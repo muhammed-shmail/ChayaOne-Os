@@ -243,6 +243,7 @@ model StaffUser {
   salaryPayments SalaryPayment[]
   audits   AuditLog[]   @relation("ActorAudits")
   sessions StaffSession[]
+  pushSubs PushSubscription[]
 
   @@unique([tenantId, username])
   @@index([tenantId, outletId])
@@ -271,6 +272,28 @@ model StaffSession {
   @@index([tenantId, staffId])
   @@index([staffId, revokedAt])
   @@map("staff_sessions")
+}
+
+/// A Web Push subscription (one per browser/device that opted in). The notify
+/// dispatcher (lib/web-push.ts) sends to these so staff alerts reach the phone
+/// even when the app is closed. Keyed by the browser's push `endpoint`; dead
+/// endpoints (404/410 on send) are pruned automatically.
+model PushSubscription {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  staffId    String   @db.Uuid
+  sessionId  String?  @db.Uuid // the StaffSession (device) this sub belongs to, if known
+  endpoint   String   @unique
+  p256dh     String   // client public key (for payload encryption)
+  auth       String   // client auth secret
+  userAgent  String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  lastUsedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, staffId])
+  @@map("push_subscriptions")
 }
 
 model SalaryPayment {

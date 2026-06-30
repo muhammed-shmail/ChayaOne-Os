@@ -20,6 +20,15 @@ function shellRoot(pathname) {
   return null;
 }
 
+// Read-only GET endpoints safe to serve stale while offline (P4). Low-sensitivity
+// view data only — the floor occupancy and the staff notification history. Order
+// placement / payments are POST and never cached. (No /api/stream — SSE can't be
+// cached; the app falls back to the last-rendered shell when offline.)
+const DATA_CACHE_API = ['/api/tables', '/api/approvals', '/api/staff/notifications'];
+function isCacheableApi(pathname) {
+  return DATA_CACHE_API.some((p) => pathname === p);
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE).then((c) => c.addAll(PRECACHE)).catch(() => {}).then(() => self.skipWaiting()),
@@ -34,6 +43,39 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// ── Web Push (Staff PWA P3) ──────────────────────────────────────────────
+// The server sends { title, body, url, tag }; show it as a system notification
+// even when the app is closed. Tapping focuses an open staff tab or opens `url`.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
+  const title = data.title || 'Cafe OS';
+  const options = {
+    body: data.body || '',
+    tag: data.tag || 'cafeos',
+    icon: '/app.png',
+    badge: '/app.png',
+    data: { url: data.url || '/pos' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/pos';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if (w.url.includes(url) && 'focus' in w) return w.focus();
+      }
+      for (const w of wins) {
+        if ('focus' in w) { w.navigate(url).catch(() => {}); return w.focus(); }
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -44,7 +86,27 @@ self.addEventListener('fetch', (event) => {
   const isStatic = url.pathname.startsWith('/_next/static') || url.pathname.startsWith('/icons/') ||
     /\.(?:png|jpg|jpeg|svg|webp|gif|ico|woff2?)$/.test(url.pathname);
 
-  // Everything else (dashboard / admin / api) → straight to network, untouched.
+  // Allow-listed read-only API GETs → stale-while-revalidate so the floor map /
+  // notifications stay viewable during a network drop.
+  if (isCacheableApi(url.pathname)) {
+    event.respondWith(
+      caches.match(req).then((cached) => {
+        const network = fetch(req)
+          .then((res) => {
+            if (res && res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+            }
+            return res;
+          })
+          .catch(() => cached); // offline → serve the last good copy
+        return cached || network;
+      }),
+    );
+    return;
+  }
+
+  // Everything else (dashboard / admin / other api) → straight to network, untouched.
   if (!root && !isStatic) return;
 
   if (root) {

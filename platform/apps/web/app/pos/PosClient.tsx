@@ -12,6 +12,7 @@ import {
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
+import { isOffline, OFFLINE_ORDER_MSG, OFFLINE_PAY_MSG } from '@/components/online';
 
 /** Category → SVG icon (replaces structural emoji; food glyph stays decorative). */
 const CAT_ICON: Record<string, LucideIcon> = {
@@ -170,6 +171,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
 
   async function sendTableCart() {
     if (!tableAction || tableCart.length === 0) return;
+    if (isOffline()) { flash(OFFLINE_ORDER_MSG); return; }
     setSendBusy(true);
     try {
       const body = {
@@ -194,6 +196,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
   }
 
   async function voidLine(l: { id: string; orderId: string; name: string }) {
+    if (isOffline()) { flash(OFFLINE_ORDER_MSG); return; }
     if (!window.confirm(`Remove “${l.name}” from this table? Stock will be restored.`)) return;
     setVoidBusyId(l.id);
     try {
@@ -211,6 +214,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
 
   async function settleTable(method: 'cash' | 'upi' | 'card') {
     if (!tableAction) return;
+    if (isOffline()) { flash(OFFLINE_PAY_MSG); return; }
     setSettleBusy(true);
     try {
       const r = await fetch('/api/tables/order', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'settle', tableId: tableAction.id, method }) });
@@ -374,6 +378,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
     opts?: { customer?: { name: string; phone: string } | null; print?: boolean },
   ) {
     if (!cart.length) return;
+    if (isOffline()) { flash(withPayment ? OFFLINE_PAY_MSG : OFFLINE_ORDER_MSG); return; }
     if (orderType === 'dine_in' && !tableId) { setCharging(false); setPendingAction('kot'); setFloorOpen(true); flash('Pick a table first'); return; }
     setBusy(true);
     try {

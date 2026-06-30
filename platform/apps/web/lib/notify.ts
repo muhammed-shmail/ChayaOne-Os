@@ -1,5 +1,6 @@
 import { prisma, type Prisma } from '@cafeos/db';
 import { publish } from './realtime';
+import { pushToStaff } from './web-push';
 
 /**
  * Cafe OS — notification dispatcher (Phase E).
@@ -65,10 +66,17 @@ export async function createNotification(input: NotificationInput) {
         audience: n.audience, targetRole: n.targetRole, targetStaffId: n.targetStaffId,
       },
     });
-    // Only owner-facing alerts fan out to external channels for now (Phase 3
-    // wires real Web Push for staff-targeted notifications).
-    if (n.audience === 'owner' && (n.severity === 'warn' || n.severity === 'critical')) {
-      await dispatchExternal(n.title, n.body, n.severity);
+    if (n.audience === 'owner') {
+      // owner-facing alerts → external channels (WhatsApp/email/push stubs)
+      if (n.severity === 'warn' || n.severity === 'critical') {
+        await dispatchExternal(n.title, n.body, n.severity);
+      }
+    } else {
+      // staff-targeted → real Web Push to the recipients' devices (P3)
+      await pushToStaff({
+        outletId: n.outletId, type: n.type, title: n.title, body: n.body,
+        audience: n.audience, targetRole: n.targetRole, targetStaffId: n.targetStaffId, entityId: n.entityId,
+      });
     }
   } catch (e) {
     console.error('notification side-effect failed', e);

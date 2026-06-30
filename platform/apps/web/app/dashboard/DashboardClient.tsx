@@ -22,6 +22,7 @@ import {
   ClipboardList, UtensilsCrossed, Package, Truck, Users, Settings, type LucideIcon,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
+import StaffDevices from '@/components/StaffDevices';
 import { MobileDrawer, BottomNav, type NavItem } from '@/components/dashboard/MobileNav';
 
 type FloorTable = { id: string; label: string; seats: number; state: string; qrToken: string; floorId: string | null; activeOrders: number };
@@ -1719,7 +1720,10 @@ export default function DashboardClient({
 
         {/* ── Staff View ── */}
         {activeMenu === 'staff' && (
-          <SectionView section="staff" />
+          <div className="flex flex-col gap-4">
+            <SectionView section="staff" />
+            <StaffDevices />
+          </div>
         )}
 
         {/* ── Customer Management (CRM) ── */}

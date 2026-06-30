@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { STAGES, STAGE_ORDER, stageOf, urgencyOf } from '@/lib/orderStatus';
 import { LogOut } from '@/components/ui';
 import StaffBell from '@/components/StaffBell';
+import { isOffline } from '@/components/online';
 
 type Ticket = {
   id: string;
@@ -81,6 +82,10 @@ export default function KdsClient({ outletName, initial, staff }: { outletName: 
       setAcked((prev) => new Set(prev).add(id));
       return;
     }
+
+    // Read-only offline — don't advance the persisted lifecycle (the optimistic
+    // update would diverge from the server). The offline banner explains why.
+    if (isOffline()) return;
 
     // Stage 2+ — advance the persisted lifecycle. Optimistic; SSE confirms.
     setTickets((prev) =>
