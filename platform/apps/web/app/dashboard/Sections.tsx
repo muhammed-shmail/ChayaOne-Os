@@ -229,7 +229,7 @@ function Inventory({ d }: { d: InventoryData }) {
 function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
   const [activeTab, setActiveTab] = useState<'directory' | 'shifts' | 'attendance' | 'payroll'>('directory');
   const [modal, setModal] = useState<{
-    type: 'add' | 'edit' | 'pin' | 'pay' | 'payout' | 'shift';
+    type: 'add' | 'edit' | 'pin' | 'pay' | 'payout' | 'shift' | 'login';
     member?: any;
   } | null>(null);
 
@@ -239,6 +239,8 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [employeeCode, setEmployeeCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   
   // Pay states
   const [payType, setPayType] = useState<string>('none');
@@ -272,6 +274,8 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
       setPhone('');
       setPin('');
       setEmployeeCode('');
+      setUsername('');
+      setPassword('');
     } else if (modal.type === 'edit' && modal.member) {
       setName(modal.member.name || '');
       setRole(modal.member.role || 'waiter');
@@ -279,6 +283,9 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
       setEmployeeCode(modal.member.employeeCode || '');
     } else if (modal.type === 'pin' && modal.member) {
       setPin('');
+    } else if (modal.type === 'login' && modal.member) {
+      setUsername(modal.member.username || '');
+      setPassword('');
     } else if (modal.type === 'pay' && modal.member) {
       setPayType(modal.member.payType || 'none');
       setPayRate(modal.member.payRatePaise ? (modal.member.payRatePaise / 100).toString() : '');
@@ -416,6 +423,10 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                       <span className="font-semibold text-ink">{m.hasPin ? '🔑 Set' : '❌ Not Set'}</span>
                     </div>
                     <div className="flex justify-between">
+                      <span>Dashboard login:</span>
+                      <span className="font-semibold text-ink truncate max-w-[55%] text-right" title={m.username || undefined}>{m.hasLogin ? `👤 ${m.username}` : '❌ Not set'}</span>
+                    </div>
+                    <div className="flex justify-between">
                       <span>Pay Rate:</span>
                       <span className="font-semibold text-ink">
                         {m.payType === 'hourly' && m.payRatePaise ? `${formatINR(m.payRatePaise)}/hr` :
@@ -437,6 +448,12 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                     className="px-2 py-1.5 rounded bg-paper-3 hover:bg-line text-xs font-semibold text-center transition-all"
                   >
                     Reset PIN
+                  </button>
+                  <button
+                    onClick={() => setModal({ type: 'login', member: m })}
+                    className="px-2 py-1.5 rounded bg-paper-3 hover:bg-line text-xs font-semibold text-center transition-all"
+                  >
+                    {m.hasLogin ? 'Edit Login' : 'Set Login'}
                   </button>
                   <button
                     onClick={() => setModal({ type: 'pay', member: m })}
@@ -662,6 +679,7 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                 {modal.type === 'add' && 'Add New Staff Member'}
                 {modal.type === 'edit' && `Edit ${modal.member?.name}`}
                 {modal.type === 'pin' && `Reset PIN for ${modal.member?.name}`}
+                {modal.type === 'login' && `${modal.member?.hasLogin ? 'Edit' : 'Set'} Login: ${modal.member?.name}`}
                 {modal.type === 'pay' && `Compensation Settings: ${modal.member?.name}`}
                 {modal.type === 'payout' && `Record Payout: ${modal.member?.name}`}
                 {modal.type === 'shift' && 'Schedule Shift'}
@@ -680,8 +698,12 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
             {/* Error Message */}
             {error && (
               <div className="mb-4 p-3 rounded bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-semibold">
-                ⚠️ Error: {error === 'pin_in_use' ? 'PIN is already in use by another staff member' : 
-                          error === 'pin_must_be_4_to_6_digits' ? 'PIN must be between 4 and 6 digits (numbers only)' : error}
+                ⚠️ Error: {error === 'pin_in_use' ? 'PIN is already in use by another staff member' :
+                          error === 'pin_must_be_4_to_6_digits' ? 'PIN must be between 4 and 6 digits (numbers only)' :
+                          error === 'username_in_use' ? 'That username is already taken by another staff member' :
+                          error === 'invalid_username' ? 'Username must be 3–30 letters, digits, dot, dash or underscore' :
+                          error === 'password_too_short' ? 'Password must be at least 6 characters' :
+                          error === 'password_required' ? 'Set a password to create this login' : error}
               </div>
             )}
 
@@ -700,6 +722,12 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
               } else if (modal.type === 'pin') {
                 if (!/^\d{4,6}$/.test(pin)) return setError('PIN must be 4 to 6 numeric digits');
                 handlePost({ action: 'setpin', id: modal.member.id, pin });
+              } else if (modal.type === 'login') {
+                const u = username.trim();
+                if (!u && !modal.member.hasLogin) return setError('Enter a username to create a login');
+                if (u && password && password.length < 6) return setError('Password must be at least 6 characters');
+                if (u && !password && !modal.member.hasLogin) return setError('Set a password to create this login');
+                handlePost({ action: 'setlogin', id: modal.member.id, username: u, password: password || undefined });
               } else if (modal.type === 'pay') {
                 const parsedRate = payType === 'none' ? null : Math.round(Number(payRate) * 100);
                 if (payType !== 'none' && (isNaN(parsedRate || 0) || (parsedRate || 0) < 0)) {
@@ -820,6 +848,42 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                       onChange={(e) => setPin(e.target.value)}
                       placeholder="Enter new pin"
                       className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm font-mono tracking-widest"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Form Fields: Username + Password login */}
+              {modal.type === 'login' && (
+                <div className="space-y-4">
+                  <p className="text-xs text-ink-3">
+                    A username + password lets this member sign in securely from the login screen — ideal for owners and managers who open the dashboard. The password is hashed and never shown. Clear the username and save to remove their login.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Username</label>
+                    <input
+                      type="text"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="e.g. ravi"
+                      className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm"
+                    />
+                    <span className="text-[10px] text-ink-3 mt-1 block">3–30 letters, digits, dot, dash or underscore. Not case-sensitive.</span>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">
+                      {modal.member?.hasLogin ? 'New Password (leave blank to keep current)' : 'Password'}
+                    </label>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      minLength={6}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="At least 6 characters"
+                      className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm"
                     />
                   </div>
                 </div>

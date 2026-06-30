@@ -226,6 +226,8 @@ model StaffUser {
   phone       String?
   email       String?
   pinHash     String?    // fast POS login
+  username    String?    // optional username for secure password login (owner/manager)
+  passwordHash String?   // scrypt hash (scrypt$salt$key) for username+password login
   role        StaffRole
   permissions Json       @default("[]")
   active      Boolean    @default(true)
@@ -240,9 +242,35 @@ model StaffUser {
   shifts   Shift[]
   salaryPayments SalaryPayment[]
   audits   AuditLog[]   @relation("ActorAudits")
+  sessions StaffSession[]
 
+  @@unique([tenantId, username])
   @@index([tenantId, outletId])
   @@map("staff_users")
+}
+
+/// A persistent login on one device (the staff PWA "stay logged in" model).
+/// Login mints a short-lived access JWT (cookie) + a long-lived refresh token
+/// bound to this row; the refresh endpoint rotates the access token and slides
+/// `expiresAt`/`lastSeenAt`. The owner can revoke a row (lost phone) — revocation
+/// bites on the next refresh (≤ access-token TTL), since edge middleware stays
+/// stateless. `lastSeenAt` also powers live staff presence on the dashboard.
+model StaffSession {
+  id         String    @id @default(uuid()) @db.Uuid // = the refresh token's `sid`
+  tenantId   String    @db.Uuid
+  staffId    String    @db.Uuid
+  label      String?   // friendly device label, e.g. "Android · Chrome"
+  userAgent  String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt  DateTime  @db.Timestamptz(6)
+  revokedAt  DateTime? @db.Timestamptz(6) // set on logout or owner remote-revoke
+
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, staffId])
+  @@index([staffId, revokedAt])
+  @@map("staff_sessions")
 }
 
 model SalaryPayment {
@@ -996,7 +1024,7 @@ model ItemSalesRollup {
 model Notification {
   id        String    @id @default(uuid()) @db.Uuid
   outletId  String    @db.Uuid
-  type      String    // low_stock | out_of_stock | ...
+  type      String    // low_stock | out_of_stock | order_ready | broadcast | ...
   severity  String    @default("info") // info | warn | critical
   title     String
   body      String?
@@ -1006,10 +1034,18 @@ model Notification {
   readAt    DateTime? @db.Timestamptz(6)
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
 
+  // Targeting (Staff PWA P2). 'owner' = owner/manager monitor bell (existing
+  // alerts; default keeps old behaviour). 'floor' = all floor staff bar.
+  // 'role' uses targetRole; 'user' uses targetStaffId.
+  audience      String     @default("owner") // owner | floor | role | user
+  targetRole    StaffRole?
+  targetStaffId String?    @db.Uuid
+
   outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
 
   @@index([outletId, createdAt])
   @@index([outletId, type, entityId, readAt])
+  @@index([outletId, audience, createdAt])
   @@map("notifications")
 }
 
@@ -1099,6 +1135,7 @@ model Subscription {
   currentStart  DateTime      @default(now()) @db.Timestamptz(6)
   currentEnd    DateTime?     @db.Timestamptz(6)
   slotOverrides Json          @default("{}") // per-tenant grants on top of the plan, e.g. { "maxBranches": 4 }
+  featureOverrides Json       @default("{}") // per-tenant feature grants on top of the plan, e.g. { "games": false, "ai_assistant": true }
   gateway       String? // "razorpay" — reserved for the later billing phase
   gatewaySubId  String?
   cancelAt      DateTime?     @db.Timestamptz(6)

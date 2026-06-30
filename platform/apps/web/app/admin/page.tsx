@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
-import { AdminBar } from './AdminBar';
 import { AdminKpis, type AdminKpi } from './AdminKpis';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +13,7 @@ export default async function AdminHome() {
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  const [tenantCount, statusGroups, ordersToday, activeSubs, admin] = await Promise.all([
+  const [tenantCount, statusGroups, ordersToday, activeSubs] = await Promise.all([
     prisma.tenant.count(),
     prisma.subscription.groupBy({ by: ['status'], _count: { _all: true } }),
     prisma.order.count({ where: { placedAt: { gte: startOfDay } } }),
@@ -22,7 +21,6 @@ export default async function AdminHome() {
       where: { status: { in: ['active', 'past_due'] } },
       select: { plan: { select: { pricePaise: true } } },
     }),
-    prisma.platformAdmin.findUnique({ where: { id: s.adminId }, select: { totpEnabled: true } }),
   ]);
 
   const byStatus: Record<string, number> = {};
@@ -45,13 +43,10 @@ export default async function AdminHome() {
   ];
 
   return (
-    <main className="min-h-screen" style={{ background: 'var(--paper)' }}>
-      <header className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--line)' }}>
-        <div>
-          <p className="font-display text-[12px] tracking-[0.3em] uppercase" style={{ color: 'var(--gold-d)' }}>Nuro7</p>
-          <h1 className="font-display text-2xl leading-none">Platform Console</h1>
-        </div>
-        <AdminBar name={s.name} totpEnabled={!!admin?.totpEnabled} />
+    <main style={{ background: 'var(--paper)' }}>
+      <header className="px-6 pt-6">
+        <h1 className="font-display text-2xl leading-none">Platform Console</h1>
+        <p className="text-sm mt-1" style={{ color: 'var(--ink-3)' }}>Cross-tenant health, revenue and operations at a glance.</p>
       </header>
 
       <section className="p-6">

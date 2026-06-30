@@ -25,7 +25,11 @@ export type Ticket = {
   placedAt: number; // epoch ms
   items: TicketItem[];
 };
-export type NotifyPayload = { id: string; type: string; severity: string; title: string; body: string | null; at: number };
+export type NotifyPayload = {
+  id: string; type: string; severity: string; title: string; body: string | null; at: number;
+  // Targeting (Staff PWA P2) — lets the staff bar / owner bell filter live events.
+  audience: string; targetRole?: string | null; targetStaffId?: string | null;
+};
 export type RealtimeEvent =
   | { type: 'order.new'; ticket: Ticket }
   | { type: 'order.updated'; ticket: Ticket }

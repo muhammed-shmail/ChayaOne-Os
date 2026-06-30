@@ -33,7 +33,7 @@ type PwaBlock = {
   wallet?: WalletBlock;
   loyalty?: LoyaltyBlock;
 };
-type Ctx = { outlet: { name: string }; table: { label: string; token: string }; order: OrderDto | null; customer: CustomerDto | null; rewards: RewardDto[]; menu: MenuCatDto[]; spinsLeft: number; pwa?: PwaBlock };
+type Ctx = { outlet: { name: string }; table: { label: string; token: string }; order: OrderDto | null; customer: CustomerDto | null; rewards: RewardDto[]; menu: MenuCatDto[]; spinsLeft: number; pwa?: PwaBlock; features?: { games: boolean; loyalty: boolean } };
 
 const FEAT_LABEL: Record<string, string> = { best_seller: 'Best Seller', chef_special: 'Chef Special', new_arrival: 'New Arrival', trending: 'Trending' };
 
@@ -62,13 +62,19 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
     for (let attempt = 0; ; attempt++) {
       try {
         const r = await fetch(`/api/customer/context${qs}`);
-        if (!r.ok) throw new Error(r.status === 404 ? 'not_setup' : `http_${r.status}`);
+        if (!r.ok) throw new Error(r.status === 404 ? 'not_setup' : r.status === 403 ? 'disabled' : `http_${r.status}`);
         setCtx(await r.json());
         return;
       } catch (e: unknown) {
+        const code = e instanceof Error ? e.message : '';
+        // A disabled PWA is a final state — don't retry, show a clear message.
+        if (code === 'disabled') {
+          setErr('Online ordering isn’t available for this cafe right now.');
+          return;
+        }
         if (attempt >= 2) {
           setErr(
-            (e instanceof Error && e.message === 'not_setup')
+            code === 'not_setup'
               ? 'This table link isn’t set up yet. Please ask our staff for help.'
               : 'Couldn’t connect. Check your connection and try again.',
           );
@@ -159,17 +165,24 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
     );
   }
 
+  // Feature tick model: Play (games) and Rewards (loyalty) can be switched off
+  // per cafe. Hide their tabs and never let navigation land on a disabled one.
+  const gamesOn = ctx.features?.games !== false;
+  const loyaltyOn = ctx.features?.loyalty !== false;
+  const visibleNav = NAV.filter((n) => (n.key === 'play' ? gamesOn : n.key === 'rewards' ? loyaltyOn : true));
+  const navigate = (t: typeof tab) => setTab(((t === 'play' && !gamesOn) || (t === 'rewards' && !loyaltyOn)) ? 'home' : t);
+
   return (
     <Shell>
       <div className="pwa-screen">
         <div className="pwa-scroll">
-          {tab === 'home' && <Home ctx={ctx} now={now} go={setTab} onUpsell={() => setTab('order')} onPick={(id) => { setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 })); setTab('order'); }} />}
+          {tab === 'home' && <Home ctx={ctx} now={now} go={navigate} onUpsell={() => setTab('order')} onPick={(id) => { setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 })); setTab('order'); }} />}
           {tab === 'order' && <Order ctx={ctx} qs={qs} cart={cart} setCart={setCart} reload={load} onPlaced={() => { flash('Order sent to waiter for confirmation', '⏳'); setTab('home'); }} />}
-          {tab === 'play' && <GamesHub ctx={ctx} qs={qs} onResult={(m, e) => { flash(m, e); pop(); }} reload={load} />}
-          {tab === 'rewards' && <Rewards ctx={ctx} qs={qs} onRedeem={(m) => { flash(m, '🎁'); pop(); }} reload={load} />}
+          {tab === 'play' && gamesOn && <GamesHub ctx={ctx} qs={qs} onResult={(m, e) => { flash(m, e); pop(); }} reload={load} />}
+          {tab === 'rewards' && loyaltyOn && <Rewards ctx={ctx} qs={qs} onRedeem={(m) => { flash(m, '🎁'); pop(); }} reload={load} />}
         </div>
         <nav className="pwa-nav" aria-label="Primary">
-          {NAV.map(({ key: k, icon: Ic, label: l }) => {
+          {visibleNav.map(({ key: k, icon: Ic, label: l }) => {
             const count = k === 'order' ? Object.values(cart).reduce((a, b) => a + b, 0) : 0;
             const on = tab === k;
             return (

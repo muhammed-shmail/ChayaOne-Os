@@ -19,6 +19,10 @@ export type NotificationInput = {
   entity?: string | null;
   entityId?: string | null;
   meta?: Prisma.InputJsonValue;
+  // Targeting (Staff PWA P2). Defaults to 'owner' → the owner monitor bell.
+  audience?: 'owner' | 'floor' | 'role' | 'user';
+  targetRole?: 'owner' | 'manager' | 'cashier' | 'kitchen' | 'waiter' | null;
+  targetStaffId?: string | null;
 };
 
 /** Which external channels are configured (drives the "integration ready" UI). */
@@ -47,15 +51,23 @@ export async function createNotification(input: NotificationInput) {
       entity: input.entity ?? null,
       entityId: input.entityId ?? null,
       meta: input.meta,
+      audience: input.audience ?? 'owner',
+      targetRole: input.targetRole ?? null,
+      targetStaffId: input.targetStaffId ?? null,
     },
   });
 
   try {
     publish(n.outletId, {
       type: 'notify',
-      notification: { id: n.id, type: n.type, severity: n.severity, title: n.title, body: n.body, at: n.createdAt.getTime() },
+      notification: {
+        id: n.id, type: n.type, severity: n.severity, title: n.title, body: n.body, at: n.createdAt.getTime(),
+        audience: n.audience, targetRole: n.targetRole, targetStaffId: n.targetStaffId,
+      },
     });
-    if (n.severity === 'warn' || n.severity === 'critical') {
+    // Only owner-facing alerts fan out to external channels for now (Phase 3
+    // wires real Web Push for staff-targeted notifications).
+    if (n.audience === 'owner' && (n.severity === 'warn' || n.severity === 'critical')) {
       await dispatchExternal(n.title, n.body, n.severity);
     }
   } catch (e) {

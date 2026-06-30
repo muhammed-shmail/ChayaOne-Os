@@ -647,6 +647,7 @@ async function getTables(outletId: string): Promise<TablesData> {
 export interface StaffMember {
   id: string; name: string; role: string; phone: string | null; active: boolean;
   employeeCode: string | null; payType: string | null; payRatePaise: number | null; hasPin: boolean;
+  username: string | null; hasLogin: boolean;
 }
 export interface StaffActivity {
   staffId: string; name: string; role: string;
@@ -672,7 +673,7 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
     prisma.staffUser.findMany({
       where: { tenantId, OR: [{ outletId }, { outletId: null }] },
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
-      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true },
+      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true },
     }),
     prisma.$queryRaw<{ staffId: string | null; name: string; orders: number; gross: number }[]>`
       SELECT o."staffId"::text AS "staffId",
@@ -757,7 +758,7 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
     }),
   ]);
 
-  const members: StaffMember[] = memberRows.map(({ pinHash, ...m }) => ({ ...m, hasPin: !!pinHash }));
+  const members: StaffMember[] = memberRows.map(({ pinHash, passwordHash, ...m }) => ({ ...m, hasPin: !!pinHash, hasLogin: !!passwordHash }));
   const activeBy = new Map(active.map((a) => [a.staffId, a]));
   const workBy = new Map(todayWork.map((w) => [w.staffId, w]));
   const paidBy = new Map<string, number>();

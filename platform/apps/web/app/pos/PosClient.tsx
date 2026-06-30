@@ -11,6 +11,7 @@ import {
   ShoppingCart, ChevronUp, Menu, Search, type LucideIcon,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
+import StaffBell from '@/components/StaffBell';
 
 /** Category → SVG icon (replaces structural emoji; food glyph stays decorative). */
 const CAT_ICON: Record<string, LucideIcon> = {
@@ -434,6 +435,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
       <div className="md:hidden sticky top-0 z-30" style={{ paddingTop: 'env(safe-area-inset-top)', background: 'color-mix(in srgb, var(--paper) 90%, transparent)', backdropFilter: 'blur(10px)', borderBottom: '1px solid var(--line)' }}>
         <div className="flex items-center gap-2 px-3 py-2">
           <button onClick={() => setMoreOpen(true)} aria-label="Open menu" aria-haspopup="dialog" aria-expanded={moreOpen} className="btn btn-icon btn-sm btn-ghost shrink-0"><Menu size={20} aria-hidden /></button>
+          <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost shrink-0" />
           <div className="flex rounded-full p-[3px] border flex-1 min-w-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
             {(['dine_in', 'takeaway'] as const).map((t) => (
               <button key={t} onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
@@ -488,7 +490,10 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
             </div>
             <span className="font-display font-bold text-[17px]">{(outlet.name.split('—')[0] ?? '').trim()}</span>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
+            <ThemeToggle />
+          </div>
         </div>
         <div className="flex items-center gap-2 px-1 -mt-1">
           <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{staff.name[0]}</span>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { STAGES, STAGE_ORDER, stageOf, urgencyOf } from '@/lib/orderStatus';
 import { LogOut } from '@/components/ui';
+import StaffBell from '@/components/StaffBell';
 
 type Ticket = {
   id: string;
@@ -18,7 +19,7 @@ type Ticket = {
 const STATIONS = ['all', 'kitchen', 'bar', 'dessert'] as const;
 const ACTIVE = ['open', 'in_kitchen', 'ready'];
 
-export default function KdsClient({ outletName, initial }: { outletName: string; initial: Ticket[] }) {
+export default function KdsClient({ outletName, initial, staff }: { outletName: string; initial: Ticket[]; staff: { id: string; role: string } }) {
   const router = useRouter();
   const [tickets, setTickets] = useState<Ticket[]>(initial);
   // Petpooja-style "accept the order" step: a ticket reads as NEW until the
@@ -120,6 +121,7 @@ export default function KdsClient({ outletName, initial }: { outletName: string;
           <span className="kstat" style={{ color: STAGES.new.color }}><b style={{ color: STAGES.new.color }}>{stats.new}</b> new</span>
           <span className="kstat" style={{ color: STAGES.ready.color }}><b style={{ color: STAGES.ready.color }}>{stats.ready}</b> ready</span>
           <span className="kstat conn" style={{ color: connected ? 'var(--ok)' : 'var(--clay)' }}>{connected ? '● live' : '○ reconnecting'}</span>
+          <StaffBell role={staff.role} staffId={staff.id} triggerClassName="kds-logout" />
           <button className="kds-logout" onClick={logout} title="Log out"><LogOut size={14} aria-hidden style={{ verticalAlign: '-2px', marginRight: 4 }} /> Log out</button>
         </div>
       </div>

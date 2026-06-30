@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { BrandMark } from '@/components/BrandMark';
-import { Delete, AlphaTag } from '@/components/ui';
+import { Delete, AlphaTag, Eye, EyeOff } from '@/components/ui';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del'];
 
@@ -19,7 +19,21 @@ export default function LoginClient() {
   const [staff, setStaff] = useState<Staff | null>(null);
   const [openSince, setOpenSince] = useState<string | null>(null); // existing open punch, if any
 
+  // login mode: fast PIN pad (floor staff) or username+password (secure, dashboard roles)
+  const [mode, setMode] = useState<'pin' | 'password'>('pin');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // reveal/hide the password field
+  const [notice, setNotice] = useState<string | null>(null); // info hint, e.g. "use password"
+
   const dest = staff?.role === 'owner' || staff?.role === 'manager' ? '/dashboard' : '/pos';
+
+  // shared post-login step: cookie is set — check today's attendance then show confirm
+  async function enterWith(who: Staff) {
+    const att = await fetch('/api/attendance').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    setOpenSince(att?.open?.clockIn ?? null);
+    setStaff(who);
+  }
 
   async function submit(code: string) {
     setBusy(true);
@@ -30,16 +44,51 @@ export default function LoginClient() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ pin: code }),
       });
+      // owners/managers can't use the PIN pad — steer them to password sign-in
+      if (res.status === 403) {
+        const body = await res.json().catch(() => ({}));
+        if (body?.error === 'use_password_login') {
+          setPin('');
+          setMode('password');
+          setNotice('Owners & managers sign in with username & password.');
+          setBusy(false);
+          return;
+        }
+      }
       if (!res.ok) throw new Error();
       const { staff: who } = await res.json().catch(() => ({ staff: null }));
-      // session cookie is now set — check whether they're already clocked in today
-      const att = await fetch('/api/attendance').then((r) => (r.ok ? r.json() : null)).catch(() => null);
-      setOpenSince(att?.open?.clockIn ?? null);
-      setStaff(who ?? { name: 'there', role: 'cashier' });
+      // Never assume a role: if the API didn't return a verified staff record,
+      // treat it as a failed login rather than silently defaulting to cashier.
+      if (!who?.role) throw new Error();
+      await enterWith(who);
       setBusy(false);
     } catch {
       setError(true);
       setPin('');
+      setBusy(false);
+    }
+  }
+
+  async function submitPassword(e: FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(false);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/auth/login/password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      if (!res.ok) throw new Error();
+      const { staff: who } = await res.json().catch(() => ({ staff: null }));
+      if (!who?.role) throw new Error();
+      await enterWith(who);
+      setBusy(false);
+    } catch {
+      setError(true);
+      setPassword('');
       setBusy(false);
     }
   }
@@ -123,35 +172,87 @@ export default function LoginClient() {
           <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="mb-1.5 object-contain" />
           <AlphaTag />
           <h1 className="font-display text-[40px] leading-none mt-3.5">Kahwa House</h1>
-          <p className="text-sm mt-2" style={{ color: 'var(--ink-3)' }}>Enter your staff PIN to open the till</p>
+          <p className="text-sm mt-2" style={{ color: 'var(--ink-3)' }}>
+            {mode === 'pin' ? 'Enter your staff PIN to open the till' : 'Sign in with your username & password'}
+          </p>
         </div>
 
-        {/* pin dots */}
-        <div className={`flex justify-center gap-3 mb-6 ${error ? 'shake' : ''}`}>
-          {Array.from({ length: 4 }).map((_, i) => (
-            <span key={i} className="w-3.5 h-3.5 rounded-full transition"
-              style={{ background: i < pin.length ? 'var(--gold)' : 'transparent', border: `2px solid ${i < pin.length ? 'var(--gold-d)' : 'var(--line-2)'}`, boxShadow: i < pin.length ? '0 0 0 3px color-mix(in srgb, var(--gold) 20%, transparent)' : 'none' }} />
-          ))}
-        </div>
+        {mode === 'pin' ? (
+          <>
+            {/* pin dots */}
+            <div className={`flex justify-center gap-3 mb-6 ${error ? 'shake' : ''}`}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <span key={i} className="w-3.5 h-3.5 rounded-full transition"
+                  style={{ background: i < pin.length ? 'var(--gold)' : 'transparent', border: `2px solid ${i < pin.length ? 'var(--gold-d)' : 'var(--line-2)'}`, boxShadow: i < pin.length ? '0 0 0 3px color-mix(in srgb, var(--gold) 20%, transparent)' : 'none' }} />
+              ))}
+            </div>
 
-        {error && <p role="alert" className="text-center text-sm font-bold mb-4" style={{ color: 'var(--clay)' }}>Wrong PIN — try again</p>}
+            {error && <p role="alert" className="text-center text-sm font-bold mb-4" style={{ color: 'var(--clay)' }}>Wrong PIN — try again</p>}
 
-        <div className="grid grid-cols-3 gap-3">
-          {KEYS.map((k) => (
-            <button key={k} onClick={() => press(k)} disabled={busy}
-              aria-label={k === 'del' ? 'Delete' : k === 'clear' ? 'Clear' : `Digit ${k}`}
-              className="aspect-[3/2] grid place-items-center rounded-[18px] font-display text-2xl font-bold transition active:scale-95 disabled:opacity-50"
-              style={k === 'clear' || k === 'del'
-                ? { background: 'transparent', color: 'var(--ink-3)', fontSize: '15px', fontFamily: 'var(--font-body)' }
-                : { background: 'var(--paper-2)', border: '1px solid var(--line)', boxShadow: 'var(--sh-1)', color: 'var(--ink)' }}>
-              {k === 'del' ? <Delete size={22} aria-hidden /> : k === 'clear' ? 'Clear' : k}
+            <div className="grid grid-cols-3 gap-3">
+              {KEYS.map((k) => (
+                <button key={k} onClick={() => press(k)} disabled={busy}
+                  aria-label={k === 'del' ? 'Delete' : k === 'clear' ? 'Clear' : `Digit ${k}`}
+                  className="aspect-[3/2] grid place-items-center rounded-[18px] font-display text-2xl font-bold transition active:scale-95 disabled:opacity-50"
+                  style={k === 'clear' || k === 'del'
+                    ? { background: 'transparent', color: 'var(--ink-3)', fontSize: '15px', fontFamily: 'var(--font-body)' }
+                    : { background: 'var(--paper-2)', border: '1px solid var(--line)', boxShadow: 'var(--sh-1)', color: 'var(--ink)' }}>
+                  {k === 'del' ? <Delete size={22} aria-hidden /> : k === 'clear' ? 'Clear' : k}
+                </button>
+              ))}
+            </div>
+
+            {/* Demo PIN hints are dev-only — never expose the owner PIN on a live till. */}
+            {process.env.NODE_ENV !== 'production' && (
+              <p className="text-center text-xs mt-7" style={{ color: 'var(--ink-3)' }}>
+                Demo PINs · Owner <b>1111</b> · Cashier <b>2222</b> · Kitchen <b>3333</b>
+              </p>
+            )}
+          </>
+        ) : (
+          <form onSubmit={submitPassword} className={`space-y-3 ${error ? 'shake' : ''}`}>
+            {notice && <p className="text-center text-sm font-bold mb-1" style={{ color: 'var(--gold-d)' }}>{notice}</p>}
+            {error && <p role="alert" className="text-center text-sm font-bold" style={{ color: 'var(--clay)' }}>Wrong username or password</p>}
+            <input
+              type="text" autoCapitalize="none" autoCorrect="off" autoComplete="username"
+              value={username} onChange={(e) => setUsername(e.target.value)}
+              placeholder="Username" disabled={busy}
+              className="w-full px-4 py-3 rounded-2xl text-[15px] outline-none disabled:opacity-50"
+              style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', boxShadow: 'var(--sh-1)', color: 'var(--ink)' }}
+            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'} autoComplete="current-password"
+                value={password} onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password" disabled={busy}
+                className="w-full pl-4 pr-12 py-3 rounded-2xl text-[15px] outline-none disabled:opacity-50"
+                style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', boxShadow: 'var(--sh-1)', color: 'var(--ink)' }}
+              />
+              <button
+                type="button" disabled={busy} tabIndex={-1}
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+                className="absolute right-2 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-xl transition disabled:opacity-50"
+                style={{ color: 'var(--ink-3)', background: 'none', border: 'none' }}
+              >
+                {showPassword ? <EyeOff size={18} aria-hidden /> : <Eye size={18} aria-hidden />}
+              </button>
+            </div>
+            <button type="submit" disabled={busy || !username.trim() || !password}
+              className="btn btn-lux w-full" style={{ padding: '14px', borderRadius: 16, fontSize: 16 }}>
+              {busy ? 'One sec…' : 'Sign in →'}
             </button>
-          ))}
-        </div>
+          </form>
+        )}
 
-        <p className="text-center text-xs mt-7" style={{ color: 'var(--ink-3)' }}>
-          Demo PINs · Owner <b>1111</b> · Cashier <b>2222</b> · Kitchen <b>3333</b>
-        </p>
+        {/* toggle between the fast PIN pad and secure username + password */}
+        <button type="button" disabled={busy}
+          onClick={() => { setMode(mode === 'pin' ? 'password' : 'pin'); setError(false); setNotice(null); setPin(''); setPassword(''); setShowPassword(false); }}
+          className="w-full mt-6 text-sm font-bold disabled:opacity-50"
+          style={{ color: 'var(--ink-3)', background: 'none', border: 'none' }}>
+          {mode === 'pin' ? 'Sign in with username & password →' : '← Use PIN pad instead'}
+        </button>
       </div>
 
       <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}} .shake{animation:shake .4s}`}</style>

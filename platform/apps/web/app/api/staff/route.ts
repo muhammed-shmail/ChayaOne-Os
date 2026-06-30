@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { prisma, type Prisma, type StaffRole } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { canManageStaff, assignableRoles, canManageTarget, ALL_ROLES } from '@/lib/rbac';
+import { hashPassword } from '@/lib/platform-crypto';
 import { assertSlot, bumpUsage, SlotExceeded } from '@/lib/limits';
 
 export const runtime = 'nodejs';
@@ -10,6 +11,8 @@ export const dynamic = 'force-dynamic';
 
 const isRole = (r: unknown): r is StaffRole => typeof r === 'string' && (ALL_ROLES as string[]).includes(r);
 const hashPin = (pin: string) => createHash('sha256').update(pin).digest('hex');
+// username: 3-30 chars, starts alphanumeric, then letters/digits/._- (case-insensitive, stored lowercase)
+const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/i;
 
 /** GET /api/staff — staff users for the tenant (manager/owner only). */
 export async function GET() {
@@ -20,9 +23,9 @@ export async function GET() {
   const rows = await prisma.staffUser.findMany({
     where: { tenantId: session.tenantId },
     orderBy: [{ active: 'desc' }, { name: 'asc' }],
-    select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true },
+    select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true },
   });
-  const members = rows.map(({ pinHash, ...m }) => ({ ...m, hasPin: !!pinHash }));
+  const members = rows.map(({ pinHash, passwordHash, ...m }) => ({ ...m, hasPin: !!pinHash, hasLogin: !!passwordHash }));
   return NextResponse.json({ members, assignable: assignableRoles(session.role) });
 }
 
@@ -51,6 +54,20 @@ export async function POST(req: NextRequest) {
     const clash = await prisma.staffUser.findFirst({ where: { pinHash }, select: { id: true } });
     if (clash) return NextResponse.json({ error: 'pin_in_use' }, { status: 409 });
 
+    // optional username + password login (secure dashboard access)
+    let username: string | null = null;
+    let passwordHash: string | null = null;
+    if (body.username || body.password) {
+      const u = String(body.username ?? '').trim().toLowerCase();
+      const pw = String(body.password ?? '');
+      if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username' }, { status: 400 });
+      if (pw.length < 6) return NextResponse.json({ error: 'password_too_short' }, { status: 400 });
+      const uClash = await prisma.staffUser.findFirst({ where: { tenantId: session.tenantId, username: u }, select: { id: true } });
+      if (uClash) return NextResponse.json({ error: 'username_in_use' }, { status: 409 });
+      username = u;
+      passwordHash = hashPassword(pw);
+    }
+
     // slot enforcement (G6): staff seats per plan
     try {
       await assertSlot(session.tenantId, 'staff');
@@ -68,6 +85,8 @@ export async function POST(req: NextRequest) {
         employeeCode: employeeCode ? String(employeeCode).trim() : null,
         role,
         pinHash,
+        username,
+        passwordHash,
         active: true,
       },
       select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true },
@@ -160,6 +179,32 @@ export async function POST(req: NextRequest) {
     if (clash) return NextResponse.json({ error: 'pin_in_use' }, { status: 409 });
     await prisma.staffUser.update({ where: { id }, data: { pinHash } });
     await audit(session, 'staff.pin_reset', id, {});
+    return NextResponse.json({ ok: true });
+  }
+
+  // set / change / clear the username + password login for an existing staff member
+  if (action === 'setlogin') {
+    const u = String(body.username ?? '').trim().toLowerCase();
+    const pw = String(body.password ?? '');
+    // empty username clears password login entirely
+    if (!u) {
+      await prisma.staffUser.update({ where: { id }, data: { username: null, passwordHash: null } });
+      await audit(session, 'staff.login_cleared', id, {});
+      return NextResponse.json({ ok: true });
+    }
+    if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username' }, { status: 400 });
+    const uClash = await prisma.staffUser.findFirst({ where: { tenantId: session.tenantId, username: u, NOT: { id } }, select: { id: true } });
+    if (uClash) return NextResponse.json({ error: 'username_in_use' }, { status: 409 });
+    const data: Prisma.StaffUserUpdateInput = { username: u };
+    // password optional: only change it when provided, so the username can be renamed alone
+    if (pw) {
+      if (pw.length < 6) return NextResponse.json({ error: 'password_too_short' }, { status: 400 });
+      data.passwordHash = hashPassword(pw);
+    } else if (!target.passwordHash) {
+      return NextResponse.json({ error: 'password_required' }, { status: 400 });
+    }
+    await prisma.staffUser.update({ where: { id }, data });
+    await audit(session, 'staff.login_set', id, { username: u });
     return NextResponse.json({ ok: true });
   }
 

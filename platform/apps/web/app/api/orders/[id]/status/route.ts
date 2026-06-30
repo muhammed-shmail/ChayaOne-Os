@@ -4,6 +4,7 @@ import { AdvanceOrderSchema } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
 import { alertOrderCancelled } from '@/lib/alerts';
+import { createNotification } from '@/lib/notify';
 import { reverseWalletHold } from '@/lib/wallet';
 
 export const runtime = 'nodejs';
@@ -57,6 +58,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (next === 'cancelled') {
     await reverseWalletHold(params.id); // refund any provisional wallet points
     await alertOrderCancelled(session.outletId, { number: updated.number, by: session.name, totalPaise: updated.totalPaise });
+  }
+  // Order ready → ping the waiter who took it (their phone's notification bar).
+  if (next === 'ready' && updated.staffId) {
+    const where = updated.table?.label ? `Table ${updated.table.label}` : updated.type === 'takeaway' ? 'Takeaway' : '';
+    await createNotification({
+      outletId: session.outletId,
+      type: 'order_ready',
+      severity: 'info',
+      title: `Order #${updated.number} is ready`,
+      body: where ? `${where} — ready to serve` : 'Ready to serve',
+      entity: 'order',
+      entityId: updated.id,
+      audience: 'user',
+      targetStaffId: updated.staffId,
+    }).catch(() => {});
   }
   return NextResponse.json({ ok: true, status: next });
 }

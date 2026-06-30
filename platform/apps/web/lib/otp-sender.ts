@@ -24,6 +24,10 @@ export function otpDevEcho(): boolean {
 
 export async function sendOtp(phone: string, code: string): Promise<OtpSendResult> {
   // --- Production providers go here -----------------------------------------
+  // WhatsApp is a tickable feature: gate this branch on the tenant's flag when
+  // wiring the provider, e.g. pass tenantId in and check
+  //   await tenantHasFeature(tenantId, 'whatsapp')
+  // before using the WhatsApp Cloud API; otherwise fall through to SMS/console.
   // if (process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID) {
   //   await sendWhatsApp(phone, code);
   //   return { delivered: true, channel: 'whatsapp' };

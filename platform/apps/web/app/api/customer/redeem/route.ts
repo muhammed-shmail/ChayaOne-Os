@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { prisma } from '@cafeos/db';
 import { resolveTable, resolveCustomerId } from '@/lib/customer';
+import { tenantHasFeature } from '@/lib/features';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,9 @@ export async function POST(req: NextRequest) {
 
   const table = await resolveTable(parsed.data.t);
   if (!table) return NextResponse.json({ error: 'table_not_found' }, { status: 404 });
+
+  if (!(await tenantHasFeature(table.outlet.tenantId, 'loyalty')))
+    return NextResponse.json({ error: 'feature_not_in_plan', feature: 'loyalty' }, { status: 402 });
 
   const customerId = await resolveCustomerId(table.outlet.tenantId);
   if (!customerId) return NextResponse.json({ error: 'not_identified' }, { status: 401 });

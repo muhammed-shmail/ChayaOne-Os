@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { prisma } from '@cafeos/db';
-import { signSession, SESSION_COOKIE } from '@/lib/auth';
+import { startStaffSession } from '@/lib/staff-session';
 import { resolveTenantIdFromHost } from '@/lib/tenant';
 
 export const runtime = 'nodejs';
@@ -38,21 +38,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 });
   }
 
-  const token = await signSession({
-    staffId: staff.id,
-    name: staff.name,
-    role: staff.role,
-    tenantId: staff.tenantId,
-    outletId: staff.outletId,
-  });
+  // The PIN pad must never open the dashboard. Owners/managers (the only roles that
+  // can reach /dashboard) sign in with username + password instead, so a guessed or
+  // shared PIN can't escalate a floor user into the owner dashboard.
+  if (staff.role === 'owner' || staff.role === 'manager') {
+    await new Promise((r) => setTimeout(r, 350));
+    return NextResponse.json({ error: 'use_password_login' }, { status: 403 });
+  }
 
   const res = NextResponse.json({ ok: true, staff: { name: staff.name, role: staff.role } });
-  res.cookies.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 60 * 60 * 12,
-  });
+  // Start a persistent device session (short access cookie + 30d refresh cookie).
+  await startStaffSession(
+    res,
+    { id: staff.id, name: staff.name, role: staff.role, tenantId: staff.tenantId, outletId: staff.outletId },
+    req.headers.get('user-agent'),
+  );
   return res;
 }

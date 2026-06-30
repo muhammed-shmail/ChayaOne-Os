@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
+import { tenantHasFeature } from '@/lib/features';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,6 +26,8 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (session.role !== 'owner' && session.role !== 'manager') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!(await tenantHasFeature(session.tenantId, 'revenue_analytics')))
+    return NextResponse.json({ error: 'feature_not_in_plan', feature: 'revenue_analytics' }, { status: 402 });
 
   // Default range: last 7 days (today inclusive) in the outlet's wall-clock zone.
   const todayKey = new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));

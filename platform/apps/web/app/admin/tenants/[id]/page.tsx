@@ -4,6 +4,8 @@ import { getPlatformSession } from '@/lib/platform-session';
 import { getTenantDetail } from '@/lib/platform-tenants';
 import { TenantActions } from './TenantActions';
 import { TenantSettings } from './TenantSettings';
+import { FeatureAccess } from './FeatureAccess';
+import { FEATURE_CATALOG, FEATURE_DEFAULTS } from '@/lib/feature-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +23,13 @@ export default async function TenantDetail({ params }: { params: { id: string } 
 
   const so = (sub?.slotOverrides ?? {}) as Record<string, number | null | undefined>;
   const slotStr = (k: string) => (so[k] === undefined ? '' : so[k] === null ? 'unlimited' : String(so[k]));
+
+  // Feature access (tick model): effective-without-override = plan flag ?? catalogue default.
+  const planFeatures = (sub?.plan.features ?? {}) as Record<string, boolean>;
+  const featureOverrides = (sub?.featureOverrides ?? {}) as Record<string, boolean>;
+  const inheritedFeatures = Object.fromEntries(
+    FEATURE_CATALOG.map((f) => [f.key, typeof planFeatures[f.key] === 'boolean' ? planFeatures[f.key]! : (FEATURE_DEFAULTS[f.key] ?? false)]),
+  );
   const brandingProps = {
     appName: t.branding?.appName ?? '',
     logoUrl: t.branding?.logoUrl ?? '',
@@ -98,6 +107,13 @@ export default async function TenantDetail({ params }: { params: { id: string } 
           id={t.id}
           branding={brandingProps}
           slots={{ maxBranches: slotStr('maxBranches'), maxStaff: slotStr('maxStaff'), maxCustomers: slotStr('maxCustomers') }}
+        />
+
+        <FeatureAccess
+          id={t.id}
+          catalog={FEATURE_CATALOG}
+          inherited={inheritedFeatures}
+          overrides={featureOverrides}
         />
       </section>
     </main>

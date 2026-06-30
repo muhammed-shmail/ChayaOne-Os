@@ -3,6 +3,7 @@ import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { getDashboardData } from '@/lib/analytics';
 import { tenantBilling } from '@/lib/billing';
+import { tenantFeatures } from '@/lib/features';
 import { BillingWall } from '@/components/BillingWall';
 import DashboardClient from './DashboardClient';
 
@@ -30,12 +31,14 @@ export default async function DashboardPage() {
   if (billing.blocked) return <BillingWall brand={outlet.tenant.name} reason={billing.reason} />;
 
   const data = await getDashboardData(outlet.id);
+  const features = await tenantFeatures(session.tenantId);
 
   return (
     <DashboardClient
       outlet={{ name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin }}
       staff={{ name: session.name, role: session.role }}
       data={data}
+      features={features}
     />
   );
 }

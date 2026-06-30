@@ -59,13 +59,13 @@ const MENU: Seed[] = [
 // Control-plane plan catalogue (global, not tenant-scoped). null limit = unlimited.
 const PLANS = [
   { key: 'starter', name: 'Starter', maxBranches: 1, maxStaff: 5, maxCustomers: 1000, maxOrdersMonthly: 2000, storageMb: 500,
-    features: { whatsapp: false, ai_assistant: false, white_label: false }, pricePaise: { monthly: 99900, yearly: 999000 } },
+    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: false, whatsapp: false, ai_assistant: false, white_label: false }, pricePaise: { monthly: 99900, yearly: 999000 } },
   { key: 'growth', name: 'Growth', maxBranches: 3, maxStaff: 20, maxCustomers: 5000, maxOrdersMonthly: 10000, storageMb: 2000,
-    features: { whatsapp: true, ai_assistant: false, white_label: false }, pricePaise: { monthly: 249900, yearly: 2499000 } },
+    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: true, whatsapp: true, ai_assistant: false, white_label: false }, pricePaise: { monthly: 249900, yearly: 2499000 } },
   { key: 'pro', name: 'Pro', maxBranches: 10, maxStaff: 100, maxCustomers: 50000, maxOrdersMonthly: 100000, storageMb: 10000,
-    features: { whatsapp: true, ai_assistant: true, white_label: false }, pricePaise: { monthly: 499900, yearly: 4999000 } },
+    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: true, whatsapp: true, ai_assistant: true, white_label: false }, pricePaise: { monthly: 499900, yearly: 4999000 } },
   { key: 'enterprise', name: 'Enterprise', maxBranches: null, maxStaff: null, maxCustomers: null, maxOrdersMonthly: null, storageMb: null,
-    features: { whatsapp: true, ai_assistant: true, white_label: true }, pricePaise: {} },
+    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: true, whatsapp: true, ai_assistant: true, white_label: true }, pricePaise: {} },
 ] as const;
 
 async function main() {
@@ -92,16 +92,17 @@ async function main() {
   await prisma.tenant.deleteMany({});
 
   const tenant = await prisma.tenant.create({
-    data: { name: 'Kaawa House', subdomain: 'kaawa', plan: 'growth', gstin: '29ABCDE1234F1Z5' },
+    data: { name: 'Kaawa House', subdomain: 'kaawa', plan: 'pro', gstin: '29ABCDE1234F1Z5' },
   });
 
-  // Active subscription on the Growth plan + slot meters, so the control plane
-  // has something real to govern from day one.
-  const growthPlan = await prisma.planDefinition.findUniqueOrThrow({ where: { key: 'growth' } });
+  // Active subscription on the Pro plan + slot meters, so the control plane has
+  // something real to govern from day one. Pro is the first tier that unlocks
+  // the AI Sales Assistant (ai_assistant feature), so the demo cafe can use it.
+  const subscriptionPlan = await prisma.planDefinition.findUniqueOrThrow({ where: { key: 'pro' } });
   await prisma.subscription.create({
     data: {
       tenantId: tenant.id,
-      planId: growthPlan.id,
+      planId: subscriptionPlan.id,
       period: 'monthly',
       status: 'active',
       currentStart: new Date(),
@@ -119,10 +120,11 @@ async function main() {
     },
   });
 
-  // staff with PIN login
+  // staff with PIN login; the owner also gets a secure username + password login
   await prisma.staffUser.createMany({
     data: [
-      { tenantId: tenant.id, outletId: outlet.id, name: 'Ravi (Owner)', role: StaffRole.owner, pinHash: pin('1111'), phone: '9000000001' },
+      // owner is password-only: the PIN pad must never open the dashboard, so no pinHash here
+      { tenantId: tenant.id, outletId: outlet.id, name: 'Ravi (Owner)', role: StaffRole.owner, phone: '9000000001', username: 'owner', passwordHash: adminPw('cafe1234') },
       { tenantId: tenant.id, outletId: outlet.id, name: 'Priya', role: StaffRole.cashier, pinHash: pin('2222'), phone: '9000000002' },
       { tenantId: tenant.id, outletId: outlet.id, name: 'Kitchen', role: StaffRole.kitchen, pinHash: pin('3333') },
     ],

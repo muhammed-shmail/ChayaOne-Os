@@ -11,13 +11,16 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const onlyUnread = req.nextUrl.searchParams.get('unread') === '1';
+  // Owner monitor bell = owner-audience alerts only. Staff-targeted notifications
+  // (order ready, broadcasts) live on the staff bar, not here.
+  const base = { outletId: session.outletId, audience: 'owner' };
   const [items, unread] = await Promise.all([
     prisma.notification.findMany({
-      where: { outletId: session.outletId, ...(onlyUnread ? { readAt: null } : {}) },
+      where: { ...base, ...(onlyUnread ? { readAt: null } : {}) },
       orderBy: { createdAt: 'desc' },
       take: 40,
     }),
-    prisma.notification.count({ where: { outletId: session.outletId, readAt: null } }),
+    prisma.notification.count({ where: { ...base, readAt: null } }),
   ]);
 
   return NextResponse.json({
@@ -51,7 +54,7 @@ export async function POST(req: NextRequest) {
   }
   if (action === 'read_all') {
     await prisma.notification.updateMany({
-      where: { outletId: session.outletId, readAt: null },
+      where: { outletId: session.outletId, audience: 'owner', readAt: null },
       data: { readAt: new Date() },
     });
     return NextResponse.json({ ok: true });

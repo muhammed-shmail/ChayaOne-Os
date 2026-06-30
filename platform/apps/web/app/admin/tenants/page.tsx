@@ -30,11 +30,8 @@ export default async function TenantsPage() {
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--paper)' }}>
-      <header className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--line)' }}>
-        <div className="flex items-center gap-3">
-          <Link href="/admin" className="text-sm" style={{ color: 'var(--ink-3)' }}>← Console</Link>
-          <h1 className="font-display text-2xl leading-none">Tenants <span style={{ color: 'var(--ink-3)' }}>({tenants.length})</span></h1>
-        </div>
+      <header className="flex items-center justify-between px-6 pt-6">
+        <h1 className="font-display text-2xl leading-none">Tenants <span style={{ color: 'var(--ink-3)' }}>({tenants.length})</span></h1>
         <NewTenant />
       </header>
 

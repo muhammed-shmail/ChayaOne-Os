@@ -28,5 +28,5 @@ export default async function KdsPage() {
   const initial: Ticket[] = orders.map(toTicket);
   const name = outlet.name.split('—')[0]?.trim() ?? 'Kitchen';
 
-  return <KdsClient outletName={name} initial={initial} />;
+  return <KdsClient outletName={name} initial={initial} staff={{ id: session.staffId, role: session.role }} />;
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { resolveTable, activeOrderForTable, resolveCustomer } from '@/lib/customer';
 import { readPwaConfig, gameUnlocked, tierForCustomer, walletPointsToPaise } from '@/lib/pwa';
+import { tenantFeatures } from '@/lib/features';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,12 @@ export async function GET(req: NextRequest) {
   if (!table) return NextResponse.json({ error: 'table_not_found' }, { status: 404 });
 
   const tenantId = table.outlet.tenantId;
+
+  // Feature tick model: the whole customer PWA can be switched off per cafe.
+  const features = await tenantFeatures(tenantId);
+  if (!features.pwa_customer_app)
+    return NextResponse.json({ error: 'pwa_disabled', feature: 'pwa_customer_app' }, { status: 403 });
+
   const { id: customerId, authenticated } = await resolveCustomer(tenantId);
 
   const [order, customer, rewards, categories, outletRow] = await Promise.all([
@@ -66,15 +73,15 @@ export async function GET(req: NextRequest) {
   const minGates = cfg.gamification.games.filter((g) => g.enabled && g.minOrderPaise > 0).map((g) => g.minOrderPaise);
   const minOrderPaise = minGates.length ? Math.min(...minGates) : 0;
   const gameUnlock = {
-    unlocked: cfg.gamification.enabledGlobal && minOrderPaise > 0 && !!order && gameUnlocked(cfg, '', orderTotal).ok && orderTotal >= minOrderPaise,
+    unlocked: features.games && cfg.gamification.enabledGlobal && minOrderPaise > 0 && !!order && gameUnlocked(cfg, '', orderTotal).ok && orderTotal >= minOrderPaise,
     minOrderPaise,
     orderTotalPaise: orderTotal,
   };
 
-  // wallet + loyalty dashboard (only when a customer is resolved)
+  // wallet + loyalty dashboard (only when a customer is resolved AND loyalty is enabled for this cafe)
   let wallet: Record<string, unknown> | null = null;
   let loyalty: Record<string, unknown> | null = null;
-  if (customer) {
+  if (customer && features.loyalty) {
     const [orderCount, gamesPlayed, rewardsWon] = await Promise.all([
       prisma.order.count({ where: { customerId: customer.id, status: { not: 'cancelled' } } }),
       prisma.gameSession.count({ where: { customerId: customer.id } }),
@@ -133,7 +140,8 @@ export async function GET(req: NextRequest) {
       ? { name: customer.name ?? 'Guest', tier: customer.tier, points: customer.points, coins: customer.coins, visits: customer.visitCount, referral: customer.referralCode, registered }
       : null,
     pwa,
-    rewards: rewards.map((r) => ({ id: r.id, name: r.name, type: r.type, cost: r.costPoints })),
+    features: { games: features.games, loyalty: features.loyalty },
+    rewards: features.loyalty ? rewards.map((r) => ({ id: r.id, name: r.name, type: r.type, cost: r.costPoints })) : [],
     menu: categories
       .filter((c) => c.items.length > 0)
       .map((c) => ({

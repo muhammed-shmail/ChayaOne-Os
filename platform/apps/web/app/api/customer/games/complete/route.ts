@@ -4,6 +4,7 @@ import { prisma } from '@cafeos/db';
 import { resolveTable, activeOrderForTable, resolveCustomerId } from '@/lib/customer';
 import { QUICK_GAMES, QUICK_GAME_MAP, isQuickGameKey, coinsForScore, pointsForCoins } from '@/lib/games/registry';
 import { getOutletPwa, gameUnlocked, startOfTodayIST } from '@/lib/pwa';
+import { tenantHasFeature } from '@/lib/features';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,6 +45,8 @@ export async function POST(req: NextRequest) {
   if (!table) return NextResponse.json({ error: 'table_not_found' }, { status: 404 });
 
   const tenantId = table.outlet.tenantId;
+  if (!(await tenantHasFeature(tenantId, 'games')))
+    return NextResponse.json({ error: 'feature_not_in_plan', feature: 'games' }, { status: 402 });
   const customerId = await resolveCustomerId(tenantId);
   if (!customerId) return NextResponse.json({ error: 'not_identified' }, { status: 401 });
 

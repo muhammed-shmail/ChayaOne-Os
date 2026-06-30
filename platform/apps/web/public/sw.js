@@ -1,13 +1,28 @@
-/* ChayaOne — minimal service worker for the installable customer PWA.
-   Conservative by design: it only handles the /app shell + static assets, and
-   lets POS / KDS / dashboard / admin / API requests go straight to the network
-   (never cached), so staff surfaces are unaffected. */
-const CACHE = 'chayaone-pwa-v1';
-const SHELL = ['/app', '/manifest.webmanifest'];
+/* Cafe OS — service worker for the installable PWAs (customer + staff).
+   Conservative by design:
+     - shells (/app customer, /pos + /kds staff) are network-first, so they stay
+       fresh online and fall back to the last cached page when the network drops;
+     - static assets are cache-first;
+     - everything else (dashboard / admin / API) goes straight to the network and
+       is never cached.
+   Read-only offline only (Phase 4 layers API GET caching on top of this). */
+const CACHE = 'cafeos-pwa-v2';
+// Public pages safe to precache at install (protected shells are cached at runtime
+// once an authenticated staff member loads them — precaching them would just cache
+// a /login redirect).
+const PRECACHE = ['/app', '/manifest.webmanifest', '/staff.webmanifest'];
+const SHELL_PREFIXES = ['/app', '/pos', '/kds'];
+
+function shellRoot(pathname) {
+  for (const p of SHELL_PREFIXES) {
+    if (pathname === p || pathname.startsWith(p + '/')) return p;
+  }
+  return null;
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}).then(() => self.skipWaiting()),
+    caches.open(CACHE).then((c) => c.addAll(PRECACHE)).catch(() => {}).then(() => self.skipWaiting()),
   );
 });
 
@@ -25,15 +40,16 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  const isApp = url.pathname === '/app' || url.pathname.startsWith('/app/');
+  const root = shellRoot(url.pathname);
   const isStatic = url.pathname.startsWith('/_next/static') || url.pathname.startsWith('/icons/') ||
     /\.(?:png|jpg|jpeg|svg|webp|gif|ico|woff2?)$/.test(url.pathname);
 
-  // Everything else (POS/KDS/dashboard/admin/api) → straight to network, untouched.
-  if (!isApp && !isStatic) return;
+  // Everything else (dashboard / admin / api) → straight to network, untouched.
+  if (!root && !isStatic) return;
 
-  if (isApp) {
-    // network-first so the app stays fresh; fall back to cache when offline
+  if (root) {
+    // network-first so the shell stays fresh; fall back to the cached page (then
+    // the shell root) when offline.
     event.respondWith(
       fetch(req)
         .then((res) => {
@@ -41,7 +57,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
           return res;
         })
-        .catch(() => caches.match(req).then((m) => m || caches.match('/app'))),
+        .catch(() => caches.match(req).then((m) => m || caches.match(root))),
     );
   } else {
     // cache-first for immutable static assets

@@ -65,12 +65,18 @@ export default function DashboardClient({
   outlet,
   staff,
   data,
+  features,
 }: {
   outlet: { name: string; brand: string; plan: string; gstin: string | null };
   staff: { name: string; role: string };
   data: DashboardData;
+  features: Record<string, boolean>;
 }) {
   const router = useRouter();
+  // Feature tick model: hide modules this cafe isn't entitled to. The server
+  // routes are the hard gate; this just keeps the UI honest.
+  const visibleMenus = MENUS.filter((m) => (m.key === 'customers' ? features.crm !== false : true));
+  const visibleBottomNav = BOTTOM_NAV.filter((m) => (m.key === 'customers' ? features.crm !== false : true));
   const [isPending, startTransition] = useTransition();
   const { kpi, trend, hourly, topItems, menuQuadrant, lowStock, loyalty, briefing } = data;
 
@@ -144,8 +150,9 @@ export default function DashboardClient({
           void liveDot.current.offsetWidth;
           liveDot.current.style.animation = '';
         }
-      } else if (msg.type === 'notify') {
-        // live alert → bump the bell + prepend to the feed
+      } else if (msg.type === 'notify' && (msg.notification.audience ?? 'owner') === 'owner') {
+        // live owner alert → bump the bell + prepend to the feed (staff-targeted
+        // notifications are ignored here; they go to the staff bar)
         setUnread((u) => u + 1);
         setNotifs((prev) => [{ ...msg.notification, readAt: null, at: new Date(msg.notification.at).toISOString() }, ...prev].slice(0, 40));
         flashMessage(`🔔 ${msg.notification.title}`);
@@ -534,6 +541,9 @@ export default function DashboardClient({
   const [notifs, setNotifs] = useState<any[]>([]);
   const [unread, setUnread] = useState(0);
   const [bellOpen, setBellOpen] = useState(false);
+  const [broadcastMsg, setBroadcastMsg] = useState('');
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [broadcastOk, setBroadcastOk] = useState(false);
 
   const loadMonitor = async () => {
     setMonitorLoading(true);
@@ -569,6 +579,16 @@ export default function DashboardClient({
     setNotifs((prev) => prev.map((n) => ({ ...n, readAt: 'now' })));
     setUnread(0);
     await fetch('/api/notifications', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'read_all' }) }).catch(() => {});
+  };
+  // Push a one-line message to every staff member's notification bar.
+  const sendBroadcast = async () => {
+    const message = broadcastMsg.trim();
+    if (!message || broadcasting) return;
+    setBroadcasting(true);
+    try {
+      const res = await fetch('/api/staff/broadcast', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message }) });
+      if (res.ok) { setBroadcastMsg(''); setBroadcastOk(true); setTimeout(() => setBroadcastOk(false), 2500); }
+    } catch { /* ignore */ } finally { setBroadcasting(false); }
   };
 
   // 6e. Staff & Access — user management (Phase F)
@@ -1268,7 +1288,7 @@ export default function DashboardClient({
         </div>
 
         <nav className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar">
-          {MENUS.map((m, i) => {
+          {visibleMenus.map((m, i) => {
             // Reports now lives under Settings — keep Settings lit while viewing it
             const on = activeMenu === m.key || (m.key === 'settings' && activeMenu === 'reports');
             const Ic = m.icon;
@@ -1395,6 +1415,25 @@ export default function DashboardClient({
                         ))}
                       </div>
                     )}
+                    {/* message all staff — lands on every staff notification bar */}
+                    <div className="px-4 py-3 border-t sticky bottom-0" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }}>
+                      <label className="text-[11px] font-bold text-ink-3 uppercase tracking-wide">Message staff</label>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <input
+                          value={broadcastMsg}
+                          onChange={(e) => setBroadcastMsg(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') sendBroadcast(); }}
+                          maxLength={280}
+                          placeholder="e.g. Table 4 needs water"
+                          className="flex-1 min-w-0 px-3 py-2 rounded-lg border text-[13px] outline-none"
+                          style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}
+                        />
+                        <button onClick={sendBroadcast} disabled={!broadcastMsg.trim() || broadcasting} className="shrink-0 px-3 py-2 rounded-lg text-[12.5px] font-bold disabled:opacity-50" style={{ background: 'var(--ink)', color: 'var(--paper-2)' }}>
+                          {broadcasting ? '…' : 'Send'}
+                        </button>
+                      </div>
+                      {broadcastOk && <div className="text-[11px] font-bold mt-1.5" style={{ color: 'var(--ok, #2E7D32)' }}>Sent to all staff ✓</div>}
+                    </div>
                   </div>
                 </>
               )}
@@ -1523,9 +1562,11 @@ export default function DashboardClient({
             <KpiCard label="Low Stock Items" n={lowStock.length} tone={lowStock.length > 0 ? 'gold' : undefined} index={3} />
 
             {/* Revenue overview — total revenue + date-wise sales chart/report */}
-            <div className="col-span-2 lg:col-span-4">
-              <RevenuePanel initialTrend={trend} />
-            </div>
+            {features.revenue_analytics !== false && (
+              <div className="col-span-2 lg:col-span-4">
+                <RevenuePanel initialTrend={trend} />
+              </div>
+            )}
 
             {/* Low Stock Alerts list */}
             <motion.section className="card col-span-2 p-5" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.1 }}>
@@ -1562,7 +1603,7 @@ export default function DashboardClient({
             </motion.section>
 
             {/* AI Assistant grounded box */}
-            <Assistant />
+            {features.ai_assistant !== false && <Assistant />}
           </div>
         )}
 
@@ -1682,7 +1723,7 @@ export default function DashboardClient({
         )}
 
         {/* ── Customer Management (CRM) ── */}
-        {activeMenu === 'customers' && (
+        {activeMenu === 'customers' && features.crm !== false && (
           <CustomerManagement role={staff.role} flash={flashMessage} />
         )}
 
@@ -3661,7 +3702,7 @@ export default function DashboardClient({
       <MobileDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        items={MENUS as NavItem[]}
+        items={visibleMenus as NavItem[]}
         activeKey={activeMenu}
         onSelect={(k) => { setActiveMenu(k); setLiveOrders(0); }}
         brand={outlet.brand}
@@ -3670,7 +3711,7 @@ export default function DashboardClient({
         onLogout={logout}
       />
       <BottomNav
-        items={BOTTOM_NAV as NavItem[]}
+        items={visibleBottomNav as NavItem[]}
         activeKey={activeMenu}
         onSelect={(k) => { setActiveMenu(k); setLiveOrders(0); }}
         onMore={() => setDrawerOpen(true)}
@@ -3760,7 +3801,20 @@ function Assistant() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ q }),
       });
-      const { reply, lang } = await res.json();
+      const data = await res.json().catch(() => ({}));
+      // Surface the real reason instead of a generic "couldn't read that" — the
+      // gate (402) and auth (401/403) return an `error`, not a `reply`.
+      if (!res.ok) {
+        const html =
+          res.status === 402
+            ? 'The <b>AI Sales Assistant</b> isn’t included in your current plan. <span class="msg-act">Upgrade to Pro to switch it on.</span>'
+            : res.status === 401 || res.status === 403
+              ? 'You don’t have access to the assistant — sign in as an owner or manager.'
+              : 'The assistant is unavailable right now — please try again in a moment.';
+        setMsgs((m) => [...m, { who: 'ai', html }]);
+        return;
+      }
+      const { reply, lang } = data;
       const safe = reply ?? 'Sorry, I couldn’t read that.';
       setMsgs((m) => [...m, { who: 'ai', html: safe }]);
       speak(safe, lang === 'ml' ? 'ml' : 'en');
