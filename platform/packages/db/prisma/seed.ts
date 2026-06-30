@@ -1,5 +1,5 @@
 /**
- * Cafe OS — seed: one tenant ("Kaawa House"), one outlet, staff (PIN),
+ * Cafe OS — seed: one tenant ("Kahwa House"), one outlet, staff (PIN),
  * categories, menu (with GST rates + stations), modifiers, tables, one customer.
  * Mirrors the prototype's data so the POS works against a real DB immediately.
  *
@@ -92,7 +92,7 @@ async function main() {
   await prisma.tenant.deleteMany({});
 
   const tenant = await prisma.tenant.create({
-    data: { name: 'Kaawa House', subdomain: 'kaawa', plan: 'pro', gstin: '29ABCDE1234F1Z5' },
+    data: { name: 'Kahwa House', subdomain: 'kahwa', plan: 'pro', gstin: '29ABCDE1234F1Z5' },
   });
 
   // Active subscription on the Pro plan + slot meters, so the control plane has
@@ -113,7 +113,7 @@ async function main() {
   const outlet = await prisma.outlet.create({
     data: {
       tenantId: tenant.id,
-      name: 'Kaawa House — Koramangala',
+      name: 'Kahwa House — Koramangala',
       stateCode: 'KA',
       gstin: '29ABCDE1234F1Z5',
       address: { line1: '5th Block, Koramangala', city: 'Bengaluru', pincode: '560095' },
@@ -215,9 +215,9 @@ async function main() {
     ],
   });
 
-  console.log(`✅  Seeded tenant=${tenant.id} outlet=${outlet.id} subdomain=kaawa`);
+  console.log(`✅  Seeded tenant=${tenant.id} outlet=${outlet.id} subdomain=kahwa`);
   console.log(`    Staff PINs → Owner 1111 · Cashier 2222 · Kitchen 3333`);
-  console.log(`    Super-admin → admin@nuro7.com / admin1234  (set DEV_TENANT_SUBDOMAIN=kaawa for local)`);
+  console.log(`    Super-admin → admin@nuro7.com / admin1234  (set DEV_TENANT_SUBDOMAIN=kahwa for local)`);
 }
 
 main()
