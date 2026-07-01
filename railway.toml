@@ -2,5 +2,8 @@
 builder = "dockerfile"
 dockerfilePath = "Dockerfile.railway"
 
+# Sync the DB schema to the deployed code before starting (idempotent, additive).
+# Without this the prod DB drifts behind schema.prisma — new columns/tables never
+# get created, and any endpoint touching them 500s.
 [deploy]
-startCommand = "npm run -w @cafeos/web start -- --port 3000"
+startCommand = "npm run -w @cafeos/db deploy:push && npm run -w @cafeos/web start -- --port 3000"
