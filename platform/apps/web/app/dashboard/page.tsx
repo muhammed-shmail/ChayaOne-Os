@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { getDashboardData } from '@/lib/analytics';
 import { tenantBilling } from '@/lib/billing';
 import { tenantFeatures } from '@/lib/features';
+import { readReceiptConfig } from '@/lib/receipt';
 import { BillingWall } from '@/components/BillingWall';
 import DashboardClient from './DashboardClient';
 
@@ -22,7 +23,7 @@ export default async function DashboardPage() {
 
   const outlet = await prisma.outlet.findUnique({
     where: { id: session.outletId },
-    select: { id: true, name: true, gstin: true, tenant: { select: { name: true, plan: true } } },
+    select: { id: true, name: true, gstin: true, settings: true, tenant: { select: { name: true, plan: true } } },
   });
   if (!outlet) redirect('/api/auth/logout');
 
@@ -32,10 +33,11 @@ export default async function DashboardPage() {
 
   const data = await getDashboardData(outlet.id);
   const features = await tenantFeatures(session.tenantId);
+  const receipt = readReceiptConfig(outlet.settings);
 
   return (
     <DashboardClient
-      outlet={{ name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin }}
+      outlet={{ name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt }}
       staff={{ name: session.name, role: session.role }}
       data={data}
       features={features}

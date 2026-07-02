@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, type Prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { readDevices, normalizeDefaults, type Device } from '@/lib/devices';
+import { readReceiptConfig, RECEIPT_FIELD_MAX } from '@/lib/receipt';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -70,6 +71,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, devices: next });
   }
 
+  // ---- receipt layout (stored in Outlet.settings.receipt) ----
+  if (body.action === 'receipt') {
+    const r = (body.receipt ?? {}) as Record<string, unknown>;
+    const clean = (v: unknown) => String(v ?? '').slice(0, RECEIPT_FIELD_MAX);
+    const receipt = {
+      header: clean(r.header),
+      footer: clean(r.footer),
+      phone: clean(r.phone),
+      showLogo: r.showLogo !== false,
+      showGstin: r.showGstin !== false,
+    };
+    const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const merged = { ...settings, receipt };
+    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.auditLog.create({
+      data: { outletId: session.outletId, actorId: session.staffId, action: 'receipt.updated', entity: 'outlet', entityId: session.outletId, after: receipt as unknown as Prisma.InputJsonValue },
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, receipt: readReceiptConfig(merged) });
+  }
+
   if (body.action !== 'outlet') return NextResponse.json({ error: 'invalid_action' }, { status: 400 });
 
   const data: Prisma.OutletUpdateInput = {};
@@ -84,19 +106,25 @@ export async function POST(req: NextRequest) {
     } as Prisma.InputJsonValue;
   }
 
-  // GST on/off + flat rate + inclusive/exclusive type live in Outlet.settings.gst
-  // (merged, not a column — keeps existing outlets untouched).
-  if (body.gstEnabled !== undefined || body.gstRate !== undefined || body.gstType !== undefined) {
+  // GST config + store logo URL live in Outlet.settings (merged, not columns —
+  // keeps existing outlets untouched). Read once, apply both, write once.
+  if (body.gstEnabled !== undefined || body.gstRate !== undefined || body.gstType !== undefined || body.logoUrl !== undefined) {
     const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
     const settings = (current?.settings as Record<string, unknown>) ?? {};
-    const gst = (settings.gst as Record<string, unknown>) ?? {};
-    if (body.gstEnabled !== undefined) gst.enabled = !!body.gstEnabled;
-    if (body.gstRate !== undefined) {
-      const rate = Number(body.gstRate);
-      gst.rate = Number.isFinite(rate) && rate > 0 ? Math.min(28, Math.round(rate * 100) / 100) : null;
+    if (body.gstEnabled !== undefined || body.gstRate !== undefined || body.gstType !== undefined) {
+      const gst = (settings.gst as Record<string, unknown>) ?? {};
+      if (body.gstEnabled !== undefined) gst.enabled = !!body.gstEnabled;
+      if (body.gstRate !== undefined) {
+        const rate = Number(body.gstRate);
+        gst.rate = Number.isFinite(rate) && rate > 0 ? Math.min(28, Math.round(rate * 100) / 100) : null;
+      }
+      if (body.gstType !== undefined) gst.type = body.gstType === 'inclusive' ? 'inclusive' : 'exclusive';
+      settings.gst = gst;
     }
-    if (body.gstType !== undefined) gst.type = body.gstType === 'inclusive' ? 'inclusive' : 'exclusive';
-    data.settings = { ...settings, gst } as Prisma.InputJsonValue;
+    if (body.logoUrl !== undefined) {
+      settings.logoUrl = body.logoUrl ? String(body.logoUrl).slice(0, 1000) : null;
+    }
+    data.settings = settings as Prisma.InputJsonValue;
   }
 
   if (Object.keys(data).length === 0) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 });
