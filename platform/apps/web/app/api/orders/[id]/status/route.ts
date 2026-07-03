@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma, type KotStatus, type OrderStatus } from '@cafeos/db';
+import { prisma, type KotStatus, type OrderStatus, type Prisma } from '@cafeos/db';
 import { AdvanceOrderSchema } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
@@ -27,7 +27,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const order = await prisma.order.findUnique({ where: { id: params.id }, select: { status: true, outletId: true } });
+  const order = await prisma.order.findUnique({ where: { id: params.id }, select: { status: true, outletId: true, totalPaise: true, settledAt: true } });
   if (!order || order.outletId !== session.outletId) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
@@ -43,16 +43,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     next = FLOW[Math.min(i + 1, FLOW.length - 1)] ?? 'served';
   }
 
+  // settling from the dashboard queue takes payment too (mirrors the POS settle):
+  // record a Payment + settledAt so collections/reports stay accurate. Guard on
+  // settledAt so a re-settle can't double-charge.
+  const settling = next === 'settled' && !order.settledAt;
+  const rawMethod = (body as { method?: unknown }).method;
+  const method = (['cash', 'upi', 'card'] as const).includes(rawMethod as 'cash' | 'upi' | 'card')
+    ? (rawMethod as 'cash' | 'upi' | 'card')
+    : 'cash';
+
   const updated = await prisma.$transaction(async (tx) => {
     const o = await tx.order.update({
       where: { id: params.id },
-      data: { status: next },
+      data: { status: next, ...(settling ? { settledAt: new Date() } : {}) },
       include: { items: true, table: { select: { label: true } } },
     });
     const kot = KOT_FOR[next];
     if (kot) await tx.orderItem.updateMany({ where: { orderId: params.id }, data: { kotStatus: kot } });
+    if (settling) {
+      await tx.payment.create({
+        data: { orderId: o.id, outletId: o.outletId, method, amountPaise: o.totalPaise, status: 'success' },
+      });
+    }
     return o;
   });
+
+  if (settling) {
+    await prisma.auditLog.create({
+      data: { outletId: order.outletId, actorId: session.staffId, action: 'order.settled', entity: 'order', entityId: params.id, after: { method, totalPaise: order.totalPaise } as Prisma.InputJsonValue },
+    }).catch(() => {});
+  }
 
   publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
   if (next === 'cancelled') {

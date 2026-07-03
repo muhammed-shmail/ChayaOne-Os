@@ -162,9 +162,12 @@ export default function DashboardClient({
   // 2. Navigation State
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [activeSubTab, setActiveSubTab] = useState('overview');
+  // read the current tab from the long-lived SSE handler without re-subscribing
+  const activeMenuRef = useRef(activeMenu);
 
   // Sync sub tab when menu changes
   useEffect(() => {
+    activeMenuRef.current = activeMenu;
     if (activeMenu === 'dashboard') setActiveSubTab('overview');
     else if (activeMenu === 'monitor') setActiveSubTab('live');
     else if (activeMenu === 'orders') setActiveSubTab('active');
@@ -190,6 +193,12 @@ export default function DashboardClient({
     es.onerror = () => setConnected(false);
     es.onmessage = (e) => {
       const msg = JSON.parse(e.data);
+      // any order lifecycle change (placed / bumped / settled anywhere) refreshes
+      // the live queue, so a bill settled in the POS clears here without a manual
+      // Refresh. Only refetch while the Orders tab is open (it reloads on open too).
+      if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
+        if (activeMenuRef.current === 'orders') loadOrders();
+      }
       if (msg.type === 'order.new') {
         setLiveOrders((n) => n + 1);
         flashMessage(`New Order Received: #${msg.ticket.number}`);
@@ -262,10 +271,9 @@ export default function DashboardClient({
       const res = await fetch(`/api/orders/${id}/status`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status: 'settled' }),
+        body: JSON.stringify({ status: 'settled', method }),
       });
       if (res.ok) {
-        // Mock payment receipt trigger
         flashMessage(`Bill settled via ${method.toUpperCase()}!`);
         loadOrders();
         router.refresh();
@@ -1444,12 +1452,8 @@ export default function DashboardClient({
         style={{ borderRight: sidebarOpen ? '1px solid var(--line)' : 'none', background: 'var(--paper-2)' }}
       >
       <div className="flex flex-col gap-1 p-4 w-full h-full min-h-0" style={{ width: 248 }}>
-        <div className="flex items-center gap-2.5 px-2 py-3 mb-2">
-          <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 104, height: 'auto', margin: 0, maxWidth: '100%' }} className="shrink-0 object-contain" />
-          <div className="leading-tight min-w-0">
-            <b className="block text-sm truncate">{outlet.brand}</b>
-            <span className="text-xs capitalize" style={{ color: 'var(--ink-3)' }}>{staff.role}</span>
-          </div>
+        <div className="flex items-center justify-center px-2 py-3 mb-2">
+          <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: '100%', height: 'auto', margin: 0, maxWidth: 140 }} className="object-contain" />
         </div>
 
         <nav className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar">
@@ -3955,8 +3959,6 @@ export default function DashboardClient({
         items={visibleMenus as NavItem[]}
         activeKey={activeMenu}
         onSelect={(k) => { setActiveMenu(k); setLiveOrders(0); }}
-        brand={outlet.brand}
-        role={staff.role}
         plan={outlet.plan}
         onLogout={logout}
       />

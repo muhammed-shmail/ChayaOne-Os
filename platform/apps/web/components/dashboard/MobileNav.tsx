@@ -26,8 +26,6 @@ export function MobileDrawer({
   items,
   activeKey,
   onSelect,
-  brand,
-  role,
   plan,
   onLogout,
 }: {
@@ -36,8 +34,6 @@ export function MobileDrawer({
   items: NavItem[];
   activeKey: string;
   onSelect: (key: string) => void;
-  brand: string;
-  role: string;
   plan: string;
   onLogout: () => void;
 }) {
@@ -106,20 +102,14 @@ export function MobileDrawer({
           paddingTop: 'calc(1rem + env(safe-area-inset-top))',
         }}
       >
-        <div className="flex items-center gap-2.5 px-2 py-3 mb-2">
+        <div className="flex items-center justify-center px-2 py-3 mb-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/logo chaya one.png"
             alt="ChayaOne"
-            style={{ width: 96, height: 'auto', maxWidth: '100%' }}
-            className="shrink-0 object-contain"
+            style={{ width: '100%', height: 'auto', maxWidth: 150 }}
+            className="object-contain"
           />
-          <div className="leading-tight min-w-0">
-            <b className="block text-sm truncate">{brand}</b>
-            <span className="text-xs capitalize" style={{ color: 'var(--ink-3)' }}>
-              {role}
-            </span>
-          </div>
         </div>
 
         <nav className="flex flex-col gap-0.5">
