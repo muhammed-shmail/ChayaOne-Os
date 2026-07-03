@@ -22,6 +22,10 @@ import { readGstConfig } from './tax';
  */
 const TZ = 'Asia/Kolkata';
 
+// A real dine-in seating won't exceed a few hours; anything longer is an order left
+// open / settled late. Clamp per-visit stay so one bad row can't blow up the KPIs.
+const MAX_VISIT_STAY_SECS = 4 * 3600; // 4h ceiling (tunable)
+
 export type SectionName =
   | 'monitor'
   | 'sales'
@@ -458,7 +462,7 @@ async function getMonitor(outletId: string, tenantId: string): Promise<MonitorDa
     prisma.stockItem.findMany({ where: { outletId }, select: { qtyOnHand: true, reorderLevel: true } }),
     prisma.$queryRaw<{ id: string; label: string; since: Date; bill: number }[]>`
       SELECT t.id::text AS id, t.label AS label, MIN(o."placedAt") AS since, COALESCE(SUM(o."totalPaise"),0)::int AS bill
-      FROM tables_map t JOIN orders o ON o."tableId" = t.id AND o."type"='dine_in' AND o.status IN ('open','in_kitchen','ready','served')
+      FROM tables_map t JOIN orders o ON o."tableId" = t.id AND o."type"='dine_in' AND o.status IN ('open','in_kitchen','ready','served') AND o."settledAt" IS NULL
       WHERE t."outletId" = ${outletId}::uuid GROUP BY t.id, t.label`,
     prisma.tableMap.count({ where: { outletId } }),
     prisma.attendance.count({ where: { outletId, clockOut: null } }),
@@ -553,6 +557,7 @@ async function getTables(outletId: string): Promise<TablesData> {
       JOIN orders o ON o."tableId" = t.id
         AND o."type" = 'dine_in'
         AND o."status" IN ('open', 'in_kitchen', 'ready', 'served')
+        AND o."settledAt" IS NULL
       WHERE t."outletId" = ${outletId}::uuid
       GROUP BY t.id, t.label
     `,
@@ -561,7 +566,7 @@ async function getTables(outletId: string): Promise<TablesData> {
       SELECT t.id::text AS id, t.label AS label,
              COUNT(o.*)::int AS orders,
              COALESCE(SUM(o."totalPaise"), 0)::int AS revenue,
-             COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(o."settledAt", o."placedAt") - o."placedAt"))), 0)::float AS stay
+             COALESCE(AVG(LEAST(EXTRACT(EPOCH FROM (COALESCE(o."settledAt", o."placedAt") - o."placedAt")), 14400)), 0)::float AS stay
       FROM tables_map t
       LEFT JOIN orders o ON o."tableId" = t.id
         AND o."status" <> 'cancelled'
@@ -606,7 +611,8 @@ async function getTables(outletId: string): Promise<TablesData> {
   const low: LowRevTable[] = occupancy.filter((o) => o.lowRevenue).map((o) => ({ id: o.id, label: o.label, durationMin: o.durationMin, billPaise: o.billPaise }));
   await syncOccupancyAlerts(outletId, low);
 
-  const totalStaySecs = visitRows.reduce((s, v) => s + (v.stay_secs || 0), 0);
+  const clampStay = (s: number) => Math.min(Math.max(0, s || 0), MAX_VISIT_STAY_SECS);
+  const totalStaySecs = visitRows.reduce((s, v) => s + clampStay(v.stay_secs), 0);
   const totalVisitRev = visitRows.reduce((s, v) => s + (v.revenue || 0), 0);
   const visits = visitRows.length;
   const avgStayMin = visits ? Math.round(totalStaySecs / visits / 60) : 0;

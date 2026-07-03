@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { computeBill, formatINR, type BillLine } from '@cafeos/core';
 import { STAGES, posStageOf } from '@/lib/orderStatus';
 import type { Floor } from '@/lib/floors';
+import type { ReceiptConfig } from '@/lib/receipt';
 import {
   ThemeToggle, Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
   Plus, Minus, X, Check, Printer, Receipt, Smartphone, Banknote, CreditCard,
@@ -30,7 +31,7 @@ export type MenuItemDto = {
 };
 export type MenuCategory = { id: string; name: string; items: MenuItemDto[] };
 export type TableDto = { id: string; label: string; seats: number; state: string; floorId: string | null };
-type Outlet = { id: string; name: string; stateCode: string; gstEnabled: boolean; gstRate: number | null; gstInclusive: boolean };
+type Outlet = { id: string; name: string; gstin: string | null; stateCode: string; gstEnabled: boolean; gstRate: number | null; gstInclusive: boolean; receipt: ReceiptConfig };
 type Staff = { id: string; name: string; role: string };
 
 type Line = {
@@ -234,6 +235,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
       *{font-family:ui-monospace,Menlo,monospace;color:#000;box-sizing:border-box}
       body{width:300px;margin:0 auto;padding:14px;font-size:12px}
       h2{text-align:center;margin:0 0 2px;font-size:15px}
+      img{display:block;max-width:160px;max-height:80px;margin:0 auto 6px;object-fit:contain}
       .muted{color:#555;text-align:center;font-size:11px;margin-bottom:10px}
       table{width:100%;border-collapse:collapse}
       td{padding:2px 0;vertical-align:top} .r{text-align:right}
@@ -243,12 +245,26 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
     w.document.close();
   }
 
+  // escape owner-entered receipt text + build the branded header shared by bill/receipt
+  const escRcpt = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
+  function receiptHeaderHtml() {
+    const r = outlet.receipt;
+    return [
+      r.showLogo && r.logoUrl ? `<img src="${r.logoUrl}" alt="" />` : '',
+      `<h2>${escRcpt((outlet.name.split('—')[0] ?? outlet.name).trim())}</h2>`,
+      r.header.trim() ? `<div class="muted">${escRcpt(r.header).replace(/\n/g, '<br/>')}</div>` : '',
+      r.phone.trim() ? `<div class="muted">☎ ${escRcpt(r.phone)}</div>` : '',
+      r.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escRcpt(outlet.gstin)}</div>` : '',
+    ].filter(Boolean).join('\n');
+  }
+  const receiptFooterText = () => (outlet.receipt.footer.trim() ? escRcpt(outlet.receipt.footer).replace(/\n/g, ' · ') : 'Thank you!');
+
   function printBill() {
     if (!tableOrder) return;
     const rows = tableOrder.lines.map((l: any) => `<tr><td>${l.qty}× ${l.name}</td><td class="r">${formatINR(l.linePaise)}</td></tr>`).join('');
     const custLine = `${billCustomer}${custPhone.trim() ? ` · ${custPhone.trim()}` : ''}`;
     printDoc(`Bill · ${tableAction?.label ?? ''}`, `
-      <h2>${(outlet.name.split('—')[0] ?? outlet.name).trim()}</h2>
+      ${receiptHeaderHtml()}
       <div class="muted">Table ${tableAction?.label} · Bill</div>
       <div class="muted">👤 ${custLine}</div>
       <table>${rows}</table><div class="line"></div>
@@ -257,7 +273,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
         <tr><td>GST</td><td class="r">${formatINR(tableOrder.totals.taxPaise)}</td></tr>
         <tr class="tot"><td>Total</td><td class="r">${formatINR(tableOrder.totals.totalPaise)}</td></tr>
       </table>
-      <div class="line"></div><div class="muted">Thank you! Served by ${staff.name}</div>`);
+      <div class="line"></div><div class="muted">${receiptFooterText()} · Served by ${staff.name}</div>`);
   }
 
   function printKOT() {
@@ -278,7 +294,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
     const cust = customer && (customer.name || customer.phone)
       ? `<div class="muted">${[esc(customer.name), esc(customer.phone)].filter(Boolean).join(' · ')}</div>` : '';
     printDoc(`Receipt #${number}`, `
-      <h2>${(outlet.name.split('—')[0] ?? outlet.name).trim()}</h2>
+      ${receiptHeaderHtml()}
       <div class="muted">Receipt #${number} · ${when}</div>
       ${cust}
       <table>${rows}</table><div class="line"></div>
@@ -294,7 +310,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
       </table>
       <div class="line"></div>
       <div class="muted">Paid · ${method.toUpperCase()}</div>
-      <div class="muted">Thank you! Served by ${staff.name}</div>`);
+      <div class="muted">${receiptFooterText()} · Served by ${staff.name}</div>`);
   }
 
   // count of QR orders awaiting approval (badge on the Approvals link)
@@ -485,15 +501,12 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
       {/* left rail — desktop / tablet only (mobile uses the top bar + More drawer) */}
       <aside className="hidden md:flex flex-col gap-3.5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-12 h-7 shrink-0 overflow-hidden flex items-center justify-center">
-              <img
-                src="/logo chaya one.png"
-                alt="ChayaOne"
-                className="w-full h-full object-contain"
-              />
-            </div>
-            <span className="font-display font-bold text-[17px]">{(outlet.name.split('—')[0] ?? '').trim()}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <img
+              src="/logo chaya one.png"
+              alt="ChayaOne"
+              className="h-8 lg:h-9 w-auto object-contain shrink-0"
+            />
           </div>
           <div className="flex items-center gap-1">
             <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />

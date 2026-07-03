@@ -14,12 +14,14 @@ import { SECTION_KEY, SectionView } from './Sections';
 import CustomerManagement from './CustomerManagement';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, assignableRoles, ALL_ROLES } from '@/lib/rbac';
 import { DEVICE_TYPES, DEVICE_CONNECTIONS, type Device } from '@/lib/devices';
+import type { ReceiptConfig } from '@/lib/receipt';
 import { tableOrderUrl, tableQrImageUrl } from '@/lib/qr';
 import { FEATURED_LABELS, DEFAULT_GAME_KEYS, type PwaConfig } from '@/lib/pwa';
 import { prettyAction } from '@/lib/audit-labels';
 import {
   ThemeToggle, Bell, Table2, LogOut, LayoutDashboard, Wifi, ChefHat, Menu,
   ClipboardList, UtensilsCrossed, Package, Truck, Users, Settings, type LucideIcon,
+  Percent, Printer, Smartphone, Store, BarChart3, ImageIcon, Download, X,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffDevices from '@/components/StaffDevices';
@@ -62,13 +64,58 @@ function auditDiff(before: Record<string, unknown> | null, after: Record<string,
     .map((k) => ({ key: k, before: fmt(b[k]), after: fmt(a[k]) }));
 }
 
+/** Titles + icons for the Settings popup window, keyed by panel. */
+const SETTINGS_TITLE: Record<string, string> = {
+  general: 'General',
+  tax: 'Tax & GST',
+  floor: 'Floor & QR',
+  pwa: 'PWA Settings',
+  devices: 'Devices & Printers',
+  audit: 'Audit Logs',
+  multibranch: 'Multi Branch',
+};
+const SETTINGS_ICON: Record<string, LucideIcon> = {
+  general: Settings,
+  tax: Percent,
+  floor: Table2,
+  pwa: Smartphone,
+  devices: Printer,
+  audit: ClipboardList,
+  multibranch: Store,
+};
+
+/** A focused popup window that hosts one settings panel. Closes on ✕, backdrop click or Esc. */
+function SettingsModal({ title, icon: Icon, onClose, children }: { title: string; icon?: LucideIcon; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+  return (
+    <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="presentation" className="scrim anim-fade z-[8500] flex items-start sm:items-center justify-center overflow-y-auto p-3 sm:p-6">
+      <div role="dialog" aria-modal="true" aria-label={title} className="anim-pop my-auto w-full max-w-2xl" style={{ background: 'var(--paper-2)', borderRadius: 22, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b sticky top-0 z-10" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)', borderTopLeftRadius: 22, borderTopRightRadius: 22 }}>
+          <h2 className="font-display text-lg font-bold flex items-center gap-2.5">
+            {Icon && <span className="grid place-items-center rounded-xl shrink-0" style={{ width: 34, height: 34, background: 'var(--paper-3)', color: 'var(--turmeric)' }}><Icon size={18} aria-hidden /></span>}
+            {title}
+          </h2>
+          <button onClick={onClose} aria-label="Close" className="btn btn-icon btn-sm btn-ghost"><X size={18} aria-hidden /></button>
+        </div>
+        <div className="p-4 sm:p-5 flex flex-col gap-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardClient({
   outlet,
   staff,
   data,
   features,
 }: {
-  outlet: { name: string; brand: string; plan: string; gstin: string | null };
+  outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: ReceiptConfig };
   staff: { name: string; role: string };
   data: DashboardData;
   features: Record<string, boolean>;
@@ -115,9 +162,12 @@ export default function DashboardClient({
   // 2. Navigation State
   const [activeMenu, setActiveMenu] = useState('dashboard');
   const [activeSubTab, setActiveSubTab] = useState('overview');
+  // read the current tab from the long-lived SSE handler without re-subscribing
+  const activeMenuRef = useRef(activeMenu);
 
   // Sync sub tab when menu changes
   useEffect(() => {
+    activeMenuRef.current = activeMenu;
     if (activeMenu === 'dashboard') setActiveSubTab('overview');
     else if (activeMenu === 'monitor') setActiveSubTab('live');
     else if (activeMenu === 'orders') setActiveSubTab('active');
@@ -143,6 +193,12 @@ export default function DashboardClient({
     es.onerror = () => setConnected(false);
     es.onmessage = (e) => {
       const msg = JSON.parse(e.data);
+      // any order lifecycle change (placed / bumped / settled anywhere) refreshes
+      // the live queue, so a bill settled in the POS clears here without a manual
+      // Refresh. Only refetch while the Orders tab is open (it reloads on open too).
+      if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
+        if (activeMenuRef.current === 'orders') loadOrders();
+      }
       if (msg.type === 'order.new') {
         setLiveOrders((n) => n + 1);
         flashMessage(`New Order Received: #${msg.ticket.number}`);
@@ -215,10 +271,9 @@ export default function DashboardClient({
       const res = await fetch(`/api/orders/${id}/status`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status: 'settled' }),
+        body: JSON.stringify({ status: 'settled', method }),
       });
       if (res.ok) {
-        // Mock payment receipt trigger
         flashMessage(`Bill settled via ${method.toUpperCase()}!`);
         loadOrders();
         router.refresh();
@@ -830,6 +885,23 @@ export default function DashboardClient({
   // order detail + print (Orders view)
   const [orderDetail, setOrderDetail] = useState<any>(null);
 
+  // escape owner-entered receipt text so it can't break the print markup
+  const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // build the branded header (logo + name + custom lines + phone) shared by bill/receipt
+  function receiptHeaderHtml() {
+    const r = outlet.receipt;
+    const logo = logoUrl ?? r.logoUrl;
+    const parts = [
+      r.showLogo && logo ? `<img src="${logo}" alt="" />` : '',
+      `<h2>${escHtml(outlet.brand)}</h2>`,
+      r.header.trim() ? `<div class="muted">${escHtml(r.header).replace(/\n/g, '<br/>')}</div>` : '',
+      r.phone.trim() ? `<div class="muted">☎ ${escHtml(r.phone)}</div>` : '',
+      r.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escHtml(outlet.gstin)}</div>` : '',
+    ];
+    return parts.filter(Boolean).join('\n');
+  }
+  const receiptFooterText = () => (outlet.receipt.footer.trim() ? escHtml(outlet.receipt.footer).replace(/\n/g, ' · ') : 'Thank you!');
+
   function printOrderDoc(title: string, inner: string) {
     const w = window.open('', '_blank', 'width=380,height=660');
     if (!w) { flashMessage('Allow pop-ups to print'); return; }
@@ -838,6 +910,7 @@ export default function DashboardClient({
       *{font-family:ui-monospace,Menlo,monospace;color:#000;box-sizing:border-box}
       body{width:300px;margin:0 auto;padding:14px;font-size:12px}
       h2{text-align:center;margin:0 0 2px;font-size:15px}
+      img{display:block;max-width:160px;max-height:80px;margin:0 auto 6px;object-fit:contain}
       .muted{color:#555;text-align:center;font-size:11px;margin-bottom:4px}
       table{width:100%;border-collapse:collapse} td{padding:2px 0;vertical-align:top} .r{text-align:right}
       .line{border-top:1px dashed #000;margin:8px 0} .tot{font-weight:700;font-size:14px}
@@ -849,8 +922,7 @@ export default function DashboardClient({
     const rows = o.items.map((i: any) => `<tr><td>${i.qty}× ${i.nameSnapshot}</td><td class="r">${formatINR(i.unitPricePaise * i.qty)}</td></tr>`).join('');
     const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
     printOrderDoc(`Bill #${o.number}`, `
-      <h2>${outlet.brand}</h2>
-      ${outlet.gstin ? `<div class="muted">GSTIN ${outlet.gstin}</div>` : ''}
+      ${receiptHeaderHtml()}
       <div class="muted">Bill #${o.number} · ${o.table?.label ? 'Table ' + o.table.label : o.type} · ${new Date(o.placedAt).toLocaleString('en-IN')}</div>
       <div class="line"></div><table>${rows}</table><div class="line"></div>
       <table>
@@ -863,7 +935,7 @@ export default function DashboardClient({
         ${row('Round off', o.roundOffPaise)}
         <tr class="tot"><td>Total</td><td class="r">${formatINR(o.totalPaise)}</td></tr>
       </table>
-      <div class="line"></div><div class="muted">Status: ${o.status} · Thank you!</div>`);
+      <div class="line"></div><div class="muted">Status: ${o.status} · ${receiptFooterText()}</div>`);
   }
 
   function printOrderKOT(o: any) {
@@ -895,8 +967,25 @@ export default function DashboardClient({
   const [salesGst, setSalesGst] = useState<any>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
 
-  // Settings panel navigation (vertical sub-nav)
+  // Settings panel navigation — each panel now opens in a popup window.
   const [settingsPanel, setSettingsPanel] = useState<'general' | 'tax' | 'floor' | 'devices' | 'pwa' | 'audit' | 'multibranch'>('general');
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const openSettings = (key: typeof settingsPanel) => { setSettingsPanel(key); setSettingsModalOpen(true); };
+  const closeSettings = () => setSettingsModalOpen(false);
+
+  // Store logo (Settings → General) — persisted to Outlet.settings.logoUrl.
+  const [logoUrl, setLogoUrl] = useState<string | null>(outlet.receipt.logoUrl);
+  const [logoBusy, setLogoBusy] = useState(false);
+
+  // Receipt layout (Settings → Devices & Printers) — printed bill header/footer.
+  const [receiptForm, setReceiptForm] = useState({
+    header: outlet.receipt.header,
+    footer: outlet.receipt.footer,
+    phone: outlet.receipt.phone,
+    showLogo: outlet.receipt.showLogo,
+    showGstin: outlet.receipt.showGstin,
+  });
+  const [receiptSaving, setReceiptSaving] = useState(false);
 
   // Devices & printers (Settings → Devices)
   const [devices, setDevices] = useState<Device[]>([]);
@@ -1249,6 +1338,89 @@ export default function DashboardClient({
     finally { setGstSaving(false); }
   };
 
+  // Settings → General → Store Logo
+  const saveLogo = async (url: string | null) => {
+    setLogoBusy(true);
+    try {
+      const res = await fetch('/api/dashboard/settings', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'outlet', logoUrl: url }),
+      });
+      if (res.ok) { setLogoUrl(url); flashMessage(url ? 'Logo updated' : 'Logo removed'); router.refresh(); }
+      else flashMessage('Could not save logo');
+    } catch (err) { console.error(err); flashMessage('Could not save logo'); }
+    finally { setLogoBusy(false); }
+  };
+  const handleLogoFile = async (file: File) => {
+    setLogoBusy(true);
+    const url = await uploadImage(file);
+    setLogoBusy(false);
+    if (url) await saveLogo(url);
+  };
+
+  // Settings → Devices & Printers → Receipt Layout
+  const handleSaveReceipt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReceiptSaving(true);
+    try {
+      const res = await fetch('/api/dashboard/settings', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'receipt', receipt: receiptForm }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (d.receipt) setReceiptForm({ header: d.receipt.header, footer: d.receipt.footer, phone: d.receipt.phone, showLogo: d.receipt.showLogo, showGstin: d.receipt.showGstin });
+        flashMessage('Receipt layout saved'); router.refresh();
+      } else flashMessage('Could not save receipt layout');
+    } catch (err) { console.error(err); flashMessage('Could not save receipt layout'); }
+    finally { setReceiptSaving(false); }
+  };
+
+  // ── Report export — Excel (.xls) + print-to-PDF, dependency-free ──
+  const escCell = (s: string | number) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const reportFileBase = (name: string) => `${outlet.brand}-${name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+  function exportExcel(name: string, title: string, headers: string[], rows: (string | number)[][]) {
+    const thead = `<tr>${headers.map((h) => `<th>${escCell(h)}</th>`).join('')}</tr>`;
+    const tbody = rows.map((r) => `<tr>${r.map((c) => `<td>${escCell(c)}</td>`).join('')}</tr>`).join('');
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"/><style>td,th{border:1px solid #ccc;padding:4px 8px;text-align:left} th{background:#f2e9da;font-weight:bold}</style></head><body><h3>${escCell(title)}</h3><table>${thead}${tbody}</table></body></html>`;
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${reportFileBase(name)}.xls`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    flashMessage('Excel file downloaded');
+  }
+
+  function exportPdf(title: string, headers: string[], rows: (string | number)[][]) {
+    const w = window.open('', '_blank', 'width=820,height=900');
+    if (!w) { flashMessage('Allow pop-ups to export'); return; }
+    const close = '<' + '/script>';
+    const thead = `<tr>${headers.map((h) => `<th>${escCell(h)}</th>`).join('')}</tr>`;
+    const tbody = rows.map((r) => `<tr>${r.map((c, i) => `<td class="${i === 0 ? 'l' : ''}">${escCell(c)}</td>`).join('')}</tr>`).join('');
+    w.document.write(`<html><head><title>${escCell(title)}</title><style>
+      *{font-family:ui-sans-serif,system-ui,sans-serif;color:#1e120a;box-sizing:border-box}
+      body{padding:28px;max-width:760px;margin:0 auto}
+      h1{font-size:20px;margin:0 0 2px} .sub{color:#6b5b4d;font-size:12px;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th,td{border-bottom:1px solid #ddd;padding:7px 6px;text-align:right} th:first-child,td.l{text-align:left} th{background:#f7efe2}
+    </style></head><body>
+      <h1>${escCell(outlet.brand)}</h1><div class="sub">${escCell(title)} · ${new Date().toLocaleString('en-IN')}</div>
+      <table><thead>${thead}</thead><tbody>${tbody}</tbody></table>
+      <script>window.onload=function(){window.print()}${close}</body></html>`);
+    w.document.close();
+  }
+
+  /** Export toolbar (Excel + PDF) shown on each Reports tab. */
+  const ExportBar = ({ name, title, headers, rows }: { name: string; title: string; headers: string[]; rows: (string | number)[][] }) => (
+    <div className="flex items-center gap-2 shrink-0">
+      <button type="button" onClick={() => exportExcel(name, title, headers, rows)} disabled={!rows.length} className="btn btn-sm inline-flex items-center gap-1.5 disabled:opacity-50" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}><Download size={14} aria-hidden /> Excel</button>
+      <button type="button" onClick={() => exportPdf(title, headers, rows)} disabled={!rows.length} className="btn btn-sm inline-flex items-center gap-1.5 disabled:opacity-50" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}><Download size={14} aria-hidden /> PDF</button>
+    </div>
+  );
+
   // GST report data (exact figures) loaded when the Reports → GST tab opens
   useEffect(() => {
     if (activeMenu === 'reports' && activeSubTab === 'gst' && !salesGst) {
@@ -1280,12 +1452,8 @@ export default function DashboardClient({
         style={{ borderRight: sidebarOpen ? '1px solid var(--line)' : 'none', background: 'var(--paper-2)' }}
       >
       <div className="flex flex-col gap-1 p-4 w-full h-full min-h-0" style={{ width: 248 }}>
-        <div className="flex items-center gap-2.5 px-2 py-3 mb-2">
-          <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 104, height: 'auto', margin: 0, maxWidth: '100%' }} className="shrink-0 object-contain" />
-          <div className="leading-tight min-w-0">
-            <b className="block text-sm truncate">{outlet.brand}</b>
-            <span className="text-xs capitalize" style={{ color: 'var(--ink-3)' }}>{staff.role}</span>
-          </div>
+        <div className="flex items-center justify-center px-2 py-3 mb-2">
+          <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: '100%', height: 'auto', margin: 0, maxWidth: 140 }} className="object-contain" />
         </div>
 
         <nav className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar">
@@ -2440,7 +2608,10 @@ export default function DashboardClient({
 
             {activeSubTab === 'daily' && (
               <section className="card p-5">
-                <h4 className="font-bold mb-3">Daily Sales Ledger</h4>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <h4 className="font-bold">Daily Sales Ledger</h4>
+                  <ExportBar name="daily-sales" title="Daily Sales Ledger" headers={['Date', 'Orders', 'Revenue', 'Discount', 'Tax']} rows={trend.map((t) => [`${t.date} (${t.label})`, t.orders, formatINR(t.grossPaise), formatINR(0), formatINR(Math.round(t.grossPaise * 0.05))])} />
+                </div>
                 <div className="overflow-x-auto">
                   <table className="rtable w-full text-sm border-collapse text-left">
                     <thead>
@@ -2470,7 +2641,10 @@ export default function DashboardClient({
 
             {activeSubTab === 'best' && (
               <section className="card p-5">
-                <h4 className="font-bold mb-3">Top Selling Products</h4>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <h4 className="font-bold">Top Selling Products</h4>
+                  <ExportBar name="top-items" title="Top Selling Products" headers={['Product', 'Qty sold', 'Gross revenue']} rows={topItems.map((i) => [i.name, i.qty, formatINR(i.revenuePaise)])} />
+                </div>
                 <div className="overflow-x-auto">
                   <table className="rtable w-full text-sm border-collapse text-left">
                     <thead>
@@ -2522,9 +2696,12 @@ export default function DashboardClient({
                     </div>
 
                     <section className="card p-5">
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <h4 className="font-bold">GST by rate</h4>
-                        <span className="text-xs text-ink-3">last 30 days · by item slab</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-ink-3">last 30 days · by item slab</span>
+                          <ExportBar name="gst-report" title="GST by rate" headers={['GST slab', 'Revenue', 'Est. tax']} rows={salesGst.gst.byRate.map((r: any) => [r.rate === 0 ? 'Tax-free (0%)' : `${r.rate}%`, formatINR(r.revenuePaise), r.rate === 0 ? '—' : formatINR(r.estTaxPaise)])} />
+                        </div>
                       </div>
                       {salesGst.gst.byRate.length === 0 ? (
                         <p className="text-sm text-ink-3 py-4 text-center">No sales in this window yet.</p>
@@ -2632,25 +2809,29 @@ export default function DashboardClient({
             {activeMenu === 'settings' && (
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {([
-                { key: 'general', icon: '⚙️', label: 'General', sub: 'Store profile & mode' },
-                { key: 'tax', icon: '🧾', label: 'Tax & GST', sub: 'GST toggle, rate & type' },
-                { key: 'floor', icon: '🍽️', label: 'Floor & QR', sub: 'Tables & scan-to-order' },
-                { key: 'pwa', icon: '📱', label: 'PWA Settings', sub: 'Customer app & loyalty' },
-                { key: 'devices', icon: '🖨️', label: 'Devices & Printers', sub: 'Receipt, KOT & more' },
-                ...(staff.role === 'owner' ? [{ key: 'audit', icon: '📜', label: 'Audit Logs', sub: 'Activity & changes' }] : []),
-                ...(isAdvanced ? [{ key: 'multibranch', icon: '🏢', label: 'Multi Branch', sub: 'Other outlets' }] : []),
-              ] as { key: 'general' | 'tax' | 'floor' | 'devices' | 'pwa' | 'audit' | 'multibranch'; icon: string; label: string; sub: string }[]).map((t) => {
-                const on = settingsPanel === t.key;
+                { key: 'general', icon: Settings, label: 'General', sub: 'Store profile & logo' },
+                { key: 'tax', icon: Percent, label: 'Tax & GST', sub: 'GST toggle, rate & type' },
+                { key: 'floor', icon: Table2, label: 'Floor & QR', sub: 'Tables & scan-to-order' },
+                { key: 'pwa', icon: Smartphone, label: 'PWA Settings', sub: 'Customer app & loyalty' },
+                { key: 'devices', icon: Printer, label: 'Devices & Printers', sub: 'Printers & receipt layout' },
+                ...(staff.role === 'owner' ? [{ key: 'audit', icon: ClipboardList, label: 'Audit Logs', sub: 'Activity & changes' }] : []),
+                ...(isAdvanced ? [{ key: 'multibranch', icon: Store, label: 'Multi Branch', sub: 'Other outlets' }] : []),
+              ] as { key: 'general' | 'tax' | 'floor' | 'devices' | 'pwa' | 'audit' | 'multibranch'; icon: LucideIcon; label: string; sub: string }[]).map((t) => {
+                const on = settingsModalOpen && settingsPanel === t.key;
+                const Icon = t.icon;
                 return (
                   <button
                     key={t.key}
-                    onClick={() => setSettingsPanel(t.key)}
-                    className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition border"
+                    onClick={() => openSettings(t.key)}
+                    aria-pressed={on}
+                    className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition border cursor-pointer hover:shadow-sm"
                     style={on
                       ? { background: 'var(--turmeric)', color: '#2A1607', borderColor: 'transparent' }
                       : { background: 'var(--paper-2)', borderColor: 'var(--line)' }}
                   >
-                    <span className="text-xl shrink-0">{t.icon}</span>
+                    <span className="grid place-items-center rounded-xl shrink-0" style={{ width: 38, height: 38, background: on ? 'rgba(42,22,7,.12)' : 'var(--paper-3)', color: on ? '#2A1607' : 'var(--turmeric)' }}>
+                      <Icon size={18} aria-hidden />
+                    </span>
                     <span className="leading-tight min-w-0">
                       <b className="block text-sm truncate">{t.label}</b>
                       <span className="text-xs block truncate" style={{ color: on ? '#5a3a14' : 'var(--ink-3)' }}>{t.sub}</span>
@@ -2660,10 +2841,12 @@ export default function DashboardClient({
               })}
               <button
                 onClick={() => { setActiveMenu('reports'); setActiveSubTab('daily'); }}
-                className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition border"
+                className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition border cursor-pointer hover:shadow-sm"
                 style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
               >
-                <span className="text-xl shrink-0">📊</span>
+                <span className="grid place-items-center rounded-xl shrink-0" style={{ width: 38, height: 38, background: 'var(--paper-3)', color: 'var(--turmeric)' }}>
+                  <BarChart3 size={18} aria-hidden />
+                </span>
                 <span className="leading-tight min-w-0">
                   <b className="block text-sm truncate">Reports</b>
                   <span className="text-xs block truncate" style={{ color: 'var(--ink-3)' }}>Sales & analytics ↗</span>
@@ -2672,9 +2855,26 @@ export default function DashboardClient({
             </div>
             )}
 
-            {activeMenu === 'settings' && settingsPanel === 'general' && (
+            {activeMenu === 'settings' && settingsModalOpen && settingsPanel === 'general' && (
+              <SettingsModal title="General" icon={Settings} onClose={closeSettings}>
               <section className="card p-5 max-w-md flex flex-col gap-4">
                 <Toggle label="Advanced Mode" desc="Enable recipes, vendors, forecasting, and deep stats." on={isAdvanced} onChange={(v) => handleToggleAdvanced(v)} />
+
+                {/* Store Logo — shown on printed bills/receipts */}
+                <div className="flex flex-col gap-2 pt-1">
+                  <h4 className="font-bold">Store Logo</h4>
+                  <p className="text-xs" style={{ color: 'var(--ink-3)' }}>Appears on printed bills &amp; receipts. PNG or JPG; a square image works best.</p>
+                  <div className="flex items-center gap-3">
+                    {logoUrl
+                      ? <img src={logoUrl} alt="Store logo" className="rounded-lg object-contain" style={{ width: 56, height: 56, background: 'var(--paper-3)' }} />
+                      : <div className="rounded-lg grid place-items-center" style={{ width: 56, height: 56, background: 'var(--paper-3)', color: 'var(--ink-3)' }}><ImageIcon size={22} aria-hidden /></div>}
+                    <label className={`btn btn-sm ${logoBusy ? 'opacity-60 pointer-events-none' : ''}`} style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
+                      {logoBusy ? 'Uploading…' : logoUrl ? 'Replace logo' : 'Upload logo'}
+                      <input type="file" accept="image/*" className="hidden" disabled={logoBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f); e.currentTarget.value = ''; }} />
+                    </label>
+                    {logoUrl && <button type="button" onClick={() => saveLogo(null)} disabled={logoBusy} className="btn btn-danger btn-sm">Remove</button>}
+                  </div>
+                </div>
 
                 {/* Store Profile — editable */}
                 <form onSubmit={handleSaveProfile} className="flex flex-col gap-3">
@@ -2704,6 +2904,7 @@ export default function DashboardClient({
                   <button type="submit" className="btn btn-primary mt-1 w-fit">Save profile</button>
                 </form>
               </section>
+              </SettingsModal>
             )}
 
             {activeMenu === 'menu' && (() => {
@@ -2930,8 +3131,12 @@ export default function DashboardClient({
 
 
 
+            {/* All other settings panels open inside one popup window */}
+            {activeMenu === 'settings' && settingsModalOpen && settingsPanel !== 'general' && (
+              <SettingsModal title={SETTINGS_TITLE[settingsPanel] ?? 'Settings'} icon={SETTINGS_ICON[settingsPanel]} onClose={closeSettings}>
+
             {/* ── Tax & GST ── */}
-            {activeMenu === 'settings' && settingsPanel === 'tax' && (
+            {settingsPanel === 'tax' && (
               <form onSubmit={handleSaveGst} className="card p-5 max-w-md flex flex-col gap-4">
                 <div>
                   <h4 className="font-bold">Tax &amp; GST</h4>
@@ -3002,7 +3207,7 @@ export default function DashboardClient({
             )}
 
             {/* ── Floor & QR ── */}
-            {activeMenu === 'settings' && settingsPanel === 'floor' && (
+            {settingsPanel === 'floor' && (
               <div className="flex flex-col gap-4">
                 <section className="card p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3147,7 +3352,7 @@ export default function DashboardClient({
             )}
 
             {/* ── PWA Settings (customer app) ── */}
-            {activeMenu === 'settings' && settingsPanel === 'pwa' && (
+            {settingsPanel === 'pwa' && (
               <div className="flex flex-col gap-4">
                 <section className="card p-5">
                   <h4 className="font-bold">PWA Settings</h4>
@@ -3366,7 +3571,7 @@ export default function DashboardClient({
               </div>
             )}
 
-            {activeMenu === 'settings' && isAdvanced && settingsPanel === 'multibranch' && (
+            {isAdvanced && settingsPanel === 'multibranch' && (
               <section className="card p-5">
                 <h4 className="font-bold mb-3">Multi Branch Configuration</h4>
                 <div className="p-4 rounded-xl" style={{ background: 'var(--paper-3)' }}>
@@ -3376,7 +3581,7 @@ export default function DashboardClient({
             )}
 
             {/* ── Devices & Printers ── */}
-            {activeMenu === 'settings' && settingsPanel === 'devices' && (
+            {settingsPanel === 'devices' && (
               <div className="flex flex-col gap-4">
                 <section className="card p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
@@ -3387,6 +3592,49 @@ export default function DashboardClient({
                     <button onClick={() => openDeviceForm()} className="btn btn-primary py-2 px-3 text-sm shrink-0">+ Add Device</button>
                   </div>
                 </section>
+
+                {/* Receipt Layout — header / footer text printed on bills & receipts */}
+                <form onSubmit={handleSaveReceipt} className="card p-5 grid gap-3">
+                  <div>
+                    <h4 className="font-bold">Receipt Layout</h4>
+                    <p className="text-xs text-ink-3">Customise what prints on the bill / receipt. The store logo is set in <b>General</b>.</p>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="lbl">Header lines</label>
+                      <textarea value={receiptForm.header} onChange={(e) => setReceiptForm((p) => ({ ...p, header: e.target.value }))} rows={2} maxLength={280} placeholder="e.g. 123 MG Road, Bengaluru" className="inp" />
+                      <span className="text-[11px] text-ink-3">Printed under the business name. One line per row.</span>
+                    </div>
+                    <div>
+                      <label className="lbl">Phone / contact number</label>
+                      <input value={receiptForm.phone} onChange={(e) => setReceiptForm((p) => ({ ...p, phone: e.target.value }))} maxLength={60} placeholder="+91 98xxxxxxx" className="inp" />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="lbl">Footer text</label>
+                      <textarea value={receiptForm.footer} onChange={(e) => setReceiptForm((p) => ({ ...p, footer: e.target.value }))} rows={2} maxLength={280} placeholder="Thank you! Visit again." className="inp" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={receiptForm.showLogo} onChange={(e) => setReceiptForm((p) => ({ ...p, showLogo: e.target.checked }))} />
+                      Print logo on top
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={receiptForm.showGstin} onChange={(e) => setReceiptForm((p) => ({ ...p, showGstin: e.target.checked }))} />
+                      Print GSTIN
+                    </label>
+                  </div>
+                  {/* tiny live preview */}
+                  <div className="rounded-xl p-3 text-center" style={{ background: 'var(--paper-3)', fontFamily: 'var(--font-mono)' }}>
+                    {receiptForm.showLogo && logoUrl && <img src={logoUrl} alt="" className="mx-auto mb-1 object-contain" style={{ width: 40, height: 40 }} />}
+                    <div className="font-bold text-sm">{outlet.brand}</div>
+                    {receiptForm.header.trim() && <div className="text-[11px] text-ink-3 whitespace-pre-line">{receiptForm.header}</div>}
+                    {receiptForm.phone.trim() && <div className="text-[11px] text-ink-3">☎ {receiptForm.phone}</div>}
+                    {receiptForm.showGstin && outlet.gstin && <div className="text-[11px] text-ink-3">GSTIN {outlet.gstin}</div>}
+                    <div className="text-[11px] text-ink-3 mt-1 border-t pt-1" style={{ borderColor: 'var(--line)' }}>{receiptForm.footer.trim() || 'Thank you!'}</div>
+                  </div>
+                  <button type="submit" disabled={receiptSaving} className="btn btn-primary w-fit disabled:opacity-60">{receiptSaving ? 'Saving…' : 'Save receipt layout'}</button>
+                </form>
 
                 {showDeviceForm && (
                   <section className="card p-5">
@@ -3477,7 +3725,7 @@ export default function DashboardClient({
               </div>
             )}
 
-            {activeMenu === 'settings' && settingsPanel === 'audit' && (
+            {settingsPanel === 'audit' && (
               <div className="flex flex-col gap-4">
                 <section className="card p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -3568,6 +3816,8 @@ export default function DashboardClient({
                   )}
                 </section>
               </div>
+            )}
+              </SettingsModal>
             )}
           </div>
         )}
@@ -3709,8 +3959,6 @@ export default function DashboardClient({
         items={visibleMenus as NavItem[]}
         activeKey={activeMenu}
         onSelect={(k) => { setActiveMenu(k); setLiveOrders(0); }}
-        brand={outlet.brand}
-        role={staff.role}
         plan={outlet.plan}
         onLogout={logout}
       />

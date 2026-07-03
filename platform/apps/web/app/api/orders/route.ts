@@ -199,10 +199,15 @@ export async function POST(req: NextRequest) {
 
 /** GET /api/orders?status=in_kitchen — used by the KDS (Phase 1b). */
 export async function GET(req: NextRequest) {
+  // scope to the caller's outlet — the queue must never surface another outlet's
+  // tickets (they'd also 404 on settle, looking permanently stuck as active).
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
   const status = req.nextUrl.searchParams.get('status') as
     | 'open' | 'in_kitchen' | 'ready' | 'served' | 'settled' | 'cancelled' | null;
   const orders = await prisma.order.findMany({
-    where: status ? { status } : undefined,
+    where: { outletId: session.outletId, ...(status ? { status } : {}) },
     orderBy: { placedAt: 'desc' },
     take: 50,
     include: { items: true, table: true },

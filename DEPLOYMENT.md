@@ -16,7 +16,6 @@
    ```
 5. Keep these strings safe — you'll paste them into Railway next.
 
----
 
 ## 2. App: Railway
 
@@ -34,9 +33,8 @@
    |----------|-------|
    | `DATABASE_URL` | Neon pooled connection string |
    | `DIRECT_URL` | Neon direct connection string |
-   | `DEV_TENANT_SUBDOMAIN` | Seeded tenant subdomain (e.g. `kaawa`) — **required for a single-tenant deploy** whose Railway URL has no tenant subdomain, so the customer PWA + PIN login resolve a tenant |
    | `JWT_SECRET` | Long random string (e.g., `openssl rand -base64 48`) |
-   | `GEMINI_API_KEY` | Your API key (from Google AI Studio) |
+   | `ANTHROPIC_API_KEY` | Your API key (from console.anthropic.com) |
    | `RAZORPAY_KEY_ID` | Test or live key (when ready) |
    | `RAZORPAY_KEY_SECRET` | Test or live secret |
    | `RAZORPAY_WEBHOOK_SECRET` | Webhook secret |
@@ -87,13 +85,6 @@ Railway → **Settings** → **Domains** → add your cafe's domain. Enable HTTP
 ## Troubleshooting
 
 **Build fails:** Check the build log. Most common: missing env var → add it to Railway dashboard.
-
-**Customer PWA shows "This table link isn't set up yet":** `/api/customer/context` returned 404 — the
-table couldn't be resolved. Two causes: (1) the Neon DB was never seeded (run §1 step 4 against Neon
-so tables with QR tokens exist), and/or (2) the request host doesn't map to a tenant — set
-`DEV_TENANT_SUBDOMAIN` to the seeded tenant's subdomain (see the env table above). Always generate the
-QR/link from the **deployed** admin (Settings → Floor & QR), not a local one — local tokens don't exist
-in Neon.
 
 **Realtime not working (KDS silent):** Verify `DATABASE_URL` is the pooled string (has `-pooler` in it). Direct URL breaks the connection pool.
 
