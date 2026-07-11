@@ -1,14 +1,12 @@
 /**
  * Cafe OS shared UI barrel.
  * Import primitives + icons from one place:
- *   import { ThemeToggle, Modal, Spinner, Coffee } from '@/components/ui';
+ *   import { ThemeToggle, AlphaTag, Coffee } from '@/components/ui';
  *
  * Icons are re-exported from lucide-react (tree-shaken). Use a consistent
  * size (16 inline, 18 controls, 20–24 headers) and the default strokeWidth.
  */
 export { ThemeToggle, useTheme } from './ThemeToggle';
-export { Modal } from './Modal';
-export { Spinner, Skeleton, EmptyState, Banner } from './feedback';
 export { AlphaTag } from './AlphaTag';
 
 export {
