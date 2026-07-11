@@ -38,8 +38,8 @@ export function Navbar({ signedIn }: { signedIn: boolean }) {
 
           <div className="l-nav-actions">
             {signedIn ? (
-              <a href="/dashboard" className="l-btn l-btn-primary">
-                Open dashboard <ArrowRight size={17} className="ic" strokeWidth={2} />
+              <a href="/launch" className="l-btn l-btn-primary">
+                Open app <ArrowRight size={17} className="ic" strokeWidth={2} />
               </a>
             ) : (
               <>
@@ -90,7 +90,7 @@ export function Navbar({ signedIn }: { signedIn: boolean }) {
               ))}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
                 {signedIn ? (
-                  <a href="/dashboard" className="l-btn l-btn-primary" onClick={() => setOpen(false)}>Open dashboard</a>
+                  <a href="/launch" className="l-btn l-btn-primary" onClick={() => setOpen(false)}>Open app</a>
                 ) : (
                   <>
                     <a href="/login" className="l-btn l-btn-primary" onClick={() => setOpen(false)}>Start free trial</a>

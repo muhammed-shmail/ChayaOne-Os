@@ -4,8 +4,6 @@
  */
 export type Paise = number;
 
-export const rupees = (paise: Paise): number => paise / 100;
-
 /** Format paise as an Indian-locale ₹ string. */
 export function formatINR(paise: Paise): string {
   const r = paise / 100;

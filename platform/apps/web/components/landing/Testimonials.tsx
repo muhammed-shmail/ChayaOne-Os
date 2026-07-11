@@ -32,11 +32,11 @@ export function Testimonials() {
   const loop = [...testimonials, ...testimonials];
   return (
     <section className="l-section" id="customers">
-      <div className="l-container">
+      <div className="l-container" style={{ textAlign: 'center' }}>
         <Rise>
-          <p className="l-eyebrow">Loved by café owners</p>
+          <p className="l-eyebrow center" style={{ justifyContent: 'center', display: 'flex' }}>Loved by café owners</p>
           <h2 className="l-h2">The people behind the counter.</h2>
-          <p className="l-lead">
+          <p className="l-lead" style={{ marginInline: 'auto' }}>
             From filter-coffee institutions to third-wave roasteries — Chaya.One runs
             quietly in the background so owners can get back to their guests.
           </p>

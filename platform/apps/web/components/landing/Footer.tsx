@@ -6,22 +6,30 @@ import { Rise } from './primitives';
 /* Brand social marks — lucide 1.21 ships no brand glyphs, so these are minimal
    inline SVGs (filled, currentColor) sized to match the footer chrome. */
 const SOCIALS: { label: string; href: string; path: React.ReactNode }[] = [
-  { label: 'Instagram', href: '#', path: (
-    <><rect x="3" y="3" width="18" height="18" rx="5" ry="5" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="17.4" cy="6.6" r="1.1" fill="currentColor" /></>
-  ) },
-  { label: 'X', href: '#', path: (
-    <path d="M4 3h3.3l4.2 5.7L16.8 3H20l-6.5 8L20.4 21H17l-4.6-6.2L7 21H3.8l6.9-8.4L4 3z" fill="currentColor" />
-  ) },
-  { label: 'LinkedIn', href: '#', path: (
-    <><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M7 10v7M7 7.2v.01M11 17v-4a2 2 0 0 1 4 0v4M11 17v-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></>
-  ) },
-  { label: 'YouTube', href: '#', path: (
-    <><rect x="2.5" y="5.5" width="19" height="13" rx="4" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M10.5 9.2l4.2 2.8-4.2 2.8V9.2z" fill="currentColor" /></>
-  ) },
+  {
+    label: 'Instagram', href: '#', path: (
+      <><rect x="3" y="3" width="18" height="18" rx="5" ry="5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <circle cx="17.4" cy="6.6" r="1.1" fill="currentColor" /></>
+    )
+  },
+  {
+    label: 'X', href: '#', path: (
+      <path d="M4 3h3.3l4.2 5.7L16.8 3H20l-6.5 8L20.4 21H17l-4.6-6.2L7 21H3.8l6.9-8.4L4 3z" fill="currentColor" />
+    )
+  },
+  {
+    label: 'LinkedIn', href: '#', path: (
+      <><rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M7 10v7M7 7.2v.01M11 17v-4a2 2 0 0 1 4 0v4M11 17v-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></>
+    )
+  },
+  {
+    label: 'YouTube', href: '#', path: (
+      <><rect x="2.5" y="5.5" width="19" height="13" rx="4" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M10.5 9.2l4.2 2.8-4.2 2.8V9.2z" fill="currentColor" /></>
+    )
+  },
 ];
 
 export function AboutStrip() {
@@ -30,7 +38,7 @@ export function AboutStrip() {
       <div className="l-container">
         <Rise>
           <div className="l-about">
-            <span className="l-eyebrow">The company</span>
+            <span className="l-eyebrow center">The company</span>
             <p style={{ fontSize: 'clamp(16px,2vw,20px)', lineHeight: 1.6, color: 'var(--l-ink-2)', maxWidth: '62ch' }}>
               Chaya.One is built by <span className="n7">Nuro 7</span> — we build intelligent
               operating systems for Indian businesses, starting with the cafés we love.
@@ -73,18 +81,24 @@ export function CtaBand() {
 }
 
 const COLS: { title: string; links: { label: string; href: string }[] }[] = [
-  { title: 'Product', links: [
-    { label: 'Features', href: '#features' }, { label: 'Pricing', href: '#pricing' },
-    { label: 'Customer app', href: '#features' }, { label: 'Live demo', href: '#contact' },
-  ] },
-  { title: 'Company', links: [
-    { label: 'About', href: '#about' }, { label: 'Customers', href: '#customers' },
-    { label: 'Backed by Nuro 7', href: '#about' }, { label: 'Careers', href: '#contact' },
-  ] },
-  { title: 'Support', links: [
-    { label: 'Help center', href: '#contact' }, { label: 'Book a demo', href: '#contact' },
-    { label: 'GST & compliance', href: '#features' }, { label: 'System status', href: '#' },
-  ] },
+  {
+    title: 'Product', links: [
+      { label: 'Features', href: '#features' }, { label: 'Pricing', href: '#pricing' },
+      { label: 'Customer app', href: '#features' }, { label: 'Live demo', href: '#contact' },
+    ]
+  },
+  {
+    title: 'Company', links: [
+      { label: 'About', href: '#about' }, { label: 'Customers', href: '#customers' },
+      { label: 'Backed by Nuro 7', href: '#about' }, { label: 'Careers', href: '#contact' },
+    ]
+  },
+  {
+    title: 'Support', links: [
+      { label: 'Help center', href: '#contact' }, { label: 'Book a demo', href: '#contact' },
+      { label: 'GST & compliance', href: '#features' }, { label: 'System status', href: '#' },
+    ]
+  },
 ];
 
 export function Footer() {
@@ -101,10 +115,10 @@ export function Footer() {
               customers and AI, in one warm, intelligent platform.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16, fontSize: 14, color: 'var(--l-ink-2)' }}>
               <a className="l-foot-link" href="mailto:hello@chaya.one" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <Mail size={16} strokeWidth={2} /> hello@chaya.one
+                <Mail size={16} strokeWidth={2} /> nuro7@chaya.one
               </a>
-              <a className="l-foot-link" href="tel:+910000000000" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <Phone size={16} strokeWidth={2} /> +91 00000 00000
+              <a className="l-foot-link" href="tel:+919446617887" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Phone size={16} strokeWidth={2} /> +91 9446 617 887
               </a>
             </div>
             <div className="l-social">

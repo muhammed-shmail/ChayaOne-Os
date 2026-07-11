@@ -1,0 +1,17 @@
+{
+  "name": "cafe-os-root",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix platform",
+    "build": "npm run build --prefix platform",
+    "lint": "npm run lint --prefix platform",
+    "typecheck": "npm run typecheck --prefix platform",
+    "db:push": "npm run db:push --prefix platform",
+    "db:seed": "npm run db:seed --prefix platform",
+    "db:seed:demo": "npm run db:seed:demo --prefix platform",
+    "db:seed:full": "npm run db:seed:full --prefix platform",
+    "db:generate": "npm run db:generate --prefix platform",
+    "db:studio": "npm run db:studio --prefix platform"
+  }
+}

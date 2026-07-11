@@ -169,7 +169,19 @@ export default function LoginClient() {
     <main className="min-h-screen grid place-items-center p-6" style={{ background: 'radial-gradient(80% 60% at 50% 0%, rgba(232,144,42,.12), transparent 60%), var(--paper)' }}>
       <div className="w-full max-w-[360px]">
         <div className="text-center mb-7 flex flex-col items-center">
-          <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="mb-1.5 object-contain" />
+          {/* The logo doubles as the owner's way in: tap it to switch to the
+              secure username + password sign-in (owners have no PIN). */}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => { setMode((m) => (m === 'pin' ? 'password' : 'pin')); setError(false); setNotice(null); setPin(''); setPassword(''); setShowPassword(false); }}
+            aria-label="Owner sign in with username & password"
+            title="Owner? Sign in with username & password"
+            className="mb-1.5 disabled:opacity-50"
+            style={{ background: 'none', border: 'none', padding: 0, lineHeight: 0, cursor: 'pointer' }}
+          >
+            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="object-contain" />
+          </button>
           <AlphaTag />
           <h1 className="font-display text-[40px] leading-none mt-3.5">Kahwa House</h1>
           <p className="text-sm mt-2" style={{ color: 'var(--ink-3)' }}>
@@ -201,13 +213,6 @@ export default function LoginClient() {
                 </button>
               ))}
             </div>
-
-            {/* Demo PIN hints are dev-only — never expose the owner PIN on a live till. */}
-            {process.env.NODE_ENV !== 'production' && (
-              <p className="text-center text-xs mt-7" style={{ color: 'var(--ink-3)' }}>
-                Demo PINs · Owner <b>1111</b> · Cashier <b>2222</b> · Kitchen <b>3333</b>
-              </p>
-            )}
           </>
         ) : (
           <form onSubmit={submitPassword} className={`space-y-3 ${error ? 'shake' : ''}`}>
@@ -245,14 +250,6 @@ export default function LoginClient() {
             </button>
           </form>
         )}
-
-        {/* toggle between the fast PIN pad and secure username + password */}
-        <button type="button" disabled={busy}
-          onClick={() => { setMode(mode === 'pin' ? 'password' : 'pin'); setError(false); setNotice(null); setPin(''); setPassword(''); setShowPassword(false); }}
-          className="w-full mt-6 text-sm font-bold disabled:opacity-50"
-          style={{ color: 'var(--ink-3)', background: 'none', border: 'none' }}>
-          {mode === 'pin' ? 'Sign in with username & password →' : '← Use PIN pad instead'}
-        </button>
       </div>
 
       <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}} .shake{animation:shake .4s}`}</style>

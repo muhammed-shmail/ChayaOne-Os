@@ -363,7 +363,7 @@ const css = `
 .l-cta-actions{ position:relative; display:flex; flex-wrap:wrap; gap:14px; margin-top:30px; }
 
 /* ---------- about strip ---------- */
-.l-about{ display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:14px 22px; text-align:center; }
+.l-about{ display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center; }
 .l-about .n7{ font-family:var(--l-display); font-weight:700; color:var(--l-brown); }
 
 /* ---------- footer ---------- */
