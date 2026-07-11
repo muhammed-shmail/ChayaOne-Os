@@ -46,7 +46,7 @@ const MINIS = [PosMini, KdsMini, DashMini];
 
 export function ChipsBand() {
   return (
-    <section className="l-section-tight" aria-label="Everything included">
+    <section className="l-section-tight" aria-label="Everything included" style={{ paddingBottom: 'clamp(24px,3vw,36px)' }}>
       <div className="l-container">
         <Rise>
           <p className="l-eyebrow center" style={{ justifyContent: 'center', display: 'flex', marginBottom: 26 }}>

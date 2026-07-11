@@ -7,9 +7,7 @@ import { LoadingScreen } from './LoadingScreen';
 import { Navbar } from './Navbar';
 import { Hero } from './Hero';
 import { ChipsBand, Features } from './Features';
-import { Stats } from './Stats';
 import { Pricing } from './Pricing';
-import { Testimonials } from './Testimonials';
 import { AboutStrip, CtaBand, Footer } from './Footer';
 
 const BOOT_KEY = 'chaya-booted';
@@ -49,10 +47,8 @@ export function Landing({ signedIn }: { signedIn: boolean }) {
         <main>
           <Hero />
           <ChipsBand />
-          <Stats />
           <Features />
           <Pricing />
-          <Testimonials />
           <AboutStrip />
           <CtaBand />
         </main>

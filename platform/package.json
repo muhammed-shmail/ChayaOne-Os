@@ -17,6 +17,8 @@
     "db:push": "npm run -w @cafeos/db push",
     "db:migrate": "npm run -w @cafeos/db migrate",
     "db:seed": "npm run -w @cafeos/db seed",
+    "db:seed:demo": "npm run -w @cafeos/db seed:demo",
+    "db:seed:full": "npm run -w @cafeos/db seed:full",
     "db:studio": "npm run -w @cafeos/db studio"
   },
   "devDependencies": {

@@ -36,7 +36,7 @@ function StatNum({ value, prefix = '', suffix = '', decimals = 0 }: {
 
 export function Stats() {
   return (
-    <section className="l-section-tight" aria-label="Chaya.One by the numbers">
+    <section className="l-section-tight" aria-label="Chaya.One by the numbers" style={{ paddingTop: 'clamp(24px,3vw,36px)' }}>
       <div className="l-container">
         <Group className="l-stats">
           {stats.map((s) => (

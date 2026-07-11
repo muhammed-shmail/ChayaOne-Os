@@ -24,12 +24,18 @@ export const chips: { Icon: LucideIcon; label: string }[] = [
 
 /** Marquee feature cards grouped by where they live in a real café. */
 export const heroCards: (Feature & { zone: string })[] = [
-  { zone: 'Front of house', Icon: Tablet, title: 'Tablet POS & GST Billing', live: true,
-    desc: 'Ring up orders, split tables, print GST-perfect bills and fire KOTs — in a couple of taps.' },
-  { zone: 'Back of house', Icon: ChefHat, title: 'Kitchen Display', live: true,
-    desc: 'Tickets land the instant an order is placed. Live timers keep every station honest.' },
-  { zone: 'The books', Icon: LayoutDashboard, title: 'Owner Dashboard & AI', live: true,
-    desc: 'Revenue, top-sellers and staff performance — with an AI that tells you what to do next.' },
+  {
+    zone: 'Front of house', Icon: Tablet, title: 'Tablet POS & GST Billing', live: true,
+    desc: 'Ring up orders, split tables, print GST-perfect bills and fire KOTs — in a couple of taps.'
+  },
+  {
+    zone: 'Back of house', Icon: ChefHat, title: 'Kitchen Display', live: true,
+    desc: 'Tickets land the instant an order is placed. Live timers keep every station honest.'
+  },
+  {
+    zone: 'The books', Icon: LayoutDashboard, title: 'Owner Dashboard & AI', live: true,
+    desc: 'Revenue, top-sellers and staff performance — with an AI that tells you what to do next.'
+  },
 ];
 
 /** Supporting feature grid. */
@@ -53,16 +59,26 @@ export const stats: { value: number; prefix?: string; suffix: string; decimals?:
 
 export type Testimonial = { quote: string; name: string; cafe: string };
 export const testimonials: Testimonial[] = [
-  { quote: 'Billing that used to take my staff a minute now takes ten seconds. Evening rush finally feels calm.',
-    name: 'Ananya Rao', cafe: 'Filter & Co. · Bengaluru' },
-  { quote: 'The kitchen display ended the paper-chit chaos. Nothing gets missed, and my cooks love the timers.',
-    name: 'Imran Qureshi', cafe: 'Chai Darbar · Hyderabad' },
-  { quote: 'I can see exactly which items make money from my phone. It changed how I plan the menu.',
-    name: 'Meera Nair', cafe: 'Coastline Brew · Kochi' },
-  { quote: 'Rewards brought my regulars back twice as often. Setup took an afternoon, not a project.',
-    name: 'Rohit Sethi', cafe: 'The Roastery · Pune' },
-  { quote: 'GST filing stopped being a nightmare. Every bill is clean and the reports just export.',
-    name: 'Kavya Menon', cafe: 'Verandah Cafe · Chennai' },
+  {
+    quote: 'Billing that used to take my staff a minute now takes ten seconds. Evening rush finally feels calm.',
+    name: 'Ananya Rao', cafe: 'Filter & Co. · Bengaluru'
+  },
+  {
+    quote: 'The kitchen display ended the paper-chit chaos. Nothing gets missed, and my cooks love the timers.',
+    name: 'Imran Qureshi', cafe: 'Chai Darbar · Hyderabad'
+  },
+  {
+    quote: 'I can see exactly which items make money from my phone. It changed how I plan the menu.',
+    name: 'Meera Nair', cafe: 'Coastline Brew · Kochi'
+  },
+  {
+    quote: 'Rewards brought my regulars back twice as often. Setup took an afternoon, not a project.',
+    name: 'Rohit Sethi', cafe: 'The Roastery · Pune'
+  },
+  {
+    quote: 'GST filing stopped being a nightmare. Every bill is clean and the reports just export.',
+    name: 'Kavya Menon', cafe: 'Verandah Cafe · Chennai'
+  },
 ];
 
 export type Plan = {
@@ -71,20 +87,26 @@ export type Plan = {
 };
 /** NOTE for the team: swap these indicative figures for your live pricing. */
 export const plans: Plan[] = [
-  { name: 'Starter', note: 'For a single counter finding its feet.', price: '₹999', unit: '/mo',
+  {
+    name: 'Starter', note: 'For a single counter finding its feet.', price: '₹999', unit: '/mo',
     cta: 'Start free trial',
-    feats: ['Tablet POS & GST billing', 'Kitchen display', 'UPI & card payments', 'Daily sales reports'] },
-  { name: 'Growth', note: 'For busy cafés ready to scale.', price: '₹1,999', unit: '/mo', popular: true,
+    feats: ['Tablet POS & GST billing', 'Kitchen display', 'UPI & card payments', 'Daily sales reports']
+  },
+  {
+    name: 'Growth', note: 'For busy cafés ready to scale.', price: '₹1,999', unit: '/mo', popular: true,
     cta: 'Start free trial',
-    feats: ['Everything in Starter', 'Inventory & suppliers', 'Loyalty, rewards & games', 'Customer app & QR ordering', 'Advanced analytics'] },
-  { name: 'Pro', note: 'For multi-outlet brands.', price: "Let's talk", unit: '',
+    feats: ['Everything in Starter', 'Inventory & suppliers', 'Loyalty, rewards & games', 'Customer app & QR ordering', 'Advanced analytics']
+  },
+  {
+    name: 'Pro', note: 'For multi-outlet brands.', price: "Let's talk", unit: '',
     cta: 'Book a demo',
-    feats: ['Everything in Growth', 'AI sales assistant', 'Multi-outlet control', 'CRM & campaigns', 'Priority support & onboarding'] },
+    feats: ['Everything in Growth', 'AI sales assistant', 'Multi-outlet control', 'CRM & campaigns', 'Priority support & onboarding']
+  },
 ];
 
 export const navLinks = [
   { label: 'Features', href: '#features' },
-  { label: 'Pricing', href: '#pricing' },
+  //{ label: 'Pricing', href: '#pricing' },//
   { label: 'Customers', href: '#customers' },
   { label: 'About', href: '#about' },
   { label: 'Contact', href: '#contact' },
