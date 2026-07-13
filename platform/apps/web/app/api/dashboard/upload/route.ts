@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getSession } from '@/lib/auth';
+import { mirrorToDrive } from '@/lib/gdrive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,13 +10,13 @@ export const dynamic = 'force-dynamic';
 /**
  * POST /api/dashboard/upload — owner image upload for PWA banners, featured-dish
  * overrides and the theme logo. Accepts multipart form-data with an `image`
- * file, writes it under `public/uploads/<outletId>/<uuid>.<ext>` and returns the
- * public URL. Owner/manager only.
+ * file and returns the public URL. Owner/manager only.
  *
- * This is the SINGLE seam for image storage. It writes to the local public dir,
- * which works on any normal Node host (this app runs `runtime='nodejs'`). For a
- * read-only / serverless deploy, swap the writeFile here for an object-storage
- * put (S3/R2) and return that URL — no caller changes needed.
+ * This is the SINGLE seam for image storage. The file is written under
+ * `public/uploads/<outletId>/<uuid>.<ext>` and that local URL is what's served
+ * and embedded (reliable in the customer PWA and printed receipts). When the
+ * `GDRIVE_*` env vars are set, a copy is ALSO mirrored to a Google Drive folder
+ * as an off-site backup — best-effort, so a Drive hiccup never fails the upload.
  */
 
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
@@ -41,10 +42,20 @@ export async function POST(req: NextRequest) {
 
   const buf = Buffer.from(await file.arrayBuffer());
   const name = `${crypto.randomUUID()}.${ext}`;
-  const dir = path.join(process.cwd(), 'public', 'uploads', session.outletId);
-  await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, name), buf);
 
+  // Local disk is the source of truth for what's served.
+  try {
+    const dir = path.join(process.cwd(), 'public', 'uploads', session.outletId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, name), buf);
+  } catch (err) {
+    console.error('[upload] local write failed', err);
+    return NextResponse.json({ error: 'storage_failed' }, { status: 502 });
+  }
   const url = `/uploads/${session.outletId}/${name}`;
-  return NextResponse.json({ ok: true, url });
+
+  // Best-effort off-site backup to Google Drive (no-op unless GDRIVE_* is set).
+  const driveId = await mirrorToDrive(`${session.outletId}-${name}`, buf, file.type);
+
+  return NextResponse.json({ ok: true, url, driveMirrored: driveId !== null });
 }
