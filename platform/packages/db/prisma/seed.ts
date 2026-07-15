@@ -59,13 +59,13 @@ const MENU: Seed[] = [
 // Control-plane plan catalogue (global, not tenant-scoped). null limit = unlimited.
 const PLANS = [
   { key: 'starter', name: 'Starter', maxBranches: 1, maxStaff: 5, maxCustomers: 1000, maxOrdersMonthly: 2000, storageMb: 500,
-    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: false, whatsapp: false, ai_assistant: false, white_label: false }, pricePaise: { monthly: 99900, yearly: 999000 } },
+    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: false, whatsapp: false, ai_assistant: false, white_label: false, staff_app: false }, pricePaise: { monthly: 99900, yearly: 999000 } },
   { key: 'growth', name: 'Growth', maxBranches: 3, maxStaff: 20, maxCustomers: 5000, maxOrdersMonthly: 10000, storageMb: 2000,
-    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: true, whatsapp: true, ai_assistant: false, white_label: false }, pricePaise: { monthly: 249900, yearly: 2499000 } },
+    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: true, whatsapp: true, ai_assistant: false, white_label: false, staff_app: false }, pricePaise: { monthly: 249900, yearly: 2499000 } },
   { key: 'pro', name: 'Pro', maxBranches: 10, maxStaff: 100, maxCustomers: 50000, maxOrdersMonthly: 100000, storageMb: 10000,
-    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: true, whatsapp: true, ai_assistant: true, white_label: false }, pricePaise: { monthly: 499900, yearly: 4999000 } },
+    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: true, whatsapp: true, ai_assistant: true, white_label: false, staff_app: false }, pricePaise: { monthly: 499900, yearly: 4999000 } },
   { key: 'enterprise', name: 'Enterprise', maxBranches: null, maxStaff: null, maxCustomers: null, maxOrdersMonthly: null, storageMb: null,
-    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: true, whatsapp: true, ai_assistant: true, white_label: true }, pricePaise: {} },
+    features: { crm: true, revenue_analytics: true, pwa_customer_app: true, loyalty: true, games: true, whatsapp: true, ai_assistant: true, white_label: true, staff_app: false }, pricePaise: {} },
 ] as const;
 
 async function main() {

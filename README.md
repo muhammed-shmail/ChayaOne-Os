@@ -66,6 +66,25 @@ The waiting time — currently dead, frustrating air — becomes the **single hi
 
 ---
 
+## Running Locally
+
+Full setup lives in [`platform/README.md`](platform/README.md). The one thing that trips people up:
+
+> **The local database is a separate process from the dev server.** Development runs
+> against a real embedded Postgres on `localhost:5433`. It must be running **in its own
+> terminal** alongside `npm run dev` — if it isn't, every DB-backed request (including
+> **login**) returns **HTTP 500**.
+
+```bash
+cd platform
+npm run db:local   # Terminal 1 — 🐘 Postgres on :5433 (leave running)
+npm run dev        # Terminal 2 — http://localhost:3000
+```
+
+Seeded staff PINs: Owner (password-only, `owner` / `cafe1234`) · Cashier `2222` · Kitchen `3333`.
+
+---
+
 ## Naming & Conventions
 - Currency: **₹ (INR)**, paise-precision stored as integers.
 - Tax: **GST** (CGST/SGST/IGST) configurable per item HSN.

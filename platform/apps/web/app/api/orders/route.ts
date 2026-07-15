@@ -7,8 +7,10 @@ import { applyRecipeConsumption, emitLowStockAlerts } from '@/lib/inventory';
 import { alertLargeDiscount } from '@/lib/alerts';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { getOutletPwa } from '@/lib/pwa';
+import { findOrCreateCustomerByPhone, accrueLoyaltyOnSettle } from '@/lib/customer';
 import { assertSlot, bumpUsage, SlotExceeded } from '@/lib/limits';
 import { tenantBilling } from '@/lib/billing';
+import { getOutletLocation, checkGeofence, readGeoFromHeaders } from '@/lib/geo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,6 +42,18 @@ export async function POST(req: NextRequest) {
   });
   if (existing) return NextResponse.json({ order: existing, idempotent: true });
 
+  // location gate (POS): a signed-in, non-owner staffer must be at the cafe.
+  // Lenient — a missing GPS fix is allowed; only a confirmed out-of-range
+  // position is refused. Sessionless trusted replays (offline outbox) skip this,
+  // and the owner is always exempt.
+  if (session && session.role !== 'owner') {
+    const loc = await getOutletLocation(outletId);
+    if (loc.enabled && loc.gatePosOrders && loc.lat !== null) {
+      const fence = checkGeofence(loc, readGeoFromHeaders(req.headers), { strict: false });
+      if (!fence.ok) return NextResponse.json({ error: 'out_of_range', radiusM: fence.radiusM, distanceM: fence.distanceM }, { status: 403 });
+    }
+  }
+
   // slot enforcement (G6): meter session-bound orders against the monthly quota.
   // Sessionless trusted replays are not metered (already-counted offline orders).
   const meterTenantId = session?.tenantId ?? null;
@@ -66,8 +80,18 @@ export async function POST(req: NextRequest) {
   }));
   const gst = await getOutletGst(outletId);
   const pwa = await getOutletPwa(outletId);
+
+  // resolve the customer for loyalty/CRM: an explicit customerId (QR/PWA) wins;
+  // otherwise find-or-create from a walk-in phone captured at the POS. Tenant
+  // comes from the session only — never a client-sent value.
+  let customerId = input.customerId ?? null;
+  if (!customerId && input.customer && session?.tenantId) {
+    customerId = await findOrCreateCustomerByPhone(session.tenantId, input.customer);
+  }
+
   const bill = computeBill(billLines, {
     discountPct: input.discountPct,
+    discountFlatPaise: input.discountFlatPaise,
     serviceChargePct: input.serviceChargePct,
     interState: input.interState,
     ...gstBillOptions(gst),
@@ -80,7 +104,7 @@ export async function POST(req: NextRequest) {
 
   // stations needing a KOT
   const stations = Array.from(
-    new Set(input.lines.map((l) => l.station).filter((s): s is 'kitchen' | 'bar' | 'dessert' => !!s)),
+    new Set(input.lines.map((l) => l.station).filter((s): s is string => !!s)),
   );
 
   try {
@@ -91,7 +115,7 @@ export async function POST(req: NextRequest) {
           number,
           outletId,
           tableId: input.tableId ?? null,
-          customerId: input.customerId ?? null,
+          customerId,
           staffId,
           type: input.type,
           // kitchen lifecycle is independent of payment: a paid-upfront takeaway
@@ -145,25 +169,8 @@ export async function POST(req: NextRequest) {
 
         // loyalty: configurable earn rate (default 1pt per ₹10) + optional first-order bonus,
         // on settle (append-only ledger). Defaults preserve the original behaviour exactly.
-        if (input.customerId) {
-          const rate = pwa.points.earnRatePaisePerPoint; // paise per earned point
-          let points = Math.floor(bill.totalPaise / rate);
-          const prior = await tx.customer.findUnique({ where: { id: input.customerId }, select: { visitCount: true } });
-          if ((!prior || prior.visitCount === 0) && pwa.loyalty.rewards.firstOrderBonus > 0) {
-            points += pwa.loyalty.rewards.firstOrderBonus;
-          }
-          await tx.loyaltyLedger.create({
-            data: { customerId: input.customerId, outletId, type: 'earn', points, source: 'order', refId: created.id },
-          });
-          await tx.customer.update({
-            where: { id: input.customerId },
-            data: {
-              points: { increment: points },
-              lifetimeSpendPaise: { increment: bill.totalPaise },
-              visitCount: { increment: 1 },
-              lastVisit: new Date(),
-            },
-          });
+        if (customerId) {
+          await accrueLoyaltyOnSettle(tx, { customerId, outletId, totalPaise: bill.totalPaise, pwa, refId: created.id });
         }
       }
 
@@ -185,8 +192,12 @@ export async function POST(req: NextRequest) {
     publish(outletId, { type: 'order.new', ticket: toTicket(order) });
     // raise low-stock alerts for anything that dipped below reorder (best effort)
     await emitLowStockAlerts(outletId, consumedStockIds);
-    // owner alert: unusually large discount on this ticket
-    if (input.discountPct > 0) await alertLargeDiscount(outletId, { number: order.number, discountPct: input.discountPct, discountPaise: bill.discountPaise });
+    // owner alert: unusually large discount on this ticket (percent OR flat ₹ —
+    // derive an effective % from the applied amount so the threshold still fires)
+    if (bill.discountPaise > 0) {
+      const effPct = bill.subtotalPaise > 0 ? Math.round((bill.discountPaise / bill.subtotalPaise) * 100) : 0;
+      await alertLargeDiscount(outletId, { number: order.number, discountPct: effPct, discountPaise: bill.discountPaise });
+    }
     return NextResponse.json({ order, bill }, { status: 201 });
   } catch (e) {
     // unique violation on clientUuid race → fetch and return idempotently

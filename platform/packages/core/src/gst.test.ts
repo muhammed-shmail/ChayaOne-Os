@@ -29,6 +29,18 @@ const disc = computeBill([{ pricePaise: 20000, gstRate: 5, qty: 2 }], { discount
 eq('discount 10% of 400', disc.discountPaise, 4000);
 eq('taxable after discount', disc.taxablePaise, 36000);
 
+// flat ₹-amount discount: ₹50 off a ₹400 base
+const flat = computeBill([{ pricePaise: 20000, gstRate: 5, qty: 2 }], { discountFlatPaise: 5000 });
+eq('flat discount applied', flat.discountPaise, 5000);
+eq('taxable after flat discount', flat.taxablePaise, 35000);
+
+// percent + flat combine, then clamp to the subtotal (never negative)
+const both = computeBill([{ pricePaise: 20000, gstRate: 5, qty: 2 }], { discountPct: 10, discountFlatPaise: 5000 });
+eq('percent + flat combined', both.discountPaise, 4000 + 5000);
+const over = computeBill([{ pricePaise: 20000, gstRate: 5, qty: 2 }], { discountFlatPaise: 99999 });
+eq('flat discount clamped to subtotal', over.discountPaise, 40000);
+eq('over-discount total is zero', over.totalPaise, 0);
+
 // INCLUSIVE: a ₹105 price @ 5% holds ₹100 base + ₹5 tax; total stays ₹105
 const incl = computeBill([{ pricePaise: 10500, gstRate: 5, qty: 1 }], { gstInclusive: true });
 eq('inclusive net base', incl.subtotalPaise, 10000);

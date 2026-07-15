@@ -21,9 +21,10 @@ export function GET() {
     orientation: 'portrait',
     background_color: '#0E0B08',
     theme_color: '#0E0B08',
+    // app.png has a transparent background, so it is not declared `maskable`
+    // (Android would clip it against no fill). Single `any` icon at real size.
     icons: [
-      { src: '/app.png', sizes: '1080x1080', type: 'image/png', purpose: 'any' },
-      { src: '/app.png', sizes: '1080x1080', type: 'image/png', purpose: 'maskable' },
+      { src: '/app.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'any' },
     ],
     shortcuts: [
       { name: 'Floor / POS', short_name: 'POS', url: '/pos' },

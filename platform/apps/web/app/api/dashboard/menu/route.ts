@@ -5,11 +5,13 @@ import { getSession } from '@/lib/auth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const STATIONS = ['kitchen', 'bar', 'dessert'] as const;
 const GST_RATES = [0, 5, 12, 18, 28];
 
-function cleanStation(v: unknown): 'kitchen' | 'bar' | 'dessert' | null {
-  return (STATIONS as readonly string[]).includes(v as string) ? (v as 'kitchen' | 'bar' | 'dessert') : null;
+/** A station is now any configured kitchen slug (Outlet.settings.kitchens), so
+ *  accept any trimmed, bounded slug — empty/blank collapses to null. */
+function cleanStation(v: unknown): string | null {
+  const s = String(v ?? '').trim().slice(0, 40);
+  return s || null;
 }
 
 /**

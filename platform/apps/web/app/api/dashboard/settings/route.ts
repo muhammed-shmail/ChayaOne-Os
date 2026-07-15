@@ -3,6 +3,8 @@ import { prisma, type Prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { readDevices, normalizeDefaults, type Device } from '@/lib/devices';
 import { readReceiptConfig, RECEIPT_FIELD_MAX } from '@/lib/receipt';
+import { normalizeLocationInput } from '@/lib/geo';
+import { readKitchens, kitchenSlug, KITCHEN_NAME_MAX, KITCHEN_PALETTE, type Kitchen } from '@/lib/kitchens';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,6 +73,47 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, devices: next });
   }
 
+  // ---- kitchens / prep stations (stored in Outlet.settings.kitchens) ----
+  // Persisting from the defaults on first edit keeps every existing menu item
+  // (station = 'kitchen'|'bar'|'dessert') mapped; the slug id is stable so a
+  // rename never orphans items.
+  if (body.action === 'kitchen_add' || body.action === 'kitchen_rename' || body.action === 'kitchen_delete') {
+    const outlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const settings = (outlet?.settings as Record<string, unknown>) ?? {};
+    const current = readKitchens(settings);
+    let next: Kitchen[];
+
+    if (body.action === 'kitchen_add') {
+      const name = String(body.name ?? '').trim().slice(0, KITCHEN_NAME_MAX);
+      if (!name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
+      if (current.some((k) => k.name.toLowerCase() === name.toLowerCase())) return NextResponse.json({ error: 'duplicate_name' }, { status: 409 });
+      // stable, unique slug id
+      let id = kitchenSlug(name) || 'kitchen';
+      if (current.some((k) => k.id === id)) { let n = 2; while (current.some((k) => k.id === `${id}-${n}`)) n++; id = `${id}-${n}`; }
+      const color = KITCHEN_PALETTE[current.length % KITCHEN_PALETTE.length];
+      next = [...current, { id, name, color, sort: current.length }];
+    } else if (body.action === 'kitchen_rename') {
+      const id = String(body.id ?? '');
+      const name = String(body.name ?? '').trim().slice(0, KITCHEN_NAME_MAX);
+      if (!id || !name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
+      if (current.some((k) => k.id !== id && k.name.toLowerCase() === name.toLowerCase())) return NextResponse.json({ error: 'duplicate_name' }, { status: 409 });
+      if (!current.some((k) => k.id === id)) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+      next = current.map((k) => (k.id === id ? { ...k, name } : k)); // id/slug stays → items stay mapped
+    } else {
+      const id = String(body.id ?? '');
+      if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
+      if (current.length <= 1) return NextResponse.json({ error: 'last_kitchen' }, { status: 409 });
+      next = current.filter((k) => k.id !== id).map((k, i) => ({ ...k, sort: i }));
+    }
+
+    const merged = { ...settings, kitchens: next };
+    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.auditLog.create({
+      data: { outletId: session.outletId, actorId: session.staffId, action: `kitchen.${body.action.replace('kitchen_', '')}`, entity: 'outlet', entityId: session.outletId, after: { kitchens: next } as unknown as Prisma.InputJsonValue },
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, kitchens: next });
+  }
+
   // ---- receipt layout (stored in Outlet.settings.receipt) ----
   if (body.action === 'receipt') {
     const r = (body.receipt ?? {}) as Record<string, unknown>;
@@ -90,6 +133,22 @@ export async function POST(req: NextRequest) {
       data: { outletId: session.outletId, actorId: session.staffId, action: 'receipt.updated', entity: 'outlet', entityId: session.outletId, after: receipt as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
     return NextResponse.json({ ok: true, receipt: readReceiptConfig(merged) });
+  }
+
+  // ---- location gate (stored in Outlet.settings.location) ----
+  // Owner-only: only the owner defines the cafe's location, and the owner is the
+  // one party exempt from the geofence at enforcement time (lib/geo.ts).
+  if (body.action === 'location') {
+    if (session.role !== 'owner') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    const location = normalizeLocationInput(body.location);
+    const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const merged = { ...settings, location };
+    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.auditLog.create({
+      data: { outletId: session.outletId, actorId: session.staffId, action: 'outlet.location_updated', entity: 'outlet', entityId: session.outletId, after: location as unknown as Prisma.InputJsonValue },
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, location });
   }
 
   if (body.action !== 'outlet') return NextResponse.json({ error: 'invalid_action' }, { status: 400 });

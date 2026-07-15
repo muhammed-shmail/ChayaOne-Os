@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { canManageStaff } from '@/lib/rbac';
+import { getOutletLocation, checkGeofence, readGeoFromHeaders } from '@/lib/geo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,11 @@ export async function GET() {
     orderBy: { clockIn: 'desc' },
     select: { id: true, clockIn: true },
   });
-  return NextResponse.json({ open: open ? { id: open.id, clockIn: open.clockIn.toISOString() } : null });
+  // hint so the client only asks for GPS (and only shows the permission prompt)
+  // when a location-gated clock-in actually applies to this staffer.
+  const loc = await getOutletLocation(session.outletId);
+  const geoRequired = loc.enabled && loc.gateAttendance && loc.lat !== null && session.role !== 'owner';
+  return NextResponse.json({ open: open ? { id: open.id, clockIn: open.clockIn.toISOString() } : null, geoRequired });
 }
 
 export async function POST(req: NextRequest) {
@@ -49,6 +54,20 @@ export async function POST(req: NextRequest) {
   });
 
   if (action === 'in') {
+    // location gate (attendance): a non-owner clocking in for THEMSELVES must be
+    // at the cafe. Strict — no GPS fix is rejected (that's the anti-fraud point).
+    // Owner self-punch and manager/dashboard overrides for another staff are exempt.
+    const selfPunch = staffId === session.staffId;
+    if (selfPunch && session.role !== 'owner') {
+      const loc = await getOutletLocation(session.outletId);
+      if (loc.enabled && loc.gateAttendance && loc.lat !== null) {
+        const fence = checkGeofence(loc, readGeoFromHeaders(req.headers), { strict: true });
+        if (!fence.ok) {
+          const error = fence.reason === 'no_fix' ? 'no_gps' : 'out_of_range';
+          return NextResponse.json({ error, radiusM: fence.radiusM, distanceM: fence.distanceM }, { status: 403 });
+        }
+      }
+    }
     if (open) return NextResponse.json({ ok: true, open: { id: open.id, clockIn: open.clockIn.toISOString() }, already: true });
     const rec = await prisma.attendance.create({
       data: { outletId: session.outletId, staffId, clockIn: new Date(), source: 'punch' },

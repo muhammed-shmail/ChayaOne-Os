@@ -7,6 +7,7 @@ import { createNotification } from '@/lib/notify';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { getOutletPwa, walletPointsToPaise, paiseToPoints } from '@/lib/pwa';
 import { tenantBilling } from '@/lib/billing';
+import { getOutletLocation, checkGeofence, readGeoFromHeaders } from '@/lib/geo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,14 @@ export async function POST(req: NextRequest) {
   // billing wall (G7): suspended/expired tenants can't accept QR orders
   const billing = await tenantBilling(tenantId);
   if (billing.blocked) return NextResponse.json({ error: 'tenant_suspended' }, { status: 403 });
+
+  // location gate: the customer must be at the cafe (lenient — a missing GPS fix
+  // is allowed; only a position GPS confirms is out of range is refused).
+  const loc = await getOutletLocation(outletId);
+  if (loc.enabled && loc.gateQrOrders && loc.lat !== null) {
+    const fence = checkGeofence(loc, readGeoFromHeaders(req.headers), { strict: false });
+    if (!fence.ok) return NextResponse.json({ error: 'out_of_range', radiusM: fence.radiusM, distanceM: fence.distanceM }, { status: 403 });
+  }
 
   // resolve requested items from the DB (never trust client prices)
   const wanted = new Map<string, number>();

@@ -1,7 +1,7 @@
-import type { NextResponse } from 'next/server';
+import type { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import {
-  signSession, signRefresh,
+  signSession, signRefresh, verifyRefresh,
   SESSION_COOKIE, REFRESH_COOKIE, ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS,
 } from '@/lib/auth';
 
@@ -92,4 +92,57 @@ export async function startStaffSession(
   const refreshToken = await signRefresh(row.id);
   setAuthCookies(res, accessToken, refreshToken);
   return row.id;
+}
+
+export type RolledSession = {
+  access: string;
+  refresh: string;
+  principal: StaffPrincipal & { sid: string };
+};
+
+/**
+ * Trade a valid refresh cookie for a fresh access+refresh token pair, enforcing
+ * revocation/expiry against the StaffSession row (the one stateful check) and
+ * sliding the 30-day window forward. Returns null when there's no usable refresh
+ * cookie (genuinely signed out / revoked / expired device).
+ *
+ * Shared by:
+ *  - /api/auth/refresh — the client keep-alive + middleware silent-refresh.
+ *  - /api/stream — so a long-lived SSE survives a lapsed 30-min access token and
+ *    reconnects without a full page reload (otherwise a single 401 kills the
+ *    EventSource for good and the live feed goes Offline).
+ */
+export async function rollFromRefresh(req: NextRequest): Promise<RolledSession | null> {
+  const token = req.cookies.get(REFRESH_COOKIE)?.value;
+  const parsed = token ? await verifyRefresh(token) : null;
+  if (!parsed) return null;
+
+  const row = await prisma.staffSession.findUnique({
+    where: { id: parsed.sid },
+    select: {
+      revokedAt: true, expiresAt: true,
+      staff: { select: { id: true, name: true, role: true, tenantId: true, outletId: true, active: true } },
+    },
+  });
+
+  const now = new Date();
+  if (!row || row.revokedAt || row.expiresAt <= now) return null;
+  const s = row.staff;
+  if (!s.active || !s.outletId) return null;
+
+  // slide the window forward + record presence (powers the live online dot)
+  await prisma.staffSession.update({
+    where: { id: parsed.sid },
+    data: { lastSeenAt: now, expiresAt: new Date(now.getTime() + REFRESH_TTL_SECONDS * 1000) },
+  });
+
+  const access = await signSession({
+    staffId: s.id, name: s.name, role: s.role, tenantId: s.tenantId, outletId: s.outletId, sid: parsed.sid,
+  });
+  const refresh = await signRefresh(parsed.sid);
+  return {
+    access,
+    refresh,
+    principal: { id: s.id, name: s.name, role: s.role, tenantId: s.tenantId, outletId: s.outletId, sid: parsed.sid },
+  };
 }

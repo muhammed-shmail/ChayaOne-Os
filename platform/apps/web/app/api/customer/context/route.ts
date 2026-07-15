@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { resolveTable, activeOrderForTable, resolveCustomer } from '@/lib/customer';
 import { readPwaConfig, gameUnlocked, tierForCustomer, walletPointsToPaise } from '@/lib/pwa';
+import { readOutletLocation } from '@/lib/geo';
 import { tenantFeatures } from '@/lib/features';
 
 export const runtime = 'nodejs';
@@ -50,6 +51,10 @@ export async function GET(req: NextRequest) {
   // Additive: every field below is optional for the client; absent config ⇒ the
   // PWA behaves exactly as before.
   const cfg = readPwaConfig(outletRow?.settings);
+  // location gate: tell the PWA whether to capture GPS before ordering, so the
+  // browser location prompt only appears when the owner has the gate on.
+  const geoLoc = readOutletLocation(outletRow?.settings);
+  const orderGate = geoLoc.enabled && geoLoc.gateQrOrders && geoLoc.lat !== null;
   const resolved = !!t && table.qrToken === t; // QR matched a real table vs demo fallback
   const registered = authenticated; // a valid signed session, not a spoofable cookie==id check
   const featIds = cfg.featured.map((f) => f.itemId);
@@ -140,6 +145,7 @@ export async function GET(req: NextRequest) {
       ? { name: customer.name ?? 'Guest', tier: customer.tier, points: customer.points, coins: customer.coins, visits: customer.visitCount, referral: customer.referralCode, registered }
       : null,
     pwa,
+    geo: { orderGate },
     features: { games: features.games, loyalty: features.loyalty },
     rewards: features.loyalty ? rewards.map((r) => ({ id: r.id, name: r.name, type: r.type, cost: r.costPoints })) : [],
     menu: categories

@@ -5,6 +5,8 @@ import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
 import { reverseRecipeConsumption } from '@/lib/inventory';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
+import { getOutletPwa } from '@/lib/pwa';
+import { findOrCreateCustomerByPhone, accrueLoyaltyOnSettle } from '@/lib/customer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -82,9 +84,21 @@ export async function POST(req: NextRequest) {
 
   const orders = await prisma.order.findMany({
     where: { tableId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
-    select: { id: true, totalPaise: true },
+    select: { id: true, totalPaise: true, customerId: true },
   });
   if (orders.length === 0) return NextResponse.json({ error: 'nothing_to_settle' }, { status: 409 });
+
+  // optional walk-in captured at the POS table panel → find-or-create the CRM
+  // customer (tenant from the session), so their order history + loyalty attach.
+  let customerId: string | null = null;
+  if (body.customer && session.tenantId) {
+    customerId = await findOrCreateCustomerByPhone(session.tenantId, body.customer);
+  }
+  // otherwise honour a customer attached when the order was placed (Send-to-KOT
+  // captured them), so loyalty still accrues without re-entering at settle.
+  if (!customerId) {
+    customerId = orders.find((o) => o.customerId)?.customerId ?? null;
+  }
 
   let total = 0;
   for (const o of orders) {
@@ -94,12 +108,21 @@ export async function POST(req: NextRequest) {
       });
       return tx.order.update({
         where: { id: o.id },
-        data: { status: 'settled', settledAt: new Date() },
+        data: { status: 'settled', settledAt: new Date(), ...(customerId ? { customerId } : {}) },
         include: { items: true, table: { select: { label: true } } },
       });
     });
     total += o.totalPaise;
     publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
+  }
+
+  // accrue loyalty ONCE on the combined table total (not per KOT) so a multi-order
+  // table counts as a single visit with points on the full bill.
+  if (customerId) {
+    const pwa = await getOutletPwa(session.outletId);
+    await prisma.$transaction((tx) =>
+      accrueLoyaltyOnSettle(tx, { customerId: customerId!, outletId: session.outletId, totalPaise: total, pwa, refId: orders[0]!.id }),
+    );
   }
 
   await prisma.auditLog.create({

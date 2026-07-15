@@ -6,7 +6,7 @@
      - everything else (dashboard / admin / API) goes straight to the network and
        is never cached.
    Read-only offline only (Phase 4 layers API GET caching on top of this). */
-const CACHE = 'cafeos-pwa-v2';
+const CACHE = 'cafeos-pwa-v3';
 // Public pages safe to precache at install (protected shells are cached at runtime
 // once an authenticated staff member loads them — precaching them would just cache
 // a /login redirect).
@@ -53,8 +53,8 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || '',
     tag: data.tag || 'cafeos',
-    icon: '/app.png',
-    badge: '/app.png',
+    icon: '/app.png?v=3',
+    badge: '/app.png?v=3',
     data: { url: data.url || '/pos' },
   };
   event.waitUntil(self.registration.showNotification(title, options));

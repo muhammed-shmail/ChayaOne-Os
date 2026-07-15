@@ -51,7 +51,20 @@ npm run db:seed                # Kahwa House: menu, tables, staff PINs, 1 custom
 npm run dev                    # http://localhost:3000  →  open /pos
 ```
 
-Staff PINs (seeded): Owner `1111` · Cashier `2222` · Kitchen `3333`.
+Staff PINs (seeded): Cashier `2222` · Kitchen `3333`. The **owner is password-only**
+(the PIN pad must never open the dashboard) — sign in with username `owner` / password
+`cafe1234` (tap the logo on the login screen to switch to password mode).
+
+### Troubleshooting — login (or any page) returns HTTP 500
+
+`npm run db:local` is a **separate long-running process** from `npm run dev`. If the
+database terminal isn't running, Prisma can't reach `localhost:5433`, so every DB-backed
+request — including `/api/auth/login` — fails with a **500** (a wrong PIN would instead
+return a clean **401**). Fix: start the DB in its own terminal and leave it open.
+
+```bash
+npm run db:local   # 🐘 must stay running alongside `npm run dev`
+```
 
 ### Push to cloud (later, unchanged code)
 

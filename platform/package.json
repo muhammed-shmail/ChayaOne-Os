@@ -13,6 +13,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "db:local": "npm run -w @cafeos/db local",
+    "db:ensure": "npm run -w @cafeos/db ensure",
     "db:generate": "npm run -w @cafeos/db generate",
     "db:push": "npm run -w @cafeos/db push",
     "db:migrate": "npm run -w @cafeos/db migrate",

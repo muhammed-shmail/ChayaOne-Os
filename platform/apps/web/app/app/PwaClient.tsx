@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { GamesHub } from '@/components/games/GamesHub';
 import { BrandMark } from '@/components/BrandMark';
 import { Coffee, ShoppingCart, Gamepad2, Gift, Plus, Minus, AlphaTag, type LucideIcon } from '@/components/ui';
+import { getGeoHeaders } from '@/lib/geo-client';
 
 const NAV: { key: 'home' | 'order' | 'play' | 'rewards'; icon: LucideIcon; label: string }[] = [
   { key: 'home', icon: Coffee, label: 'Home' },
@@ -33,7 +34,7 @@ type PwaBlock = {
   wallet?: WalletBlock;
   loyalty?: LoyaltyBlock;
 };
-type Ctx = { outlet: { name: string }; table: { label: string; token: string }; order: OrderDto | null; customer: CustomerDto | null; rewards: RewardDto[]; menu: MenuCatDto[]; spinsLeft: number; pwa?: PwaBlock; features?: { games: boolean; loyalty: boolean } };
+type Ctx = { outlet: { name: string }; table: { label: string; token: string }; order: OrderDto | null; customer: CustomerDto | null; rewards: RewardDto[]; menu: MenuCatDto[]; spinsLeft: number; pwa?: PwaBlock; geo?: { orderGate: boolean }; features?: { games: boolean; loyalty: boolean } };
 
 const FEAT_LABEL: Record<string, string> = { best_seller: 'Best Seller', chef_special: 'Chef Special', new_arrival: 'New Arrival', trending: 'Trending' };
 
@@ -100,11 +101,33 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
     return () => es.close();
   }, [qs]);
 
-  // register the installable PWA's service worker (production only — keeps dev clean)
+  // Register the installable PWA's service worker (production only — keeps dev
+  // clean). Also actively pull updates: check on load and whenever the app is
+  // re-shown, and reload once when a freshly-activated worker takes control — so
+  // a deploy reaches already-installed devices without a manual reinstall.
   useEffect(() => {
-    if (process.env.NODE_ENV === 'production' && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    }
+    if (process.env.NODE_ENV !== 'production' || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const sw = navigator.serviceWorker;
+    const hadController = !!sw.controller; // false on the very first install
+    let refreshing = false;
+    const onControllerChange = () => {
+      // Skip the initial clients.claim() on first install; reload only when a new
+      // worker replaces an existing one (a genuine update).
+      if (refreshing || !hadController) return;
+      refreshing = true;
+      window.location.reload();
+    };
+    sw.addEventListener('controllerchange', onControllerChange);
+
+    let reg: ServiceWorkerRegistration | undefined;
+    sw.register('/sw.js').then((r) => { reg = r; r.update().catch(() => {}); }).catch(() => {});
+    const onVisible = () => { if (document.visibilityState === 'visible') reg?.update().catch(() => {}); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      sw.removeEventListener('controllerchange', onControllerChange);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // QR welcome shows once per table session, then "Start Ordering" enters the app
@@ -389,6 +412,7 @@ function Order({ ctx, qs, cart, setCart, reload, onPlaced }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [useWallet, setUseWallet] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const byId = new Map<string, MenuItemDto>();
   for (const c of ctx.menu) for (const i of c.items) byId.set(i.id, i);
 
@@ -414,17 +438,32 @@ function Order({ ctx, qs, cart, setCart, reload, onPlaced }: {
   async function place() {
     if (!count || busy) return;
     setBusy(true);
+    setErr(null);
     try {
+      // location gate (lenient): only capture GPS when the owner has the gate on
+      // (so the browser location prompt never appears otherwise). The server
+      // still only blocks a GPS-confirmed out-of-range order.
+      const geo = ctx.geo?.orderGate ? await getGeoHeaders() : {};
       const res = await fetch('/api/qr-order', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...geo },
         body: JSON.stringify({ t: qs.replace('?t=', '') || undefined, lines: lines.map(([itemId, qty]) => ({ itemId, qty })), walletPoints: useWallet ? walletPoints : undefined }),
       });
-      if (!res.ok) throw new Error('failed');
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        if (res.status === 403 && d.error === 'out_of_range') {
+          setErr('You’re too far from the cafe to order. Turn on location and come closer, then try again.');
+        } else {
+          setErr('Could not send your order. Please try again or ask a waiter.');
+        }
+        setBusy(false);
+        return;
+      }
       setCart({});
       reload();
       onPlaced();
     } catch {
+      setErr('Could not send your order. Please try again or ask a waiter.');
       setBusy(false);
     }
   }
@@ -474,6 +513,7 @@ function Order({ ctx, qs, cart, setCart, reload, onPlaced }: {
           <span className="wt-label">Use wallet — <b>{rupee(walletDiscountPaise)} off</b><em>{walletPoints} points</em></span>
         </button>
       )}
+      {err && <p className="anti-cheat" role="alert" style={{ color: 'var(--chilli, #c0392b)' }}>{err}</p>}
       {count > 0 && (
         <button className="ord-place" disabled={busy} onClick={place}>
           {busy ? 'Sending…' : <>Send order · {count} item{count > 1 ? 's' : ''} · {rupee(payable)}{useWallet && walletDiscountPaise > 0 ? ` (−${rupee(walletDiscountPaise)})` : ''}</>}
@@ -620,7 +660,7 @@ function Register({ cfg, outlet, welcome, qrToken, onDone }: { cfg: { enabled: b
 
   return (
     <div className="reg">
-      <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 120, height: 120, objectFit: 'contain' }} />
+      <img src="/logo chaya one.png" alt="ChayaOne" className="brand-logo" style={{ width: 120, height: 120, objectFit: 'contain' }} />
       <AlphaTag />
 
       {step === 'phone' && (
@@ -784,7 +824,7 @@ const shellCss = `
 `;
 
 const css = `
-.pwa-scroll { flex: 1; overflow-y: auto; padding: 44px 16px 80px; display: flex; flex-direction: column; gap: 18px; }
+.pwa-scroll { flex: 1; overflow-y: auto; padding: calc(44px + env(safe-area-inset-top)) 16px 80px; display: flex; flex-direction: column; gap: 18px; }
 .pwa-scroll::-webkit-scrollbar { width: 0; }
 .pwa-scroll > * { animation: tabFadeIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 

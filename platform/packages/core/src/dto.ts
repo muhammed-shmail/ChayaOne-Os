@@ -4,7 +4,11 @@
  */
 import { z } from 'zod';
 
+/** Built-in station slugs. Kept for reference; stations are now configurable
+ *  per outlet (Outlet.settings.kitchens), so a cart line accepts any slug. */
 export const StationEnum = z.enum(['kitchen', 'bar', 'dessert']);
+/** A kitchen/station slug on a cart line — any configured kitchen id, or null. */
+export const StationSchema = z.string().min(1).max(40);
 export const OrderTypeEnum = z.enum(['dine_in', 'takeaway', 'delivery']);
 export const PayMethodEnum = z.enum(['cash', 'card', 'upi', 'wallet', 'points']);
 
@@ -15,7 +19,7 @@ export const CartLineSchema = z.object({
   qty: z.number().int().positive().max(99),
   unitPricePaise: z.number().int().nonnegative(),
   gstRate: z.number().min(0).max(28),
-  station: StationEnum.nullish(),
+  station: StationSchema.nullish(),
   modifiers: z
     .array(z.object({ name: z.string(), pricePaise: z.number().int().nonnegative() }))
     .default([]),
@@ -30,9 +34,18 @@ export const CreateOrderSchema = z.object({
   type: OrderTypeEnum,
   tableId: z.string().uuid().nullish(),
   customerId: z.string().uuid().nullish(),
+  /** optional walk-in captured at the POS; linked/created server-side by phoneHash */
+  customer: z
+    .object({
+      name: z.string().max(60).optional(),
+      phone: z.string().max(20).optional(),
+    })
+    .nullish(),
   staffId: z.string().uuid().nullish(),
   lines: z.array(CartLineSchema).min(1),
   discountPct: z.number().min(0).max(100).default(0),
+  /** flat ₹-amount discount in paise, applied on top of discountPct */
+  discountFlatPaise: z.number().int().min(0).default(0),
   serviceChargePct: z.number().min(0).max(100).default(0),
   interState: z.boolean().default(false),
   /** when present, settle immediately with this payment */

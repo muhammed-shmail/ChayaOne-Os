@@ -9,11 +9,13 @@ import {
   ThemeToggle, Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
   Plus, Minus, X, Check, Printer, Receipt, Smartphone, Banknote, CreditCard,
   CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
-  ShoppingCart, ChevronUp, Menu, Search, type LucideIcon,
+  ShoppingCart, ChevronUp, Menu, Search, Download, type LucideIcon,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
+import { useStaffInstall } from '@/components/staff-install';
 import { isOffline, OFFLINE_ORDER_MSG, OFFLINE_PAY_MSG } from '@/components/online';
+import { getGeoHeaders } from '@/lib/geo-client';
 
 /** Category → SVG icon (replaces structural emoji; food glyph stays decorative). */
 const CAT_ICON: Record<string, LucideIcon> = {
@@ -26,7 +28,7 @@ export type MenuItemDto = {
   name: string;
   pricePaise: number;
   gstRate: number;
-  station: 'kitchen' | 'bar' | 'dessert' | null;
+  station: string | null; // kitchen slug — configurable per outlet (Outlet.settings.kitchens)
   tags: string[];
 };
 export type MenuCategory = { id: string; name: string; items: MenuItemDto[] };
@@ -70,13 +72,14 @@ function tableStage(status?: string): TableStage {
   return 'order'; // open / pending_approval / approved
 }
 
-export default function PosClient({ outlet, staff, menu, tables, floors }: { outlet: Outlet; staff: Staff; menu: MenuCategory[]; tables: TableDto[]; floors: Floor[] }) {
+export default function PosClient({ outlet, staff, menu, tables, floors, staffAppEnabled = false, locationGate = false }: { outlet: Outlet; staff: Staff; menu: MenuCategory[]; tables: TableDto[]; floors: Floor[]; staffAppEnabled?: boolean; locationGate?: boolean }) {
   const [activeCat, setActiveCat] = useState(menu[0]?.id ?? '');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<Line[]>([]);
   const [orderType, setOrderType] = useState<'dine_in' | 'takeaway'>('dine_in');
   const [tableId, setTableId] = useState<string | null>(null);
   const [discountPct, setDiscountPct] = useState(0);
+  const [discountFlatPaise, setDiscountFlatPaise] = useState(0);
   const [scPct, setScPct] = useState(0);
   const [floorOpen, setFloorOpen] = useState(false);
   const [floorFilter, setFloorFilter] = useState<string>('all'); // 'all' | floorId | 'unassigned'
@@ -121,6 +124,10 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
   const [settleBusy, setSettleBusy] = useState(false);
   const [askSettle, setAskSettle] = useState(false);
   const canSettleBill = ['owner', 'manager', 'cashier'].includes(staff.role);
+  // "Install the Staff App" entry — only when the cafe has the Staff App (PWA) offer
+  // and the device can actually install (Android prompt ready, or iOS manual hint).
+  const staffInstall = useStaffInstall();
+  const showInstallApp = staffAppEnabled && staffInstall.available;
 
   // ---- inline "add items" + per-line void, inside the table popup ----
   const [addMode, setAddMode] = useState(false);
@@ -135,6 +142,16 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
   const [showCust, setShowCust] = useState(false);
   const billCustomer = custName.trim() || 'Customer';
   function resetCustomer() { setCustName(''); setCustPhone(''); setShowCust(false); }
+
+  // ---- optional customer attached to the current POS ticket (Send to KOT or Charge) ----
+  // separate from the table-settle customer above; the server find-or-creates the CRM
+  // row from the phone so a walk-in reaches order history + loyalty. Undefined phone
+  // (name only) still prints but creates no CRM row.
+  const [orderCustName, setOrderCustName] = useState('');
+  const [orderCustPhone, setOrderCustPhone] = useState('');
+  const [showOrderCust, setShowOrderCust] = useState(false);
+  const orderCustomer = () =>
+    orderCustName.trim() || orderCustPhone.trim() ? { name: orderCustName.trim(), phone: orderCustPhone.trim() } : null;
 
   function closeTableActions() {
     setTableAction(null); setTableOrder(null); setAddMode(false); setTableCart([]); setAddSearch(''); resetCustomer();
@@ -186,9 +203,13 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
         serviceChargePct: 0,
         interState: false,
       };
-      const r = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const geo = locationGate ? await getGeoHeaders() : {};
+      const r = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json', ...geo }, body: JSON.stringify(body) });
       const d = await r.json();
-      if (!r.ok) throw new Error(d?.error ?? 'failed');
+      if (!r.ok) {
+        flash(d?.error === 'out_of_range' ? 'Too far from the cafe to send this order' : 'Could not send — check connection');
+        return;
+      }
       flash(`KOT #${d.order.number} sent to kitchen`);
       setTableCart([]); setAddMode(false); setAddSearch('');
       await refreshTableOrder(); refreshTables();
@@ -218,7 +239,17 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
     if (isOffline()) { flash(OFFLINE_PAY_MSG); return; }
     setSettleBusy(true);
     try {
-      const r = await fetch('/api/tables/order', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'settle', tableId: tableAction.id, method }) });
+      const r = await fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'settle',
+          tableId: tableAction.id,
+          method,
+          // walk-in from the table panel → server creates/links the CRM customer
+          ...(custName.trim() || custPhone.trim() ? { customer: { name: custName.trim(), phone: custPhone.trim() } } : {}),
+        }),
+      });
       const d = await r.json();
       if (r.ok) { flash(`Settled ${formatINR(d.totalPaise)} · ${billCustomer} · ${method.toUpperCase()}`); closeTableActions(); refreshTables(); }
       else flash('Could not settle table');
@@ -300,7 +331,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
       <table>${rows}</table><div class="line"></div>
       <table>
         <tr><td>${outlet.gstEnabled && outlet.gstInclusive ? 'Taxable value' : 'Subtotal'}</td><td class="r">${formatINR(bill.subtotalPaise)}</td></tr>
-        ${discountPct > 0 ? `<tr><td>Discount (${discountPct}%)</td><td class="r">− ${formatINR(bill.discountPaise)}</td></tr>` : ''}
+        ${bill.discountPaise > 0 ? `<tr><td>Discount${discountPct > 0 ? ` (${discountPct}%)` : ''}</td><td class="r">− ${formatINR(bill.discountPaise)}</td></tr>` : ''}
         ${outlet.gstEnabled ? `<tr><td>CGST</td><td class="r">${formatINR(bill.cgstPaise)}</td></tr>` : ''}
         ${outlet.gstEnabled ? `<tr><td>SGST</td><td class="r">${formatINR(bill.sgstPaise)}</td></tr>` : ''}
         ${scPct > 0 ? `<tr><td>Service charge</td><td class="r">${formatINR(bill.serviceChargePaise)}</td></tr>` : ''}
@@ -361,8 +392,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
 
   const bill = useMemo(() => {
     const lines: BillLine[] = cart.map((l) => ({ pricePaise: l.pricePaise, gstRate: l.gstRate, qty: l.qty }));
-    return computeBill(lines, { discountPct, serviceChargePct: scPct, gstEnabled: outlet.gstEnabled, gstRateOverride: outlet.gstRate, gstInclusive: outlet.gstInclusive });
-  }, [cart, discountPct, scPct, outlet.gstEnabled, outlet.gstRate, outlet.gstInclusive]);
+    return computeBill(lines, { discountPct, discountFlatPaise, serviceChargePct: scPct, gstEnabled: outlet.gstEnabled, gstRateOverride: outlet.gstRate, gstInclusive: outlet.gstInclusive });
+  }, [cart, discountPct, discountFlatPaise, scPct, outlet.gstEnabled, outlet.gstRate, outlet.gstInclusive]);
 
   function flash(msg: string) {
     setToast(msg);
@@ -380,7 +411,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
     setCart((c) => c.flatMap((l) => (l.key === key ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
   }
   function clear() {
-    setCart([]); setDiscountPct(0); setScPct(0);
+    setCart([]); setDiscountPct(0); setDiscountFlatPaise(0); setScPct(0);
+    setOrderCustName(''); setOrderCustPhone(''); setShowOrderCust(false);
   }
 
   // shared "Charge →" entry: dine-in needs a table first (opens the floor map)
@@ -396,6 +428,9 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
     if (!cart.length) return;
     if (isOffline()) { flash(withPayment ? OFFLINE_PAY_MSG : OFFLINE_ORDER_MSG); return; }
     if (orderType === 'dine_in' && !tableId) { setCharging(false); setPendingAction('kot'); setFloorOpen(true); flash('Pick a table first'); return; }
+    // customer: the charge modal passes an explicit value (may be null); a plain
+    // Send-to-KOT (no opts) falls back to whatever was attached on the ticket panel.
+    const customer = opts ? (opts.customer ?? null) : orderCustomer();
     setBusy(true);
     try {
       const body = {
@@ -404,6 +439,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
         staffId: staff.id,
         type: orderType,
         tableId: orderType === 'dine_in' ? tableId : null,
+        // walk-in captured on the ticket / charge modal → server creates/links the CRM customer
+        ...(customer ? { customer } : {}),
         lines: cart.map((l) => ({
           itemId: l.itemId,
           nameSnapshot: l.name,
@@ -414,16 +451,21 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
           modifiers: [],
         })),
         discountPct,
+        discountFlatPaise,
         serviceChargePct: scPct,
         interState: false,
         ...(withPayment ? { payment: { method: withPayment.method, amountPaise: bill.totalPaise + withPayment.tipPaise, tipPaise: withPayment.tipPaise } } : {}),
       };
-      const res = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const geo = locationGate ? await getGeoHeaders() : {};
+      const res = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json', ...geo }, body: JSON.stringify(body) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? 'failed');
+      if (!res.ok) {
+        if (data?.error === 'out_of_range') { flash('Too far from the cafe to place this order'); return; }
+        throw new Error(data?.error ?? 'failed');
+      }
       flash(withPayment ? `Paid ${formatINR(bill.totalPaise + withPayment.tipPaise)} · #${data.order.number}` : `KOT #${data.order.number} sent to kitchen`);
       // print the receipt before clearing the cart (cart/bill are read inside printReceipt)
-      if (withPayment && opts?.print) printReceipt(data.order.number, withPayment.method, withPayment.tipPaise, opts.customer ?? null);
+      if (withPayment && opts?.print) printReceipt(data.order.number, withPayment.method, withPayment.tipPaise, customer);
       // start tracking it on the live rail (idempotent replays return the same order)
       const where = orderType === 'takeaway' ? '🥡 Takeaway' : selectedTable ? `Table ${selectedTable.label}` : 'Dine-in';
       setLive((prev) => (prev.some((t) => t.id === data.order.id) ? prev : [{ id: data.order.id, number: data.order.number, where, status: data.order.status ?? 'in_kitchen', placedAt: Date.now() }, ...prev]));
@@ -505,7 +547,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
             <img
               src="/logo chaya one.png"
               alt="ChayaOne"
-              className="h-8 lg:h-9 w-auto object-contain shrink-0"
+              className="brand-logo h-8 lg:h-9 w-auto object-contain shrink-0"
             />
           </div>
           <div className="flex items-center gap-1">
@@ -553,6 +595,11 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
             <span className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
           )}
         </a>
+        {showInstallApp && (
+          <button onClick={() => staffInstall.promptInstall()} className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+            <Download size={17} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
+          </button>
+        )}
         {(staff.role === 'owner' || staff.role === 'manager') && (
           <a href="/dashboard" className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--turmeric)', color: '#2A1607', border: '1px solid var(--turmeric-d)' }}>
             <LayoutDashboard size={17} aria-hidden /> Owner Dashboard
@@ -615,7 +662,12 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
           <button onClick={clear} disabled={!cart.length} title="Clear ticket" aria-label="Clear ticket" className="btn btn-icon btn-sm btn-ghost"><RefreshCw size={16} aria-hidden /></button>
         </div>
 
-        <CartBody cart={cart} bill={bill} outlet={outlet} discountPct={discountPct} scPct={scPct} setDiscountPct={setDiscountPct} setScPct={setScPct} bump={bump} />
+        <CartBody cart={cart} bill={bill} outlet={outlet} discountPct={discountPct} discountFlatPaise={discountFlatPaise} scPct={scPct} setDiscountPct={setDiscountPct} setDiscountFlatPaise={setDiscountFlatPaise} setScPct={setScPct} bump={bump} />
+
+        {cart.length > 0 && (
+          <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
+            setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
+        )}
 
         <div className="grid grid-cols-[1fr_1.2fr] gap-2.5 mt-3.5">
           <button disabled={!cart.length || busy} onClick={() => submit(null)} className="btn btn-dark">Send to KOT</button>
@@ -848,6 +900,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
       {/* charge modal */}
       {charging && (
         <ChargeModal total={bill.totalPaise} busy={busy}
+          initialName={orderCustName} initialPhone={orderCustPhone}
           onClose={() => setCharging(false)}
           onConfirm={(method, tipPaise, opts) => submit({ method, tipPaise }, opts)} />
       )}
@@ -896,7 +949,11 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
               </div>
             </div>
             <div className="flex flex-col flex-1 min-h-0 px-5 pb-[max(1.1rem,env(safe-area-inset-bottom))]">
-              <CartBody cart={cart} bill={bill} outlet={outlet} discountPct={discountPct} scPct={scPct} setDiscountPct={setDiscountPct} setScPct={setScPct} bump={bump} />
+              <CartBody cart={cart} bill={bill} outlet={outlet} discountPct={discountPct} discountFlatPaise={discountFlatPaise} scPct={scPct} setDiscountPct={setDiscountPct} setDiscountFlatPaise={setDiscountFlatPaise} setScPct={setScPct} bump={bump} />
+              {cart.length > 0 && (
+                <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
+                  setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
+              )}
               <div className="flex flex-col gap-2.5 mt-3.5">
                 <button disabled={!cart.length || busy} onClick={() => { setCartSheetOpen(false); submit(null); }} className="btn btn-primary btn-lg w-full">Send to Kitchen</button>
                 <button disabled={!cart.length || busy} onClick={() => { setCartSheetOpen(false); startCharge(); }} className="btn btn-dark w-full">Charge · {formatINR(bill.totalPaise)} →</button>
@@ -915,7 +972,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-12 h-7 shrink-0 overflow-hidden flex items-center justify-center">
-                  <img src="/logo chaya one.png" alt="ChayaOne" className="w-full h-full object-contain" />
+                  <img src="/logo chaya one.png" alt="ChayaOne" className="brand-logo w-full h-full object-contain" />
                 </div>
                 <span className="font-display font-bold text-[16px] truncate">{(outlet.name.split('—')[0] ?? '').trim()}</span>
               </div>
@@ -936,6 +993,11 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
                 <span className="ml-auto min-w-[22px] h-[22px] px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
               )}
             </a>
+            {showInstallApp && (
+              <button onClick={() => { setMoreOpen(false); staffInstall.promptInstall(); }} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                <Download size={18} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
+              </button>
+            )}
             {(staff.role === 'owner' || staff.role === 'manager') && (
               <a href="/dashboard" className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--turmeric)', color: '#2A1607', border: '1px solid var(--turmeric-d)' }}>
                 <LayoutDashboard size={18} aria-hidden /> Owner Dashboard
@@ -954,16 +1016,30 @@ export default function PosClient({ outlet, staff, menu, tables, floors }: { out
  * The action buttons (Send to KOT / Charge) stay with each caller so desktop and
  * mobile can emphasise them differently. Qty steppers are 44px on phones, 32px at md+.
  */
-function CartBody({ cart, bill, outlet, discountPct, scPct, setDiscountPct, setScPct, bump }: {
+function CartBody({ cart, bill, outlet, discountPct, discountFlatPaise, scPct, setDiscountPct, setDiscountFlatPaise, setScPct, bump }: {
   cart: Line[];
   bill: ReturnType<typeof computeBill>;
   outlet: Outlet;
   discountPct: number;
+  discountFlatPaise: number;
   scPct: number;
   setDiscountPct: (n: number) => void;
+  setDiscountFlatPaise: (n: number) => void;
   setScPct: (n: number) => void;
   bump: (key: string, d: number) => void;
 }) {
+  const DISC_PRESETS = [0, 10];
+  // discount-entry unit: percentage vs a flat ₹ amount (selector sits by the field)
+  const [discMode, setDiscMode] = useState<'pct' | 'amt'>(discountFlatPaise > 0 ? 'amt' : 'pct');
+  // presets are % → clear any flat amount; % clamps 0–100, flat clamps 0–subtotal
+  const applyPreset = (d: number) => { setDiscMode('pct'); setDiscountFlatPaise(0); setDiscountPct(d); };
+  const clampPct = (v: string) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0; };
+  const clampFlat = (v: string) => { const p = Math.round(Number(v) * 100); return Number.isFinite(p) ? Math.min(bill.subtotalPaise, Math.max(0, p)) : 0; };
+  function pickMode(m: 'pct' | 'amt') {
+    // switching unit clears the other so only one discount kind is ever live
+    if (m === 'pct') setDiscountFlatPaise(0); else setDiscountPct(0);
+    setDiscMode(m);
+  }
   return (
     <>
       <div className="flex-1 overflow-auto flex flex-col gap-2 min-h-0">
@@ -987,7 +1063,7 @@ function CartBody({ cart, bill, outlet, discountPct, scPct, setDiscountPct, setS
       {cart.length > 0 && (
         <div className="border-t border-dashed mt-3 pt-3" style={{ borderColor: 'var(--line-2)' }}>
           <Row label={outlet.gstEnabled && outlet.gstInclusive ? 'Taxable value' : 'Subtotal'} val={formatINR(bill.subtotalPaise)} />
-          {discountPct > 0 && <Row label={`Discount (${discountPct}%)`} val={`− ${formatINR(bill.discountPaise)}`} accent />}
+          {bill.discountPaise > 0 && <Row label={discountPct > 0 ? `Discount (${discountPct}%)` : 'Discount'} val={`− ${formatINR(bill.discountPaise)}`} accent />}
           {outlet.gstEnabled && <Row label="CGST" val={formatINR(bill.cgstPaise)} sub />}
           {outlet.gstEnabled && <Row label="SGST" val={formatINR(bill.sgstPaise)} sub />}
           {outlet.gstEnabled && outlet.gstInclusive && <div className="text-[10px] mt-0.5" style={{ color: 'var(--ink-3)' }}>Menu prices include GST</div>}
@@ -996,9 +1072,44 @@ function CartBody({ cart, bill, outlet, discountPct, scPct, setDiscountPct, setS
           <div className="flex justify-between font-extrabold font-display text-[19px] mt-2 pt-2 border-t" style={{ borderColor: 'var(--line)' }}>
             <span>Total</span><span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(bill.totalPaise)}</span>
           </div>
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {[0, 5, 10].map((d) => <Chip key={d} on={d === discountPct} onClick={() => setDiscountPct(d)}>{d ? `${d}% off` : 'No disc.'}</Chip>)}
-            <Chip on={scPct > 0} onClick={() => setScPct(scPct ? 0 : 5)}>+SC 5%</Chip>
+          <div className="mt-3 flex flex-col gap-2">
+            {/* quick presets + service charge */}
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {DISC_PRESETS.map((d) => <Chip key={d} on={d === discountPct && discountFlatPaise === 0} onClick={() => applyPreset(d)}>{d ? `${d}% off` : 'No disc.'}</Chip>)}
+              <Chip on={scPct > 0} onClick={() => setScPct(scPct ? 0 : 5)}>+SC 5%</Chip>
+            </div>
+            {/* discount entry — label left, compact field + %/₹ selector aligned right */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[13.5px]" style={{ color: 'var(--ink-2)' }}>Discount</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="relative w-[88px]">
+                  {discMode === 'amt' && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] font-bold" style={{ color: 'var(--ink-3)' }}>₹</span>}
+                  {discMode === 'pct' ? (
+                    <input key="pct" type="number" min={0} max={100} step={1} inputMode="numeric"
+                      value={discountPct || ''} onChange={(e) => setDiscountPct(clampPct(e.target.value))}
+                      placeholder="0" aria-label="Discount percent"
+                      className="w-full pl-2.5 pr-2.5 py-1.5 rounded-[9px] border text-[13.5px] outline-none tnum text-right"
+                      style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }} />
+                  ) : (
+                    <input key="amt" type="number" min={0} step="0.01" inputMode="decimal"
+                      value={discountFlatPaise ? discountFlatPaise / 100 : ''} onChange={(e) => setDiscountFlatPaise(clampFlat(e.target.value))}
+                      placeholder="0" aria-label="Discount amount in rupees"
+                      className="w-full pl-6 pr-2.5 py-1.5 rounded-[9px] border text-[13.5px] outline-none tnum text-right"
+                      style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }} />
+                  )}
+                </div>
+                {/* %/₹ unit selector */}
+                <div className="flex rounded-[9px] p-[2px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}>
+                  {(['pct', 'amt'] as const).map((m) => (
+                    <button key={m} onClick={() => pickMode(m)} aria-pressed={discMode === m} aria-label={m === 'pct' ? 'Discount by percent' : 'Discount by amount'}
+                      className="w-7 py-1 rounded-[6px] text-xs font-extrabold transition"
+                      style={discMode === m ? { background: 'var(--turmeric)', color: '#2a1607' } : { color: 'var(--ink-3)' }}>
+                      {m === 'pct' ? '%' : '₹'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1077,13 +1188,49 @@ function Modal({ children, title, onClose }: { children: React.ReactNode; title:
   );
 }
 
-function ChargeModal({ total, busy, onClose, onConfirm }: { total: number; busy: boolean; onClose: () => void; onConfirm: (m: 'cash' | 'upi' | 'card', tip: number, opts: { customer: { name: string; phone: string } | null; print: boolean }) => void }) {
+/**
+ * Optional customer (name + phone) attached to the current ticket, shared by the
+ * desktop rail and the mobile sheet. Collapsed to a single "＋ Add customer" button
+ * until opened; a phone reaches the CRM (order history + loyalty), name-only just
+ * prints on the receipt. Removing clears both fields.
+ */
+function CustomerField({ name, phone, open, setName, setPhone, setOpen }: {
+  name: string; phone: string; open: boolean;
+  setName: (v: string) => void; setPhone: (v: string) => void; setOpen: (v: boolean) => void;
+}) {
+  const has = !!(name.trim() || phone.trim());
+  return (
+    <div className="mt-3.5">
+      {!open && !has ? (
+        <button onClick={() => setOpen(true)}
+          className="w-full py-2.5 rounded-[12px] border border-dashed font-bold text-[13px] inline-flex items-center justify-center gap-1.5"
+          style={{ borderColor: 'var(--line)', color: 'var(--ink-2)', background: 'var(--paper)' }}>
+          <User size={15} aria-hidden /> ＋ Add customer <span style={{ color: 'var(--ink-3)' }}>(optional)</span>
+        </button>
+      ) : (
+        <div className="rounded-[14px] border p-3" style={{ borderColor: 'var(--line)', background: 'var(--paper)' }}>
+          <div className="flex items-center mb-2">
+            <span className="inline-flex items-center gap-1.5 font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}><User size={14} aria-hidden /> Customer</span>
+            <button onClick={() => { setName(''); setPhone(''); setOpen(false); }} className="ml-auto text-xs font-bold" style={{ color: 'var(--ink-3)' }}>Remove</button>
+          </div>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
+            className="w-full mb-2 px-3 py-2 rounded-[10px] border text-sm outline-none" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }} />
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (for loyalty & history)" inputMode="tel"
+            className="w-full px-3 py-2 rounded-[10px] border text-sm outline-none" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChargeModal({ total, busy, initialName = '', initialPhone = '', onClose, onConfirm }: { total: number; busy: boolean; initialName?: string; initialPhone?: string; onClose: () => void; onConfirm: (m: 'cash' | 'upi' | 'card', tip: number, opts: { customer: { name: string; phone: string } | null; print: boolean }) => void }) {
   const [method, setMethod] = useState<'cash' | 'upi' | 'card'>('upi');
   const [tip, setTip] = useState(0);
   const [print, setPrint] = useState(true);
-  const [showCust, setShowCust] = useState(false);
-  const [custName, setCustName] = useState('');
-  const [custPhone, setCustPhone] = useState('');
+  // seed from any customer attached on the ticket panel (so charge reflects it, editable here)
+  const [showCust, setShowCust] = useState(!!(initialName || initialPhone));
+  const [custName, setCustName] = useState(initialName);
+  const [custPhone, setCustPhone] = useState(initialPhone);
   const customer = custName.trim() || custPhone.trim() ? { name: custName.trim(), phone: custPhone.trim() } : null;
   return (
     <Modal title="Charge" onClose={onClose}>

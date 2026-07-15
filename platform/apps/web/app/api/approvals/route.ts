@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma, type Prisma, type Station } from '@cafeos/db';
+import { prisma, type Prisma } from '@cafeos/db';
 import { computeBill, type BillLine } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
 
   // ---------------- approve ----------------
   const stations = Array.from(
-    new Set(order.items.map((i) => i.station).filter((s): s is Station => !!s)),
+    new Set(order.items.map((i) => i.station).filter((s): s is string => !!s)),
   );
 
   let consumed: string[] = [];

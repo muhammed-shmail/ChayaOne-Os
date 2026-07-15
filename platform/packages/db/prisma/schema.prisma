@@ -34,11 +34,9 @@ enum StaffRole {
   waiter
 }
 
-enum Station {
-  kitchen
-  bar
-  dessert
-}
+// NOTE: kitchens/stations are configurable per outlet (Outlet.settings.kitchens,
+// see lib/kitchens.ts). The station columns below hold a kitchen *slug* (free
+// text) — the built-in defaults 'kitchen' | 'bar' | 'dessert' stay valid.
 
 enum OrderType {
   dine_in
@@ -348,7 +346,7 @@ model MenuItem {
   hsnCode     String?
   gstRate     Decimal  @db.Decimal(4, 2) // 5.00, 12.00, 18.00
   isAvailable Boolean  @default(true)
-  station     Station?
+  station     String?  // kitchen slug — see Outlet.settings.kitchens
   tags        String[]
 
   outlet     Outlet     @relation(fields: [outletId], references: [id], onDelete: Cascade)
@@ -483,7 +481,7 @@ model OrderItem {
   unitPricePaise Int
   modifiers      Json?     // [{ name, pricePaise }]
   notes          String?
-  station        Station?
+  station        String?   // kitchen slug snapshot — see Outlet.settings.kitchens
   kotStatus      KotStatus @default(queued)
 
   order Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -497,7 +495,7 @@ model Kot {
   id        String   @id @default(uuid()) @db.Uuid
   orderId   String   @db.Uuid
   outletId  String   @db.Uuid
-  station   Station
+  station   String   // kitchen slug — see Outlet.settings.kitchens
   number    Int
   status    KotStatus @default(queued)
   createdAt DateTime  @default(now()) @db.Timestamptz(6)

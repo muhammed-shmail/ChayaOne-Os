@@ -36,6 +36,13 @@
   }
 }
 
+/* Brand wordmark — "logo chaya one.png" is dark ink, invisible on dark surfaces.
+   On any themeable surface running the dark theme, swap in the white version.
+   Only the ChayaOne brand mark carries `.brand-logo`; the always-light landing
+   footer/loader and tenant-uploaded logos deliberately opt out. Unlayered so it
+   wins over Tailwind utilities on the same <img>. */
+[data-theme="dark"] img.brand-logo { content: url("/chaya oneWhite.png"); }
+
 @layer components {
   /* ---- Buttons ------------------------------------------------------- */
   .btn {
@@ -172,6 +179,14 @@
   @keyframes cafe-sheet { from { transform: translateY(100%); } }
   @keyframes cafe-drawer-l { from { transform: translateX(-100%); } }
   @keyframes cafe-slide-in { from { opacity: 0; transform: translateY(-8px); } }
+  /* Waving hand: pivots from the wrist, a few friendly waves then rests */
+  .anim-wave { display: inline-block; transform-origin: 50% 85%; animation: cafe-wave 2.4s ease-in-out .3s infinite; }
+  @keyframes cafe-wave {
+    0%, 60%, 100% { transform: rotate(0deg); }
+    10%, 30%, 50% { transform: rotate(14deg); }
+    20%, 40%      { transform: rotate(-8deg); }
+  }
+  @media (prefers-reduced-motion: reduce) { .anim-wave { animation: none; } }
 
   /* ---- Luxe accents -------------------------------------------------- */
   /* Gold hairline border + softer radius — the "fine-dining menu" card */

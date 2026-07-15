@@ -17,9 +17,12 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: 'portrait',
     background_color: '#F6EFE3',
     theme_color: '#15110D',
+    // app.png is a transparent-background chai glass, so it is NOT declared
+    // `maskable`: Android would fill no background and clip the steam/base inside
+    // the adaptive mask. Single `any` icon at real size; `?v=3` busts the
+    // home-screen icon cache on redeploy.
     icons: [
-      { src: '/app.png', sizes: '1080x1080', type: 'image/png', purpose: 'any' },
-      { src: '/app.png', sizes: '1080x1080', type: 'image/png', purpose: 'maskable' },
+      { src: '/app.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'any' },
     ],
     shortcuts: [
       { name: 'Order now', short_name: 'Order', url: '/app' },

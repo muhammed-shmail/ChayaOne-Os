@@ -3,7 +3,8 @@
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { BrandMark } from '@/components/BrandMark';
-import { Delete, AlphaTag, Eye, EyeOff } from '@/components/ui';
+import { Delete, AlphaTag, Eye, EyeOff, WaveHand } from '@/components/ui';
+import { getGeoHeaders } from '@/lib/geo-client';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del'];
 
@@ -18,6 +19,8 @@ export default function LoginClient() {
   // after a correct PIN we pause on an attendance-confirm step before entering
   const [staff, setStaff] = useState<Staff | null>(null);
   const [openSince, setOpenSince] = useState<string | null>(null); // existing open punch, if any
+  const [geoRequired, setGeoRequired] = useState(false); // outlet location gate applies to this clock-in
+  const [attError, setAttError] = useState<string | null>(null); // clock-in blocked (off-site / no GPS)
 
   // login mode: fast PIN pad (floor staff) or username+password (secure, dashboard roles)
   const [mode, setMode] = useState<'pin' | 'password'>('pin');
@@ -32,6 +35,7 @@ export default function LoginClient() {
   async function enterWith(who: Staff) {
     const att = await fetch('/api/attendance').then((r) => (r.ok ? r.json() : null)).catch(() => null);
     setOpenSince(att?.open?.clockIn ?? null);
+    setGeoRequired(!!att?.geoRequired);
     setStaff(who);
   }
 
@@ -96,18 +100,31 @@ export default function LoginClient() {
   // clock in (unless already open) then enter the app
   async function confirmAttendance(mark: boolean) {
     setBusy(true);
-    try {
-      if (mark && !openSince) {
-        await fetch('/api/attendance', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'in' }),
-        }).catch(() => {});
+    setAttError(null);
+    if (mark && !openSince) {
+      // location gate (strict): staff must be at the cafe. Only capture GPS
+      // when the gate applies, so a location prompt never appears otherwise.
+      const geo = geoRequired ? await getGeoHeaders(12000) : {};
+      const res = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...geo },
+        body: JSON.stringify({ action: 'in' }),
+      }).catch(() => null);
+      // a real 403 means off-site / no GPS → block and stay on the confirm step.
+      // (a null res is a network hiccup, not proof of absence — let them through.)
+      if (geoRequired && res && res.status === 403) {
+        const d = await res.json().catch(() => ({}));
+        setAttError(
+          d.error === 'no_gps'
+            ? 'Turn on location to mark attendance — you must be at the cafe to clock in.'
+            : 'You’re not at the cafe. Come on-site to clock in.',
+        );
+        setBusy(false);
+        return;
       }
-    } finally {
-      router.replace(dest);
-      router.refresh();
     }
+    router.replace(dest);
+    router.refresh();
   }
 
   function press(k: string) {
@@ -132,7 +149,10 @@ export default function LoginClient() {
             style={{ background: 'var(--gold-grad)', color: 'var(--espresso)', border: '1px solid var(--gold-d)', boxShadow: 'var(--sh-2)' }}>
             {staff.name.trim().charAt(0).toUpperCase() || '☕'}
           </div>
-          <h1 className="font-display text-[32px] leading-none">Hi {staff.name} 👋</h1>
+          <h1 className="font-display text-[32px] leading-none inline-flex items-center justify-center gap-2">
+            Hi {staff.name}
+            <WaveHand className="anim-wave" size={30} />
+          </h1>
           <p className="text-sm mt-1.5 capitalize" style={{ color: 'var(--ink-3)' }}>{staff.role}</p>
 
           <div className="lux-card mt-6 p-5 text-left">
@@ -145,9 +165,19 @@ export default function LoginClient() {
               <>
                 <p className="font-bold text-[15px]">🕒 Mark your attendance</p>
                 <p className="text-sm mt-1" style={{ color: 'var(--ink-2)' }}>Confirm to clock in at {clockedTime} and start your shift.</p>
+                {geoRequired && (
+                  <p className="text-xs mt-2" style={{ color: 'var(--ink-3)' }}>📍 Location required — you must be at the cafe to clock in.</p>
+                )}
               </>
             )}
           </div>
+
+          {attError && (
+            <p role="alert" className="mt-4 text-sm font-semibold rounded-xl p-3"
+              style={{ color: 'var(--chilli, #c0392b)', background: 'color-mix(in srgb, var(--chilli, #c0392b) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--chilli, #c0392b) 30%, transparent)' }}>
+              {attError}
+            </p>
+          )}
 
           <button disabled={busy} onClick={() => confirmAttendance(true)}
             className="btn btn-lux w-full mt-5" style={{ padding: '15px', borderRadius: 16, fontSize: 16 }}>
@@ -180,7 +210,7 @@ export default function LoginClient() {
             className="mb-1.5 disabled:opacity-50"
             style={{ background: 'none', border: 'none', padding: 0, lineHeight: 0, cursor: 'pointer' }}
           >
-            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="object-contain" />
+            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="brand-logo object-contain" />
           </button>
           <AlphaTag />
           <h1 className="font-display text-[40px] leading-none mt-3.5">Kahwa House</h1>

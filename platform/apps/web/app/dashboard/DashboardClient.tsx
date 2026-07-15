@@ -17,11 +17,13 @@ import { DEVICE_TYPES, DEVICE_CONNECTIONS, type Device } from '@/lib/devices';
 import type { ReceiptConfig } from '@/lib/receipt';
 import { tableOrderUrl, tableQrImageUrl } from '@/lib/qr';
 import { FEATURED_LABELS, DEFAULT_GAME_KEYS, type PwaConfig } from '@/lib/pwa';
+import type { OutletLocation } from '@/lib/geo';
+import { getGeoHeaders } from '@/lib/geo-client';
 import { prettyAction } from '@/lib/audit-labels';
 import {
   ThemeToggle, Bell, Table2, LogOut, LayoutDashboard, Wifi, ChefHat, Menu,
-  ClipboardList, UtensilsCrossed, Package, Truck, Users, Settings, type LucideIcon,
-  Percent, Printer, Smartphone, Store, BarChart3, ImageIcon, Download, X,
+  ClipboardList, UtensilsCrossed, Package, Truck, Users, User, Settings, type LucideIcon,
+  Percent, Printer, Smartphone, Store, BarChart3, ImageIcon, Download, X, MapPin, Megaphone,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffDevices from '@/components/StaffDevices';
@@ -29,6 +31,7 @@ import { MobileDrawer, BottomNav, type NavItem } from '@/components/dashboard/Mo
 
 type FloorTable = { id: string; label: string; seats: number; state: string; qrToken: string; floorId: string | null; activeOrders: number };
 type Floor = { id: string; name: string; sort: number };
+type Kitchen = { id: string; name: string; color?: string; sort: number };
 
 type Msg = { who: 'ai' | 'me'; html: string };
 
@@ -70,6 +73,7 @@ const SETTINGS_TITLE: Record<string, string> = {
   tax: 'Tax & GST',
   floor: 'Floor & QR',
   pwa: 'PWA Settings',
+  location: 'Location Gate',
   devices: 'Devices & Printers',
   audit: 'Audit Logs',
   multibranch: 'Multi Branch',
@@ -79,6 +83,7 @@ const SETTINGS_ICON: Record<string, LucideIcon> = {
   tax: Percent,
   floor: Table2,
   pwa: Smartphone,
+  location: MapPin,
   devices: Printer,
   audit: ClipboardList,
   multibranch: Store,
@@ -188,10 +193,11 @@ export default function DashboardClient({
   const liveDot = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    const es = new EventSource('/api/stream');
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
-    es.onmessage = (e) => {
+    let es: EventSource | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
+
+    const onMessage = (e: MessageEvent) => {
       const msg = JSON.parse(e.data);
       // any order lifecycle change (placed / bumped / settled anywhere) refreshes
       // the live queue, so a bill settled in the POS clears here without a manual
@@ -215,7 +221,32 @@ export default function DashboardClient({
         flashMessage(`🔔 ${msg.notification.title}`);
       }
     };
-    return () => es.close();
+
+    // Self-healing stream. EventSource auto-retries transient network drops on its
+    // own, but gives up permanently on a hard failure (e.g. a 401 when the access
+    // token has lapsed) — which used to strand the bell on "Offline" until reload.
+    // The server now accepts the refresh cookie, so we just re-open the connection.
+    const connect = () => {
+      if (closed) return;
+      es = new EventSource('/api/stream');
+      es.onopen = () => setConnected(true);
+      es.onmessage = onMessage;
+      es.onerror = () => {
+        setConnected(false);
+        // readyState CONNECTING → native retry in flight, let it run. CLOSED → dead
+        // for good, so we reconnect ourselves after a short backoff.
+        if (es && es.readyState === EventSource.CLOSED && !closed && !retry) {
+          retry = setTimeout(() => { retry = null; connect(); }, 3000);
+        }
+      };
+    };
+    connect();
+
+    return () => {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      es?.close();
+    };
   }, []);
 
   function flashMessage(msg: string) {
@@ -311,6 +342,7 @@ export default function DashboardClient({
         const flatItems = (d.data?.categories || []).flatMap((c: any) => c.items || []);
         setMenuItems(flatItems);
         setMenuCategories(d.data?.categoryList || []);
+        setKitchens(d.data?.kitchens || []);
       }
     } catch (err) {
       console.error(err);
@@ -600,6 +632,10 @@ export default function DashboardClient({
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcasting, setBroadcasting] = useState(false);
   const [broadcastOk, setBroadcastOk] = useState(false);
+  // Who the message goes to: everyone on the floor, one role/team, or one person.
+  const [broadcastTo, setBroadcastTo] = useState<'floor' | 'role' | 'user'>('floor');
+  const [broadcastRole, setBroadcastRole] = useState<'manager' | 'cashier' | 'waiter' | 'kitchen'>('waiter');
+  const [broadcastStaffId, setBroadcastStaffId] = useState('');
 
   const loadMonitor = async () => {
     setMonitorLoading(true);
@@ -636,13 +672,31 @@ export default function DashboardClient({
     setUnread(0);
     await fetch('/api/notifications', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'read_all' }) }).catch(() => {});
   };
-  // Push a one-line message to every staff member's notification bar.
+  // Teams a message can be aimed at (role groups). Owner is excluded — you
+  // message people you manage, not yourself.
+  const BROADCAST_TEAMS: { role: 'manager' | 'cashier' | 'waiter' | 'kitchen'; label: string }[] = [
+    { role: 'manager', label: 'Managers' },
+    { role: 'cashier', label: 'Cashiers' },
+    { role: 'waiter', label: 'Waiters' },
+    { role: 'kitchen', label: 'Kitchen' },
+  ];
+  // Human label for the current target, used in the "Sent to …" confirmation.
+  const broadcastTargetLabel = () => {
+    if (broadcastTo === 'role') return BROADCAST_TEAMS.find((t) => t.role === broadcastRole)?.label ?? 'team';
+    if (broadcastTo === 'user') return staffMembers.find((m) => m.id === broadcastStaffId)?.name ?? 'them';
+    return 'all staff';
+  };
+  // Push a one-line message to the chosen audience's notification bar.
   const sendBroadcast = async () => {
     const message = broadcastMsg.trim();
     if (!message || broadcasting) return;
+    if (broadcastTo === 'user' && !broadcastStaffId) { flashMessage('Pick a person to message'); return; }
     setBroadcasting(true);
     try {
-      const res = await fetch('/api/staff/broadcast', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message }) });
+      const payload: Record<string, unknown> = { message, audience: broadcastTo };
+      if (broadcastTo === 'role') payload.targetRole = broadcastRole;
+      if (broadcastTo === 'user') payload.targetStaffId = broadcastStaffId;
+      const res = await fetch('/api/staff/broadcast', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       if (res.ok) { setBroadcastMsg(''); setBroadcastOk(true); setTimeout(() => setBroadcastOk(false), 2500); }
     } catch { /* ignore */ } finally { setBroadcasting(false); }
   };
@@ -779,7 +833,8 @@ export default function DashboardClient({
 
   // product management (add + full customize)
   const GST_OPTIONS = [0, 5, 12, 18, 28];
-  const STATION_OPTIONS = ['kitchen', 'bar', 'dessert'];
+  // kitchens/stations are configured per outlet — populated from the menu/settings section loads
+  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
   const [menuCategories, setMenuCategories] = useState<{ id: string; name: string }[]>([]);
   const [menuCatFilter, setMenuCatFilter] = useState('all'); // 'all' | category id | 'none'
   const blankProduct = { name: '', price: '', gstRate: '5', station: 'kitchen', categoryId: '', description: '' };
@@ -788,6 +843,22 @@ export default function DashboardClient({
   const [newCategory, setNewCategory] = useState('');
   const [editProductId, setEditProductId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ ...blankProduct });
+
+  // Station picker options = configured kitchens, plus the item's current value
+  // if it's a legacy/removed slug (so editing never silently drops a routing).
+  const stationOptions = (current: string) => {
+    const list = kitchens.map((k) => ({ id: k.id, name: k.name }));
+    if (current && !list.some((k) => k.id === current)) list.unshift({ id: current, name: current });
+    return list;
+  };
+  // Default a new product to a real kitchen once the list loads.
+  useEffect(() => {
+    const first = kitchens[0];
+    if (first && !kitchens.some((k) => k.id === newProduct.station)) {
+      setNewProduct((p) => ({ ...p, station: first.id }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kitchens]);
 
   const handleCreateCategory = async () => {
     const name = newCategory.trim();
@@ -885,6 +956,24 @@ export default function DashboardClient({
   // order detail + print (Orders view)
   const [orderDetail, setOrderDetail] = useState<any>(null);
 
+  // Live-floor: click an occupied table to see its running orders (reuses the POS
+  // table-order endpoint — merged bill view of every unsettled order on the table).
+  const [tableOrders, setTableOrders] = useState<{ label: string; data: any } | null>(null);
+  const [tableOrdersLoading, setTableOrdersLoading] = useState(false);
+  const openTableOrders = async (t: { id: string; label: string }) => {
+    setTableOrders({ label: t.label, data: null });
+    setTableOrdersLoading(true);
+    try {
+      const res = await fetch(`/api/tables/order?tableId=${encodeURIComponent(t.id)}`);
+      if (res.ok) setTableOrders({ label: t.label, data: await res.json() });
+      else { setTableOrders(null); flashMessage('Could not load table orders'); }
+    } catch (err) {
+      console.error(err); setTableOrders(null); flashMessage('Could not load table orders');
+    } finally {
+      setTableOrdersLoading(false);
+    }
+  };
+
   // escape owner-entered receipt text so it can't break the print markup
   const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // build the branded header (logo + name + custom lines + phone) shared by bill/receipt
@@ -968,10 +1057,22 @@ export default function DashboardClient({
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Settings panel navigation — each panel now opens in a popup window.
-  const [settingsPanel, setSettingsPanel] = useState<'general' | 'tax' | 'floor' | 'devices' | 'pwa' | 'audit' | 'multibranch'>('general');
+  const [settingsPanel, setSettingsPanel] = useState<'general' | 'tax' | 'floor' | 'location' | 'devices' | 'pwa' | 'audit' | 'multibranch'>('general');
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const openSettings = (key: typeof settingsPanel) => { setSettingsPanel(key); setSettingsModalOpen(true); };
   const closeSettings = () => setSettingsModalOpen(false);
+
+  // Location gate (Settings → Location Gate, owner only) — Outlet.settings.location.
+  // lat/lng/radius held as strings for the inputs; converted on save.
+  const [location, setLocation] = useState({ enabled: false, lat: '', lng: '', radiusM: '100', gateQrOrders: true, gatePosOrders: true, gateAttendance: true });
+  const [locationSaving, setLocationSaving] = useState(false);
+  const [geoBusy, setGeoBusy] = useState(false);
+
+  // Kitchens / prep-station manager (Menu → Kitchens) — persisted to Outlet.settings.kitchens.
+  const [newKitchenName, setNewKitchenName] = useState('');
+  const [editKitchenId, setEditKitchenId] = useState<string | null>(null);
+  const [editKitchenName, setEditKitchenName] = useState('');
+  const [kitchenBusy, setKitchenBusy] = useState(false);
 
   // Store logo (Settings → General) — persisted to Outlet.settings.logoUrl.
   const [logoUrl, setLogoUrl] = useState<string | null>(outlet.receipt.logoUrl);
@@ -1092,9 +1193,20 @@ export default function DashboardClient({
         const o = d.data?.outlet;
         const a = (o?.address ?? {}) as any;
         setProfile({ name: o?.name ?? '', gstin: o?.gstin ?? '', stateCode: o?.stateCode ?? '', line1: a.line1 ?? '', city: a.city ?? '', pincode: a.pincode ?? '', gstEnabled: o?.gstEnabled ?? false, gstRate: o?.gstRate != null ? String(o.gstRate) : '', gstType: o?.gstType === 'inclusive' ? 'inclusive' : 'exclusive' });
+        const loc = (o?.location ?? {}) as Partial<OutletLocation>;
+        setLocation({
+          enabled: !!loc.enabled,
+          lat: loc.lat != null ? String(loc.lat) : '',
+          lng: loc.lng != null ? String(loc.lng) : '',
+          radiusM: loc.radiusM != null ? String(loc.radiusM) : '100',
+          gateQrOrders: loc.gateQrOrders !== false,
+          gatePosOrders: loc.gatePosOrders !== false,
+          gateAttendance: loc.gateAttendance !== false,
+        });
         setDevices(d.data?.devices ?? []);
         setFloorTables(d.data?.tables ?? []);
         setFloors(d.data?.floors ?? []);
+        setKitchens(d.data?.kitchens ?? []);
         setProfileLoaded(true);
       }
     } catch (err) { console.error(err); }
@@ -1150,6 +1262,41 @@ export default function DashboardClient({
     const n = floorTables.filter((t) => t.floorId === f.id).length;
     if (!window.confirm(`Delete floor “${f.name}”?${n ? ` Its ${n} table${n === 1 ? '' : 's'} will become Unassigned.` : ''}`)) return;
     floorApi({ action: 'floor_delete', floorId: f.id }, `Floor “${f.name}” deleted`);
+  };
+
+  // --- Kitchens / prep stations (Outlet.settings.kitchens) ---
+  const KITCHEN_ERR: Record<string, string> = {
+    duplicate_name: 'A kitchen with that name already exists.',
+    missing_name: 'Enter a kitchen name.',
+    last_kitchen: 'Keep at least one kitchen.',
+    forbidden: 'Only owners and managers can change kitchens.',
+  };
+  const kitchenApi = async (payload: Record<string, unknown>, okMsg: string) => {
+    setKitchenBusy(true);
+    try {
+      const res = await fetch('/api/dashboard/settings', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && Array.isArray(d.kitchens)) { setKitchens(d.kitchens); flashMessage(okMsg); return true; }
+      flashMessage(KITCHEN_ERR[d.error as string] ?? `Could not save (${d.error ?? 'error'})`);
+      return false;
+    } catch (err) { console.error(err); flashMessage('Network error'); return false; }
+    finally { setKitchenBusy(false); }
+  };
+  const handleAddKitchen = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKitchenName.trim()) { flashMessage('Enter a kitchen name'); return; }
+    if (await kitchenApi({ action: 'kitchen_add', name: newKitchenName.trim() }, `Kitchen “${newKitchenName.trim()}” added`)) setNewKitchenName('');
+  };
+  const handleRenameKitchen = async (id: string) => {
+    if (!editKitchenName.trim()) { flashMessage('Enter a kitchen name'); return; }
+    if (await kitchenApi({ action: 'kitchen_rename', id, name: editKitchenName.trim() }, 'Kitchen renamed')) setEditKitchenId(null);
+  };
+  const handleDeleteKitchen = (k: Kitchen) => {
+    if (!window.confirm(`Delete kitchen “${k.name}”? Items routed here keep their tag until you reassign them.`)) return;
+    kitchenApi({ action: 'kitchen_delete', id: k.id }, `Kitchen “${k.name}” deleted`);
   };
   const handleAssignFloor = (tableId: string, floorId: string) => {
     floorApi({ action: 'assign', id: tableId, floorId: floorId || undefined }, 'Table moved');
@@ -1338,6 +1485,46 @@ export default function DashboardClient({
     finally { setGstSaving(false); }
   };
 
+  // Settings → Location Gate — capture the owner's current position as the cafe pin.
+  const useMyLocation = async () => {
+    setGeoBusy(true);
+    try {
+      const h = await getGeoHeaders(12000);
+      if (h['x-geo-lat'] && h['x-geo-lng']) {
+        setLocation((p) => ({ ...p, lat: h['x-geo-lat']!, lng: h['x-geo-lng']! }));
+        flashMessage('Pinned to your current location');
+      } else {
+        flashMessage('Could not read your location — allow location access and try again');
+      }
+    } finally { setGeoBusy(false); }
+  };
+
+  // Settings → Location Gate — saves only the location block (owner only server-side).
+  const handleSaveLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocationSaving(true);
+    try {
+      const res = await fetch('/api/dashboard/settings', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'location',
+          location: {
+            enabled: location.enabled,
+            lat: location.lat.trim() === '' ? null : Number(location.lat),
+            lng: location.lng.trim() === '' ? null : Number(location.lng),
+            radiusM: location.radiusM.trim() === '' ? 100 : Number(location.radiusM),
+            gateQrOrders: location.gateQrOrders,
+            gatePosOrders: location.gatePosOrders,
+            gateAttendance: location.gateAttendance,
+          },
+        }),
+      });
+      if (res.ok) { flashMessage(location.enabled ? 'Location gate saved' : 'Location gate turned off'); router.refresh(); }
+      else flashMessage('Could not save location settings');
+    } catch (err) { console.error(err); flashMessage('Could not save location settings'); }
+    finally { setLocationSaving(false); }
+  };
+
   // Settings → General → Store Logo
   const saveLogo = async (url: string | null) => {
     setLogoBusy(true);
@@ -1453,7 +1640,7 @@ export default function DashboardClient({
       >
       <div className="flex flex-col gap-1 p-4 w-full h-full min-h-0" style={{ width: 248 }}>
         <div className="flex items-center justify-center px-2 py-3 mb-2">
-          <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: '100%', height: 'auto', margin: 0, maxWidth: 140 }} className="object-contain" />
+          <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: '100%', height: 'auto', margin: 0, maxWidth: 140 }} className="brand-logo object-contain" />
         </div>
 
         <nav className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar">
@@ -1584,24 +1771,69 @@ export default function DashboardClient({
                         ))}
                       </div>
                     )}
-                    {/* message all staff — lands on every staff notification bar */}
+                    {/* message staff — everyone, a team (role), or one person */}
                     <div className="px-4 py-3 border-t sticky bottom-0" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }}>
                       <label className="text-[11px] font-bold text-ink-3 uppercase tracking-wide">Message staff</label>
-                      <div className="flex items-center gap-2 mt-1.5">
+                      {/* who it goes to */}
+                      <div className="flex items-center gap-1 mt-1.5">
+                        {([
+                          { key: 'floor', label: 'Everyone', Icon: Megaphone },
+                          { key: 'role', label: 'Team', Icon: Users },
+                          { key: 'user', label: 'Person', Icon: User },
+                        ] as const).map(({ key, label, Icon }) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => { setBroadcastTo(key); if (key === 'user' && staffMembers.length === 0) loadStaff(); }}
+                            aria-pressed={broadcastTo === key}
+                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[11.5px] font-bold border transition"
+                            style={broadcastTo === key
+                              ? { background: 'var(--ink)', color: 'var(--paper-2)', borderColor: 'var(--ink)' }
+                              : { background: 'var(--paper)', color: 'var(--ink-2)', borderColor: 'var(--line)' }}
+                          >
+                            <Icon size={13} aria-hidden /> {label}
+                          </button>
+                        ))}
+                      </div>
+                      {/* pick the specific team or person */}
+                      {broadcastTo === 'role' && (
+                        <select
+                          value={broadcastRole}
+                          onChange={(e) => setBroadcastRole(e.target.value as typeof broadcastRole)}
+                          className="w-full mt-2 px-3 py-2 rounded-lg border text-[13px] outline-none"
+                          style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}
+                        >
+                          {BROADCAST_TEAMS.map((t) => <option key={t.role} value={t.role}>{t.label}</option>)}
+                        </select>
+                      )}
+                      {broadcastTo === 'user' && (
+                        <select
+                          value={broadcastStaffId}
+                          onChange={(e) => setBroadcastStaffId(e.target.value)}
+                          className="w-full mt-2 px-3 py-2 rounded-lg border text-[13px] outline-none"
+                          style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}
+                        >
+                          <option value="">{staffLoading ? 'Loading…' : 'Choose a person…'}</option>
+                          {staffMembers.filter((m) => m.active).map((m) => (
+                            <option key={m.id} value={m.id}>{m.name} · {ROLE_LABELS[m.role as keyof typeof ROLE_LABELS] ?? m.role}</option>
+                          ))}
+                        </select>
+                      )}
+                      <div className="flex items-center gap-2 mt-2">
                         <input
                           value={broadcastMsg}
                           onChange={(e) => setBroadcastMsg(e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter') sendBroadcast(); }}
                           maxLength={280}
-                          placeholder="e.g. Table 4 needs water"
+                          placeholder={broadcastTo === 'user' ? 'e.g. Please see me at the till' : broadcastTo === 'role' ? 'e.g. Prep for the 7pm rush' : 'e.g. Table 4 needs water'}
                           className="flex-1 min-w-0 px-3 py-2 rounded-lg border text-[13px] outline-none"
                           style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}
                         />
-                        <button onClick={sendBroadcast} disabled={!broadcastMsg.trim() || broadcasting} className="shrink-0 px-3 py-2 rounded-lg text-[12.5px] font-bold disabled:opacity-50" style={{ background: 'var(--ink)', color: 'var(--paper-2)' }}>
+                        <button onClick={sendBroadcast} disabled={!broadcastMsg.trim() || broadcasting || (broadcastTo === 'user' && !broadcastStaffId)} className="shrink-0 px-3 py-2 rounded-lg text-[12.5px] font-bold disabled:opacity-50" style={{ background: 'var(--ink)', color: 'var(--paper-2)' }}>
                           {broadcasting ? '…' : 'Send'}
                         </button>
                       </div>
-                      {broadcastOk && <div className="text-[11px] font-bold mt-1.5" style={{ color: 'var(--ok, #2E7D32)' }}>Sent to all staff ✓</div>}
+                      {broadcastOk && <div className="text-[11px] font-bold mt-1.5" style={{ color: 'var(--ok, #2E7D32)' }}>Sent to {broadcastTargetLabel()} ✓</div>}
                     </div>
                   </div>
                 </>
@@ -2382,15 +2614,12 @@ export default function DashboardClient({
             </div>
 
             {/* KPI row (shared) */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <section className="card p-4">
                 <span className="block text-xs mb-2 text-ink-3">Occupied now</span>
                 <span className="block text-2xl md:text-3xl font-bold tnum font-mono">{tablesData?.totals?.occupied ?? 0}<span className="text-base text-ink-3"> / {tablesData?.totals?.tables ?? 0}</span></span>
                 {(tablesData?.totals?.lowRevenueCount ?? 0) > 0 && <span className="text-xs font-bold" style={{ color: 'var(--clay)' }}>{tablesData.totals.lowRevenueCount} low-revenue ⚠</span>}
               </section>
-              <KpiCard label="Avg stay (visit)" value={`${tablesData?.totals?.avgStayMin ?? 0} min`} />
-              <KpiCard label="Avg spend / visit" value={formatINR(tablesData?.totals?.avgSpendPaise ?? 0)} tone="cardamom" />
-              <KpiCard label="Revenue / occupied hr" value={formatINR(tablesData?.totals?.revenuePerOccupiedHourPaise ?? 0)} tone="gold" />
             </div>
 
             {activeSubTab === 'floor' && (() => {
@@ -2422,7 +2651,16 @@ export default function DashboardClient({
                 const s = STATUS[st];
                 const o = occMap.get(t.id);
                 return (
-                  <div key={t.id} className="rounded-xl border p-3 flex flex-col gap-1" style={{ background: `color-mix(in srgb, ${s.color} 8%, var(--paper-3))`, borderColor: s.color, borderTopWidth: 3, borderTopColor: s.color }}>
+                  <div
+                    key={t.id}
+                    onClick={o ? () => openTableOrders(t) : undefined}
+                    role={o ? 'button' : undefined}
+                    tabIndex={o ? 0 : undefined}
+                    onKeyDown={o ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTableOrders(t); } } : undefined}
+                    title={o ? 'View orders on this table' : undefined}
+                    className={`rounded-xl border p-3 flex flex-col gap-1${o ? ' cursor-pointer transition hover:-translate-y-0.5' : ''}`}
+                    style={{ background: `color-mix(in srgb, ${s.color} 8%, var(--paper-3))`, borderColor: s.color, borderTopWidth: 3, borderTopColor: s.color }}
+                  >
                     <div className="flex items-center justify-between">
                       <span className="font-display font-bold text-lg">{t.label}</span>
                       <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
@@ -2431,7 +2669,7 @@ export default function DashboardClient({
                     {o ? (
                       <div className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>
                         <div className="flex justify-between"><span>{o.durationMin} min</span><span className="font-mono">{formatINR(o.billPaise)}</span></div>
-                        <span>{o.orders} order{o.orders > 1 ? 's' : ''}</span>
+                        <span className="flex justify-between"><span>{o.orders} order{o.orders > 1 ? 's' : ''}</span><span style={{ color: s.color }}>view ▸</span></span>
                       </div>
                     ) : (
                       <span className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>{'•'.repeat(t.seats)} · open</span>
@@ -2813,10 +3051,11 @@ export default function DashboardClient({
                 { key: 'tax', icon: Percent, label: 'Tax & GST', sub: 'GST toggle, rate & type' },
                 { key: 'floor', icon: Table2, label: 'Floor & QR', sub: 'Tables & scan-to-order' },
                 { key: 'pwa', icon: Smartphone, label: 'PWA Settings', sub: 'Customer app & loyalty' },
+                ...(staff.role === 'owner' ? [{ key: 'location', icon: MapPin, label: 'Location Gate', sub: 'Require on-site to order & clock in' }] : []),
                 { key: 'devices', icon: Printer, label: 'Devices & Printers', sub: 'Printers & receipt layout' },
                 ...(staff.role === 'owner' ? [{ key: 'audit', icon: ClipboardList, label: 'Audit Logs', sub: 'Activity & changes' }] : []),
                 ...(isAdvanced ? [{ key: 'multibranch', icon: Store, label: 'Multi Branch', sub: 'Other outlets' }] : []),
-              ] as { key: 'general' | 'tax' | 'floor' | 'devices' | 'pwa' | 'audit' | 'multibranch'; icon: LucideIcon; label: string; sub: string }[]).map((t) => {
+              ] as { key: 'general' | 'tax' | 'floor' | 'location' | 'devices' | 'pwa' | 'audit' | 'multibranch'; icon: LucideIcon; label: string; sub: string }[]).map((t) => {
                 const on = settingsModalOpen && settingsPanel === t.key;
                 const Icon = t.icon;
                 return (
@@ -2968,6 +3207,32 @@ export default function DashboardClient({
                   </div>
                 )}
 
+                {/* Kitchens / prep stations — where each item routes on the KDS */}
+                <div className="p-4 mb-4 rounded-xl" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
+                  <h5 className="font-bold text-sm mb-1">Kitchens / prep stations</h5>
+                  <p className="text-xs text-ink-3 mb-3">Each product routes to one kitchen. Orders split into one ticket per kitchen on the KDS — a café with 2 kitchens (say Hot &amp; Cold) gets a screen tab for each.</p>
+                  <form onSubmit={handleAddKitchen} className="flex flex-wrap items-end gap-2 mb-3">
+                    <input value={newKitchenName} onChange={(e) => setNewKitchenName(e.target.value)} placeholder="e.g. Hot Kitchen" className="inp flex-1 min-w-[160px]" />
+                    <button type="submit" disabled={kitchenBusy} className="btn btn-primary disabled:opacity-50">Add kitchen</button>
+                  </form>
+                  <div className="flex flex-wrap gap-2">
+                    {kitchens.map((k) => editKitchenId === k.id ? (
+                      <div key={k.id} className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
+                        <input value={editKitchenName} onChange={(e) => setEditKitchenName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRenameKitchen(k.id); } if (e.key === 'Escape') setEditKitchenId(null); }} className="w-32 p-1 rounded-lg border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} autoFocus />
+                        <button onClick={() => handleRenameKitchen(k.id)} disabled={kitchenBusy} className="btn btn-primary py-1 px-2 text-xs disabled:opacity-50">Save</button>
+                        <button onClick={() => setEditKitchenId(null)} className="btn py-1 px-2 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>✕</button>
+                      </div>
+                    ) : (
+                      <span key={k.id} className="inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-sm font-bold" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: k.color ?? 'var(--turmeric)' }} />
+                        {k.name}
+                        <button onClick={() => { setEditKitchenId(k.id); setEditKitchenName(k.name); }} className="text-xs text-ink-3 hover:text-ink" title="Rename" aria-label={`Rename ${k.name}`}>✎</button>
+                        <button onClick={() => handleDeleteKitchen(k)} className="text-xs" style={{ color: 'var(--clay)' }} title="Delete" aria-label={`Delete ${k.name}`}>🗑</button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
                 {showAddProduct && (
                   <form onSubmit={handleCreateProduct} className="grid gap-3 p-4 mb-4 rounded-xl" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
                     <div className="grid sm:grid-cols-2 gap-3">
@@ -2996,8 +3261,8 @@ export default function DashboardClient({
                       </div>
                       <div>
                         <label className="lbl">Station</label>
-                        <select value={newProduct.station} onChange={(e) => setNewProduct((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none capitalize" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
-                          {STATION_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                        <select value={newProduct.station} onChange={(e) => setNewProduct((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
+                          {stationOptions(newProduct.station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                       </div>
                     </div>
@@ -3051,7 +3316,7 @@ export default function DashboardClient({
                                 <button onClick={() => { setPriceEditId(item.id); setPriceDraft((item.pricePaise / 100).toString()); }} className="underline decoration-dotted">
                                   {formatINR(item.pricePaise)}
                                 </button>
-                                {item.station ? <span className="capitalize"> · {item.station}</span> : null} · GST {item.gstRate}%
+                                {item.station ? <span> · {kitchens.find((k) => k.id === item.station)?.name ?? item.station}</span> : null} · GST {item.gstRate}%
                               </span>
                             )}
                           </div>
@@ -3100,8 +3365,8 @@ export default function DashboardClient({
                               </div>
                               <div>
                                 <label className="lbl">Station</label>
-                                <select value={editDraft.station} onChange={(e) => setEditDraft((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none capitalize" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
-                                  {STATION_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                                <select value={editDraft.station} onChange={(e) => setEditDraft((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
+                                  {stationOptions(editDraft.station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                               </div>
                             </div>
@@ -3203,6 +3468,71 @@ export default function DashboardClient({
                 )}
 
                 <button type="submit" disabled={gstSaving} className="btn btn-primary w-fit disabled:opacity-50">{gstSaving ? 'Saving…' : 'Save GST settings'}</button>
+              </form>
+            )}
+
+            {/* ── Location Gate (owner only) ── */}
+            {settingsPanel === 'location' && (
+              <form onSubmit={handleSaveLocation} className="card p-5 max-w-md flex flex-col gap-4">
+                <div>
+                  <h4 className="font-bold">Location Gate</h4>
+                  <p className="text-xs text-ink-3">Require people to be physically at the cafe. Stops customers ordering when they’re not here, and stops staff clocking in from off-site. You (the owner) are never blocked.</p>
+                </div>
+
+                <Toggle label="Require on-site presence" desc={location.enabled ? 'Gate is ON for everyone except you' : 'Off — no location check'} on={location.enabled} onChange={(v) => setLocation((p) => ({ ...p, enabled: v }))} />
+
+                {location.enabled && (
+                  <>
+                    {/* Cafe pin */}
+                    <div className="flex flex-col gap-2">
+                      <label className="lbl">Cafe location</label>
+                      <button type="button" onClick={useMyLocation} disabled={geoBusy} className="btn btn-sm w-fit inline-flex items-center gap-1.5" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
+                        <MapPin size={14} aria-hidden /> {geoBusy ? 'Getting location…' : 'Use my current location'}
+                      </button>
+                      <span className="text-[11px]" style={{ color: 'var(--ink-3)' }}>Stand at the cafe and tap this, or enter coordinates manually.</span>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Latitude"><input value={location.lat} onChange={(e) => setLocation((p) => ({ ...p, lat: e.target.value.replace(/[^0-9.\-]/g, '') }))} inputMode="decimal" placeholder="e.g. 12.9716" className="inp" /></Field>
+                        <Field label="Longitude"><input value={location.lng} onChange={(e) => setLocation((p) => ({ ...p, lng: e.target.value.replace(/[^0-9.\-]/g, '') }))} inputMode="decimal" placeholder="e.g. 77.5946" className="inp" /></Field>
+                      </div>
+                      {(!location.lat || !location.lng) && (
+                        <span className="text-[11px]" style={{ color: 'var(--turmeric)' }}>Set a location — the gate stays inactive until the cafe is pinned.</span>
+                      )}
+                    </div>
+
+                    {/* Radius */}
+                    <div>
+                      <label className="lbl">Allowed radius</label>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {['50', '100', '200', '500'].map((r) => {
+                          const on = location.radiusM === r;
+                          return (
+                            <button type="button" key={r} onClick={() => setLocation((p) => ({ ...p, radiusM: r }))}
+                              className="px-3 py-2 rounded-xl border text-sm font-semibold transition"
+                              style={on ? { background: 'var(--turmeric)', color: '#2A1607', borderColor: 'transparent' } : { background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
+                              {r} m
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <input value={location.radiusM} onChange={(e) => setLocation((p) => ({ ...p, radiusM: e.target.value.replace(/[^0-9]/g, '') }))} inputMode="numeric" placeholder="Radius in metres" className="inp" />
+                      <span className="block text-[11px] mt-1" style={{ color: 'var(--ink-3)' }}>How far from the pin still counts as “at the cafe”. Between 10 and 5000 m.</span>
+                    </div>
+
+                    {/* Which actions */}
+                    <div className="flex flex-col gap-2">
+                      <label className="lbl">Apply the gate to</label>
+                      <Toggle label="Customer QR ordering" desc="Customers must be at the cafe to order" on={location.gateQrOrders} onChange={(v) => setLocation((p) => ({ ...p, gateQrOrders: v }))} />
+                      <Toggle label="Staff POS orders" desc="POS orders only from on-site staff" on={location.gatePosOrders} onChange={(v) => setLocation((p) => ({ ...p, gatePosOrders: v }))} />
+                      <Toggle label="Staff attendance" desc="Clock-in only from the cafe" on={location.gateAttendance} onChange={(v) => setLocation((p) => ({ ...p, gateAttendance: v }))} />
+                    </div>
+
+                    <div className="rounded-xl border p-3 text-[11px]" style={{ borderColor: 'var(--line)', background: 'var(--paper-3)', color: 'var(--ink-3)' }}>
+                      Orders are lenient — a customer or POS is only blocked when GPS confirms they’re too far. Attendance is strict — staff must share location to clock in. You (the owner) are always exempt.
+                    </div>
+                  </>
+                )}
+
+                <button type="submit" disabled={locationSaving} className="btn btn-primary w-fit disabled:opacity-50">{locationSaving ? 'Saving…' : 'Save location settings'}</button>
               </form>
             )}
 
@@ -3671,8 +4001,8 @@ export default function DashboardClient({
                       {deviceForm.type === 'kot_printer' && (
                         <div className="sm:max-w-[200px]">
                           <label className="lbl">Kitchen station</label>
-                          <select value={deviceForm.station} onChange={(e) => setDeviceForm((p) => ({ ...p, station: e.target.value }))} className="inp capitalize">
-                            {['kitchen', 'bar', 'dessert'].map((s) => <option key={s} value={s}>{s}</option>)}
+                          <select value={deviceForm.station} onChange={(e) => setDeviceForm((p) => ({ ...p, station: e.target.value }))} className="inp">
+                            {stationOptions(deviceForm.station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                           </select>
                         </div>
                       )}
@@ -3705,7 +4035,7 @@ export default function DashboardClient({
                               <b className="block">{dev.name}{dev.isDefault && <span className="ml-2 pill" style={{ color: 'var(--cardamom-d)' }}>● default</span>}</b>
                               <span className="text-xs text-ink-3">
                                 {meta?.label ?? dev.type}
-                                {dev.station ? <span className="capitalize"> · {dev.station}</span> : null}
+                                {dev.station ? <span> · {kitchens.find((k) => k.id === dev.station)?.name ?? dev.station}</span> : null}
                                 {' · '}{DEVICE_CONNECTIONS.find((c) => c.value === dev.connection)?.label ?? dev.connection}
                                 {dev.target ? <span className="font-mono"> · {dev.target}</span> : null}
                                 {' · '}{dev.copies} cop{dev.copies === 1 ? 'y' : 'ies'}
@@ -3897,6 +4227,61 @@ export default function DashboardClient({
                 </div>
               )}
               <button onClick={() => setStatement(null)} className="btn btn-dark w-full mt-4">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* live-floor table orders modal — every running order on the tapped table */}
+      {tableOrders && (
+        <div onClick={() => setTableOrders(null)} className="fixed inset-0 z-[8500] grid place-items-center p-5" style={{ background: 'rgba(30,18,10,.5)', backdropFilter: 'blur(6px)' }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-[min(560px,100%)] max-h-[88vh] overflow-auto" style={{ background: 'var(--paper-2)', borderRadius: 24, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--line)' }}>
+              <div>
+                <h3 className="text-lg font-bold">Table {tableOrders.label}</h3>
+                <span className="text-xs text-ink-3">
+                  {tableOrdersLoading ? 'Loading…' : `${tableOrders.data?.count ?? 0} running order${(tableOrders.data?.count ?? 0) === 1 ? '' : 's'}`}
+                </span>
+              </div>
+              <button onClick={() => setTableOrders(null)} className="btn btn-dark py-1.5 px-3 text-xs">Close</button>
+            </div>
+            <div className="p-5">
+              {tableOrdersLoading ? (
+                <TeaLoader label="Loading orders…" size={44} />
+              ) : !tableOrders.data || (tableOrders.data.orders?.length ?? 0) === 0 ? (
+                <p className="text-sm text-ink-3">No running orders on this table.</p>
+              ) : (
+                <>
+                  {tableOrders.data.orders.map((ord: any) => {
+                    const lines = (tableOrders.data.lines ?? []).filter((l: any) => l.orderId === ord.id);
+                    return (
+                      <div key={ord.id} className="mb-3 last:mb-0 rounded-xl p-3" style={{ background: 'var(--paper-3)' }}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-bold text-sm">Order #{ord.number}</span>
+                          <span className="pill text-[9px] uppercase">{ord.status}</span>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          {lines.length === 0 ? (
+                            <span className="text-xs text-ink-3">No active items.</span>
+                          ) : lines.map((l: any) => (
+                            <div key={l.id} className="flex justify-between text-sm">
+                              <span><b className="mr-1.5" style={{ color: 'var(--turmeric-d)' }}>{l.qty}×</b>{l.name}{l.station ? <span className="text-[10px] text-ink-3 ml-1.5 uppercase">{l.station}</span> : null}</span>
+                              <span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="grid gap-1 text-sm border-t pt-3 mt-1" style={{ borderColor: 'var(--line)' }}>
+                    <Line label="Subtotal" val={formatINR(tableOrders.data.totals?.subtotalPaise ?? 0)} />
+                    {(tableOrders.data.totals?.taxPaise ?? 0) > 0 && <Line label="Tax" val={formatINR(tableOrders.data.totals.taxPaise)} />}
+                    <div className="flex justify-between font-extrabold font-display text-lg mt-1 pt-2 border-t" style={{ borderColor: 'var(--line)' }}>
+                      <span>Total</span><span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(tableOrders.data.totals?.totalPaise ?? 0)}</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -6,6 +6,8 @@ import { readDevices, type Device } from './devices';
 import { readFloors, readTableFloors, type Floor } from './floors';
 import { readPwaConfig, type PwaConfig } from './pwa';
 import { readGstConfig } from './tax';
+import { readOutletLocation, type OutletLocation } from './geo';
+import { readKitchens, type Kitchen } from './kitchens';
 
 /**
  * Cafe OS — Owner Dashboard section data.
@@ -918,19 +920,24 @@ export interface MenuData {
     items: { id: string; name: string; pricePaise: number; gstRate: number; station: string | null; isAvailable: boolean; tags: string[]; categoryId: string | null; description: string | null }[];
   }[];
   categoryList: { id: string; name: string }[];
+  /** the outlet's kitchens/stations — powers the item "Station" picker */
+  kitchens: Kitchen[];
 }
 
 async function getMenu(outletId: string): Promise<MenuData> {
-  const categories = await prisma.category.findMany({
-    where: { outletId },
-    orderBy: { sort: 'asc' },
-    include: {
-      items: {
-        orderBy: { name: 'asc' },
-        select: { id: true, name: true, pricePaise: true, gstRate: true, station: true, isAvailable: true, tags: true, categoryId: true, description: true },
+  const [outlet, categories] = await Promise.all([
+    prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }),
+    prisma.category.findMany({
+      where: { outletId },
+      orderBy: { sort: 'asc' },
+      include: {
+        items: {
+          orderBy: { name: 'asc' },
+          select: { id: true, name: true, pricePaise: true, gstRate: true, station: true, isAvailable: true, tags: true, categoryId: true, description: true },
+        },
       },
-    },
-  });
+    }),
+  ]);
 
   let items = 0;
   let available = 0;
@@ -957,7 +964,7 @@ async function getMenu(outletId: string): Promise<MenuData> {
   // flat category list (id + name) for product-management dropdowns
   const categoryList = categories.map((c) => ({ id: c.id, name: c.name }));
 
-  return { counts: { items, available, unavailable: items - available }, categories: out, categoryList };
+  return { counts: { items, available, unavailable: items - available }, categories: out, categoryList, kitchens: readKitchens(outlet?.settings) };
 }
 
 // ===================== Settings =====================
@@ -975,13 +982,14 @@ export interface FloorTable {
 }
 
 export interface SettingsData {
-  outlet: { name: string; address: Record<string, unknown> | null; gstin: string | null; stateCode: string | null; timezone: string; gstEnabled: boolean; gstRate: number | null; gstType: 'inclusive' | 'exclusive' };
+  outlet: { name: string; address: Record<string, unknown> | null; gstin: string | null; stateCode: string | null; timezone: string; gstEnabled: boolean; gstRate: number | null; gstType: 'inclusive' | 'exclusive'; location: OutletLocation };
   tenant: { name: string; plan: string; gstin: string | null };
   staffCount: number;
   tableCount: number;
   devices: Device[];
   tables: FloorTable[];
   floors: Floor[];
+  kitchens: Kitchen[];
 }
 
 async function getSettings(outletId: string, tenantId: string): Promise<SettingsData> {
@@ -1032,6 +1040,7 @@ async function getSettings(outletId: string, tenantId: string): Promise<Settings
       gstEnabled: gst.enabled,
       gstRate: gst.rateOverride,
       gstType: gst.type,
+      location: readOutletLocation(outlet?.settings),
     },
     tenant: { name: tenant?.name ?? '', plan: tenant?.plan ?? 'starter', gstin: tenant?.gstin ?? null },
     staffCount,
@@ -1039,6 +1048,7 @@ async function getSettings(outletId: string, tenantId: string): Promise<Settings
     devices: readDevices(outlet?.settings),
     tables,
     floors,
+    kitchens: readKitchens(outlet?.settings),
   };
 }
 

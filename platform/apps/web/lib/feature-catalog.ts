@@ -21,13 +21,14 @@ export type FeatureKey =
   | 'games'
   | 'loyalty'
   | 'whatsapp'
-  | 'white_label';
+  | 'white_label'
+  | 'staff_app';
 
 export type FeatureDef = {
   key: FeatureKey;
   label: string;
   description: string;
-  category: 'Insights' | 'Engagement' | 'Growth' | 'Branding';
+  category: 'Insights' | 'Engagement' | 'Growth' | 'Branding' | 'Operations';
   defaultOn: boolean;
 };
 
@@ -48,6 +49,8 @@ export const FEATURE_CATALOG: FeatureDef[] = [
     description: 'Deliver OTP and customer messages over WhatsApp.' },
   { key: 'white_label', label: 'White-label Branding', category: 'Branding', defaultOn: false,
     description: 'Apply the cafe’s own app name and logo across customer surfaces.' },
+  { key: 'staff_app', label: 'Staff App (PWA)', category: 'Operations', defaultOn: false,
+    description: 'Installable staff phone app for POS/KDS — home-screen install, offline viewing and push alerts for cashiers, waiters and kitchen.' },
 ];
 
 /** key -> defaultOn, used as the resolution fallback in lib/features.ts. */

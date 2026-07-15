@@ -108,7 +108,7 @@ export function MobileDrawer({
             src="/logo chaya one.png"
             alt="ChayaOne"
             style={{ width: '100%', height: 'auto', maxWidth: 150 }}
-            className="object-contain"
+            className="brand-logo object-contain"
           />
         </div>
 

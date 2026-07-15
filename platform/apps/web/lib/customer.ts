@@ -1,7 +1,10 @@
 import { cookies, headers } from 'next/headers';
-import { prisma } from '@cafeos/db';
+import { prisma, type Prisma } from '@cafeos/db';
 import { resolveTenantIdFromHost } from './tenant';
 import { CUSTOMER_COOKIE, verifyCustomerSession } from './customer-auth';
+import { hashPhone, normalizePhone, isValidPhone } from './phone';
+import { assertSlot, bumpUsage, SlotExceeded } from './limits';
+import type { PwaConfig } from './pwa';
 
 /**
  * Customer identity for the PWA.
@@ -82,5 +85,83 @@ export async function activeOrderForTable(tableId: string) {
     where: { tableId, status: { in: ['pending_approval', 'approved', 'open', 'in_kitchen', 'ready', 'served'] } },
     orderBy: { placedAt: 'desc' },
     include: { items: { select: { nameSnapshot: true, qty: true, station: true } }, table: { select: { label: true } } },
+  });
+}
+
+/**
+ * Find-or-create a tenant customer from a phone (+ optional name) captured at the
+ * POS, so a walk-in reaches the CRM. Deduped on `(tenantId, phoneHash)`; an
+ * existing profile has its name (when supplied) and `lastVisit` refreshed.
+ *
+ * Deliberately non-blocking, unlike `customer/register` (which returns 402 on the
+ * cap): a valid but capped/invalid phone returns null so the POS still completes
+ * the sale. Returns the customer id, or null when no CRM row was created/linked
+ * (invalid phone, or the tenant's customer slot is exhausted).
+ */
+export async function findOrCreateCustomerByPhone(
+  tenantId: string,
+  input: { name?: string | null; phone?: string | null },
+): Promise<string | null> {
+  const phone = normalizePhone(String(input?.phone ?? ''));
+  if (!isValidPhone(phone)) return null; // name-only / junk → prints only, no CRM row
+  const phoneHash = hashPhone(phone);
+  const name = typeof input.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 60) : null;
+
+  const existing = await prisma.customer.findFirst({ where: { tenantId, phoneHash }, select: { id: true, name: true } });
+  if (existing) {
+    await prisma.customer.update({
+      where: { id: existing.id },
+      // keep an existing name unless the walk-in provides a new one
+      data: { name: name || existing.name || undefined, phone, lastVisit: new Date() },
+    });
+    return existing.id;
+  }
+
+  // slot enforcement (G6): a capped tenant simply stops gaining new CRM rows —
+  // it must never fail an in-progress sale, so swallow the cap and return null.
+  try {
+    await assertSlot(tenantId, 'customers');
+  } catch (e) {
+    if (e instanceof SlotExceeded) return null;
+    throw e;
+  }
+  const now = new Date();
+  const created = await prisma.customer.create({
+    data: { tenantId, name, phone, phoneHash, source: 'manual', firstVisit: now, lastVisit: now },
+    select: { id: true },
+  });
+  await bumpUsage(tenantId, 'customers').catch(() => {});
+  return created.id;
+}
+
+/**
+ * Award loyalty for one settled bill (configurable earn rate + optional first-order
+ * bonus), appending a single `earn` ledger row and bumping the customer's
+ * points/spend/visit aggregates. Call ONCE per settle — passing the combined table
+ * total — so a multi-KOT table counts as one visit, not one per KOT. Must run
+ * inside a transaction (shared by the order-create and table-settle paths).
+ */
+export async function accrueLoyaltyOnSettle(
+  tx: Prisma.TransactionClient,
+  args: { customerId: string; outletId: string; totalPaise: number; pwa: PwaConfig; refId: string },
+): Promise<void> {
+  const { customerId, outletId, totalPaise, pwa, refId } = args;
+  const rate = pwa.points.earnRatePaisePerPoint; // paise per earned point
+  let points = Math.floor(totalPaise / rate);
+  const prior = await tx.customer.findUnique({ where: { id: customerId }, select: { visitCount: true } });
+  if ((!prior || prior.visitCount === 0) && pwa.loyalty.rewards.firstOrderBonus > 0) {
+    points += pwa.loyalty.rewards.firstOrderBonus;
+  }
+  await tx.loyaltyLedger.create({
+    data: { customerId, outletId, type: 'earn', points, source: 'order', refId },
+  });
+  await tx.customer.update({
+    where: { id: customerId },
+    data: {
+      points: { increment: points },
+      lifetimeSpendPaise: { increment: totalPaise },
+      visitCount: { increment: 1 },
+      lastVisit: new Date(),
+    },
   });
 }

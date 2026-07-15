@@ -8,6 +8,7 @@
  */
 export { ThemeToggle, useTheme } from './ThemeToggle';
 export { AlphaTag } from './AlphaTag';
+export { WaveHand } from './WaveHand';
 
 export {
   // navigation / chrome

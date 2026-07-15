@@ -24,6 +24,12 @@ export interface BillLine {
 export interface BillOptions {
   /** order-level discount percent (0–100) */
   discountPct?: number;
+  /**
+   * Flat order-level discount in paise, applied ON TOP of discountPct. The
+   * combined discount is clamped to the subtotal so a bill never goes negative.
+   * Use for "₹50 off" style manual discounts.
+   */
+  discountFlatPaise?: number;
   /** service charge percent applied on the post-discount taxable base */
   serviceChargePct?: number;
   /** true = inter-state supply → IGST instead of CGST/SGST */
@@ -70,6 +76,7 @@ export interface Bill {
  */
 export function computeBill(lines: BillLine[], opts: BillOptions = {}): Bill {
   const discountPct = clampPct(opts.discountPct ?? 0);
+  const flatDiscountPaise = Math.max(0, Math.round(opts.discountFlatPaise ?? 0));
   const scPct = clampPct(opts.serviceChargePct ?? 0);
   const interState = !!opts.interState;
   // GST gating: off ⇒ no tax; a flat override replaces every line's own rate.
@@ -94,7 +101,11 @@ export function computeBill(lines: BillLine[], opts: BillOptions = {}): Bill {
   });
 
   const subtotalPaise = norm.reduce((sum, l) => sum + l.gross, 0);
-  const discountPaise = Math.round((subtotalPaise * discountPct) / 100);
+  // percent + flat, clamped to the subtotal so the taxable base never goes negative
+  const discountPaise = Math.min(
+    subtotalPaise,
+    Math.round((subtotalPaise * discountPct) / 100) + flatDiscountPaise,
+  );
 
   let cgstPaise = 0;
   let sgstPaise = 0;

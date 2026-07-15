@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useStaffInstall } from '@/components/staff-install';
 
 /**
  * Client runtime mounted on the staff surfaces (POS / KDS) and the dashboard.
@@ -17,11 +18,6 @@ import { useEffect, useState } from 'react';
 const KEEPALIVE_MS = 15 * 60 * 1000; // well under the 30-min access TTL
 const INSTALL_DISMISS_KEY = 'cafeos_staff_install_dismissed';
 const ALERTS_DISMISS_KEY = 'cafeos_staff_alerts_dismissed';
-
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-};
 
 function urlB64ToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);
@@ -76,37 +72,27 @@ export default function StaffRuntime({ pwa = false }: { pwa?: boolean }) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }, [pwa]);
 
-  // ---- install banner ----
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [installShow, setInstallShow] = useState(false);
-  const [iosHint, setIosHint] = useState(false);
+  // ---- install banner (shared state so the POS/KDS menu buttons trigger the same prompt) ----
+  const { available, iosHint, reveal, promptInstall } = useStaffInstall();
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (!pwa || typeof window === 'undefined') return;
-    const standalone = window.matchMedia('(display-mode: standalone)').matches ||
-      (navigator as unknown as { standalone?: boolean }).standalone === true;
-    if (standalone) return; // already installed
-    try { if (localStorage.getItem(INSTALL_DISMISS_KEY) === '1') return; } catch { /* ignore */ }
-
-    const onPrompt = (e: Event) => { e.preventDefault(); setDeferred(e as BeforeInstallPromptEvent); setInstallShow(true); };
-    window.addEventListener('beforeinstallprompt', onPrompt);
-
-    const ua = navigator.userAgent;
-    if (/iPhone|iPad|iPod/i.test(ua) && /Safari/i.test(ua) && !/CriOS|FxiOS/i.test(ua)) {
-      setIosHint(true); setInstallShow(true);
+    try { if (localStorage.getItem(INSTALL_DISMISS_KEY) === '1') setDismissed(true); } catch { /* ignore */ }
+  }, []);
+  // A menu-button tap without a native prompt (iOS) bumps `reveal` → un-dismiss so
+  // the Share → Add to Home Screen hint comes back even after it was closed.
+  useEffect(() => {
+    if (reveal > 0) {
+      setDismissed(false);
+      try { localStorage.removeItem(INSTALL_DISMISS_KEY); } catch { /* ignore */ }
     }
-    return () => window.removeEventListener('beforeinstallprompt', onPrompt);
-  }, [pwa]);
+  }, [reveal]);
 
   const dismissInstall = () => {
-    setInstallShow(false);
+    setDismissed(true);
     try { localStorage.setItem(INSTALL_DISMISS_KEY, '1'); } catch { /* ignore */ }
   };
-  const install = async () => {
-    if (!deferred) return;
-    try { await deferred.prompt(); await deferred.userChoice; } catch { /* ignore */ }
-    setDeferred(null); dismissInstall();
-  };
+  const install = async () => { await promptInstall(); dismissInstall(); };
 
   // ---- push alerts ----
   // 'unsupported' until we confirm support in prod; then mirrors Notification.permission.
@@ -137,7 +123,7 @@ export default function StaffRuntime({ pwa = false }: { pwa?: boolean }) {
     try { localStorage.setItem(ALERTS_DISMISS_KEY, '1'); } catch { /* ignore */ }
   };
 
-  const showInstall = pwa && installShow;
+  const showInstall = pwa && available && !dismissed;
   const showAlerts = pwa && pushState === 'default' && !alertsDismissed;
   if (!showInstall && !showAlerts) return null;
 

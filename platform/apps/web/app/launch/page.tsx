@@ -106,11 +106,8 @@ export default function LaunchHub() {
         </div>
       </div>
 
-      {/* subtle hover affordance for the surface arrow — restrained, respects reduced-motion */}
-      {/* raster logo is dark-on-transparent; lift it so it reads on the dark theme.
-          Unquoted attribute selector — a quoted "dark" gets escaped in the server
-          HTML and triggers a hydration text-mismatch. */}
-      <style dangerouslySetInnerHTML={{ __html: `[data-theme=dark] .brand-logo{ filter:brightness(1.55) contrast(1.05); }` }} />
+      {/* The dark-theme logo swap (dark ink → white asset) is handled globally
+          in globals.css via `[data-theme="dark"] img.brand-logo`. */}
     </main>
   );
 }

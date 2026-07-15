@@ -2,9 +2,11 @@ import { redirect } from 'next/navigation';
 import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { canAccess, landingFor } from '@/lib/rbac';
+import { tenantHasFeature } from '@/lib/features';
 import { readGstConfig } from '@/lib/tax';
 import { readFloors, readTableFloors } from '@/lib/floors';
 import { readReceiptConfig } from '@/lib/receipt';
+import { readOutletLocation } from '@/lib/geo';
 import PosClient, { type MenuCategory, type TableDto } from './PosClient';
 
 export const dynamic = 'force-dynamic';
@@ -46,6 +48,11 @@ export default async function PosPage() {
   const tableDtos: TableDto[] = tables.map((t) => ({ id: t.id, label: t.label, seats: t.seats, state: t.state, floorId: tableFloors[t.id] ?? null }));
   const gst = readGstConfig(outlet.settings);
   const receipt = readReceiptConfig(outlet.settings);
+  const staffAppEnabled = await tenantHasFeature(session.tenantId, 'staff_app');
+  // location gate: only prompt POS for GPS when it actually applies here
+  // (gate on + POS orders gated + a pin set + this staffer isn't the owner).
+  const loc = readOutletLocation(outlet.settings);
+  const locationGate = loc.enabled && loc.gatePosOrders && loc.lat !== null && session.role !== 'owner';
 
   return (
     <PosClient
@@ -54,6 +61,8 @@ export default async function PosPage() {
       menu={menu}
       tables={tableDtos}
       floors={floors}
+      staffAppEnabled={staffAppEnabled}
+      locationGate={locationGate}
     />
   );
 }
