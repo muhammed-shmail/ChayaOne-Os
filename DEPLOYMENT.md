@@ -38,6 +38,9 @@
    | `RAZORPAY_KEY_ID` | Test or live key (when ready) |
    | `RAZORPAY_KEY_SECRET` | Test or live secret |
    | `RAZORPAY_WEBHOOK_SECRET` | Webhook secret |
+   | `SUPABASE_URL` | Supabase project URL |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role key |
+   | `SUPABASE_BUCKET` | Supabase bucket name (e.g., `uploads`) |
 
 5. **Deploy** — Railway will build and start your app. First build takes 2–3 minutes.
 6. Once deployed, you'll get a public URL. Test it:
