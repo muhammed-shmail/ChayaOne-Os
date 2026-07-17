@@ -64,9 +64,10 @@ browsers subscribe directly to **private** channels, so we need one-time setup.
    - **Framework Preset:** Next.js (auto-detected). Build/install come from
      [platform/vercel.json](platform/vercel.json):
      - Install: `npm ci`
-     - Build: `npm run db:generate` → (on **production** only) `db:generate` +
-       `prisma db push` to sync the schema → `npm run build`
+     - Build: `npm run db:generate` (Prisma client) → `npm run build`
      - Output: `apps/web/.next`
+     - The build does **not** touch the database, so it never needs `DIRECT_URL`
+       and can't apply a surprise migration. Sync the schema explicitly (below).
 3. Add environment variables (Project → Settings → Environment Variables):
 
    | Variable | Value |
@@ -103,14 +104,19 @@ git push origin main
 # Watch the deployment on the Vercel dashboard → done
 ```
 
-**Schema changes (Prisma)?** Just push. The **production** build runs
-`prisma db push` against your database before the app boots, so the live schema is
-synced automatically. Preview deploys **skip** the push (gated on `VERCEL_ENV`), so
-they never mutate the production database.
+**Schema changes (Prisma)?** The Vercel build no longer pushes the schema (that
+kept it from mutating prod on every deploy). After changing `schema.prisma`, sync
+the database once from your machine, then push code as usual:
 
-⚠️ **Caveat:** the push uses `--accept-data-loss`, so destructive diffs (renaming/
-dropping a column) apply without a prompt. Additive changes are safe; for a
-genuinely lossy migration, test it on a database branch first.
+```bash
+# from platform/, pointed at the production DB
+DATABASE_URL="<pooled>" DIRECT_URL="<direct>" npm run db:push
+git push origin main   # Vercel rebuilds the app against the now-synced schema
+```
+
+⚠️ `db:push` uses `--accept-data-loss`, so destructive diffs (renaming/dropping a
+column) apply without a prompt. Additive changes are safe; for a genuinely lossy
+migration, test it on a database branch first.
 
 ---
 
