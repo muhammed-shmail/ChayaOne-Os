@@ -21,7 +21,7 @@
  * bypasses RLS, so sending always succeeds.
  */
 
-export type TicketItem = { name: string; qty: number; station: string | null; modifiers: { name: string }[] };
+export type TicketItem = { name: string; qty: number; station: string | null; modifiers: { name: string }[]; notes: string | null };
 export type Ticket = {
   id: string;
   number: number;
@@ -30,6 +30,8 @@ export type Ticket = {
   type: string;
   status: string;
   placedAt: number; // epoch ms
+  /** guest name when a customer is attached — the KDS shows it if configured */
+  customerName: string | null;
   items: TicketItem[];
 };
 export type NotifyPayload = {
@@ -116,7 +118,8 @@ export function toTicket(order: {
   placedAt: Date;
   tableId?: string | null;
   table?: { label: string } | null;
-  items: { nameSnapshot: string; qty: number; station: string | null; modifiers: unknown }[];
+  customer?: { name: string | null } | null;
+  items: { nameSnapshot: string; qty: number; station: string | null; modifiers: unknown; notes?: string | null }[];
 }): Ticket {
   return {
     id: order.id,
@@ -126,11 +129,13 @@ export function toTicket(order: {
     type: order.type,
     status: order.status,
     placedAt: order.placedAt.getTime(),
+    customerName: order.customer?.name ?? null,
     items: order.items.map((i) => ({
       name: i.nameSnapshot,
       qty: i.qty,
       station: i.station,
       modifiers: Array.isArray(i.modifiers) ? (i.modifiers as { name: string }[]) : [],
+      notes: i.notes ?? null,
     })),
   };
 }

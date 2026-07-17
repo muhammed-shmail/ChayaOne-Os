@@ -56,7 +56,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const o = await tx.order.update({
       where: { id: params.id },
       data: { status: next, ...(settling ? { settledAt: new Date() } : {}) },
-      include: { items: true, table: { select: { label: true } } },
+      include: { items: true, table: { select: { label: true } }, customer: { select: { name: true } } },
     });
     const kot = KOT_FOR[next];
     if (kot) await tx.orderItem.updateMany({ where: { orderId: params.id }, data: { kotStatus: kot } });

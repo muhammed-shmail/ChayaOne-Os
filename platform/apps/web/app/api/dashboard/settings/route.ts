@@ -5,6 +5,7 @@ import { readDevices, normalizeDefaults, type Device } from '@/lib/devices';
 import { readReceiptConfig, RECEIPT_FIELD_MAX } from '@/lib/receipt';
 import { normalizeLocationInput } from '@/lib/geo';
 import { readKitchens, kitchenSlug, KITCHEN_NAME_MAX, KITCHEN_PALETTE, type Kitchen } from '@/lib/kitchens';
+import { readKitchenWorkflow, normalizeKitchenWorkflowInput } from '@/lib/kitchenWorkflow';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -133,6 +134,22 @@ export async function POST(req: NextRequest) {
       data: { outletId: session.outletId, actorId: session.staffId, action: 'receipt.updated', entity: 'outlet', entityId: session.outletId, after: receipt as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
     return NextResponse.json({ ok: true, receipt: readReceiptConfig(merged) });
+  }
+
+  // ---- kitchen workflow (stored in Outlet.settings.kitchenWorkflow) ----
+  // Digital KDS / Printed KOT / Hybrid + all the KDS display options. The whole
+  // config is normalized server-side (readKitchenWorkflow rules), so a bad
+  // client value can never break the KDS render.
+  if (body.action === 'kitchen_workflow') {
+    const kitchenWorkflow = normalizeKitchenWorkflowInput(body.workflow ?? {});
+    const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const merged = { ...settings, kitchenWorkflow };
+    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.auditLog.create({
+      data: { outletId: session.outletId, actorId: session.staffId, action: 'kitchen.workflow_updated', entity: 'outlet', entityId: session.outletId, after: kitchenWorkflow as unknown as Prisma.InputJsonValue },
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, kitchenWorkflow: readKitchenWorkflow(merged) });
   }
 
   // ---- location gate (stored in Outlet.settings.location) ----

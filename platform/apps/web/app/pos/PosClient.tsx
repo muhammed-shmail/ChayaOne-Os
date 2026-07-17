@@ -5,6 +5,7 @@ import { computeBill, formatINR, type BillLine } from '@cafeos/core';
 import { STAGES, posStageOf } from '@/lib/orderStatus';
 import type { Floor } from '@/lib/floors';
 import type { ReceiptConfig } from '@/lib/receipt';
+import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
 import {
   ThemeToggle, Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
   Plus, Minus, X, Check, Printer, Receipt, Smartphone, Banknote, CreditCard,
@@ -34,7 +35,7 @@ export type MenuItemDto = {
 };
 export type MenuCategory = { id: string; name: string; items: MenuItemDto[] };
 export type TableDto = { id: string; label: string; seats: number; state: string; floorId: string | null };
-type Outlet = { id: string; name: string; gstin: string | null; stateCode: string; gstEnabled: boolean; gstRate: number | null; gstInclusive: boolean; receipt: ReceiptConfig };
+type Outlet = { id: string; name: string; gstin: string | null; stateCode: string; gstEnabled: boolean; gstRate: number | null; gstInclusive: boolean; receipt: ReceiptConfig; kitchenWorkflow: KitchenWorkflowConfig };
 type Staff = { id: string; name: string; role: string };
 
 type Line = {
@@ -318,6 +319,22 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       <div class="muted">${staff.name}</div>`);
   }
 
+  // Auto-printed KOT for a just-sent POS order (Printed / Hybrid workflow). Reads
+  // the current cart, so call it before clear(). Prints kotCopies copies in one
+  // window, page-broken so each copy tears off separately.
+  function printKotFromCart(number: number, whereLabel: string) {
+    const copies = Math.max(1, Math.min(4, outlet.kitchenWorkflow.kotCopies || 1));
+    const when = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const rows = cart.map((l) => `<tr><td>${l.qty}×</td><td>${escRcpt(l.name)}</td><td class="r">${escRcpt(l.station ?? '')}</td></tr>`).join('');
+    const one = `
+      <h2>KOT · #${number}</h2>
+      <div class="muted">${escRcpt(whereLabel)} · ${when}</div>
+      <table>${rows}</table><div class="line"></div>
+      <div class="muted">${escRcpt(staff.name)}</div>`;
+    const inner = Array.from({ length: copies }, (_, i) => (i === 0 ? one : `<div style="page-break-before:always"></div>${one}`)).join('');
+    printDoc(`KOT #${number}`, inner);
+  }
+
   // receipt for a just-charged POS order (cart/bill captured at confirm time)
   function printReceipt(number: number, method: string, tipPaise: number, customer: { name: string; phone: string } | null) {
     const esc = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
@@ -467,6 +484,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       // start tracking it on the live rail (idempotent replays return the same order)
       const where = orderType === 'takeaway' ? '🥡 Takeaway' : selectedTable ? `Table ${selectedTable.label}` : 'Dine-in';
       setLive((prev) => (prev.some((t) => t.id === data.order.id) ? prev : [{ id: data.order.id, number: data.order.number, where, status: data.order.status ?? 'in_kitchen', placedAt: Date.now() }, ...prev]));
+      // Printed / Hybrid workflow: auto-print the paper KOT (reads cart, so before clear())
+      if (!data.idempotent && outlet.kitchenWorkflow.autoPrintKot && outlet.kitchenWorkflow.mode !== 'digital') printKotFromCart(data.order.number, where);
       clear(); setCharging(false);
       // reset the table so the next order must pick one (don't silently reuse the last table)
       if (orderType === 'dine_in') setTableId(null);

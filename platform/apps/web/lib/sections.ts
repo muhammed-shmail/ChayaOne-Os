@@ -8,6 +8,7 @@ import { readPwaConfig, type PwaConfig } from './pwa';
 import { readGstConfig } from './tax';
 import { readOutletLocation, type OutletLocation } from './geo';
 import { readKitchens, type Kitchen } from './kitchens';
+import { readKitchenWorkflow, type KitchenWorkflowConfig } from './kitchenWorkflow';
 
 /**
  * Cafe OS — Owner Dashboard section data.
@@ -990,6 +991,7 @@ export interface SettingsData {
   tables: FloorTable[];
   floors: Floor[];
   kitchens: Kitchen[];
+  kitchenWorkflow: KitchenWorkflowConfig;
 }
 
 async function getSettings(outletId: string, tenantId: string): Promise<SettingsData> {
@@ -1049,6 +1051,7 @@ async function getSettings(outletId: string, tenantId: string): Promise<Settings
     tables,
     floors,
     kitchens: readKitchens(outlet?.settings),
+    kitchenWorkflow: readKitchenWorkflow(outlet?.settings),
   };
 }
 

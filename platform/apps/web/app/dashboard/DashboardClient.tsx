@@ -15,6 +15,7 @@ import CustomerManagement from './CustomerManagement';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, assignableRoles, ALL_ROLES } from '@/lib/rbac';
 import { DEVICE_TYPES, DEVICE_CONNECTIONS, type Device } from '@/lib/devices';
 import type { ReceiptConfig } from '@/lib/receipt';
+import { type KitchenWorkflowConfig, KITCHEN_WORKFLOW_DEFAULTS, AUTO_CLEAR_OPTIONS, DELAY_THRESHOLD_OPTIONS, SORT_OPTIONS, THEME_OPTIONS, FONT_SIZE_OPTIONS } from '@/lib/kitchenWorkflow';
 import { tableOrderUrl, tableQrImageUrl } from '@/lib/qr';
 import { FEATURED_LABELS, DEFAULT_GAME_KEYS, type PwaConfig } from '@/lib/pwa';
 import type { OutletLocation } from '@/lib/geo';
@@ -73,6 +74,7 @@ const SETTINGS_TITLE: Record<string, string> = {
   general: 'General',
   tax: 'Tax & GST',
   floor: 'Floor & QR',
+  kitchen: 'Kitchen Workflow',
   pwa: 'PWA Settings',
   location: 'Location Gate',
   devices: 'Devices & Printers',
@@ -83,6 +85,7 @@ const SETTINGS_ICON: Record<string, LucideIcon> = {
   general: Settings,
   tax: Percent,
   floor: Table2,
+  kitchen: ChefHat,
   pwa: Smartphone,
   location: MapPin,
   devices: Printer,
@@ -1033,7 +1036,7 @@ export default function DashboardClient({
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Settings panel navigation — each panel now opens in a popup window.
-  const [settingsPanel, setSettingsPanel] = useState<'general' | 'tax' | 'floor' | 'location' | 'devices' | 'pwa' | 'audit' | 'multibranch'>('general');
+  const [settingsPanel, setSettingsPanel] = useState<'general' | 'tax' | 'floor' | 'kitchen' | 'location' | 'devices' | 'pwa' | 'audit' | 'multibranch'>('general');
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const openSettings = (key: typeof settingsPanel) => { setSettingsPanel(key); setSettingsModalOpen(true); };
   const closeSettings = () => setSettingsModalOpen(false);
@@ -1063,6 +1066,12 @@ export default function DashboardClient({
     showGstin: outlet.receipt.showGstin,
   });
   const [receiptSaving, setReceiptSaving] = useState(false);
+
+  // Kitchen Workflow (Settings → Kitchen) — Outlet.settings.kitchenWorkflow.
+  // Digital KDS / Printed KOT / Hybrid + all the KDS display options.
+  const [kwForm, setKwForm] = useState<KitchenWorkflowConfig>(KITCHEN_WORKFLOW_DEFAULTS);
+  const [kwSaving, setKwSaving] = useState(false);
+  const setKw = <K extends keyof KitchenWorkflowConfig>(key: K, value: KitchenWorkflowConfig[K]) => setKwForm((p) => ({ ...p, [key]: value }));
 
   // Devices & printers (Settings → Devices)
   const [devices, setDevices] = useState<Device[]>([]);
@@ -1183,6 +1192,7 @@ export default function DashboardClient({
         setFloorTables(d.data?.tables ?? []);
         setFloors(d.data?.floors ?? []);
         setKitchens(d.data?.kitchens ?? []);
+        if (d.data?.kitchenWorkflow) setKwForm(d.data.kitchenWorkflow);
         setProfileLoaded(true);
       }
     } catch (err) { console.error(err); }
@@ -1537,6 +1547,23 @@ export default function DashboardClient({
       } else flashMessage('Could not save receipt layout');
     } catch (err) { console.error(err); flashMessage('Could not save receipt layout'); }
     finally { setReceiptSaving(false); }
+  };
+
+  const handleSaveKitchenWorkflow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setKwSaving(true);
+    try {
+      const res = await fetch('/api/dashboard/settings', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'kitchen_workflow', workflow: kwForm }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (d.kitchenWorkflow) setKwForm(d.kitchenWorkflow);
+        flashMessage('Kitchen workflow saved'); router.refresh();
+      } else flashMessage('Could not save kitchen workflow');
+    } catch (err) { console.error(err); flashMessage('Could not save kitchen workflow'); }
+    finally { setKwSaving(false); }
   };
 
   // ── Report export — Excel (.xls) + print-to-PDF, dependency-free ──
@@ -3026,12 +3053,13 @@ export default function DashboardClient({
                 { key: 'general', icon: Settings, label: 'General', sub: 'Store profile & logo' },
                 { key: 'tax', icon: Percent, label: 'Tax & GST', sub: 'GST toggle, rate & type' },
                 { key: 'floor', icon: Table2, label: 'Floor & QR', sub: 'Tables & scan-to-order' },
+                { key: 'kitchen', icon: ChefHat, label: 'Kitchen', sub: 'KDS, KOT & workflow' },
                 { key: 'pwa', icon: Smartphone, label: 'PWA Settings', sub: 'Customer app & loyalty' },
                 ...(staff.role === 'owner' ? [{ key: 'location', icon: MapPin, label: 'Location Gate', sub: 'Require on-site to order & clock in' }] : []),
                 { key: 'devices', icon: Printer, label: 'Devices & Printers', sub: 'Printers & receipt layout' },
                 ...(staff.role === 'owner' ? [{ key: 'audit', icon: ClipboardList, label: 'Audit Logs', sub: 'Activity & changes' }] : []),
                 ...(isAdvanced ? [{ key: 'multibranch', icon: Store, label: 'Multi Branch', sub: 'Other outlets' }] : []),
-              ] as { key: 'general' | 'tax' | 'floor' | 'location' | 'devices' | 'pwa' | 'audit' | 'multibranch'; icon: LucideIcon; label: string; sub: string }[]).map((t) => {
+              ] as { key: 'general' | 'tax' | 'floor' | 'kitchen' | 'location' | 'devices' | 'pwa' | 'audit' | 'multibranch'; icon: LucideIcon; label: string; sub: string }[]).map((t) => {
                 const on = settingsModalOpen && settingsPanel === t.key;
                 const Icon = t.icon;
                 return (
@@ -3444,6 +3472,141 @@ export default function DashboardClient({
                 )}
 
                 <button type="submit" disabled={gstSaving} className="btn btn-primary w-fit disabled:opacity-50">{gstSaving ? 'Saving…' : 'Save GST settings'}</button>
+              </form>
+            )}
+
+            {/* ── Kitchen Workflow ── */}
+            {settingsPanel === 'kitchen' && (
+              <form onSubmit={handleSaveKitchenWorkflow} className="flex flex-col gap-4 max-w-2xl">
+                <section className="card p-5 flex flex-col gap-4">
+                  <div>
+                    <h4 className="font-bold">Kitchen Workflow</h4>
+                    <p className="text-xs text-ink-3">Choose how your kitchen receives orders. A single-chef tea shop can print paper tickets and never touch a screen; a busy kitchen can run the live display — or do both.</p>
+                  </div>
+
+                  <Toggle
+                    label="Enable Kitchen Display System"
+                    desc="A live digital screen for chefs to receive and bump orders. Turn off to run a paper-ticket-only kitchen."
+                    on={kwForm.kdsEnabled}
+                    onChange={(v) => setKw('kdsEnabled', v)}
+                  />
+
+                  <div>
+                    <label className="lbl">Workflow mode</label>
+                    <div className="grid sm:grid-cols-3 gap-2">
+                      {([
+                        { key: 'digital', label: 'Digital KDS', desc: 'Only the kitchen display is used.' },
+                        { key: 'printed', label: 'Printed KOT', desc: 'Auto-print paper tickets. No screen needed.' },
+                        { key: 'hybrid', label: 'Hybrid', desc: 'Show on the display and print — a backup for both.' },
+                      ] as { key: KitchenWorkflowConfig['mode']; label: string; desc: string }[]).map((m) => {
+                        const on = kwForm.mode === m.key;
+                        return (
+                          <button
+                            type="button"
+                            key={m.key}
+                            onClick={() => setKw('mode', m.key)}
+                            aria-pressed={on}
+                            className="text-left rounded-2xl border p-3 transition cursor-pointer hover:shadow-sm"
+                            style={on ? { background: 'var(--turmeric)', color: '#2A1607', borderColor: 'transparent' } : { background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+                          >
+                            <b className="block text-sm">{m.label}</b>
+                            <span className="text-xs block mt-0.5" style={{ color: on ? '#5a3a14' : 'var(--ink-3)' }}>{m.desc}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </section>
+
+                {/* Printed KOT — only relevant when tickets print */}
+                {kwForm.mode !== 'digital' && (
+                  <section className="card p-5 flex flex-col gap-4">
+                    <div>
+                      <h4 className="font-bold">Printed KOT</h4>
+                      <p className="text-xs text-ink-3">Kitchen tickets print from the POS when an order is sent to the kitchen. Register the KOT printer under <b>Devices &amp; Printers</b>.</p>
+                    </div>
+                    <Toggle label="Auto-print KOT" desc="Print the kitchen ticket automatically after send-to-KOT / billing." on={kwForm.autoPrintKot} onChange={(v) => setKw('autoPrintKot', v)} />
+                    <div className="sm:max-w-[200px]">
+                      <label className="lbl">Copies</label>
+                      <select value={kwForm.kotCopies} onChange={(e) => setKw('kotCopies', Number(e.target.value))} className="inp">
+                        {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </div>
+                  </section>
+                )}
+
+                {/* KDS display options — only when the screen is enabled */}
+                {kwForm.kdsEnabled && (
+                  <section className="card p-5 flex flex-col gap-4">
+                    <div>
+                      <h4 className="font-bold">Kitchen Display options</h4>
+                      <p className="text-xs text-ink-3">How the live screen looks and behaves. Changes apply the next time the display loads.</p>
+                    </div>
+
+                    <Toggle label="Auto-accept orders" desc="Skip the on-screen “accept” tap — new tickets show as Preparing at once." on={kwForm.autoAcceptOrders} onChange={(v) => setKw('autoAcceptOrders', v)} />
+                    <Toggle label="Sound notification" desc="Play a chime when a new order lands." on={kwForm.soundNotification} onChange={(v) => setKw('soundNotification', v)} />
+
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="lbl">Auto-clear completed orders</label>
+                        <select value={kwForm.autoClearSec} onChange={(e) => setKw('autoClearSec', Number(e.target.value))} className="inp">
+                          {AUTO_CLEAR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="lbl">Order sorting</label>
+                        <select value={kwForm.sorting} onChange={(e) => setKw('sorting', e.target.value as KitchenWorkflowConfig['sorting'])} className="inp">
+                          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    <Toggle label="Highlight delayed orders" desc="Flag tickets that have been waiting too long." on={kwForm.highlightDelayed} onChange={(v) => setKw('highlightDelayed', v)} />
+                    {kwForm.highlightDelayed && (
+                      <div className="sm:max-w-[200px]">
+                        <label className="lbl">Delay threshold</label>
+                        <select value={kwForm.delayThresholdMin} onChange={(e) => setKw('delayThresholdMin', Number(e.target.value))} className="inp">
+                          {DELAY_THRESHOLD_OPTIONS.map((m) => <option key={m} value={m}>{m} min</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="lbl">Show on each ticket</label>
+                      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 mt-1">
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input type="checkbox" checked={kwForm.showCustomerName} onChange={(e) => setKw('showCustomerName', e.target.checked)} /> Customer name
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input type="checkbox" checked={kwForm.showTableNumber} onChange={(e) => setKw('showTableNumber', e.target.checked)} /> Table number
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input type="checkbox" checked={kwForm.showNotes} onChange={(e) => setKw('showNotes', e.target.checked)} /> Kitchen notes
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input type="checkbox" checked={kwForm.showPrepTime} onChange={(e) => setKw('showPrepTime', e.target.checked)} /> Preparation timer
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="lbl">Display theme</label>
+                        <select value={kwForm.theme} onChange={(e) => setKw('theme', e.target.value as KitchenWorkflowConfig['theme'])} className="inp">
+                          {THEME_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="lbl">Font size</label>
+                        <select value={kwForm.fontSize} onChange={(e) => setKw('fontSize', e.target.value as KitchenWorkflowConfig['fontSize'])} className="inp">
+                          {FONT_SIZE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                <button type="submit" disabled={kwSaving} className="btn btn-primary w-fit disabled:opacity-50">{kwSaving ? 'Saving…' : 'Save kitchen workflow'}</button>
               </form>
             )}
 

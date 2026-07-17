@@ -6,6 +6,7 @@ import { tenantHasFeature } from '@/lib/features';
 import { readGstConfig } from '@/lib/tax';
 import { readFloors, readTableFloors } from '@/lib/floors';
 import { readReceiptConfig } from '@/lib/receipt';
+import { readKitchenWorkflow } from '@/lib/kitchenWorkflow';
 import { readOutletLocation } from '@/lib/geo';
 import PosClient, { type MenuCategory, type TableDto } from './PosClient';
 
@@ -48,6 +49,7 @@ export default async function PosPage() {
   const tableDtos: TableDto[] = tables.map((t) => ({ id: t.id, label: t.label, seats: t.seats, state: t.state, floorId: tableFloors[t.id] ?? null }));
   const gst = readGstConfig(outlet.settings);
   const receipt = readReceiptConfig(outlet.settings);
+  const kitchenWorkflow = readKitchenWorkflow(outlet.settings);
   const staffAppEnabled = await tenantHasFeature(session.tenantId, 'staff_app');
   // location gate: only prompt POS for GPS when it actually applies here
   // (gate on + POS orders gated + a pin set + this staffer isn't the owner).
@@ -56,7 +58,7 @@ export default async function PosPage() {
 
   return (
     <PosClient
-      outlet={{ id: outlet.id, name: outlet.name, gstin: outlet.gstin, stateCode: outlet.stateCode ?? 'KA', gstEnabled: gst.enabled, gstRate: gst.rateOverride, gstInclusive: gst.inclusive, receipt }}
+      outlet={{ id: outlet.id, name: outlet.name, gstin: outlet.gstin, stateCode: outlet.stateCode ?? 'KA', gstEnabled: gst.enabled, gstRate: gst.rateOverride, gstInclusive: gst.inclusive, receipt, kitchenWorkflow }}
       staff={{ id: session.staffId, name: session.name, role: session.role }}
       menu={menu}
       tables={tableDtos}

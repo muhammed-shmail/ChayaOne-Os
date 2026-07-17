@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
             })),
           },
         },
-        include: { items: true, kots: true, table: { select: { label: true } } },
+        include: { items: true, kots: true, table: { select: { label: true } }, customer: { select: { name: true } } },
       });
 
       if (input.payment) {
