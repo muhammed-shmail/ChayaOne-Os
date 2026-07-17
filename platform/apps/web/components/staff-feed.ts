@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useSyncExternalStore } from 'react';
+import { subscribeStaff } from '@/lib/realtime-client';
 
 /**
  * Staff notification feed — a module-level singleton shared by every <StaffBell>.
  *
- * One EventSource for the whole tab (POS keeps both the mobile header and the
- * desktop rail mounted, so per-component connections would double up). Read-state
+ * One realtime subscription for the whole tab (POS keeps both the mobile header
+ * and the desktop rail mounted, so per-component connections would double up).
+ * The shared outlet channel is multiplexed in lib/realtime-client.ts. Read-state
  * is a per-device "last seen" timestamp in localStorage — unread = items newer
  * than that. Survives Next HMR via globalThis.
  */
@@ -20,11 +22,11 @@ const EMPTY: State = { items: [], lastSeen: 0 };
 const g = globalThis as unknown as {
   __cafeStaffFeed?: {
     state: State; principal: Principal | null; started: boolean;
-    es: EventSource | null; listeners: Set<() => void>;
+    unsub: (() => void) | null; listeners: Set<() => void>;
   };
 };
 const store = g.__cafeStaffFeed ?? (g.__cafeStaffFeed = {
-  state: EMPTY, principal: null, started: false, es: null, listeners: new Set(),
+  state: EMPTY, principal: null, started: false, unsub: null, listeners: new Set(),
 });
 
 function emit() { for (const l of store.listeners) l(); }
@@ -60,29 +62,23 @@ async function start(p: Principal) {
     }
   } catch { /* offline — SSE will backfill live items */ }
 
-  // live stream (shares the per-outlet SSE bus with the KDS / owner bell)
-  try {
-    const es = new EventSource('/api/stream');
-    store.es = es;
-    es.onmessage = (e) => {
-      let msg: any;
-      try { msg = JSON.parse(e.data); } catch { return; }
-      if (msg.type === 'notify' && relevant(msg.notification)) {
-        const n = msg.notification;
-        add({ id: n.id, type: n.type, severity: n.severity, title: n.title, body: n.body, at: n.at });
-      } else if (msg.type === 'order.pending' && ['waiter', 'cashier', 'owner', 'manager'].includes(p.role)) {
-        // QR orders awaiting approval — live, transient (the Approvals screen is
-        // the source of truth; this is just the heads-up on the bar).
-        const t = msg.ticket;
-        add({
-          id: `pending:${t.id}`, type: 'approval', severity: 'info',
-          title: `Order #${t.number} awaiting approval`,
-          body: t.table && t.table !== '—' ? `Table ${t.table}` : null,
-          at: t.placedAt || store.state.lastSeen,
-        });
-      }
-    };
-  } catch { /* EventSource unsupported — history-only */ }
+  // live channel (shares the per-outlet Supabase channel with the KDS / owner bell)
+  store.unsub = subscribeStaff((msg) => {
+    if (msg.type === 'notify' && relevant(msg.notification)) {
+      const n = msg.notification;
+      add({ id: n.id, type: n.type, severity: n.severity, title: n.title, body: n.body, at: n.at });
+    } else if (msg.type === 'order.pending' && ['waiter', 'cashier', 'owner', 'manager'].includes(p.role)) {
+      // QR orders awaiting approval — live, transient (the Approvals screen is
+      // the source of truth; this is just the heads-up on the bar).
+      const t = msg.ticket;
+      add({
+        id: `pending:${t.id}`, type: 'approval', severity: 'info',
+        title: `Order #${t.number} awaiting approval`,
+        body: t.table && t.table !== '—' ? `Table ${t.table}` : null,
+        at: t.placedAt || store.state.lastSeen,
+      });
+    }
+  });
 }
 
 export function markSeen() {

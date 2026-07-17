@@ -108,9 +108,9 @@ export type RolledSession = {
  *
  * Shared by:
  *  - /api/auth/refresh — the client keep-alive + middleware silent-refresh.
- *  - /api/stream — so a long-lived SSE survives a lapsed 30-min access token and
- *    reconnects without a full page reload (otherwise a single 401 kills the
- *    EventSource for good and the live feed goes Offline).
+ *  - /api/realtime/token — so a client re-fetching its Supabase Realtime token
+ *    after a lapsed 30-min access token gets re-authorized (and a fresh access
+ *    cookie) instead of being stranded Offline.
  */
 export async function rollFromRefresh(req: NextRequest): Promise<RolledSession | null> {
   const token = req.cookies.get(REFRESH_COOKIE)?.value;

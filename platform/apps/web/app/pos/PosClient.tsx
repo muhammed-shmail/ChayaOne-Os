@@ -13,6 +13,7 @@ import {
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
+import { subscribeStaff } from '@/lib/realtime-client';
 import { useStaffInstall } from '@/components/staff-install';
 import { isOffline, OFFLINE_ORDER_MSG, OFFLINE_PAY_MSG } from '@/components/online';
 import { getGeoHeaders } from '@/lib/geo-client';
@@ -352,12 +353,10 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     return () => { alive = false; };
   }, []);
 
-  // follow the same realtime bus the KDS uses, so status flips here the instant
-  // the kitchen bumps a ticket. We only care about orders fired from this till.
+  // follow the same realtime channel the KDS uses, so status flips here the
+  // instant the kitchen bumps a ticket. We only care about orders from this till.
   useEffect(() => {
-    const es = new EventSource('/api/stream');
-    es.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
+    return subscribeStaff((msg) => {
       // keep the approvals badge + floor occupancy live as orders arrive / settle
       if (msg.type === 'order.pending' || msg.type === 'order.new' || msg.type === 'order.updated') {
         fetch('/api/approvals').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setPendingApprovals(d.orders?.length ?? 0); }).catch(() => {});
@@ -373,8 +372,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
         }
         return prev.map((t) => (t.id === msg.ticket.id ? { ...t, status: msg.ticket.status } : t));
       });
-    };
-    return () => es.close();
+    });
   }, []);
 
   const cat = menu.find((c) => c.id === activeCat) ?? menu[0];

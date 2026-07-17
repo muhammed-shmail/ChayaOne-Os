@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
       return o;
     });
     await reverseWalletHold(orderId); // refund any provisional wallet points
-    publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
+    await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
     await alertOrderCancelled(session.outletId, { number: updated.number, by: session.name, totalPaise: updated.totalPaise });
     return NextResponse.json({ ok: true, status: 'cancelled' });
   }
@@ -237,7 +237,7 @@ export async function POST(req: NextRequest) {
 
   await emitLowStockAlerts(session.outletId, consumed);
   // now it reaches the KDS (and the POS live rail + the customer's table stream)
-  publish(session.outletId, { type: 'order.new', ticket: toTicket(updated) });
+  await publish(session.outletId, { type: 'order.new', ticket: toTicket(updated) });
 
   return NextResponse.json({ ok: true, status: 'in_kitchen', approvedBy: session.name });
 }

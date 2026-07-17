@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatINR } from '@cafeos/core';
 import { Minus, Plus, X, ArrowLeft } from '@/components/ui';
+import { subscribeStaff } from '@/lib/realtime-client';
 
 export type PendingOrder = {
   id: string;
@@ -65,20 +66,18 @@ export default function ApprovalsClient({ outletName, role, initial }: { outletN
   }
 
   useEffect(() => {
-    const es = new EventSource('/api/stream');
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
-    es.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'order.pending') {
-        if (liveRef.current) { liveRef.current.style.animation = 'none'; void liveRef.current.offsetWidth; liveRef.current.style.animation = ''; }
-        refetch();
-      } else if (msg.type === 'order.new' || msg.type === 'order.updated') {
-        // it left the pending queue (approved → kitchen, or cancelled)
-        setOrders((prev) => prev.filter((o) => o.id !== msg.ticket?.id));
-      }
-    };
-    return () => es.close();
+    return subscribeStaff(
+      (msg) => {
+        if (msg.type === 'order.pending') {
+          if (liveRef.current) { liveRef.current.style.animation = 'none'; void liveRef.current.offsetWidth; liveRef.current.style.animation = ''; }
+          refetch();
+        } else if (msg.type === 'order.new' || msg.type === 'order.updated') {
+          // it left the pending queue (approved → kitchen, or cancelled)
+          setOrders((prev) => prev.filter((o) => o.id !== msg.ticket?.id));
+        }
+      },
+      (s) => setConnected(s === 'connected'),
+    );
   }, []);
 
   async function act(id: string, action: 'approve' | 'reject') {

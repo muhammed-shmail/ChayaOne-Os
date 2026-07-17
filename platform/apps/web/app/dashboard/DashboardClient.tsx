@@ -18,6 +18,7 @@ import type { ReceiptConfig } from '@/lib/receipt';
 import { tableOrderUrl, tableQrImageUrl } from '@/lib/qr';
 import { FEATURED_LABELS, DEFAULT_GAME_KEYS, type PwaConfig } from '@/lib/pwa';
 import type { OutletLocation } from '@/lib/geo';
+import { subscribeStaff } from '@/lib/realtime-client';
 import { getGeoHeaders } from '@/lib/geo-client';
 import { prettyAction } from '@/lib/audit-labels';
 import {
@@ -192,61 +193,36 @@ export default function DashboardClient({
   const [toast, setToast] = useState<string | null>(null);
   const liveDot = useRef<HTMLSpanElement>(null);
 
+  // Self-healing realtime. The helper re-fetches a fresh token and rejoins the
+  // private outlet channel on drop/expiry (the old hand-rolled EventSource
+  // reconnect that kept the owner bell from sticking on "Offline" now lives there).
   useEffect(() => {
-    let es: EventSource | null = null;
-    let retry: ReturnType<typeof setTimeout> | null = null;
-    let closed = false;
-
-    const onMessage = (e: MessageEvent) => {
-      const msg = JSON.parse(e.data);
-      // any order lifecycle change (placed / bumped / settled anywhere) refreshes
-      // the live queue, so a bill settled in the POS clears here without a manual
-      // Refresh. Only refetch while the Orders tab is open (it reloads on open too).
-      if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
-        if (activeMenuRef.current === 'orders') loadOrders();
-      }
-      if (msg.type === 'order.new') {
-        setLiveOrders((n) => n + 1);
-        flashMessage(`New Order Received: #${msg.ticket.number}`);
-        if (liveDot.current) {
-          liveDot.current.style.animation = 'none';
-          void liveDot.current.offsetWidth;
-          liveDot.current.style.animation = '';
+    return subscribeStaff(
+      (msg) => {
+        // any order lifecycle change (placed / bumped / settled anywhere) refreshes
+        // the live queue, so a bill settled in the POS clears here without a manual
+        // Refresh. Only refetch while the Orders tab is open (it reloads on open too).
+        if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
+          if (activeMenuRef.current === 'orders') loadOrders();
         }
-      } else if (msg.type === 'notify' && (msg.notification.audience ?? 'owner') === 'owner') {
-        // live owner alert → bump the bell + prepend to the feed (staff-targeted
-        // notifications are ignored here; they go to the staff bar)
-        setUnread((u) => u + 1);
-        setNotifs((prev) => [{ ...msg.notification, readAt: null, at: new Date(msg.notification.at).toISOString() }, ...prev].slice(0, 40));
-        flashMessage(`🔔 ${msg.notification.title}`);
-      }
-    };
-
-    // Self-healing stream. EventSource auto-retries transient network drops on its
-    // own, but gives up permanently on a hard failure (e.g. a 401 when the access
-    // token has lapsed) — which used to strand the bell on "Offline" until reload.
-    // The server now accepts the refresh cookie, so we just re-open the connection.
-    const connect = () => {
-      if (closed) return;
-      es = new EventSource('/api/stream');
-      es.onopen = () => setConnected(true);
-      es.onmessage = onMessage;
-      es.onerror = () => {
-        setConnected(false);
-        // readyState CONNECTING → native retry in flight, let it run. CLOSED → dead
-        // for good, so we reconnect ourselves after a short backoff.
-        if (es && es.readyState === EventSource.CLOSED && !closed && !retry) {
-          retry = setTimeout(() => { retry = null; connect(); }, 3000);
+        if (msg.type === 'order.new') {
+          setLiveOrders((n) => n + 1);
+          flashMessage(`New Order Received: #${msg.ticket.number}`);
+          if (liveDot.current) {
+            liveDot.current.style.animation = 'none';
+            void liveDot.current.offsetWidth;
+            liveDot.current.style.animation = '';
+          }
+        } else if (msg.type === 'notify' && (msg.notification.audience ?? 'owner') === 'owner') {
+          // live owner alert → bump the bell + prepend to the feed (staff-targeted
+          // notifications are ignored here; they go to the staff bar)
+          setUnread((u) => u + 1);
+          setNotifs((prev) => [{ ...msg.notification, readAt: null, at: new Date(msg.notification.at).toISOString() }, ...prev].slice(0, 40));
+          flashMessage(`🔔 ${msg.notification.title}`);
         }
-      };
-    };
-    connect();
-
-    return () => {
-      closed = true;
-      if (retry) clearTimeout(retry);
-      es?.close();
-    };
+      },
+      (s) => setConnected(s === 'connected'),
+    );
   }, []);
 
   function flashMessage(msg: string) {
