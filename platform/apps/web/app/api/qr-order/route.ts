@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
   });
 
   // surface to waiters (and the customer's own table stream) — NOT the KDS
-  publish(outletId, { type: 'order.pending', ticket: toTicket(order) });
+  await publish(outletId, { type: 'order.pending', ticket: toTicket(order) });
 
   return NextResponse.json({ ok: true, order: { id: order.id, number: order.number, status: order.status, totalPaise: bill.totalPaise, discountPaise: bill.discountPaise, walletPointsUsed } }, { status: 201 });
 }

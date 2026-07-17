@@ -1,120 +1,156 @@
 # Cafe OS — Deployment Guide
 
-## 1. Database: Neon (PostgreSQL)
+Cafe OS is one full-stack Next.js app (`platform/apps/web` in a Turborepo). It
+deploys to **Vercel**, with **Neon/Supabase Postgres** for data and **Supabase**
+for image storage + realtime (KDS / POS / owner bell / customer live status).
 
-1. Go to [neon.tech](https://neon.tech) and sign up.
-2. Create a new project:
-   - **Region:** AWS ap-southeast-1 (Singapore)
+## 1. Database: Postgres (Neon or Supabase)
+
+1. Create a Postgres database — [neon.tech](https://neon.tech) or the Postgres that
+   ships with your Supabase project both work.
+   - **Region:** closest to your users (e.g. AWS ap-southeast-1 / Singapore).
    - **Database name:** `cafeos`
-3. Copy the two connection strings from the project dashboard:
-   - **Pooled connection string** → `DATABASE_URL` (for app queries)
-   - **Direct connection string** → `DIRECT_URL` (for migrations)
-4. Run migrations against Neon (from `platform/` directory):
+2. Copy the two connection strings:
+   - **Pooled** connection string → `DATABASE_URL` (app queries)
+   - **Direct** connection string → `DIRECT_URL` (migrations)
+3. Push the schema + seed once (from `platform/`):
    ```bash
    DATABASE_URL="<pooled>" DIRECT_URL="<direct>" npm run db:push
    npm run db:seed
    ```
-5. Keep these strings safe — you'll paste them into Railway next.
+4. Keep these strings safe — you'll paste them into Vercel.
 
+## 2. Realtime + Storage: Supabase
 
-## 2. App: Railway
+The realtime spine (order tickets to the KDS/POS, owner-bell alerts, customer live
+status) runs on **Supabase Realtime broadcast**. The server broadcasts events; the
+browsers subscribe directly to **private** channels, so we need one-time setup.
 
-1. Go to [railway.app](https://railway.app) and log in with GitHub.
-2. **New Project** → **Deploy from GitHub repo** → select your Cafe OS repo.
-3. Configure:
-   - **Root directory:** `platform`
-   - **Environment:** Railway auto-detects Next.js and runs:
-     - Build: `npm run db:generate && npm run build`
-     - Start: `npm run -w @cafeos/web start`
-   - **Region:** Singapore (or closest to your users)
-4. Add environment variables in the Railway dashboard:
+1. In your Supabase project, **Settings → API**, copy:
+   - **Project URL** → `SUPABASE_URL`
+   - **service_role** key → `SUPABASE_SERVICE_ROLE_KEY` (server only)
+   - **anon** key → `SUPABASE_ANON_KEY` (public)
+   - **JWT Secret** → `SUPABASE_JWT_SECRET`
+2. **Storage:** create a **public** bucket (e.g. `uploads`) and set `SUPABASE_BUCKET`.
+3. **Realtime authorization (one-time SQL).** In **SQL Editor**, run the policy that
+   scopes each private channel to the outlet (and table) in the client's token. Our
+   token endpoints ([app/api/realtime/token](platform/apps/web/app/api/realtime/token/route.ts),
+   [app/api/customer/realtime](platform/apps/web/app/api/customer/realtime/route.ts))
+   mint a JWT with `outlet_id` (staff) or `outlet_id` + `table_id` (customer):
+
+   ```sql
+   -- Receive-only policy for private broadcast channels. A staff token (outlet
+   -- only) reads exactly outlet:<id>; a customer token (outlet + table) reads
+   -- exactly outlet:<id>:tbl:<tableId>. The service-role broadcast bypasses RLS.
+   create policy "cafeos realtime read own channel"
+   on realtime.messages for select
+   to authenticated
+   using (
+     realtime.topic() =
+       'outlet:' || (auth.jwt() ->> 'outlet_id')
+       || coalesce(':tbl:' || (auth.jwt() ->> 'table_id'), '')
+   );
+   ```
+
+   > No table replication or Realtime-per-table toggling is needed — we use
+   > **broadcast**, not Postgres-changes. The policy above is the only Supabase-side
+   > config beyond enabling Realtime (on by default for new projects).
+
+## 3. App: Vercel
+
+1. Go to [vercel.com](https://vercel.com), **Add New → Project**, import your repo.
+2. Configure the project:
+   - **Root Directory:** `platform`  ← important (the monorepo root, has `turbo.json`).
+   - **Framework Preset:** Next.js (auto-detected). Build/install come from
+     [platform/vercel.json](platform/vercel.json):
+     - Install: `npm ci`
+     - Build: `npm run db:generate` → (on **production** only) `db:generate` +
+       `prisma db push` to sync the schema → `npm run build`
+     - Output: `apps/web/.next`
+3. Add environment variables (Project → Settings → Environment Variables):
 
    | Variable | Value |
    |----------|-------|
-   | `DATABASE_URL` | Neon pooled connection string |
-   | `DIRECT_URL` | Neon direct connection string |
-   | `JWT_SECRET` | Long random string (e.g., `openssl rand -base64 48`) |
-   | `ANTHROPIC_API_KEY` | Your API key (from console.anthropic.com) |
-   | `RAZORPAY_KEY_ID` | Test or live key (when ready) |
-   | `RAZORPAY_KEY_SECRET` | Test or live secret |
-   | `RAZORPAY_WEBHOOK_SECRET` | Webhook secret |
+   | `DATABASE_URL` | Pooled Postgres connection string |
+   | `DIRECT_URL` | Direct Postgres connection string |
+   | `JWT_SECRET` | Long random string (`openssl rand -base64 48`) |
+   | `PLATFORM_JWT_SECRET` | Long random string (super-admin sessions) |
    | `SUPABASE_URL` | Supabase project URL |
    | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role key |
-   | `SUPABASE_BUCKET` | Supabase bucket name (e.g., `uploads`) |
+   | `SUPABASE_ANON_KEY` | Supabase anon key |
+   | `SUPABASE_JWT_SECRET` | Supabase JWT secret (realtime tokens) |
+   | `SUPABASE_BUCKET` | Storage bucket name (e.g. `uploads`) |
+   | `GEMINI_API_KEY` | For the AI assistant (optional) |
+   | `RAZORPAY_KEY_ID` / `_SECRET` / `_WEBHOOK_SECRET` | Payments (when ready) |
+   | `DEV_TENANT_SUBDOMAIN` | Only for a single-tenant deploy whose host carries no tenant subdomain |
 
-5. **Deploy** — Railway will build and start your app. First build takes 2–3 minutes.
-6. Once deployed, you'll get a public URL. Test it:
-   - Open `/login` → should see login page
-   - Orders → KDS realtime should work (same process, multiple KDS tabs)
+4. **Deploy.** First build takes 2–3 minutes.
+5. Once live, test:
+   - `/login` → login page renders.
+   - Open the KDS and POS in two tabs, fire an order → the ticket appears on the
+     KDS live and the POS/owner-bell update (confirms realtime end-to-end).
 
 ---
 
-## 3. After deployment: the update loop
+## 4. After deployment: the update loop
 
-**Push code → Railway auto-rebuilds → live in 2–3 minutes.**
+**Push code → Vercel auto-rebuilds → live in 2–3 minutes.**
 
 ```bash
-# Make changes locally
 git add .
 git commit -m "description"
 git push origin main
-# Watch the build on Railway dashboard → done
+# Watch the deployment on the Vercel dashboard → done
 ```
 
-**Schema changes (Prisma)?** Run against Neon first:
-```bash
-npm run db:push
-# (or if you have migrations: npm run db:migrate && npm run db:deploy)
-```
-Then push the code. Railway will regenerate types automatically.
+**Schema changes (Prisma)?** Just push. The **production** build runs
+`prisma db push` against your database before the app boots, so the live schema is
+synced automatically. Preview deploys **skip** the push (gated on `VERCEL_ENV`), so
+they never mutate the production database.
+
+⚠️ **Caveat:** the push uses `--accept-data-loss`, so destructive diffs (renaming/
+dropping a column) apply without a prompt. Additive changes are safe; for a
+genuinely lossy migration, test it on a database branch first.
 
 ---
 
-## 4. Monitoring & logs
+## 5. Monitoring & logs
 
-In Railway dashboard:
-- **Logs** → real-time stdout/stderr from your app
-- **Metrics** → CPU, memory, request count
-- **Deployments** → see each push and rollback if needed
+In the Vercel dashboard:
+- **Deployments** → each push, with build + function logs and one-click rollback.
+- **Logs / Observability** → runtime logs and function invocations.
+- **Realtime** usage lives in the Supabase dashboard (**Reports → Realtime**).
 
 ---
 
-## 5. Custom domain (optional)
+## 6. Custom domain
 
-Railway → **Settings** → **Domains** → add your cafe's domain. Enable HTTPS auto (free Let's Encrypt).
+Vercel → **Settings → Domains** → add your domain and point DNS as instructed.
+HTTPS is provisioned automatically. For multi-tenant subdomains (`kaava.yourdomain.com`),
+add a wildcard `*.yourdomain.com` domain.
 
 ---
 
 ## Troubleshooting
 
-**Build fails:** Check the build log. Most common: missing env var → add it to Railway dashboard.
+**Build fails with a Prisma engine error:** the schema's generator includes
+`rhel-openssl-3.0.x` for Vercel's runtime — if you changed it, restore that target.
 
-**Realtime not working (KDS silent):** Verify `DATABASE_URL` is the pooled string (has `-pooler` in it). Direct URL breaks the connection pool.
+**Realtime silent (KDS/POS not updating live):**
+- Confirm `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`, and
+  `SUPABASE_JWT_SECRET` are all set. Without them, `publish()` is a no-op and the
+  clients can't get a token.
+- Confirm the **RLS policy** from §2 exists on `realtime.messages` — without it,
+  private-channel subscribes are rejected and clients show "Offline".
+- Check the browser console for a `/api/realtime/token` 503 (`realtime_not_configured`)
+  → an env var is missing.
 
-**Database migration errors:** Use Neon branching to test migrations safely before running against prod. See neon.tech/docs/manage/branches.
+**A guest sees another table's order (or nothing):** verify the RLS policy's topic
+expression matches exactly — staff = `outlet:<id>`, customer = `outlet:<id>:tbl:<tableId>`.
 
----
-
-## Scaling: when you need Redis
-
-Once you add multiple Railway instances or go serverless, the in-process EventEmitter won't work across instances. That's when you:
-
-1. Sign up at [upstash.com](https://upstash.com) (Redis).
-2. Swap one function in `platform/apps/web/lib/realtime.ts`:
-   ```ts
-   // Replace the EventEmitter block with Upstash client
-   import { Redis } from '@upstash/redis';
-   const redis = new Redis({ url: process.env.REDIS_URL });
-   export function publish(outletId, event) {
-     redis.publish(`outlet:${outletId}`, JSON.stringify(event));
-   }
-   export function subscribe(outletId, handler) {
-     // ... Upstash subscriber pattern
-   }
-   ```
-3. Add `REDIS_URL` to Railway env vars.
-4. Deploy. No other code changes.
+**Database migration errors:** use a database branch to test migrations before prod.
 
 ---
 
-**That's it. Questions?** Check Railway docs at https://docs.railway.app.
+**That's it.** Vercel docs: https://vercel.com/docs · Supabase Realtime:
+https://supabase.com/docs/guides/realtime.

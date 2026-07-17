@@ -59,7 +59,7 @@ export async function createNotification(input: NotificationInput) {
   });
 
   try {
-    publish(n.outletId, {
+    await publish(n.outletId, {
       type: 'notify',
       notification: {
         id: n.id, type: n.type, severity: n.severity, title: n.title, body: n.body, at: n.createdAt.getTime(),

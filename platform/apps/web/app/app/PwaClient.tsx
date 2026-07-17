@@ -5,6 +5,7 @@ import { GamesHub } from '@/components/games/GamesHub';
 import { BrandMark } from '@/components/BrandMark';
 import { Coffee, ShoppingCart, Gamepad2, Gift, Plus, Minus, AlphaTag, type LucideIcon } from '@/components/ui';
 import { getGeoHeaders } from '@/lib/geo-client';
+import { subscribeCustomerTable } from '@/lib/realtime-client';
 
 const NAV: { key: 'home' | 'order' | 'play' | 'rewards'; icon: LucideIcon; label: string }[] = [
   { key: 'home', icon: Coffee, label: 'Home' },
@@ -89,17 +90,15 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
-  // live order status via the public SSE stream
+  // live order status via this table's private Supabase channel (the QR token
+  // resolves to the table server-side, and the channel is scoped to it)
   useEffect(() => {
-    const es = new EventSource(`/api/customer/stream${qs}`);
-    es.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
+    return subscribeCustomerTable(qrToken ?? '', (msg) => {
       if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
         setCtx((c) => (c ? { ...c, order: { ...(c.order ?? {}), ...msg.ticket } as OrderDto } : c));
       }
-    };
-    return () => es.close();
-  }, [qs]);
+    });
+  }, [qrToken]);
 
   // Register the installable PWA's service worker (production only — keeps dev
   // clean). Also actively pull updates: check on load and whenever the app is

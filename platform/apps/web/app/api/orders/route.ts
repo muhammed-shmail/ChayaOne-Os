@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
     if (meterTenantId) await bumpUsage(meterTenantId, 'orders_month').catch(() => {});
 
     // fan out to every KDS subscribed to this outlet
-    publish(outletId, { type: 'order.new', ticket: toTicket(order) });
+    await publish(outletId, { type: 'order.new', ticket: toTicket(order) });
     // raise low-stock alerts for anything that dipped below reorder (best effort)
     await emitLowStockAlerts(outletId, consumedStockIds);
     // owner alert: unusually large discount on this ticket (percent OR flat ₹ —

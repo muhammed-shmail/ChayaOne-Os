@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
       });
     });
     total += o.totalPaise;
-    publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
+    await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
   }
 
   // accrue loyalty ONCE on the combined table total (not per KOT) so a multi-order
@@ -206,7 +206,7 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
   }).catch(() => {});
 
   // refresh the KDS — ticket without the voided line, or gone if cancelled
-  publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
+  await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
 
   return NextResponse.json({ ok: true, cancelled: noneLeft, totalPaise: updated.totalPaise });
 }

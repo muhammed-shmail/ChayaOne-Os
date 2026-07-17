@@ -8,6 +8,7 @@ import StaffBell from '@/components/StaffBell';
 import { useStaffInstall } from '@/components/staff-install';
 import { isOffline } from '@/components/online';
 import { kitchenName, kitchenColor, type Kitchen } from '@/lib/kitchens';
+import { subscribeStaff } from '@/lib/realtime-client';
 
 type Ticket = {
   id: string;
@@ -67,26 +68,24 @@ export default function KdsClient({ outletName, initial, kitchens, staff, staffA
     return () => clearInterval(t);
   }, []);
 
-  // SSE subscription
+  // realtime subscription (Supabase private channel for this outlet)
   useEffect(() => {
-    const es = new EventSource('/api/stream');
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
-    es.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'order.new') {
-        // pulse the live dot
-        if (liveRef.current) { liveRef.current.style.animation = 'none'; void liveRef.current.offsetWidth; liveRef.current.style.animation = ''; }
-        setTickets((prev) => (prev.some((t) => t.id === msg.ticket.id) ? prev : [...prev, msg.ticket]));
-      } else if (msg.type === 'order.updated') {
-        setTickets((prev) => {
-          const stillActive = ACTIVE.includes(msg.ticket.status);
-          const without = prev.filter((t) => t.id !== msg.ticket.id);
-          return stillActive ? [...without, msg.ticket] : without;
-        });
-      }
-    };
-    return () => es.close();
+    return subscribeStaff(
+      (msg) => {
+        if (msg.type === 'order.new') {
+          // pulse the live dot
+          if (liveRef.current) { liveRef.current.style.animation = 'none'; void liveRef.current.offsetWidth; liveRef.current.style.animation = ''; }
+          setTickets((prev) => (prev.some((t) => t.id === msg.ticket.id) ? prev : [...prev, msg.ticket]));
+        } else if (msg.type === 'order.updated') {
+          setTickets((prev) => {
+            const stillActive = ACTIVE.includes(msg.ticket.status);
+            const without = prev.filter((t) => t.id !== msg.ticket.id);
+            return stillActive ? [...without, msg.ticket] : without;
+          });
+        }
+      },
+      (s) => setConnected(s === 'connected'),
+    );
   }, []);
 
   async function logout() {

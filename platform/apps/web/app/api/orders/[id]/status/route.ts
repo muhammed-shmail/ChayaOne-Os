@@ -74,7 +74,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }).catch(() => {});
   }
 
-  publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
+  await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
   if (next === 'cancelled') {
     await reverseWalletHold(params.id); // refund any provisional wallet points
     await alertOrderCancelled(session.outletId, { number: updated.number, by: session.name, totalPaise: updated.totalPaise });
