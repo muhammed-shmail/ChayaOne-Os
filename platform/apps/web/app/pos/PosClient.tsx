@@ -200,6 +200,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
         staffId: staff.id,
         type: 'dine_in' as const,
         tableId: tableAction.id,
+        ...(custName.trim() || custPhone.trim() ? { customer: { name: custName.trim(), phone: custPhone.trim() } } : {}),
         lines: tableCart.map((l) => ({ itemId: l.itemId, nameSnapshot: l.name, qty: l.qty, unitPricePaise: l.pricePaise, gstRate: l.gstRate, station: l.station, modifiers: [] })),
         discountPct: 0,
         serviceChargePct: 0,
@@ -617,9 +618,9 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             <Download size={17} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
           </button>
         )}
-        {(staff.role === 'owner' || staff.role === 'manager') && (
+        {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
           <a href="/dashboard" className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--turmeric)', color: '#2A1607', border: '1px solid var(--turmeric-d)' }}>
-            <LayoutDashboard size={17} aria-hidden /> Owner Dashboard
+            <LayoutDashboard size={17} aria-hidden /> Dashboard
           </a>
         )}
       </aside>
@@ -873,15 +874,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                   </button>
                 </div>
                 {showCust && (
-                  <div className="rounded-[12px] border p-2.5 mt-2 flex flex-col gap-2" style={{ borderColor: 'var(--line)', background: 'var(--paper)' }}>
-                    <input value={custName} onChange={(e) => setCustName(e.target.value)} placeholder="Customer name"
-                      className="px-3 py-2 rounded-[10px] border text-sm" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }} />
-                    <input value={custPhone} onChange={(e) => setCustPhone(e.target.value)} placeholder="Phone (optional)" inputMode="tel"
-                      className="px-3 py-2 rounded-[10px] border text-sm" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }} />
-                    {(custName.trim() || custPhone.trim()) && (
-                      <button onClick={() => resetCustomer()} className="self-start text-xs font-bold" style={{ color: 'var(--ink-3)' }}>Clear</button>
-                    )}
-                  </div>
+                  <CustomerField name={custName} phone={custPhone} open={showCust}
+                    setName={setCustName} setPhone={setCustPhone} setOpen={setShowCust} compact />
                 )}
               </div>
 
@@ -1015,9 +1009,9 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                 <Download size={18} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
               </button>
             )}
-            {(staff.role === 'owner' || staff.role === 'manager') && (
+            {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
               <a href="/dashboard" className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--turmeric)', color: '#2A1607', border: '1px solid var(--turmeric-d)' }}>
-                <LayoutDashboard size={18} aria-hidden /> Owner Dashboard
+                <LayoutDashboard size={18} aria-hidden /> Dashboard
               </a>
             )}
           </aside>
@@ -1211,13 +1205,33 @@ function Modal({ children, title, onClose }: { children: React.ReactNode; title:
  * until opened; a phone reaches the CRM (order history + loyalty), name-only just
  * prints on the receipt. Removing clears both fields.
  */
-function CustomerField({ name, phone, open, setName, setPhone, setOpen }: {
+function CustomerField({ name, phone, open, setName, setPhone, setOpen, compact = false }: {
   name: string; phone: string; open: boolean;
   setName: (v: string) => void; setPhone: (v: string) => void; setOpen: (v: boolean) => void;
+  compact?: boolean;
 }) {
   const has = !!(name.trim() || phone.trim());
+  const digits = phone.replace(/\D/g, '');
+  const [matches, setMatches] = useState<{ id: string; name: string | null; phone: string | null; points: number; visitCount: number }[]>([]);
+
+  useEffect(() => {
+    if (!open || digits.length < 3) { setMatches([]); return; }
+    const ac = new AbortController();
+    const t = window.setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/pos/customer/lookup?phone=${encodeURIComponent(phone)}`, { signal: ac.signal });
+        if (!r.ok) return;
+        const d = await r.json();
+        const found = typeof d?.customer?.name === 'string' ? d.customer.name.trim() : '';
+        if (found && (!name.trim() || name.trim().toLowerCase() === 'customer' || name.trim().toLowerCase() === 'guest')) setName(found);
+        setMatches(Array.isArray(d?.customers) ? d.customers : []);
+      } catch {}
+    }, 250);
+    return () => { ac.abort(); window.clearTimeout(t); };
+  }, [digits, name, open, phone, setName]);
+
   return (
-    <div className="mt-3.5">
+    <div className={compact ? 'mt-2' : 'mt-3.5'}>
       {!open && !has ? (
         <button onClick={() => setOpen(true)}
           className="w-full py-2.5 rounded-[12px] border border-dashed font-bold text-[13px] inline-flex items-center justify-center gap-1.5"
@@ -1234,6 +1248,22 @@ function CustomerField({ name, phone, open, setName, setPhone, setOpen }: {
             className="w-full mb-2 px-3 py-2 rounded-[10px] border text-sm outline-none" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }} />
           <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (for loyalty & history)" inputMode="tel"
             className="w-full px-3 py-2 rounded-[10px] border text-sm outline-none" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }} />
+          {matches.length > 0 && (
+            <div className="mt-2 rounded-[10px] border overflow-hidden" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }}>
+              {matches.map((m) => (
+                <button key={m.id} type="button" onClick={() => { setName(m.name ?? ''); setPhone(m.phone ?? phone); setMatches([]); }}
+                  className="w-full px-3 py-2 text-left text-[12.5px] font-bold border-b last:border-b-0"
+                  style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
+                  <span>{m.name ?? 'Guest'}</span>
+                  <span className="ml-2 tnum" style={{ color: 'var(--ink-3)' }}>{m.phone}</span>
+                  <span className="ml-2" style={{ color: 'var(--cardamom-d)' }}>{m.points} pts · {m.visitCount} visits</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {digits.length >= 8 && !name.trim() && (
+            <p className="mt-1.5 text-[11px] font-bold" style={{ color: 'var(--ink-3)' }}>New customer name will be saved with this phone.</p>
+          )}
         </div>
       )}
     </div>
@@ -1249,6 +1279,25 @@ function ChargeModal({ total, busy, initialName = '', initialPhone = '', onClose
   const [custName, setCustName] = useState(initialName);
   const [custPhone, setCustPhone] = useState(initialPhone);
   const customer = custName.trim() || custPhone.trim() ? { name: custName.trim(), phone: custPhone.trim() } : null;
+  const custDigits = custPhone.replace(/\D/g, '');
+  const [custMatches, setCustMatches] = useState<{ id: string; name: string | null; phone: string | null; points: number; visitCount: number }[]>([]);
+
+  useEffect(() => {
+    if (!showCust || custDigits.length < 3) { setCustMatches([]); return; }
+    const ac = new AbortController();
+    const t = window.setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/pos/customer/lookup?phone=${encodeURIComponent(custPhone)}`, { signal: ac.signal });
+        if (!r.ok) return;
+        const d = await r.json();
+        const found = typeof d?.customer?.name === 'string' ? d.customer.name.trim() : '';
+        if (found && (!custName.trim() || custName.trim().toLowerCase() === 'customer' || custName.trim().toLowerCase() === 'guest')) setCustName(found);
+        setCustMatches(Array.isArray(d?.customers) ? d.customers : []);
+      } catch {}
+    }, 250);
+    return () => { ac.abort(); window.clearTimeout(t); };
+  }, [custDigits, custName, custPhone, showCust]);
+
   return (
     <Modal title="Charge" onClose={onClose}>
       <div className="flex justify-between items-baseline px-[22px] py-[18px]">
@@ -1295,6 +1344,19 @@ function ChargeModal({ total, busy, initialName = '', initialPhone = '', onClose
               className="w-full mb-2 px-3 py-2 rounded-[10px] border text-sm" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }} />
             <input value={custPhone} onChange={(e) => setCustPhone(e.target.value)} placeholder="Phone" inputMode="tel"
               className="w-full px-3 py-2 rounded-[10px] border text-sm" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }} />
+            {custMatches.length > 0 && (
+              <div className="mt-2 rounded-[10px] border overflow-hidden" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }}>
+                {custMatches.map((m) => (
+                  <button key={m.id} type="button" onClick={() => { setCustName(m.name ?? ''); setCustPhone(m.phone ?? custPhone); setCustMatches([]); }}
+                    className="w-full px-3 py-2 text-left text-[12.5px] font-bold border-b last:border-b-0"
+                    style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
+                    <span>{m.name ?? 'Guest'}</span>
+                    <span className="ml-2 tnum" style={{ color: 'var(--ink-3)' }}>{m.phone}</span>
+                    <span className="ml-2" style={{ color: 'var(--cardamom-d)' }}>{m.points} pts · {m.visitCount} visits</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

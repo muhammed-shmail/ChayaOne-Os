@@ -221,7 +221,7 @@ export async function GET(req: NextRequest) {
     where: { outletId: session.outletId, ...(status ? { status } : {}) },
     orderBy: { placedAt: 'desc' },
     take: 50,
-    include: { items: true, table: true },
+    include: { items: true, table: true, customer: true },
   });
   return NextResponse.json({ orders });
 }

@@ -27,14 +27,14 @@ export const ROLE_LABELS: Record<StaffRole, string> = {
 export const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
   owner: 'Full access — dashboard, reports, settings, and staff management.',
   manager: 'Dashboard, inventory, suppliers, tables & reports. Manages floor staff.',
-  cashier: 'Point of sale and kitchen display.',
+  cashier: 'Cashier dashboard, point of sale and kitchen display.',
   waiter: 'Point of sale and QR order approvals.',
   kitchen: 'Kitchen display only.',
 };
 
 /** Which roles may reach each surface. */
 const ACCESS: Record<Surface, StaffRole[]> = {
-  dashboard: ['owner', 'manager'],
+  dashboard: ['owner', 'manager', 'cashier'],
   pos: ['owner', 'manager', 'cashier', 'waiter'],
   kds: ['owner', 'manager', 'cashier', 'kitchen'],
   approvals: ['owner', 'manager', 'cashier', 'waiter', 'kitchen'], // kitchen is view-only (enforced in the approvals API)
@@ -47,8 +47,8 @@ export function canAccess(role: string, surface: Surface): boolean {
 /** Where to send a role after login / when they hit a surface they can't use. */
 export function landingFor(role: string): string {
   if (role === 'kitchen') return '/kds';
-  if (canAccess(role, 'pos')) return '/pos';
   if (canAccess(role, 'dashboard')) return '/dashboard';
+  if (canAccess(role, 'pos')) return '/pos';
   return '/login';
 }
 

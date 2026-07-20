@@ -39,6 +39,7 @@ type Msg = { who: 'ai' | 'me'; html: string };
 
 const MENUS: { key: string; label: string; icon: LucideIcon }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'reprint', label: 'Print Bills', icon: Printer },
   { key: 'monitor', label: 'Monitor', icon: Wifi },
   { key: 'orders', label: 'Orders', icon: ClipboardList },
   { key: 'tables', label: 'Tables', icon: UtensilsCrossed },
@@ -54,6 +55,7 @@ const MENUS: { key: string; label: string; icon: LucideIcon }[] = [
  *  button opens the full drawer. Everything else stays reachable via the drawer. */
 const BOTTOM_NAV: { key: string; label: string; icon: LucideIcon }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'reprint', label: 'Print Bills', icon: Printer },
   { key: 'orders', label: 'Orders', icon: ClipboardList },
   { key: 'tables', label: 'Tables', icon: UtensilsCrossed },
   { key: 'customers', label: 'Customers', icon: Users },
@@ -132,8 +134,20 @@ export default function DashboardClient({
   const router = useRouter();
   // Feature tick model: hide modules this cafe isn't entitled to. The server
   // routes are the hard gate; this just keeps the UI honest.
-  const visibleMenus = MENUS.filter((m) => (m.key === 'customers' ? features.crm !== false : true));
-  const visibleBottomNav = BOTTOM_NAV.filter((m) => (m.key === 'customers' ? features.crm !== false : true));
+  const visibleMenus = MENUS.filter((m) => {
+    if (m.key === 'customers' && features.crm === false) return false;
+    if (staff.role === 'cashier') {
+      return ['dashboard', 'orders', 'tables', 'reprint'].includes(m.key);
+    }
+    return true;
+  });
+  const visibleBottomNav = BOTTOM_NAV.filter((m) => {
+    if (m.key === 'customers' && features.crm === false) return false;
+    if (staff.role === 'cashier') {
+      return ['dashboard', 'orders', 'tables', 'reprint'].includes(m.key);
+    }
+    return true;
+  });
   const [isPending, startTransition] = useTransition();
   const { kpi, trend, hourly, topItems, menuQuadrant, lowStock, loyalty, briefing } = data;
 
@@ -206,7 +220,7 @@ export default function DashboardClient({
         // the live queue, so a bill settled in the POS clears here without a manual
         // Refresh. Only refetch while the Orders tab is open (it reloads on open too).
         if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
-          if (activeMenuRef.current === 'orders') loadOrders();
+          if (activeMenuRef.current === 'orders' || activeMenuRef.current === 'reprint') loadOrders();
         }
         if (msg.type === 'order.new') {
           setLiveOrders((n) => n + 1);
@@ -236,6 +250,11 @@ export default function DashboardClient({
   // 4. Settle / Advance Orders logic
   const [ordersList, setOrdersList] = useState<any[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [billSearch, setBillSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [editingDiscount, setEditingDiscount] = useState(false);
+  const [editDiscountPct, setEditDiscountPct] = useState('0');
+  const [editDiscountFlat, setEditDiscountFlat] = useState('0');
 
   const loadOrders = async () => {
     setOrdersLoading(true);
@@ -253,7 +272,7 @@ export default function DashboardClient({
   };
 
   useEffect(() => {
-    if (activeMenu === 'orders') {
+    if (activeMenu === 'orders' || activeMenu === 'reprint') {
       loadOrders();
     }
   }, [activeMenu]);
@@ -290,6 +309,38 @@ export default function DashboardClient({
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleSaveDiscount = async () => {
+    if (!orderDetail) return;
+    try {
+      const pct = parseFloat(editDiscountPct) || 0;
+      const flatVal = parseFloat(editDiscountFlat) || 0;
+      const flatPaise = Math.round(flatVal * 100);
+
+      const res = await fetch(`/api/orders/${orderDetail.id}/status`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          discountPct: pct > 0 ? pct : undefined,
+          discountFlatPaise: flatPaise > 0 ? flatPaise : undefined,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        flashMessage('Discount updated successfully!');
+        if (data.order) {
+          setOrderDetail(data.order);
+        }
+        setEditingDiscount(false);
+        loadOrders();
+      } else {
+        flashMessage('Failed to update discount.');
+      }
+    } catch (err) {
+      console.error(err);
+      flashMessage('Error saving discount.');
     }
   };
 
@@ -2032,92 +2083,144 @@ export default function DashboardClient({
               </a>
             </div>
 
-            {/* Tabs */}
-            <div className="subtabs border-b" style={{ borderColor: 'var(--line)' }}>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'active' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('active')}>Active Orders</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'bills' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('bills')}>Billing & Bills</button>
-            </div>
-
-            {activeSubTab === 'active' && (
-              <section className="card p-5">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="font-bold">Live Order Queue</h4>
-                  <button onClick={loadOrders} className="btn py-1 px-3 text-xs">↻ Refresh</button>
-                </div>
-                {ordersLoading ? (
-                  <p className="text-sm">Loading orders...</p>
-                ) : ordersList.filter((o) => o.status !== 'settled' && o.status !== 'cancelled').length === 0 ? (
-                  <p className="text-sm text-ink-3">No active orders right now.</p>
-                ) : (
-                  <div className="grid gap-3">
-                    {ordersList
-                      .filter((o) => o.status !== 'settled' && o.status !== 'cancelled')
-                      .map((o) => (
-                        <div key={o.id} className="card p-4 flex flex-wrap justify-between items-center gap-3" style={{ background: 'var(--paper-3)' }}>
-                          <button onClick={() => setOrderDetail(o)} className="text-left flex-1 min-w-0">
-                            <span className="font-bold text-base">#{o.number} ({o.type === 'takeaway' ? 'Takeaway' : `Table ${o.table?.label ?? '—'}`}) <span className="text-xs font-normal" style={{ color: 'var(--turmeric-d)' }}>· details ▸</span></span>
-                            <div className="text-xs text-ink-3 mt-1 truncate">
-                              {o.items.map((i: any) => `${i.qty}× ${i.nameSnapshot}`).join(', ')}
-                            </div>
-                          </button>
-                          <div className="flex items-center gap-2">
-                            <span className="pill text-[10px] uppercase">{o.status}</span>
-                            {o.status === 'in_kitchen' && (
-                              <button onClick={() => handleBumpOrder(o.id, 'ready')} className="btn py-1.5 px-3 text-xs btn-primary">Mark Ready</button>
-                            )}
-                            {o.status === 'ready' && (
-                              <button onClick={() => handleBumpOrder(o.id, 'served')} className="btn py-1.5 px-3 text-xs btn-primary">Mark Served</button>
-                            )}
-                            {o.status === 'served' && (
-                              <div className="flex gap-1">
-                                <button onClick={() => handleSettleOrder(o.id, 'cash')} className="btn py-1.5 px-3 text-xs btn-dark">Settle Cash</button>
-                                <button onClick={() => handleSettleOrder(o.id, 'upi')} className="btn py-1.5 px-3 text-xs btn-primary">Settle UPI</button>
-                              </div>
-                            )}
+            <section className="card p-5">
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="font-bold">Live Order Queue</h4>
+                <button onClick={loadOrders} className="btn py-1 px-3 text-xs">↻ Refresh</button>
+              </div>
+              {ordersLoading ? (
+                <p className="text-sm">Loading orders...</p>
+              ) : ordersList.filter((o) => o.status !== 'settled' && o.status !== 'cancelled').length === 0 ? (
+                <p className="text-sm text-ink-3">No active orders right now.</p>
+              ) : (
+                <div className="grid gap-3">
+                  {ordersList
+                    .filter((o) => o.status !== 'settled' && o.status !== 'cancelled')
+                    .map((o) => (
+                      <div key={o.id} className="card p-4 flex flex-wrap justify-between items-center gap-3" style={{ background: 'var(--paper-3)' }}>
+                        <button onClick={() => setOrderDetail(o)} className="text-left flex-1 min-w-0">
+                          <span className="font-bold text-base">#{o.number} ({o.type === 'takeaway' ? 'Takeaway' : `Table ${o.table?.label ?? '—'}`}) <span className="text-xs font-normal" style={{ color: 'var(--turmeric-d)' }}>· details ▸</span></span>
+                          <div className="text-xs text-ink-3 mt-1 truncate">
+                            {o.items.map((i: any) => `${i.qty}× ${i.nameSnapshot}`).join(', ')}
                           </div>
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className="pill text-[10px] uppercase">{o.status}</span>
+                          {o.status === 'in_kitchen' && (
+                            <button onClick={() => handleBumpOrder(o.id, 'ready')} className="btn py-1.5 px-3 text-xs btn-primary">Mark Ready</button>
+                          )}
+                          {o.status === 'ready' && (
+                            <button onClick={() => handleBumpOrder(o.id, 'served')} className="btn py-1.5 px-3 text-xs btn-primary">Mark Served</button>
+                          )}
+                          {o.status === 'served' && (
+                            <div className="flex gap-1">
+                              <button onClick={() => handleSettleOrder(o.id, 'cash')} className="btn py-1.5 px-3 text-xs btn-dark">Settle Cash</button>
+                              <button onClick={() => handleSettleOrder(o.id, 'upi')} className="btn py-1.5 px-3 text-xs btn-primary">Settle UPI</button>
+                            </div>
+                          )}
                         </div>
-                      ))}
-                  </div>
-                )}
-              </section>
-            )}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
 
-            {activeSubTab === 'bills' && (
-              <section className="card p-5">
-                <h4 className="font-bold mb-3">Recent Invoices / Bills</h4>
-                {ordersList.filter((o) => o.status === 'settled').length === 0 ? (
-                  <p className="text-sm text-ink-3">No settled invoices recorded yet.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="rtable w-full text-sm border-collapse text-left">
-                      <thead>
-                        <tr className="border-b" style={{ borderColor: 'var(--line)' }}>
-                          <th className="pb-2">Bill No.</th>
-                          <th className="pb-2">Table</th>
-                          <th className="pb-2">Amount</th>
-                          <th className="pb-2">Settled At</th>
-                          <th className="pb-2">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ordersList
-                          .filter((o) => o.status === 'settled')
-                          .slice(0, 15)
-                          .map((o) => (
-                            <tr key={o.id} onClick={() => setOrderDetail(o)} className="border-b cursor-pointer hover:bg-[var(--paper-3)]" style={{ borderColor: 'var(--line-2)' }}>
-                              <td className="py-2.5 font-bold" data-label="Bill No.">#{o.number}</td>
-                              <td className="py-2.5" data-label="Table">{o.table?.label ?? 'Takeaway'}</td>
-                              <td className="py-2.5 font-mono" data-label="Amount">{formatINR(o.totalPaise)}</td>
-                              <td className="py-2.5 text-xs" data-label="Settled">{new Date(o.settledAt || o.placedAt).toLocaleString()}</td>
-                              <td className="py-2.5" data-label="Status"><span className="pill text-[9px] bg-green-100 text-green-800">PAID</span></td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
+        {activeMenu === 'reprint' && (
+          <div className="flex flex-col gap-4">
+            <section className="card p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <h4 className="font-bold">Print Bills</h4>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="p-2.5 rounded-xl border text-sm outline-none"
+                    style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="paid">Paid (Settled)</option>
+                    <option value="unpaid">Unpaid (Active)</option>
+                  </select>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--ink-3)' }}>🔍</span>
+                    <input
+                      value={billSearch}
+                      onChange={(e) => setBillSearch(e.target.value)}
+                      placeholder="Search name, phone, table, bill #..."
+                      className="pl-8 pr-3 py-2 rounded-xl border text-sm outline-none w-64"
+                      style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}
+                    />
                   </div>
-                )}
-              </section>
-            )}
+                </div>
+              </div>
+              {ordersList.filter((o) => {
+                if (statusFilter === 'paid') return o.status === 'settled';
+                if (statusFilter === 'unpaid') return o.status !== 'settled' && o.status !== 'cancelled';
+                return o.status !== 'cancelled';
+              }).length === 0 ? (
+                <p className="text-sm text-ink-3">No matching invoices recorded yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="rtable w-full text-sm border-collapse text-left">
+                    <thead>
+                      <tr className="border-b" style={{ borderColor: 'var(--line)' }}>
+                        <th className="pb-2">Bill No.</th>
+                        <th className="pb-2">Customer</th>
+                        <th className="pb-2">Table</th>
+                        <th className="pb-2">Amount</th>
+                        <th className="pb-2">Settled At / Placed At</th>
+                        <th className="pb-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ordersList
+                        .filter((o) => {
+                          if (statusFilter === 'paid') return o.status === 'settled';
+                          if (statusFilter === 'unpaid') return o.status !== 'settled' && o.status !== 'cancelled';
+                          return o.status !== 'cancelled';
+                        })
+                        .filter((o) => {
+                          if (!billSearch.trim()) return true;
+                          const q = billSearch.toLowerCase();
+                          const numStr = String(o.number);
+                          const nameStr = o.customer?.name?.toLowerCase() || '';
+                          const phoneStr = o.customer?.phone?.toLowerCase() || '';
+                          const tableStr = o.table?.label?.toLowerCase() || 'takeaway';
+                          return numStr.includes(q) || nameStr.includes(q) || phoneStr.includes(q) || tableStr.includes(q);
+                        })
+                        .slice(0, 30)
+                        .map((o) => (
+                          <tr key={o.id} onClick={() => setOrderDetail(o)} className="border-b cursor-pointer hover:bg-[var(--paper-3)]" style={{ borderColor: 'var(--line-2)' }}>
+                            <td className="py-2.5 font-bold" data-label="Bill No.">#{o.number}</td>
+                            <td className="py-2.5" data-label="Customer">
+                              {o.customer ? (
+                                <div>
+                                  <span className="block text-sm font-semibold">{o.customer.name || 'Walk-in'}</span>
+                                  <span className="block text-[10px] text-ink-3 font-mono">{o.customer.phone}</span>
+                                </div>
+                              ) : (
+                                <span className="text-ink-3">—</span>
+                              )}
+                            </td>
+                            <td className="py-2.5" data-label="Table">{o.table?.label ?? 'Takeaway'}</td>
+                            <td className="py-2.5 font-mono" data-label="Amount">{formatINR(o.totalPaise)}</td>
+                            <td className="py-2.5 text-xs" data-label="Date">{new Date(o.settledAt || o.placedAt).toLocaleString()}</td>
+                            <td className="py-2.5" data-label="Status">
+                              {o.status === 'settled' ? (
+                                <span className="pill text-[9px] bg-green-100 text-green-800">PAID</span>
+                              ) : (
+                                <span className="pill text-[9px] bg-amber-100 text-amber-800">{o.status.toUpperCase()}</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </div>
         )}
 
@@ -4460,10 +4563,53 @@ export default function DashboardClient({
                   <span>Total</span><span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(orderDetail.totalPaise)}</span>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-5">
-                <button onClick={() => printOrderBill(orderDetail)} className="btn btn-primary">🖨 Print bill</button>
-                <button onClick={() => printOrderKOT(orderDetail)} className="btn" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>🧾 Print KOT</button>
-                <button onClick={() => setOrderDetail(null)} className="btn btn-dark">Close</button>
+              {editingDiscount ? (
+                <div className="mt-4 p-4 rounded-xl border grid gap-3" style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
+                  <h4 className="font-bold text-sm">Apply Discount</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-ink-3 block mb-1">Discount %</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={editDiscountPct}
+                        onChange={(e) => {
+                          setEditDiscountPct(e.target.value);
+                          setEditDiscountFlat('0');
+                        }}
+                        className="w-full p-2 rounded-xl border text-sm outline-none"
+                        style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-ink-3 block mb-1">Flat (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={editDiscountFlat}
+                        onChange={(e) => {
+                          setEditDiscountFlat(e.target.value);
+                          setEditDiscountPct('0');
+                        }}
+                        className="w-full p-2 rounded-xl border text-sm outline-none"
+                        style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setEditingDiscount(false)} className="btn btn-dark py-1.5 px-3 text-xs">Cancel</button>
+                    <button onClick={handleSaveDiscount} className="btn btn-primary py-1.5 px-3 text-xs">Save</button>
+                  </div>
+                </div>
+              ) : null}
+              <div className="flex flex-wrap gap-2 mt-5">
+                <button onClick={() => printOrderBill(orderDetail)} className="btn btn-primary flex-1 min-w-[100px]">🖨 Print bill</button>
+                <button onClick={() => printOrderKOT(orderDetail)} className="btn flex-1 min-w-[100px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>🧾 Print KOT</button>
+                <button onClick={() => { setEditingDiscount(true); setEditDiscountPct('0'); setEditDiscountFlat('0'); }} className="btn flex-1 min-w-[100px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>✏️ Discount</button>
+                <button onClick={() => { setOrderDetail(null); setEditingDiscount(false); }} className="btn btn-dark flex-1 min-w-[80px]">Close</button>
               </div>
             </div>
           </div>

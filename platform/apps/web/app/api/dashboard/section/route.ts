@@ -16,7 +16,7 @@ const SECTIONS: SectionName[] = ['monitor', 'sales', 'inventory', 'suppliers', '
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager')
+  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'cashier')
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const s = req.nextUrl.searchParams.get('s') as SectionName | null;

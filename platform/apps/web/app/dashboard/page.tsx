@@ -11,15 +11,13 @@ import DashboardClient from './DashboardClient';
 export const dynamic = 'force-dynamic';
 
 /**
- * Owner Dashboard — server component.
- * Requires a session and an owner/manager role (cashiers/kitchen are bounced to
- * their surface). Loads the outlet + real analytics, then hands off to the
- * client shell which subscribes to live order events.
+ * Dashboard page — server component.
+ * Requires a session and renders the dashboard client for owner, manager, and cashier.
  */
 export default async function DashboardPage() {
   const session = await getSession();
   if (!session) redirect('/login');
-  if (session.role !== 'owner' && session.role !== 'manager') redirect('/pos');
+  if (!['owner', 'manager', 'cashier'].includes(session.role)) redirect('/pos');
 
   const outlet = await prisma.outlet.findUnique({
     where: { id: session.outletId },
@@ -35,9 +33,11 @@ export default async function DashboardPage() {
   const features = await tenantFeatures(session.tenantId);
   const receipt = readReceiptConfig(outlet.settings);
 
+  const dashboardOutlet = { name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt };
+
   return (
     <DashboardClient
-      outlet={{ name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt }}
+      outlet={dashboardOutlet}
       staff={{ name: session.name, role: session.role }}
       data={data}
       features={features}
