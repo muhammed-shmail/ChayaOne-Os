@@ -92,6 +92,7 @@ browsers subscribe directly to **private** channels, so we need one-time setup.
      - **Admin (Owner) / Manager / Cashier:** `/dashboard` (Dashboard and controls)
      - **Waiter:** `/pos` (POS billing flow)
      - **Kitchen:** `/kds` (KDS display)
+     - **Platform Admin (Super-admin):** `/admin` (Platform controls and tenant setup; login is at `/admin/login`)
    - Open the KDS and POS in two tabs, fire an order → the ticket appears on the
      KDS live and the POS/owner-bell update (confirms realtime end-to-end).
 
