@@ -88,6 +88,10 @@ browsers subscribe directly to **private** channels, so we need one-time setup.
 4. **Deploy.** First build takes 2–3 minutes.
 5. Once live, test:
    - `/login` → login page renders.
+   - Verify role-based landing page routing:
+     - **Admin (Owner) / Manager / Cashier:** `/dashboard` (Dashboard and controls)
+     - **Waiter:** `/pos` (POS billing flow)
+     - **Kitchen:** `/kds` (KDS display)
    - Open the KDS and POS in two tabs, fire an order → the ticket appears on the
      KDS live and the POS/owner-bell update (confirms realtime end-to-end).
 
