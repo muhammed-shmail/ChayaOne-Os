@@ -188,6 +188,17 @@ export default function DashboardClient({
   // read the current tab from the long-lived SSE handler without re-subscribing
   const activeMenuRef = useRef(activeMenu);
 
+  // Sync initial menu tab from query search parameter
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab && MENUS.some((m) => m.key === tab)) {
+        setActiveMenu(tab);
+      }
+    }
+  }, []);
+
   // Sync sub tab when menu changes
   useEffect(() => {
     activeMenuRef.current = activeMenu;
