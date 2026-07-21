@@ -470,6 +470,8 @@ model Order {
 
   @@index([outletId, placedAt])
   @@index([status])
+  @@index([outletId, number])
+  @@index([outletId, tableId, settledAt])
   @@map("orders")
 }
 

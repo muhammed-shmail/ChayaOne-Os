@@ -7,7 +7,7 @@
  * the strict attendance path is enforced server-side, which rejects the empty
  * header set. Attach the returned object straight onto a fetch's `headers`.
  */
-export async function getGeoHeaders(timeoutMs = 8000): Promise<Record<string, string>> {
+export async function getGeoHeaders(timeoutMs = 3000): Promise<Record<string, string>> {
   if (typeof navigator === 'undefined' || !navigator.geolocation) return {};
   return new Promise((resolve) => {
     let settled = false;
@@ -20,7 +20,7 @@ export async function getGeoHeaders(timeoutMs = 8000): Promise<Record<string, st
           'x-geo-acc': String(Math.round(pos.coords.accuracy || 0)),
         }),
         () => done({}),
-        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 },
+        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60000 },
       );
     } catch {
       done({});

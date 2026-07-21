@@ -48,21 +48,8 @@ export default function LoginClient() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ pin: code }),
       });
-      // owners/managers can't use the PIN pad — steer them to password sign-in
-      if (res.status === 403) {
-        const body = await res.json().catch(() => ({}));
-        if (body?.error === 'use_password_login') {
-          setPin('');
-          setMode('password');
-          setNotice('Owners & managers sign in with username & password.');
-          setBusy(false);
-          return;
-        }
-      }
       if (!res.ok) throw new Error();
       const { staff: who } = await res.json().catch(() => ({ staff: null }));
-      // Never assume a role: if the API didn't return a verified staff record,
-      // treat it as a failed login rather than silently defaulting to cashier.
       if (!who?.role) throw new Error();
       await enterWith(who);
       setBusy(false);
@@ -207,10 +194,10 @@ export default function LoginClient() {
             onClick={() => { setMode((m) => (m === 'pin' ? 'password' : 'pin')); setError(false); setNotice(null); setPin(''); setPassword(''); setShowPassword(false); }}
             aria-label="Owner sign in with username & password"
             title="Owner? Sign in with username & password"
-            className="mb-1.5 disabled:opacity-50"
+            className="mb-1.5 disabled:opacity-50 flex justify-center items-center w-full"
             style={{ background: 'none', border: 'none', padding: 0, lineHeight: 0, cursor: 'pointer' }}
           >
-            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="brand-logo object-contain" />
+            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="brand-logo object-contain mx-auto block" />
           </button>
           <AlphaTag />
           <h1 className="font-display text-[40px] leading-none mt-3.5">Kahwa House</h1>

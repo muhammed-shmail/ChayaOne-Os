@@ -515,7 +515,11 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       {/* ── Mobile top bar + category chips — sticky, phones only (md:hidden) ── */}
       <div className="md:hidden sticky top-0 z-30" style={{ paddingTop: 'env(safe-area-inset-top)', background: 'color-mix(in srgb, var(--paper) 90%, transparent)', backdropFilter: 'blur(10px)', borderBottom: '1px solid var(--line)' }}>
         <div className="flex items-center gap-2 px-3 py-2">
-          <button onClick={() => setMoreOpen(true)} aria-label="Open menu" aria-haspopup="dialog" aria-expanded={moreOpen} className="btn btn-icon btn-sm btn-ghost shrink-0"><Menu size={20} aria-hidden /></button>
+          {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
+            <a href="/dashboard" title="Dashboard" className="btn btn-icon btn-sm btn-ghost shrink-0">
+              <LayoutDashboard size={18} aria-hidden />
+            </a>
+          )}
           <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost shrink-0" />
           <div className="flex rounded-full p-[3px] border flex-1 min-w-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
             {(['dine_in', 'takeaway'] as const).map((t) => (
@@ -569,6 +573,16 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             />
           </div>
           <div className="flex items-center gap-1">
+            {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
+              <a
+                href="/dashboard"
+                title="Go to Dashboard"
+                className="btn btn-icon btn-sm btn-ghost"
+                style={{ color: 'var(--ink-2)' }}
+              >
+                <LayoutDashboard size={18} aria-hidden />
+              </a>
+            )}
             <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
             <ThemeToggle />
           </div>

@@ -34,8 +34,6 @@ export async function POST(req: NextRequest) {
   });
 
   if (!staff || !staff.outletId || !staff.passwordHash || !verifyPassword(parsed.data.password, staff.passwordHash)) {
-    // small constant-ish delay to blunt brute force; real build adds Redis rate-limit
-    await new Promise((r) => setTimeout(r, 350));
     return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 });
   }
 

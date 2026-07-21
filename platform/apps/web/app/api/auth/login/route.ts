@@ -33,17 +33,14 @@ export async function POST(req: NextRequest) {
   });
 
   if (!staff || !staff.outletId) {
-    // small constant-ish delay to blunt brute force; real build adds Redis rate-limit
-    await new Promise((r) => setTimeout(r, 350));
     return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 });
   }
 
-  // The PIN pad must never open the dashboard. Owners/managers (the only roles that
-  // can reach /dashboard) sign in with username + password instead, so a guessed or
-  // shared PIN can't escalate a floor user into the owner dashboard.
+  // The PIN pad must never log in owners/managers. Owners/managers sign in
+  // with username + password (via tapping the logo). Any PIN attempt for an owner/manager
+  // is treated as an invalid PIN.
   if (staff.role === 'owner' || staff.role === 'manager') {
-    await new Promise((r) => setTimeout(r, 350));
-    return NextResponse.json({ error: 'use_password_login' }, { status: 403 });
+    return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 });
   }
 
   const res = NextResponse.json({ ok: true, staff: { name: staff.name, role: staff.role } });
