@@ -997,6 +997,12 @@ export default function DashboardClient({
   // order detail + print (Orders view)
   const [orderDetail, setOrderDetail] = useState<any>(null);
 
+  // Quick Custom Invoice / Bill Creator
+  const [quickInvoiceOpen, setQuickInvoiceOpen] = useState(false);
+  const [quickInvoiceLines, setQuickInvoiceLines] = useState<any[]>([]);
+  const [quickInvoiceCustName, setQuickInvoiceCustName] = useState('');
+  const [quickInvoiceCustPhone, setQuickInvoiceCustPhone] = useState('');
+
   // Live-floor: click an occupied table to see its running orders (reuses the POS
   // table-order endpoint — merged bill view of every unsettled order on the table).
   const [tableOrders, setTableOrders] = useState<{ label: string; data: any } | null>(null);
@@ -1075,6 +1081,97 @@ export default function DashboardClient({
       <div class="muted">${o.table?.label ? 'Table ' + o.table.label : o.type}</div>
       <div class="line"></div><table>${rows}</table>`);
   }
+
+  const openQuickInvoice = () => {
+    setQuickInvoiceOpen(true);
+    setQuickInvoiceLines([{ key: '1', itemId: '', name: '', price: '', qty: 1, gst: 5, source: 'custom' }]);
+    setQuickInvoiceCustName('');
+    setQuickInvoiceCustPhone('');
+    if (menuItems.length === 0) {
+      loadInventoryData();
+    }
+  };
+
+  const computeQuickInvoiceTotals = () => {
+    let subtotalPaise = 0;
+    let cgstPaise = 0;
+    let sgstPaise = 0;
+
+    const computedLines = quickInvoiceLines.map((l) => {
+      const priceVal = parseFloat(l.price) || 0;
+      const pricePaise = Math.round(priceVal * 100);
+      const qtyVal = parseInt(l.qty) || 1;
+      const lineTotalPaise = pricePaise * qtyVal;
+
+      const gstRate = parseFloat(l.gst) || 0;
+      const gstAmountPaise = Math.round((lineTotalPaise * gstRate) / 100);
+
+      subtotalPaise += lineTotalPaise;
+      cgstPaise += Math.round(gstAmountPaise / 2);
+      sgstPaise += Math.round(gstAmountPaise / 2);
+
+      return {
+        ...l,
+        pricePaise,
+        qty: qtyVal,
+        lineTotalPaise,
+      };
+    });
+
+    const totalBeforeRoundPaise = subtotalPaise + cgstPaise + sgstPaise;
+    const finalTotalPaise = Math.round(totalBeforeRoundPaise / 100) * 100;
+    const roundOffPaise = finalTotalPaise - totalBeforeRoundPaise;
+
+    return {
+      lines: computedLines,
+      subtotalPaise,
+      cgstPaise,
+      sgstPaise,
+      roundOffPaise,
+      totalPaise: finalTotalPaise,
+    };
+  };
+
+  const handlePrintQuickBill = () => {
+    const totals = computeQuickInvoiceTotals();
+    if (totals.lines.length === 0) { flashMessage('Add at least one item'); return; }
+
+    const rows = totals.lines.map((l: any) => `<tr><td>${l.qty}× ${l.name || 'Untitled Item'}</td><td class="r">${formatINR(l.lineTotalPaise)}</td></tr>`).join('');
+    const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
+    
+    const randomNum = Math.floor(Math.random() * 9000) + 1000;
+    const dateStr = new Date().toLocaleString('en-IN');
+    const custLine = quickInvoiceCustName.trim() || quickInvoiceCustPhone.trim()
+      ? `<div class="muted">👤 ${quickInvoiceCustName} ${quickInvoiceCustPhone}</div>`
+      : '';
+
+    printOrderDoc(`Quick Bill #${randomNum}`, `
+      ${receiptHeaderHtml()}
+      <div class="muted">Quick Bill #${randomNum} · ${dateStr}</div>
+      ${custLine}
+      <div class="line"></div><table>${rows}</table><div class="line"></div>
+      <table>
+        ${row('Subtotal', totals.subtotalPaise)}
+        ${totals.cgstPaise > 0 ? row('CGST', totals.cgstPaise) : ''}
+        ${totals.sgstPaise > 0 ? row('SGST', totals.sgstPaise) : ''}
+        ${totals.roundOffPaise !== 0 ? row('Round off', totals.roundOffPaise) : ''}
+        <tr class="tot"><td>Total</td><td class="r">${formatINR(totals.totalPaise)}</td></tr>
+      </table>
+      <div class="line"></div><div class="muted">Status: PAID · ${receiptFooterText()}</div>`);
+  };
+
+  const handlePrintQuickKOT = () => {
+    const totals = computeQuickInvoiceTotals();
+    if (totals.lines.length === 0) { flashMessage('Add at least one item'); return; }
+
+    const rows = totals.lines.map((l: any) => `<tr><td>${l.qty}×</td><td>${l.name || 'Untitled Item'}</td><td class="r">Quick</td></tr>`).join('');
+    const randomNum = Math.floor(Math.random() * 9000) + 1000;
+    
+    printOrderDoc(`KOT #${randomNum}`, `
+      <h2>KOT · #${randomNum}</h2>
+      <div class="muted">Quick KOT · ${new Date().toLocaleString('en-IN')}</div>
+      <div class="line"></div><table>${rows}</table>`);
+  };
 
   const handleSavePrice = async (itemId: string) => {
     const rupees = parseFloat(priceDraft);
@@ -2142,7 +2239,12 @@ export default function DashboardClient({
           <div className="flex flex-col gap-4">
             <section className="card p-5">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                <h4 className="font-bold">Print Bills</h4>
+                <div className="flex items-center gap-3">
+                  <h4 className="font-bold">Print Bills</h4>
+                  <button onClick={openQuickInvoice} className="px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1" style={{ background: 'var(--turmeric)', color: '#2A1607' }}>
+                    ＋ Create Custom Bill
+                  </button>
+                </div>
                 <div className="flex items-center gap-2">
                   <select
                     value={statusFilter}
@@ -4622,6 +4724,161 @@ export default function DashboardClient({
                 <button onClick={() => { setEditingDiscount(true); setEditDiscountPct('0'); setEditDiscountFlat('0'); }} className="btn flex-1 min-w-[100px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>✏️ Discount</button>
                 <button onClick={() => { setOrderDetail(null); setEditingDiscount(false); }} className="btn btn-dark flex-1 min-w-[80px]">Close</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Custom Invoice modal */}
+      {quickInvoiceOpen && (
+        <div onClick={() => setQuickInvoiceOpen(false)} className="fixed inset-0 z-[8500] grid place-items-center p-5" style={{ background: 'rgba(30,18,10,.5)', backdropFilter: 'blur(6px)' }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-[min(680px,100%)] max-h-[88vh] flex flex-col" style={{ background: 'var(--paper-2)', borderRadius: 24, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: 'var(--line)' }}>
+              <div>
+                <h3 className="text-lg font-bold">Quick Custom Bill</h3>
+                <span className="text-xs text-ink-3">Print a bill directly without creating a POS ticket</span>
+              </div>
+              <button onClick={() => setQuickInvoiceOpen(false)} className="text-sm font-bold text-ink-3 hover:text-ink">Close</button>
+            </div>
+            
+            <div className="p-5 overflow-auto flex-1 space-y-4">
+              {/* Customer details */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-ink-3 block mb-1">Customer Name (Optional)</label>
+                  <input type="text" value={quickInvoiceCustName} onChange={(e) => setQuickInvoiceCustName(e.target.value)} placeholder="e.g. Walk-in Guest" className="inp" />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-3 block mb-1">Customer Phone (Optional)</label>
+                  <input type="tel" value={quickInvoiceCustPhone} onChange={(e) => setQuickInvoiceCustPhone(e.target.value)} placeholder="e.g. 9876543210" className="inp" />
+                </div>
+              </div>
+
+              {/* Items List */}
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-ink-3 block uppercase tracking-wider">Bill Items</span>
+                {quickInvoiceLines.map((line, idx) => {
+                  return (
+                    <div key={line.key} className="flex flex-wrap items-center gap-2 p-3 rounded-xl border relative" style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
+                      {/* Source selector */}
+                      <div className="w-[110px]">
+                        <select value={line.source} onChange={(e) => {
+                          const src = e.target.value as 'inventory' | 'custom';
+                          setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, source: src, itemId: '', name: '', price: '', gst: 5 } : l));
+                        }} className="inp text-xs py-1.5" aria-label="Item Source">
+                          <option value="custom">✍ Custom</option>
+                          <option value="inventory">☕ From Menu</option>
+                        </select>
+                      </div>
+
+                      {/* Item Selector / Name Input */}
+                      <div className="flex-grow min-w-[150px]">
+                        {line.source === 'inventory' ? (
+                          <select value={line.itemId} onChange={(e) => {
+                            const id = e.target.value;
+                            const item = menuItems.find(it => it.id === id);
+                            setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? {
+                              ...l,
+                              itemId: id,
+                              name: item ? item.name : '',
+                              price: item ? String(item.pricePaise / 100) : '',
+                              gst: item ? Number(item.gstRate) : 5
+                            } : l));
+                          }} className="inp text-xs py-1.5" aria-label="Select Menu Item" required>
+                            <option value="">-- Select Menu Item --</option>
+                            {menuItems.map(it => <option key={it.id} value={it.id}>{it.name} (₹{it.pricePaise / 100})</option>)}
+                          </select>
+                        ) : (
+                          <input type="text" value={line.name} onChange={(e) => {
+                            const val = e.target.value;
+                            setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, name: val } : l));
+                          }} placeholder="Item name" className="inp text-xs py-1.5" aria-label="Item Name" required />
+                        )}
+                      </div>
+
+                      {/* Price Input */}
+                      <div className="w-[80px]">
+                        <input type="number" step="0.01" value={line.price} onChange={(e) => {
+                          const val = e.target.value;
+                          setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, price: val } : l));
+                        }} placeholder="₹ Price" className="inp text-xs py-1.5 text-right font-mono" aria-label="Price" required />
+                      </div>
+
+                      {/* Qty Input */}
+                      <div className="w-[60px]">
+                        <input type="number" min="1" value={line.qty} onChange={(e) => {
+                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                          setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, qty: val } : l));
+                        }} className="inp text-xs py-1.5 text-center font-mono" aria-label="Quantity" required />
+                      </div>
+
+                      {/* GST Selection */}
+                      <div className="w-[70px]">
+                        <select value={line.gst} onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, gst: val } : l));
+                        }} className="inp text-xs py-1.5" aria-label="GST Rate">
+                          {[0, 5, 12, 18, 28].map(g => <option key={g} value={g}>{g}%</option>)}
+                        </select>
+                      </div>
+
+                      {/* Delete button */}
+                      <button type="button" onClick={() => {
+                        setQuickInvoiceLines(prev => prev.filter(l => l.key !== line.key));
+                      }} className="w-8 h-8 grid place-items-center text-red-500 hover:bg-red-50 rounded-lg" aria-label="Delete line">
+                        🗑
+                      </button>
+                    </div>
+                  );
+                })}
+
+                <button type="button" onClick={() => {
+                  setQuickInvoiceLines(prev => [...prev, { key: Math.random().toString(), itemId: '', name: '', price: '', qty: 1, gst: 5, source: 'custom' }]);
+                }} className="btn border border-dashed py-2 w-full text-xs font-bold transition hover:bg-[var(--paper-3)]" style={{ borderColor: 'var(--line)' }}>
+                  ＋ Add New Line
+                </button>
+              </div>
+
+              {/* Totals Section */}
+              {quickInvoiceLines.length > 0 && (() => {
+                const totals = computeQuickInvoiceTotals();
+                return (
+                  <div className="border-t pt-3 mt-4 text-sm space-y-1.5" style={{ borderColor: 'var(--line)' }}>
+                    <div className="flex justify-between text-ink-3">
+                      <span>Subtotal</span>
+                      <span className="font-mono">{formatINR(totals.subtotalPaise)}</span>
+                    </div>
+                    {totals.cgstPaise > 0 && (
+                      <div className="flex justify-between text-ink-3">
+                        <span>CGST</span>
+                        <span className="font-mono">{formatINR(totals.cgstPaise)}</span>
+                      </div>
+                    )}
+                    {totals.sgstPaise > 0 && (
+                      <div className="flex justify-between text-ink-3">
+                        <span>SGST</span>
+                        <span className="font-mono">{formatINR(totals.sgstPaise)}</span>
+                      </div>
+                    )}
+                    {totals.roundOffPaise !== 0 && (
+                      <div className="flex justify-between text-ink-3">
+                        <span>Round-off</span>
+                        <span className="font-mono">{totals.roundOffPaise >= 0 ? '+' : ''}{formatINR(totals.roundOffPaise)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-extrabold text-lg border-t pt-2 mt-1" style={{ borderColor: 'var(--line)' }}>
+                      <span>Total</span>
+                      <span className="font-mono">{formatINR(totals.totalPaise)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="p-5 border-t shrink-0 flex gap-2" style={{ borderColor: 'var(--line)' }}>
+              <button onClick={handlePrintQuickBill} className="btn btn-primary flex-1">🖨 Print Bill</button>
+              <button onClick={handlePrintQuickKOT} className="btn flex-1" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>🧾 Print KOT</button>
+              <button onClick={() => setQuickInvoiceOpen(false)} className="btn btn-dark w-24">Cancel</button>
             </div>
           </div>
         </div>
