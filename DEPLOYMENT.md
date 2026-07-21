@@ -96,6 +96,25 @@ browsers subscribe directly to **private** channels, so we need one-time setup.
    - Open the KDS and POS in two tabs, fire an order → the ticket appears on the
      KDS live and the POS/owner-bell update (confirms realtime end-to-end).
 
+### Seeded Default Credentials
+
+Once the seed script has run (`npm run db:seed`), the following login credentials are standard across development and production:
+
+* **Platform Admin (Super-admin):**
+  - **URL:** `/admin/login`
+  - **Email:** `admin@nuro7.com`
+  - **Password:** `admin1234`
+
+* **Admin (Owner):**
+  - **URL:** `/login` (Switch to the Username/Password login tab)
+  - **Username:** `owner`
+  - **Password:** `cafe1234`
+
+* **Floor Staff (PIN login):**
+  - **URL:** `/login` (PIN pad screen)
+  - **Cashier PIN:** `2222`
+  - **Kitchen PIN:** `3333`
+
 ---
 
 ## 4. After deployment: the update loop
