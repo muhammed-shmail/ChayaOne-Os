@@ -224,6 +224,26 @@
     content: ""; width: 5px; height: 5px; border-radius: 999px;
     background: var(--gold); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 22%, transparent);
   }
+
+  /* Compact Input fields for spreadsheet-style lists (e.g. quick invoice rows) */
+  .inp-compact {
+    min-height: 36px !important;
+    height: 36px !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+    font-size: 0.8125rem !important;
+    border-radius: 10px !important;
+  }
+  select.inp-compact {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23888' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.5rem center !important;
+    background-size: 1.25em !important;
+    padding-right: 1.75rem !important;
+  }
 }
 
 @layer utilities {

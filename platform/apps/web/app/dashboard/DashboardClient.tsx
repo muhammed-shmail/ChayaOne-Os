@@ -4765,7 +4765,7 @@ export default function DashboardClient({
                         <select value={line.source} onChange={(e) => {
                           const src = e.target.value as 'inventory' | 'custom';
                           setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, source: src, itemId: '', name: '', price: '', gst: 5 } : l));
-                        }} className="inp text-xs py-1.5" aria-label="Item Source">
+                        }} className="inp inp-compact" aria-label="Item Source">
                           <option value="custom">✍ Custom</option>
                           <option value="inventory">☕ From Menu</option>
                         </select>
@@ -4784,7 +4784,7 @@ export default function DashboardClient({
                               price: item ? String(item.pricePaise / 100) : '',
                               gst: item ? Number(item.gstRate) : 5
                             } : l));
-                          }} className="inp text-xs py-1.5" aria-label="Select Menu Item" required>
+                          }} className="inp inp-compact" aria-label="Select Menu Item" required>
                             <option value="">-- Select Menu Item --</option>
                             {menuItems.map(it => <option key={it.id} value={it.id}>{it.name} (₹{it.pricePaise / 100})</option>)}
                           </select>
@@ -4792,7 +4792,7 @@ export default function DashboardClient({
                           <input type="text" value={line.name} onChange={(e) => {
                             const val = e.target.value;
                             setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, name: val } : l));
-                          }} placeholder="Item name" className="inp text-xs py-1.5" aria-label="Item Name" required />
+                          }} placeholder="Item name" className="inp inp-compact" aria-label="Item Name" required />
                         )}
                       </div>
 
@@ -4801,7 +4801,7 @@ export default function DashboardClient({
                         <input type="number" step="0.01" value={line.price} onChange={(e) => {
                           const val = e.target.value;
                           setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, price: val } : l));
-                        }} placeholder="₹ Price" className="inp text-xs py-1.5 text-right font-mono" aria-label="Price" required />
+                        }} placeholder="₹ Price" className="inp inp-compact text-right font-mono" aria-label="Price" required />
                       </div>
 
                       {/* Qty Input */}
@@ -4809,7 +4809,7 @@ export default function DashboardClient({
                         <input type="number" min="1" value={line.qty} onChange={(e) => {
                           const val = Math.max(1, parseInt(e.target.value) || 1);
                           setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, qty: val } : l));
-                        }} className="inp text-xs py-1.5 text-center font-mono" aria-label="Quantity" required />
+                        }} className="inp inp-compact text-center font-mono" aria-label="Quantity" required />
                       </div>
 
                       {/* GST Selection */}
@@ -4817,7 +4817,7 @@ export default function DashboardClient({
                         <select value={line.gst} onChange={(e) => {
                           const val = parseFloat(e.target.value) || 0;
                           setQuickInvoiceLines(prev => prev.map(l => l.key === line.key ? { ...l, gst: val } : l));
-                        }} className="inp text-xs py-1.5" aria-label="GST Rate">
+                        }} className="inp inp-compact" aria-label="GST Rate">
                           {[0, 5, 12, 18, 28].map(g => <option key={g} value={g}>{g}%</option>)}
                         </select>
                       </div>
