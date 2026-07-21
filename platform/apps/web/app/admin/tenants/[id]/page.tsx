@@ -5,6 +5,7 @@ import { getTenantDetail } from '@/lib/platform-tenants';
 import { TenantActions } from './TenantActions';
 import { TenantSettings } from './TenantSettings';
 import { FeatureAccess } from './FeatureAccess';
+import { TenantSubscription } from './TenantSubscription';
 import { FEATURE_CATALOG, FEATURE_DEFAULTS } from '@/lib/feature-catalog';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,12 @@ export default async function TenantDetail({ params }: { params: { id: string } 
 
   const sub = t.subscription;
   const usage = Object.fromEntries(t.usage.map((u) => [u.metric, u.value]));
+  const subProps = sub ? {
+    planKey: sub.plan.key,
+    period: sub.period,
+    status: sub.status,
+    currentEnd: sub.currentEnd ? new Date(sub.currentEnd).toISOString().split('T')[0]! : '',
+  } : undefined;
 
   const so = (sub?.slotOverrides ?? {}) as Record<string, number | null | undefined>;
   const slotStr = (k: string) => (so[k] === undefined ? '' : so[k] === null ? 'unlimited' : String(so[k]));
@@ -107,6 +114,11 @@ export default async function TenantDetail({ params }: { params: { id: string } 
           id={t.id}
           branding={brandingProps}
           slots={{ maxBranches: slotStr('maxBranches'), maxStaff: slotStr('maxStaff'), maxCustomers: slotStr('maxCustomers') }}
+        />
+
+        <TenantSubscription
+          id={t.id}
+          sub={subProps}
         />
 
         <FeatureAccess

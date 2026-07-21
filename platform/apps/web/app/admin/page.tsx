@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { AdminKpis, type AdminKpi } from './AdminKpis';
+import { PlanEditor } from './PlanEditor';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,13 +14,16 @@ export default async function AdminHome() {
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  const [tenantCount, statusGroups, ordersToday, activeSubs] = await Promise.all([
+  const [tenantCount, statusGroups, ordersToday, activeSubs, plans] = await Promise.all([
     prisma.tenant.count(),
     prisma.subscription.groupBy({ by: ['status'], _count: { _all: true } }),
     prisma.order.count({ where: { placedAt: { gte: startOfDay } } }),
     prisma.subscription.findMany({
       where: { status: { in: ['active', 'past_due'] } },
       select: { plan: { select: { pricePaise: true } } },
+    }),
+    prisma.planDefinition.findMany({
+      orderBy: { key: 'asc' },
     }),
   ]);
 
@@ -71,6 +75,8 @@ export default async function AdminHome() {
           </div>
           <span className="font-display text-2xl" style={{ color: 'var(--gold-d)' }}>⚙</span>
         </Link>
+
+        <PlanEditor initialPlans={plans} />
       </section>
     </main>
   );
