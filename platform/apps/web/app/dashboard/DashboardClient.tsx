@@ -2019,7 +2019,7 @@ export default function DashboardClient({
             {/* Revenue overview — total revenue + date-wise sales chart/report */}
             {features.revenue_analytics !== false && (
               <div className="col-span-2 lg:col-span-4">
-                <RevenuePanel initialTrend={trend} />
+                <RevenuePanel initialTrend={trend} restrictToToday={staff.role === 'cashier'} />
               </div>
             )}
 

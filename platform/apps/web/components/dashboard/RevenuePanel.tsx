@@ -27,18 +27,27 @@ const PRESETS: { key: string; label: string; days: number }[] = [
   { key: '90d', label: '90 days', days: 90 },
 ];
 
-export function RevenuePanel({ initialTrend }: { initialTrend: TrendPoint[] }) {
+const DOW_SHORT = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+export function RevenuePanel({ initialTrend, restrictToToday }: { initialTrend: TrendPoint[]; restrictToToday?: boolean }) {
+  const today = ymd(new Date());
+
   const seed = useMemo<Revenue>(() => {
-    const daily: Daily[] = initialTrend.map((t) => ({ date: t.date, label: t.label, dateLabel: labelOf(t.date), orders: t.orders, grossPaise: t.grossPaise }));
+    let daily: Daily[] = initialTrend.map((t) => ({ date: t.date, label: t.label, dateLabel: labelOf(t.date), orders: t.orders, grossPaise: t.grossPaise }));
+    if (restrictToToday) {
+      daily = daily.filter((d) => d.date === today);
+      if (daily.length === 0) {
+        daily = [{ date: today, label: DOW_SHORT[new Date().getDay()]!, dateLabel: labelOf(today), orders: 0, grossPaise: 0 }];
+      }
+    }
     const totalPaise = daily.reduce((s, d) => s + d.grossPaise, 0);
     const orders = daily.reduce((s, d) => s + d.orders, 0);
     return { from: daily[0]?.date ?? '', to: daily[daily.length - 1]?.date ?? '', totalPaise, orders, aovPaise: orders ? Math.round(totalPaise / orders) : 0, daily };
-  }, [initialTrend]);
+  }, [initialTrend, restrictToToday, today]);
 
-  const today = ymd(new Date());
-  const [preset, setPreset] = useState('7d');
-  const [from, setFrom] = useState(seed.from || today);
-  const [to, setTo] = useState(seed.to || today);
+  const [preset, setPreset] = useState(restrictToToday ? '' : '7d');
+  const [from, setFrom] = useState(restrictToToday ? today : (seed.from || today));
+  const [to, setTo] = useState(restrictToToday ? today : (seed.to || today));
   const [data, setData] = useState<Revenue>(seed);
   const [loading, setLoading] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -69,25 +78,29 @@ export function RevenuePanel({ initialTrend }: { initialTrend: TrendPoint[] }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h4 className="text-base font-bold">Revenue</h4>
-            <p className="text-xs text-ink-3">Total sales and the day-by-day trend for your selected range.</p>
+            <p className="text-xs text-ink-3">
+              {restrictToToday ? "Today's sales summary." : "Total sales and the day-by-day trend for your selected range."}
+            </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {PRESETS.map((p) => {
-              const on = preset === p.key;
-              return (
-                <button key={p.key} onClick={() => applyPreset(p.days, p.key)}
-                  className="px-3 py-1.5 rounded-full text-xs font-bold transition"
-                  style={on ? { background: 'var(--turmeric)', color: '#2A1607' } : { background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line-2)' }}>
-                  {p.label}
-                </button>
-              );
-            })}
-            <span className="inline-flex items-center gap-1.5">
-              <input type="date" value={from} max={to} onChange={(e) => { setFrom(e.target.value); setPreset(''); }} className="inp" style={{ minHeight: 36, width: 'auto' }} aria-label="From date" />
-              <span className="text-ink-3 text-xs">→</span>
-              <input type="date" value={to} min={from} max={today} onChange={(e) => { setTo(e.target.value); setPreset(''); }} className="inp" style={{ minHeight: 36, width: 'auto' }} aria-label="To date" />
-            </span>
-          </div>
+          {!restrictToToday && (
+            <div className="flex flex-wrap items-center gap-2">
+              {PRESETS.map((p) => {
+                const on = preset === p.key;
+                return (
+                  <button key={p.key} onClick={() => applyPreset(p.days, p.key)}
+                    className="px-3 py-1.5 rounded-full text-xs font-bold transition"
+                    style={on ? { background: 'var(--turmeric)', color: '#2A1607' } : { background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line-2)' }}>
+                    {p.label}
+                  </button>
+                );
+              })}
+              <span className="inline-flex items-center gap-1.5">
+                <input type="date" value={from} max={to} onChange={(e) => { setFrom(e.target.value); setPreset(''); }} className="inp" style={{ minHeight: 36, width: 'auto' }} aria-label="From date" />
+                <span className="text-ink-3 text-xs">→</span>
+                <input type="date" value={to} min={from} max={today} onChange={(e) => { setTo(e.target.value); setPreset(''); }} className="inp" style={{ minHeight: 36, width: 'auto' }} aria-label="To date" />
+              </span>
+            </div>
+          )}
         </div>
 
         {/* headline stats */}

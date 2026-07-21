@@ -25,10 +25,8 @@ const isDate = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.t
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   if (!(await tenantHasFeature(session.tenantId, 'revenue_analytics')))
     return NextResponse.json({ error: 'feature_not_in_plan', feature: 'revenue_analytics' }, { status: 402 });
-
   // Default range: last 7 days (today inclusive) in the outlet's wall-clock zone.
   const todayKey = new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
   const qpFrom = req.nextUrl.searchParams.get('from');
@@ -41,6 +39,13 @@ export async function GET(req: NextRequest) {
 
   const from = ymd(fromD);
   const to = ymd(toD);
+
+  const today = ymd(todayKey);
+  const isTodayOnly = from === to && to === today;
+
+  if (session.role !== 'owner' && session.role !== 'manager' && !(session.role === 'cashier' && isTodayOnly)) {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
 
   const rows = await prisma.$queryRaw<{ day: Date; orders: number; gross: number }[]>`
     SELECT ("placedAt" AT TIME ZONE ${TZ})::date AS day,
