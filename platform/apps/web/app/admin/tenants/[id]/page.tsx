@@ -6,6 +6,7 @@ import { TenantActions } from './TenantActions';
 import { TenantSettings } from './TenantSettings';
 import { FeatureAccess } from './FeatureAccess';
 import { TenantSubscription } from './TenantSubscription';
+import { TenantPayment } from './TenantPayment';
 import { FEATURE_CATALOG, FEATURE_DEFAULTS } from '@/lib/feature-catalog';
 
 export const dynamic = 'force-dynamic';
@@ -26,6 +27,8 @@ export default async function TenantDetail({ params }: { params: { id: string } 
     period: sub.period,
     status: sub.status,
     currentEnd: sub.currentEnd ? new Date(sub.currentEnd).toISOString().split('T')[0]! : '',
+    customPriceMonthlyPaise: sub.customPriceMonthlyPaise,
+    customPriceYearlyPaise: sub.customPriceYearlyPaise,
   } : undefined;
 
   const so = (sub?.slotOverrides ?? {}) as Record<string, number | null | undefined>;
@@ -44,9 +47,16 @@ export default async function TenantDetail({ params }: { params: { id: string } 
     poweredBy: t.branding?.poweredBy ?? true,
   };
 
+  let planDisplay = sub?.plan.name ?? t.plan;
+  if (sub?.customPriceMonthlyPaise !== null && sub?.customPriceMonthlyPaise !== undefined) {
+    planDisplay = `${planDisplay} (Custom: ₹${(sub.customPriceMonthlyPaise / 100).toLocaleString('en-IN')}/mo)`;
+  } else if (sub?.customPriceYearlyPaise !== null && sub?.customPriceYearlyPaise !== undefined) {
+    planDisplay = `${planDisplay} (Custom: ₹${(sub.customPriceYearlyPaise / 100).toLocaleString('en-IN')}/yr)`;
+  }
+
   const facts = [
     ['Subdomain', `${t.subdomain ?? '—'}.chayaone.com`],
-    ['Plan', sub?.plan.name ?? t.plan],
+    ['Plan', planDisplay],
     ['Subscription', sub?.status ?? '—'],
     ['Billing period', sub?.period ?? '—'],
     ['Trial ends', fmtDate(sub?.trialEndsAt)],
@@ -119,6 +129,13 @@ export default async function TenantDetail({ params }: { params: { id: string } 
         <TenantSubscription
           id={t.id}
           sub={subProps}
+        />
+
+        <TenantPayment
+          id={t.id}
+          customPaymentEnabled={t.customPaymentEnabled}
+          razorpayKeyId={t.razorpayKeyId ?? ''}
+          razorpayKeySecret={t.razorpayKeySecret ?? ''}
         />
 
         <FeatureAccess

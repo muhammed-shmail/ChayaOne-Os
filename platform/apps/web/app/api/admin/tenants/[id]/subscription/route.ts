@@ -13,6 +13,8 @@ const Body = z.object({
   period: z.enum(['monthly', 'quarterly', 'half_yearly', 'yearly']),
   status: z.enum(['trialing', 'active', 'past_due', 'suspended', 'cancelled', 'expired']),
   currentEnd: z.string().nullable().optional(), // YYYY-MM-DD
+  customPriceMonthly: z.number().nonnegative().nullable().optional(),
+  customPriceYearly: z.number().nonnegative().nullable().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -23,7 +25,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid_input' }, { status: 400 });
 
-  const { planKey, period, status, currentEnd } = parsed.data;
+  const { planKey, period, status, currentEnd, customPriceMonthly, customPriceYearly } = parsed.data;
 
   // Find the plan definition by key
   const plan = await prisma.planDefinition.findUnique({
@@ -37,6 +39,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
 
   const parsedDate = currentEnd ? new Date(`${currentEnd}T00:00:00Z`) : null;
+  const customPriceMonthlyPaise = customPriceMonthly !== undefined && customPriceMonthly !== null ? Math.round(customPriceMonthly * 100) : null;
+  const customPriceYearlyPaise = customPriceYearly !== undefined && customPriceYearly !== null ? Math.round(customPriceYearly * 100) : null;
 
   if (currentSub) {
     await prisma.subscription.update({
@@ -46,6 +50,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         period,
         status,
         currentEnd: parsedDate,
+        customPriceMonthlyPaise,
+        customPriceYearlyPaise,
       },
     });
   } else {
@@ -56,6 +62,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         period,
         status,
         currentEnd: parsedDate,
+        customPriceMonthlyPaise,
+        customPriceYearlyPaise,
       },
     });
   }

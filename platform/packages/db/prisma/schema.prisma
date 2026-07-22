@@ -156,6 +156,11 @@ model Tenant {
   status    String   @default("active")
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
+  // Custom payment settings per-tenant (Razorpay credentials)
+  customPaymentEnabled Boolean @default(false)
+  razorpayKeyId        String?
+  razorpayKeySecret    String?
+
   outlets    Outlet[]
   staff      StaffUser[]
   roles      Role[]
@@ -1158,6 +1163,8 @@ model Subscription {
   trialEndsAt   DateTime?     @db.Timestamptz(6)
   currentStart  DateTime      @default(now()) @db.Timestamptz(6)
   currentEnd    DateTime?     @db.Timestamptz(6)
+  customPriceMonthlyPaise Int?
+  customPriceYearlyPaise  Int?
   slotOverrides Json          @default("{}") // per-tenant grants on top of the plan, e.g. { "maxBranches": 4 }
   featureOverrides Json       @default("{}") // per-tenant feature grants on top of the plan, e.g. { "games": false, "ai_assistant": true }
   gateway       String? // "razorpay" — reserved for the later billing phase

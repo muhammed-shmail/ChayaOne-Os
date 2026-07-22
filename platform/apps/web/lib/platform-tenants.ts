@@ -129,6 +129,9 @@ export async function getTenantDetail(id: string) {
       subscription: { include: { plan: true } },
       branding: true,
       usage: true,
+      customPaymentEnabled: true,
+      razorpayKeyId: true,
+      razorpayKeySecret: true,
       _count: { select: { outlets: true, staff: true, customers: true } },
     },
   });

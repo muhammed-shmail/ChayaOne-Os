@@ -1,6 +1,7 @@
 import { getSession } from '@/lib/auth';
 import { landingDisplay, landingBody } from '@/components/landing/fonts';
 import { Landing } from '@/components/landing/Landing';
+import { prisma } from '@cafeos/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,9 +9,14 @@ export const dynamic = 'force-dynamic';
 // demo, feature story, pricing, testimonials). The staff launcher lives at /launch.
 export default async function Home() {
   const session = await getSession();
+  const dbPlans = await prisma.planDefinition.findMany({
+    where: { active: true },
+    orderBy: { key: 'asc' },
+  });
+
   return (
     <div className={`${landingDisplay.variable} ${landingBody.variable}`}>
-      <Landing signedIn={!!session} />
+      <Landing signedIn={!!session} dbPlans={dbPlans} />
     </div>
   );
 }

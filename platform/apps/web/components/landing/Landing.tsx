@@ -12,7 +12,7 @@ import { AboutStrip, CtaBand, Footer } from './Footer';
 
 const BOOT_KEY = 'chaya-booted';
 
-export function Landing({ signedIn }: { signedIn: boolean }) {
+export function Landing({ signedIn, dbPlans }: { signedIn: boolean; dbPlans: any[] }) {
   // Boot screen — shown once per tab session, then fades into the page.
   const [booting, setBooting] = useState(true);
 
@@ -48,7 +48,7 @@ export function Landing({ signedIn }: { signedIn: boolean }) {
           <Hero />
           <ChipsBand />
           <Features />
-          <Pricing />
+          <Pricing dbPlans={dbPlans} />
           <AboutStrip />
           <CtaBand />
         </main>

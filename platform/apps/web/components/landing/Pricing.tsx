@@ -4,7 +4,25 @@ import { Check } from 'lucide-react';
 import { plans } from './data';
 import { Rise, Group, GroupItem } from './primitives';
 
-export function Pricing() {
+export function Pricing({ dbPlans }: { dbPlans?: any[] }) {
+  const mergedPlans = plans.map((p) => {
+    const dbPlan = dbPlans?.find((dp) => dp.key === p.name.toLowerCase());
+    if (!dbPlan) return p;
+
+    const prices = (dbPlan.pricePaise ?? {}) as { monthly?: number; yearly?: number };
+    const monthlyPrice = prices.monthly;
+
+    if (monthlyPrice !== undefined && monthlyPrice !== null) {
+      return {
+        ...p,
+        price: `₹${(monthlyPrice / 100).toLocaleString('en-IN')}`,
+        unit: '/mo',
+      };
+    }
+
+    return p;
+  });
+
   return (
     <section className="l-section" id="pricing">
       <div className="l-container">
@@ -18,7 +36,7 @@ export function Pricing() {
         </Rise>
 
         <Group className="l-price-grid" style={{ marginTop: 46 }} stagger={0.1}>
-          {plans.map((p) => (
+          {mergedPlans.map((p) => (
             <GroupItem key={p.name} style={{ height: '100%' }}>
               <div className={`l-price ${p.popular ? 'pop' : ''}`}>
                 {p.popular && <span className="l-price-tag">Most popular</span>}

@@ -20,7 +20,10 @@ export default async function AdminHome() {
     prisma.order.count({ where: { placedAt: { gte: startOfDay } } }),
     prisma.subscription.findMany({
       where: { status: { in: ['active', 'past_due'] } },
-      select: { plan: { select: { pricePaise: true } } },
+      select: {
+        customPriceMonthlyPaise: true,
+        plan: { select: { pricePaise: true } },
+      },
     }),
     prisma.planDefinition.findMany({
       orderBy: { key: 'asc' },
@@ -32,8 +35,12 @@ export default async function AdminHome() {
 
   let mrrPaise = 0;
   for (const sub of activeSubs) {
-    const pp = (sub.plan.pricePaise ?? {}) as { monthly?: number };
-    mrrPaise += Number(pp.monthly ?? 0);
+    if (sub.customPriceMonthlyPaise !== null && sub.customPriceMonthlyPaise !== undefined) {
+      mrrPaise += sub.customPriceMonthlyPaise;
+    } else {
+      const pp = (sub.plan.pricePaise ?? {}) as { monthly?: number };
+      mrrPaise += Number(pp.monthly ?? 0);
+    }
   }
 
   const kpis: AdminKpi[] = [

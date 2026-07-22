@@ -13,6 +13,8 @@ export function TenantSubscription({
     period: string;
     status: string;
     currentEnd: string; // YYYY-MM-DD
+    customPriceMonthlyPaise?: number | null;
+    customPriceYearlyPaise?: number | null;
   };
 }) {
   const router = useRouter();
@@ -20,6 +22,16 @@ export function TenantSubscription({
   const [period, setPeriod] = useState(sub?.period ?? 'monthly');
   const [status, setStatus] = useState(sub?.status ?? 'active');
   const [currentEnd, setCurrentEnd] = useState(sub?.currentEnd ?? '');
+  const [customPriceMonthly, setCustomPriceMonthly] = useState(
+    sub?.customPriceMonthlyPaise !== undefined && sub?.customPriceMonthlyPaise !== null
+      ? String(sub.customPriceMonthlyPaise / 100)
+      : ''
+  );
+  const [customPriceYearly, setCustomPriceYearly] = useState(
+    sub?.customPriceYearlyPaise !== undefined && sub?.customPriceYearlyPaise !== null
+      ? String(sub.customPriceYearlyPaise / 100)
+      : ''
+  );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -36,6 +48,8 @@ export function TenantSubscription({
         period,
         status,
         currentEnd: currentEnd || null,
+        customPriceMonthly: customPriceMonthly.trim() !== '' ? parseFloat(customPriceMonthly) : null,
+        customPriceYearly: customPriceYearly.trim() !== '' ? parseFloat(customPriceYearly) : null,
       }),
     });
     setBusy(false);
@@ -82,6 +96,16 @@ export function TenantSubscription({
         <label className="flex items-center justify-between text-sm gap-2">
           <span style={{ color: 'var(--ink-2)' }}>End Date</span>
           <input type="date" value={currentEnd} onChange={(e) => setCurrentEnd(e.target.value)} className="w-40 rounded-lg px-2 py-1.5 text-sm outline-none" style={input} aria-label="End Date" />
+        </label>
+
+        <label className="flex items-center justify-between text-sm gap-2">
+          <span style={{ color: 'var(--ink-2)' }}>Custom Monthly Fee (₹)</span>
+          <input type="number" step="0.01" placeholder="plan default" value={customPriceMonthly} onChange={(e) => setCustomPriceMonthly(e.target.value)} className="w-40 rounded-lg px-2 py-1.5 text-sm outline-none" style={input} aria-label="Custom Monthly Fee" />
+        </label>
+
+        <label className="flex items-center justify-between text-sm gap-2">
+          <span style={{ color: 'var(--ink-2)' }}>Custom Yearly Fee (₹)</span>
+          <input type="number" step="0.01" placeholder="plan default" value={customPriceYearly} onChange={(e) => setCustomPriceYearly(e.target.value)} className="w-40 rounded-lg px-2 py-1.5 text-sm outline-none" style={input} aria-label="Custom Yearly Fee" />
         </label>
 
         <button onClick={saveSubscription} disabled={busy} className="btn btn-lux w-full mt-2" style={{ padding: 10, borderRadius: 12 }}>
