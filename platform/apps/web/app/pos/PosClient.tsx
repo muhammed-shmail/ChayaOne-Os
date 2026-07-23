@@ -632,16 +632,6 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             <Download size={17} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
           </button>
         )}
-        {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
-          <a href="/dashboard?tab=reprint" className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-            <Printer size={17} aria-hidden /> Print Bills
-          </a>
-        )}
-        {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
-          <a href="/dashboard" className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--turmeric)', color: '#2A1607', border: '1px solid var(--turmeric-d)' }}>
-            <LayoutDashboard size={17} aria-hidden /> Dashboard
-          </a>
-        )}
       </aside>
 
       {/* menu grid */}
@@ -1027,16 +1017,6 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               <button onClick={() => { setMoreOpen(false); staffInstall.promptInstall(); }} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
                 <Download size={18} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
               </button>
-            )}
-            {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
-              <a href="/dashboard?tab=reprint" className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-                <Printer size={18} aria-hidden /> Print Bills
-              </a>
-            )}
-            {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
-              <a href="/dashboard" className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--turmeric)', color: '#2A1607', border: '1px solid var(--turmeric-d)' }}>
-                <LayoutDashboard size={18} aria-hidden /> Dashboard
-              </a>
             )}
           </aside>
         </div>

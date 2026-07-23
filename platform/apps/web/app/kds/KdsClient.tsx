@@ -417,7 +417,7 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
         </div>
       )}
 
-      <style>{kdsCss}</style>
+      <style dangerouslySetInnerHTML={{ __html: kdsCss }} />
     </div>
   );
 }

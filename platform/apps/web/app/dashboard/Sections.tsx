@@ -15,8 +15,20 @@ import type {
 import type { StaffRole } from '@cafeos/db';
 import { ROLE_LABELS, ALL_ROLES } from '@/lib/rbac';
 
-/* maps a sidebar label → API section key (only those with a deep view) */
+/* maps a sidebar key → API section key (only those with a deep view) */
 export const SECTION_KEY: Record<string, SectionData['section'] | undefined> = {
+  // New 11-item nav keys
+  home:      undefined,     // Home data passed via props (DashboardData)
+  orders:    undefined,     // orders loaded via /api/orders, not section API
+  kitchen:   undefined,     // redirects to /kds
+  menu:      'menu',
+  inventory: 'inventory',
+  customers: 'loyalty',     // merged: loyalty + marketing + CRM
+  staff:     'staff',
+  finance:   undefined,     // Finance uses monitor + sales data directly
+  reports:   'sales',
+  settings:  'settings',
+  // Legacy keys (kept for backward compat during transition)
   'Sales & Analytics': 'sales',
   Inventory: 'inventory',
   Staff: 'staff',

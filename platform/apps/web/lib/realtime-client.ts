@@ -123,9 +123,10 @@ function scheduleRetry(key: string, hub: Hub) {
 
 function teardown(hub: Hub, opts: { keepListeners: boolean }) {
   if (hub.rotate) { clearInterval(hub.rotate); hub.rotate = null; }
-  if (hub.channel) {
-    try { RT.client?.removeChannel(hub.channel); } catch { /* ignore */ }
+  const chan = hub.channel;
+  if (chan) {
     hub.channel = null;
+    try { RT.client?.removeChannel(chan); } catch { /* ignore */ }
   }
   if (!opts.keepListeners) { hub.events.clear(); hub.statuses.clear(); }
 }

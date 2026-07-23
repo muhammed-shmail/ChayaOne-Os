@@ -38,26 +38,24 @@ type Kitchen = { id: string; name: string; color?: string; sort: number };
 type Msg = { who: 'ai' | 'me'; html: string };
 
 const MENUS: { key: string; label: string; icon: LucideIcon }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'reprint', label: 'Print Bills', icon: Printer },
-  { key: 'monitor', label: 'Monitor', icon: Wifi },
-  { key: 'orders', label: 'Orders', icon: ClipboardList },
-  { key: 'tables', label: 'Tables', icon: UtensilsCrossed },
-  { key: 'staff', label: 'Staff', icon: ChefHat },
-  { key: 'inventory', label: 'Inventory', icon: Package },
-  { key: 'suppliers', label: 'Suppliers', icon: Truck },
-  { key: 'customers', label: 'Customer Management', icon: Users },
-  { key: 'menu', label: 'Menu Items', icon: UtensilsCrossed },
-  { key: 'settings', label: 'Settings', icon: Settings },
+  { key: 'home',      label: 'Home',         icon: LayoutDashboard },
+  { key: 'orders',    label: 'Orders',        icon: ClipboardList },
+  { key: 'kitchen',   label: 'Kitchen',       icon: ChefHat },
+  { key: 'menu',      label: 'Menu',          icon: UtensilsCrossed },
+  { key: 'inventory', label: 'Inventory',     icon: Package },
+  { key: 'customers', label: 'Customers',     icon: Users },
+  { key: 'staff',     label: 'Staff',         icon: User },
+  { key: 'finance',   label: 'Finance',       icon: BarChart3 },
+  { key: 'reports',   label: 'Reports',       icon: ImageIcon },
+  { key: 'settings',  label: 'Settings',      icon: Settings },
 ];
 
 /** Key actions surfaced in the mobile bottom nav (short labels); a 5th "More"
  *  button opens the full drawer. Everything else stays reachable via the drawer. */
 const BOTTOM_NAV: { key: string; label: string; icon: LucideIcon }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'reprint', label: 'Print Bills', icon: Printer },
-  { key: 'orders', label: 'Orders', icon: ClipboardList },
-  { key: 'tables', label: 'Tables', icon: UtensilsCrossed },
+  { key: 'home',      label: 'Home',      icon: LayoutDashboard },
+  { key: 'orders',    label: 'Orders',    icon: ClipboardList },
+  { key: 'finance',   label: 'Finance',   icon: BarChart3 },
   { key: 'customers', label: 'Customers', icon: Users },
 ];
 
@@ -136,15 +134,27 @@ export default function DashboardClient({
   // routes are the hard gate; this just keeps the UI honest.
   const visibleMenus = MENUS.filter((m) => {
     if (m.key === 'customers' && features.crm === false) return false;
+    // cashier/accountant: home, orders, finance (operations), settings read-only
     if (staff.role === 'cashier') {
-      return ['dashboard', 'orders', 'tables', 'reprint'].includes(m.key);
+      return ['home', 'orders', 'finance'].includes(m.key);
+    }
+    // kitchen staff: home, orders, kitchen only
+    if (staff.role === 'kitchen') {
+      return ['home', 'orders', 'kitchen'].includes(m.key);
+    }
+    // waiter: home, orders, kitchen
+    if (staff.role === 'waiter') {
+      return ['home', 'orders', 'kitchen'].includes(m.key);
     }
     return true;
   });
   const visibleBottomNav = BOTTOM_NAV.filter((m) => {
     if (m.key === 'customers' && features.crm === false) return false;
     if (staff.role === 'cashier') {
-      return ['dashboard', 'orders', 'tables', 'reprint'].includes(m.key);
+      return ['home', 'orders', 'finance'].includes(m.key);
+    }
+    if (staff.role === 'kitchen' || staff.role === 'waiter') {
+      return ['home', 'orders'].includes(m.key);
     }
     return true;
   });
@@ -183,7 +193,7 @@ export default function DashboardClient({
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // 2. Navigation State
-  const [activeMenu, setActiveMenu] = useState('dashboard');
+  const [activeMenu, setActiveMenu] = useState('home');
   const [activeSubTab, setActiveSubTab] = useState('overview');
   // read the current tab from the long-lived SSE handler without re-subscribing
   const activeMenuRef = useRef(activeMenu);
@@ -202,16 +212,15 @@ export default function DashboardClient({
   // Sync sub tab when menu changes
   useEffect(() => {
     activeMenuRef.current = activeMenu;
-    if (activeMenu === 'dashboard') setActiveSubTab('overview');
-    else if (activeMenu === 'monitor') setActiveSubTab('live');
+    if (activeMenu === 'home') setActiveSubTab('overview');
     else if (activeMenu === 'orders') setActiveSubTab('active');
-    else if (activeMenu === 'inventory') setActiveSubTab('stock');
-    else if (activeMenu === 'suppliers') setActiveSubTab('ledger');
-    else if (activeMenu === 'tables') setActiveSubTab('floor');
-    else if (activeMenu === 'staff') setActiveSubTab('activity');
-    else if (activeMenu === 'customers') setActiveSubTab('list');
-    else if (activeMenu === 'reports') setActiveSubTab('daily');
+    else if (activeMenu === 'kitchen') setActiveSubTab('kds');
     else if (activeMenu === 'menu') setActiveSubTab('menu');
+    else if (activeMenu === 'inventory') setActiveSubTab('stock');
+    else if (activeMenu === 'customers') setActiveSubTab('list');
+    else if (activeMenu === 'staff') setActiveSubTab('activity');
+    else if (activeMenu === 'finance') setActiveSubTab('operations');
+    else if (activeMenu === 'reports') setActiveSubTab('daily');
     else if (activeMenu === 'settings') setActiveSubTab('general');
   }, [activeMenu]);
 
@@ -231,7 +240,7 @@ export default function DashboardClient({
         // the live queue, so a bill settled in the POS clears here without a manual
         // Refresh. Only refetch while the Orders tab is open (it reloads on open too).
         if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
-          if (activeMenuRef.current === 'orders' || activeMenuRef.current === 'reprint') loadOrders();
+          if (activeMenuRef.current === 'orders') loadOrders();
         }
         if (msg.type === 'order.new') {
           setLiveOrders((n) => n + 1);
@@ -283,7 +292,7 @@ export default function DashboardClient({
   };
 
   useEffect(() => {
-    if (activeMenu === 'orders' || activeMenu === 'reprint') {
+    if (activeMenu === 'orders') {
       loadOrders();
     }
   }, [activeMenu]);
@@ -393,7 +402,7 @@ export default function DashboardClient({
   };
 
   useEffect(() => {
-    if (activeMenu === 'inventory' || activeMenu === 'settings' || activeMenu === 'menu') {
+    if (activeMenu === 'inventory' || activeMenu === 'settings' || activeMenu === 'menu' || activeMenu === 'finance') {
       loadInventoryData();
     }
   }, [activeMenu]);
@@ -526,7 +535,8 @@ export default function DashboardClient({
   };
 
   useEffect(() => {
-    if (activeMenu === 'suppliers') loadSuppliers();
+    // suppliers is now a tab inside Inventory — load when inventory opens
+    if (activeMenu === 'inventory') loadSuppliers();
   }, [activeMenu]);
 
   const postSupplier = async (payload: any, okMsg: string) => {
@@ -642,9 +652,9 @@ export default function DashboardClient({
     }
   };
 
-  // refresh live occupancy every 30s while the Tables view is open
+  // refresh live occupancy every 30s while Home or Finance is open (floor widget on Home)
   useEffect(() => {
-    if (activeMenu !== 'tables') return;
+    if (activeMenu !== 'home' && activeMenu !== 'finance') return;
     loadTables();
     const t = setInterval(loadTables, 30000);
     return () => clearInterval(t);
@@ -696,8 +706,9 @@ export default function DashboardClient({
   // unread count on mount; live bumps come from the SSE 'notify' handler
   useEffect(() => { loadNotifs(); }, []);
 
+  // Monitor widget is now embedded on Home — refresh while Home is open
   useEffect(() => {
-    if (activeMenu !== 'monitor') return;
+    if (activeMenu !== 'home') return;
     loadMonitor();
     const t = setInterval(loadMonitor, 20000);
     return () => clearInterval(t);
@@ -759,7 +770,7 @@ export default function DashboardClient({
     } catch (err) { console.error(err); } finally { setStaffLoading(false); }
   };
 
-  useEffect(() => { if (activeMenu === 'settings' || activeMenu === 'staff') loadStaff(); }, [activeMenu]);
+  useEffect(() => { if (activeMenu === 'settings' || activeMenu === 'staff' || activeMenu === 'finance') loadStaff(); }, [activeMenu]);
 
   // ---- Staff/HR board (activity · attendance · shifts · payroll) ----
   const [staffBoard, setStaffBoard] = useState<any>(null);
@@ -1770,9 +1781,9 @@ export default function DashboardClient({
     </div>
   );
 
-  // GST report data (exact figures) loaded when the Reports → GST tab opens
+  // GST report data (exact figures) loaded when the Finance → GST tab or Reports → GST tab opens
   useEffect(() => {
-    if (activeMenu === 'reports' && activeSubTab === 'gst' && !salesGst) {
+    if ((activeMenu === 'reports' || activeMenu === 'finance') && activeSubTab === 'gst' && !salesGst) {
       fetch('/api/dashboard/section?s=sales').then((r) => (r.ok ? r.json() : null)).then((d) => setSalesGst(d?.data ?? null)).catch(() => {});
     }
   }, [activeMenu, activeSubTab, salesGst]);
@@ -1807,8 +1818,8 @@ export default function DashboardClient({
 
         <nav className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar">
           {visibleMenus.map((m, i) => {
-            // Reports now lives under Settings — keep Settings lit while viewing it
-            const on = activeMenu === m.key || (m.key === 'settings' && activeMenu === 'reports');
+            // Sidebar active state — reports no longer lives under settings
+            const on = activeMenu === m.key;
             const Ic = m.icon;
             return (
               <motion.button
@@ -1883,14 +1894,20 @@ export default function DashboardClient({
             </button>
             <div className="min-w-0">
               <h1 className="font-display text-2xl sm:text-3xl md:text-4xl leading-tight truncate">
-                {activeMenu === 'menu' ? 'Menu Items' : activeMenu.charAt(0).toUpperCase() + activeMenu.slice(1)}
+                {activeMenu === 'home' ? outlet.name
+                  : activeMenu === 'ai' ? 'AI Assistant'
+                  : activeMenu.charAt(0).toUpperCase() + activeMenu.slice(1)}
               </h1>
               <p className="text-xs truncate" style={{ color: 'var(--ink-3)' }}>
-                {outlet.name} · {isAdvanced ? 'Advanced Mode' : 'Beginner Mode'}
+                {outlet.brand} · {staff.name} · <span className="capitalize">{staff.role}</span>
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Open POS — always visible in header; replaces sidebar POS link */}
+            <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm hidden sm:inline-flex items-center gap-1.5" id="header-open-pos">
+              <Store size={15} aria-hidden /> Open POS
+            </a>
             <span className="pill" style={{ color: connected ? 'var(--cardamom-d)' : 'var(--ink-3)' }}>
               <span
                 ref={liveDot}
@@ -2006,7 +2023,200 @@ export default function DashboardClient({
           </div>
         </header>
 
-        {/* ── 1b. Owner Monitor (live ops) ── */}
+        {/* ── Kitchen redirect — navigates to /kds ── */}
+        {activeMenu === 'kitchen' && (
+          <div className="flex flex-col items-center justify-center gap-6 py-16">
+            <span className="text-6xl">🍳</span>
+            <div className="text-center">
+              <h2 className="font-display text-2xl font-bold mb-2">Kitchen Display</h2>
+              <p className="text-sm" style={{ color: 'var(--ink-3)' }}>The KDS opens in a dedicated full-screen view.</p>
+            </div>
+            <a href="/kds" target="_blank" rel="noopener noreferrer" className="btn btn-primary px-8 py-3 text-base">
+              Open Kitchen Display (KDS)
+            </a>
+            <p className="text-xs" style={{ color: 'var(--ink-3)' }}>Tip: Bookmark /kds on your kitchen screen for instant access.</p>
+          </div>
+        )}
+
+        {/* ── Finance section ── */}
+        {activeMenu === 'finance' && (
+          <div className="flex flex-col gap-4">
+            {/* Finance Sub Tabs */}
+            <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Finance sections">
+              {[
+                { key: 'operations', label: '⚡ Operations' },
+                ...(staff.role === 'owner' || staff.role === 'manager' ? [
+                  { key: 'revenue',  label: '💰 Revenue' },
+                  { key: 'gst',      label: '📋 GST' },
+                  { key: 'expenses', label: '🧾 Expenses' },
+                  { key: 'closing',  label: '🔒 Daily Closing' },
+                ] : []),
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  role="tab"
+                  aria-selected={activeSubTab === tab.key}
+                  onClick={() => setActiveSubTab(tab.key)}
+                  className="px-4 py-2 rounded-xl text-sm font-bold transition"
+                  style={activeSubTab === tab.key
+                    ? { background: 'var(--turmeric)', color: '#2A1607' }
+                    : { background: 'var(--paper-2)', color: 'var(--ink-2)', border: '1px solid var(--line)' }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Operations Tab — available to cashier, manager, owner */}
+            {activeSubTab === 'operations' && (
+              <div className="grid gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <section className="card p-4">
+                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Today Cash Sales</p>
+                    <p className="text-2xl font-display font-extrabold tnum">{formatINR(monitor?.today?.cashPaise ?? 0)}</p>
+                  </section>
+                  <section className="card p-4">
+                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Today UPI Sales</p>
+                    <p className="text-2xl font-display font-extrabold tnum">{formatINR(monitor?.today?.upiPaise ?? 0)}</p>
+                  </section>
+                  <section className="card p-4">
+                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Today Total Sales</p>
+                    <p className="text-2xl font-display font-extrabold tnum">{formatINR(monitor?.today?.salesPaise ?? 0)}</p>
+                  </section>
+                  <section className="card p-4">
+                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Orders Today</p>
+                    <p className="text-2xl font-display font-extrabold tnum">{monitor?.today?.orders ?? kpi.todayOrders}</p>
+                  </section>
+                </div>
+
+                <div className="grid lg:grid-cols-2 gap-4">
+                  <section className="card p-5">
+                    <h4 className="font-bold mb-3">⚡ Quick Actions</h4>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn btn-primary justify-start gap-2">
+                        <Store size={16} aria-hidden /> Open POS
+                      </a>
+                      <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn justify-start gap-2" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
+                        <Printer size={16} aria-hidden /> X Report
+                      </a>
+                      <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn justify-start gap-2" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
+                        <Package size={16} aria-hidden /> Cash In / Out
+                      </a>
+                      <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn justify-start gap-2" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
+                        <ClipboardList size={16} aria-hidden /> Close Shift (Z)
+                      </a>
+                    </div>
+                    <p className="text-xs mt-3" style={{ color: 'var(--ink-3)' }}>Shift operations (X Report, cash drop, Z Report) are available inside the POS terminal for cashiers.</p>
+                  </section>
+
+                  <section className="card p-5">
+                    <h4 className="font-bold mb-3">💳 Payment Methods Today</h4>
+                    <div className="flex flex-col gap-2">
+                      {(monitor?.payMix ?? []).length === 0 ? (
+                        <p className="text-sm" style={{ color: 'var(--ink-3)' }}>No payments recorded yet today.</p>
+                      ) : (
+                        (monitor?.payMix ?? []).map((p: any) => (
+                          <div key={p.method} className="flex items-center justify-between py-2 px-3 rounded-xl" style={{ background: 'var(--paper-3)' }}>
+                            <span className="text-sm font-bold capitalize">{p.method}</span>
+                            <span className="text-sm tnum font-mono" style={{ color: 'var(--ink-2)' }}>{formatINR(p.amountPaise ?? 0)}</span>
+                          </div>
+                        ))
+                      )}
+                      <p className="text-xs mt-2" style={{ color: 'var(--ink-3)' }}>Settlement status: UPI & card amounts settled by Razorpay are reflected in your bank within T+1.</p>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            )}
+
+            {/* Revenue Tab — manager + owner */}
+            {activeSubTab === 'revenue' && (staff.role === 'owner' || staff.role === 'manager') && (
+              <div className="grid gap-4">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <section className="card p-4"><p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Today Sales</p><p className="text-2xl font-display font-extrabold tnum">{formatINR(kpi.todaySalesPaise)}</p></section>
+                  <section className="card p-4"><p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Orders</p><p className="text-2xl font-display font-extrabold tnum">{kpi.todayOrders}</p></section>
+                  <section className="card p-4"><p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>AOV</p><p className="text-2xl font-display font-extrabold tnum">{formatINR(kpi.aovPaise)}</p></section>
+                  <section className="card p-4"><p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Estimated Profit</p><p className="text-2xl font-display font-extrabold tnum">{formatINR(Math.round(kpi.todaySalesPaise * 0.7))}</p></section>
+                </div>
+                <section className="card p-5">
+                  <h4 className="font-bold mb-3">Revenue Trend</h4>
+                  <SectionView section="sales" />
+                </section>
+              </div>
+            )}
+
+            {/* GST Tab */}
+            {activeSubTab === 'gst' && (staff.role === 'owner' || staff.role === 'manager') && (
+              <div className="grid gap-4">
+                <section className="card p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-bold">GST Summary</h4>
+                    <span className="pill text-xs">Last 30 days</span>
+                  </div>
+                  {!salesGst ? (
+                    <p className="text-sm" style={{ color: 'var(--ink-3)' }}>Loading GST data…</p>
+                  ) : (
+                    <div className="grid gap-3">
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}><p className="text-xs mb-1" style={{ color: 'var(--ink-3)' }}>Taxable Value</p><p className="font-bold tnum">{formatINR(salesGst?.totals?.grossPaise ?? 0)}</p></div>
+                        <div className="p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}><p className="text-xs mb-1" style={{ color: 'var(--ink-3)' }}>CGST</p><p className="font-bold tnum">{formatINR((salesGst?.totals?.taxPaise ?? 0) / 2)}</p></div>
+                        <div className="p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}><p className="text-xs mb-1" style={{ color: 'var(--ink-3)' }}>SGST</p><p className="font-bold tnum">{formatINR((salesGst?.totals?.taxPaise ?? 0) / 2)}</p></div>
+                        <div className="p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}><p className="text-xs mb-1" style={{ color: 'var(--ink-3)' }}>Total Tax</p><p className="font-bold tnum">{formatINR(salesGst?.totals?.taxPaise ?? 0)}</p></div>
+                      </div>
+                      {outlet.gstin && <p className="text-xs" style={{ color: 'var(--ink-3)' }}>GSTIN: {outlet.gstin}</p>}
+                      {!outlet.gstin && <p className="text-xs px-3 py-2 rounded-lg" style={{ background: 'color-mix(in srgb, var(--clay) 10%, transparent)', color: 'var(--clay)' }}>⚠ No GSTIN on file. Add it in Settings → Outlet to enable GST invoicing.</p>}
+                    </div>
+                  )}
+                </section>
+              </div>
+            )}
+
+            {/* Daily Closing Tab */}
+            {activeSubTab === 'closing' && (staff.role === 'owner' || staff.role === 'manager') && (
+              <div className="grid gap-4">
+                <section className="card p-5">
+                  <h4 className="font-bold mb-4">🔒 Daily Closing Checklist</h4>
+                  <div className="flex flex-col gap-3">
+                    {[
+                      { label: 'All shifts closed (Z Reports done)', done: true },
+                      { label: 'Cash counted and deposited', done: false },
+                      { label: 'UPI settlements verified', done: true },
+                      { label: 'Card settlements verified', done: false },
+                      { label: 'Vendor payments logged', done: true },
+                      { label: 'Stock adjusted for waste', done: false },
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-center gap-3 py-2.5 px-3 rounded-xl" style={{ background: 'var(--paper-3)' }}>
+                        <span className="text-base">{item.done ? '✅' : '⏳'}</span>
+                        <span className="text-sm font-bold" style={{ color: item.done ? 'var(--ink)' : 'var(--ink-2)' }}>{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 p-4 rounded-xl" style={{ background: 'color-mix(in srgb, var(--turmeric) 12%, transparent)', border: '1px solid var(--turmeric-l)' }}>
+                    <p className="text-sm font-bold">Day Summary</p>
+                    <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+                      <span style={{ color: 'var(--ink-3)' }}>Total Revenue</span><span className="font-bold tnum text-right">{formatINR(kpi.todaySalesPaise)}</span>
+                      <span style={{ color: 'var(--ink-3)' }}>Orders</span><span className="font-bold tnum text-right">{kpi.todayOrders}</span>
+                    </div>
+                  </div>
+                  <button className="btn btn-primary w-full mt-4">Lock Day & Close ↗</button>
+                </section>
+              </div>
+            )}
+
+            {/* Expenses Tab */}
+            {activeSubTab === 'expenses' && (staff.role === 'owner' || staff.role === 'manager') && (
+              <div className="card p-5">
+                <h4 className="font-bold mb-3">🧾 Expenses</h4>
+                <p className="text-sm" style={{ color: 'var(--ink-3)' }}>Expense tracking is coming soon. Log rent, utilities, and petty cash here.</p>
+                <div className="mt-4 p-3 rounded-xl" style={{ background: 'color-mix(in srgb, var(--turmeric) 8%, transparent)', border: '1px dashed var(--turmeric)' }}>
+                  <p className="text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>🚧 Coming in next release</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Live Monitor (legacy — now embedded on Home) ── */}
         {activeMenu === 'monitor' && (
           <div className="flex flex-col gap-4">
             {monitorLoading && !monitor ? (
@@ -2097,7 +2307,7 @@ export default function DashboardClient({
         )}
 
         {/* ── 1. Dashboard View ── */}
-        {activeMenu === 'dashboard' && (
+        {activeMenu === 'home' && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {/* AI Briefing */}
             <motion.section className="card col-span-2 p-5 flex flex-col justify-between" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.05 }}>
@@ -2235,6 +2445,7 @@ export default function DashboardClient({
           </div>
         )}
 
+        {/* reprint is now the History/Reprint tab inside Orders — kept here as fallback */}
         {activeMenu === 'reprint' && (
           <div className="flex flex-col gap-4">
             <section className="card p-5">
