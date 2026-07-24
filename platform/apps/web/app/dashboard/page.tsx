@@ -7,6 +7,7 @@ import { tenantFeatures } from '@/lib/features';
 import { readReceiptConfig } from '@/lib/receipt';
 import { BillingWall } from '@/components/BillingWall';
 import DashboardClient from './DashboardClient';
+import RoleDashboardClient from './RoleDashboardClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,10 +15,10 @@ export const dynamic = 'force-dynamic';
  * Dashboard page — server component.
  * Requires a session and renders the dashboard client for owner, manager, and cashier.
  */
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: { [key: string]: string | undefined } }) {
   const session = await getSession();
   if (!session) redirect('/login');
-  if (!['owner', 'manager', 'cashier'].includes(session.role)) redirect('/pos');
+  if (!['owner', 'manager', 'cashier', 'accountant'].includes(session.role)) redirect('/pos');
 
   const outlet = await prisma.outlet.findUnique({
     where: { id: session.outletId },
@@ -35,10 +36,23 @@ export default async function DashboardPage() {
 
   const dashboardOutlet = { name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt };
 
+  const showOwner = session.role === 'owner' || session.role === 'accountant' || (session.role === 'manager' && searchParams?.view === 'owner');
+
+  if (showOwner) {
+    return (
+      <DashboardClient
+        outlet={dashboardOutlet}
+        staff={{ name: session.name, role: session.role }}
+        data={data}
+        features={features}
+      />
+    );
+  }
+
   return (
-    <DashboardClient
+    <RoleDashboardClient
       outlet={dashboardOutlet}
-      staff={{ name: session.name, role: session.role }}
+      staff={{ id: session.staffId, name: session.name, role: session.role }}
       data={data}
       features={features}
     />

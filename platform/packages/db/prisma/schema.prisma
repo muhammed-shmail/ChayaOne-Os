@@ -33,6 +33,7 @@ enum StaffRole {
   cashier
   kitchen
   waiter
+  accountant
 }
 
 // NOTE: kitchens/stations are configurable per outlet (Outlet.settings.kitchens,

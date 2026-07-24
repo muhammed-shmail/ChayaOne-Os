@@ -134,9 +134,13 @@ export default function DashboardClient({
   // routes are the hard gate; this just keeps the UI honest.
   const visibleMenus = MENUS.filter((m) => {
     if (m.key === 'customers' && features.crm === false) return false;
-    // cashier/accountant: home, orders, finance (operations), settings read-only
+    // cashier: home, orders, finance (operations)
     if (staff.role === 'cashier') {
       return ['home', 'orders', 'finance'].includes(m.key);
+    }
+    // accountant: home, orders, inventory, customers, finance, reports
+    if (staff.role === 'accountant') {
+      return ['home', 'orders', 'inventory', 'customers', 'finance', 'reports'].includes(m.key);
     }
     // kitchen staff: home, orders, kitchen only
     if (staff.role === 'kitchen') {
@@ -150,7 +154,7 @@ export default function DashboardClient({
   });
   const visibleBottomNav = BOTTOM_NAV.filter((m) => {
     if (m.key === 'customers' && features.crm === false) return false;
-    if (staff.role === 'cashier') {
+    if (staff.role === 'cashier' || staff.role === 'accountant') {
       return ['home', 'orders', 'finance'].includes(m.key);
     }
     if (staff.role === 'kitchen' || staff.role === 'waiter') {
@@ -211,8 +215,11 @@ export default function DashboardClient({
 
   // Sync sub tab when menu changes
   useEffect(() => {
-    activeMenuRef.current = activeMenu;
-    if (activeMenu === 'home') setActiveSubTab('overview');
+    if (activeMenu === 'home') {
+      if (activeSubTab !== 'floor' && activeSubTab !== 'overview') {
+        setActiveSubTab('overview');
+      }
+    }
     else if (activeMenu === 'orders') setActiveSubTab('active');
     else if (activeMenu === 'kitchen') setActiveSubTab('kds');
     else if (activeMenu === 'menu') setActiveSubTab('menu');
@@ -652,13 +659,12 @@ export default function DashboardClient({
     }
   };
 
-  // refresh live occupancy every 30s while Home or Finance is open (floor widget on Home)
+  // refresh live occupancy every 30s globally (updates the header stats & floor map)
   useEffect(() => {
-    if (activeMenu !== 'home' && activeMenu !== 'finance') return;
     loadTables();
     const t = setInterval(loadTables, 30000);
     return () => clearInterval(t);
-  }, [activeMenu]);
+  }, []);
 
   const handleSaveTableConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1854,6 +1860,12 @@ export default function DashboardClient({
           <Table2 size={16} aria-hidden /> Open Till (POS)
         </a>
 
+        {staff.role === 'manager' && (
+          <Link href="/dashboard" className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl transition font-bold" style={{ color: 'var(--turmeric-d)' }}>
+            <LayoutDashboard size={16} aria-hidden /> Manager Dashboard
+          </Link>
+        )}
+
         <div className="card p-3 mt-1" style={{ background: 'var(--paper-3)' }}>
           <b className="text-sm capitalize">{outlet.plan} plan</b>
           <span className="block text-xs mb-2" style={{ color: 'var(--ink-3)' }}>14 days left in trial</span>
@@ -1868,7 +1880,7 @@ export default function DashboardClient({
 
       <main className="min-w-0 flex-1 flex flex-col gap-4 px-5 pt-5 md:px-7 md:pt-7 pb-[calc(76px_+_env(safe-area-inset-bottom))] lg:pb-7">
         {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-3">
+        <header className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b" style={{ borderColor: 'var(--line)' }}>
           <div className="flex items-center gap-3 min-w-0">
             {/* Mobile: open the slide-out drawer (full menu) */}
             <button
@@ -1904,8 +1916,24 @@ export default function DashboardClient({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Table occupancy status indicator in header */}
+            {tablesData && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveMenu('home');
+                  setActiveSubTab('floor');
+                }}
+                title="Click to view Live Floor Map"
+                className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition cursor-pointer"
+                style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+              >
+                <span className="w-2 h-2 rounded-full" style={{ background: (tablesData?.totals?.occupied ?? 0) > 0 ? 'var(--turmeric)' : 'var(--cardamom)' }} />
+                <span>Tables: {tablesData?.totals?.occupied ?? 0} / {tablesData?.totals?.tables ?? 0}</span>
+              </button>
+            )}
             {/* Open POS — always visible in header; replaces sidebar POS link */}
-            <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm hidden sm:inline-flex items-center gap-1.5" id="header-open-pos">
+            <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition" id="header-open-pos" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
               <Store size={15} aria-hidden /> Open POS
             </a>
             <span className="pill" style={{ color: connected ? 'var(--cardamom-d)' : 'var(--ink-3)' }}>
@@ -2019,7 +2047,9 @@ export default function DashboardClient({
               )}
             </div>
 
-            <ShiftStatus />
+            <div className="hidden md:inline-flex">
+              <ShiftStatus />
+            </div>
           </div>
         </header>
 
@@ -2045,7 +2075,7 @@ export default function DashboardClient({
             <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Finance sections">
               {[
                 { key: 'operations', label: '⚡ Operations' },
-                ...(staff.role === 'owner' || staff.role === 'manager' ? [
+                ...(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant' ? [
                   { key: 'revenue',  label: '💰 Revenue' },
                   { key: 'gst',      label: '📋 GST' },
                   { key: 'expenses', label: '🧾 Expenses' },
@@ -2130,7 +2160,7 @@ export default function DashboardClient({
             )}
 
             {/* Revenue Tab — manager + owner */}
-            {activeSubTab === 'revenue' && (staff.role === 'owner' || staff.role === 'manager') && (
+            {activeSubTab === 'revenue' && (staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant') && (
               <div className="grid gap-4">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <section className="card p-4"><p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Today Sales</p><p className="text-2xl font-display font-extrabold tnum">{formatINR(kpi.todaySalesPaise)}</p></section>
@@ -2146,7 +2176,7 @@ export default function DashboardClient({
             )}
 
             {/* GST Tab */}
-            {activeSubTab === 'gst' && (staff.role === 'owner' || staff.role === 'manager') && (
+            {activeSubTab === 'gst' && (staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant') && (
               <div className="grid gap-4">
                 <section className="card p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -2172,7 +2202,7 @@ export default function DashboardClient({
             )}
 
             {/* Daily Closing Tab */}
-            {activeSubTab === 'closing' && (staff.role === 'owner' || staff.role === 'manager') && (
+            {activeSubTab === 'closing' && (staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant') && (
               <div className="grid gap-4">
                 <section className="card p-5">
                   <h4 className="font-bold mb-4">🔒 Daily Closing Checklist</h4>
@@ -2204,7 +2234,7 @@ export default function DashboardClient({
             )}
 
             {/* Expenses Tab */}
-            {activeSubTab === 'expenses' && (staff.role === 'owner' || staff.role === 'manager') && (
+            {activeSubTab === 'expenses' && (staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant') && (
               <div className="card p-5">
                 <h4 className="font-bold mb-3">🧾 Expenses</h4>
                 <p className="text-sm" style={{ color: 'var(--ink-3)' }}>Expense tracking is coming soon. Log rent, utilities, and petty cash here.</p>
@@ -2308,75 +2338,190 @@ export default function DashboardClient({
 
         {/* ── 1. Dashboard View ── */}
         {activeMenu === 'home' && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* AI Briefing */}
-            <motion.section className="card col-span-2 p-5 flex flex-col justify-between" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.05 }}>
-              <div>
-                <span className="font-bold text-xs" style={{ color: 'var(--berry)' }}>✦ AI Morning Briefing</span>
-                <div className="grid gap-2.5 mt-3">
-                  {briefing.length === 0 ? (
-                    <p className="text-sm text-ink-3">Briefing updates instantly as sales come in.</p>
+          <div className="flex flex-col gap-4">
+            {/* Home Sub Tabs */}
+            <div className="flex gap-1.5 p-1 rounded-[16px] border max-w-[340px]" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist" aria-label="Home sections">
+              {[
+                { key: 'overview', label: '📊 Overview' },
+                { key: 'floor', label: '🍽️ Live Floor' }
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  role="tab"
+                  aria-selected={activeSubTab === tab.key}
+                  onClick={() => setActiveSubTab(tab.key)}
+                  className="flex-1 px-4 py-2 rounded-[12px] text-sm font-bold transition"
+                  style={activeSubTab === tab.key
+                    ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                    : { color: 'var(--ink-2)' }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Overview Tab */}
+            {activeSubTab === 'overview' && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* AI Briefing */}
+                <motion.section className="card col-span-2 p-5 flex flex-col justify-between" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.05 }}>
+                  <div>
+                    <span className="font-bold text-xs" style={{ color: 'var(--berry)' }}>✦ AI Morning Briefing</span>
+                    <div className="grid gap-2.5 mt-3">
+                      {briefing.length === 0 ? (
+                        <p className="text-sm text-ink-3">Briefing updates instantly as sales come in.</p>
+                      ) : (
+                        briefing.map((b, i) => (
+                          <div key={i} className="flex gap-2 text-sm leading-snug">
+                            <span style={{ color: b.tone === 'up' ? 'var(--cardamom)' : 'var(--clay)' }}>●</span>
+                            <p>{b.text}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </motion.section>
+
+                {/* Constraints display: Sales, Orders, Profit, Low Stock, Top Sellers */}
+                <KpiCard label="Today's Sales" n={totalSales} format={formatINR} index={0} />
+                <KpiCard label="Orders" n={kpi.todayOrders} index={1} />
+                <KpiCard label="Profit (est. 70%)" n={estimatedProfit} format={formatINR} tone="cardamom" index={2} />
+                <KpiCard label="Low Stock Items" n={lowStock.length} tone={lowStock.length > 0 ? 'gold' : undefined} index={3} />
+
+                {/* Revenue overview — total revenue + date-wise sales chart/report */}
+                {features.revenue_analytics !== false && (
+                  <div className="col-span-2 lg:col-span-4">
+                    <RevenuePanel initialTrend={trend} restrictToToday={staff.role === 'cashier'} />
+                  </div>
+                )}
+
+                {/* Low Stock Alerts list */}
+                <motion.section className="card col-span-2 p-5" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.1 }}>
+                  <h4 className="text-base font-bold mb-3">⚠ Low Stock Alerts</h4>
+                  {lowStock.length === 0 ? (
+                    <p className="text-sm text-ink-3">All ingredients look healthy!</p>
                   ) : (
-                    briefing.map((b, i) => (
-                      <div key={i} className="flex gap-2 text-sm leading-snug">
-                        <span style={{ color: b.tone === 'up' ? 'var(--cardamom)' : 'var(--clay)' }}>●</span>
-                        <p>{b.text}</p>
-                      </div>
-                    ))
+                    <div className="grid gap-2">
+                      {lowStock.map((s) => (
+                        <div key={s.id} className="flex justify-between items-center text-sm py-1 border-b" style={{ borderColor: 'var(--line-2)' }}>
+                          <span>{s.name}</span>
+                          <span className="pill py-0.5">{s.qty} ({s.level})</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </div>
-              </div>
-            </motion.section>
+                </motion.section>
 
-            {/* Constraints display: Sales, Orders, Profit, Low Stock, Top Sellers */}
-            <KpiCard label="Today's Sales" n={totalSales} format={formatINR} index={0} />
-            <KpiCard label="Orders" n={kpi.todayOrders} index={1} />
-            <KpiCard label="Profit (est. 70%)" n={estimatedProfit} format={formatINR} tone="cardamom" index={2} />
-            <KpiCard label="Low Stock Items" n={lowStock.length} tone={lowStock.length > 0 ? 'gold' : undefined} index={3} />
+                {/* Top Selling Items */}
+                <motion.section className="card col-span-2 p-5" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.15 }}>
+                  <h4 className="text-base font-bold mb-3">⭐ Top Selling Items</h4>
+                  {topItems.length === 0 ? (
+                    <p className="text-sm text-ink-3">Not enough orders to rank bestsellers.</p>
+                  ) : (
+                    <div className="grid gap-2">
+                      {topItems.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-sm py-1 border-b" style={{ borderColor: 'var(--line-2)' }}>
+                          <span><b>{idx + 1}.</b> {item.name}</span>
+                          <span className="font-mono text-ink-2">{item.qty} sold</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </motion.section>
 
-            {/* Revenue overview — total revenue + date-wise sales chart/report */}
-            {features.revenue_analytics !== false && (
-              <div className="col-span-2 lg:col-span-4">
-                <RevenuePanel initialTrend={trend} restrictToToday={staff.role === 'cashier'} />
+                {/* AI Assistant grounded box */}
+                {features.ai_assistant !== false && <Assistant />}
               </div>
             )}
 
-            {/* Low Stock Alerts list */}
-            <motion.section className="card col-span-2 p-5" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.1 }}>
-              <h4 className="text-base font-bold mb-3">⚠ Low Stock Alerts</h4>
-              {lowStock.length === 0 ? (
-                <p className="text-sm text-ink-3">All ingredients look healthy!</p>
-              ) : (
-                <div className="grid gap-2">
-                  {lowStock.map((s) => (
-                    <div key={s.id} className="flex justify-between items-center text-sm py-1 border-b" style={{ borderColor: 'var(--line-2)' }}>
-                      <span>{s.name}</span>
-                      <span className="pill py-0.5">{s.qty} ({s.level})</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </motion.section>
+            {/* Live Floor Tab */}
+            {activeSubTab === 'floor' && (() => {
+              const occMap = new Map<string, any>((tablesData?.occupancy ?? []).map((o: any) => [o.id, o]));
+              const STATUS = {
+                free: { label: 'Free', color: '#34C759' },
+                occupied: { label: 'Occupied', color: '#3B82F6' },
+                long: { label: 'Long stay', color: '#E8A22B' },
+                low: { label: 'Low revenue', color: '#C3492F' },
+              };
+              const minutes = tablesData?.config?.minutes ?? 90;
+              const statusOf = (id: string): keyof typeof STATUS => {
+                const o = occMap.get(id);
+                if (!o) return 'free';
+                if (o.lowRevenue) return 'low';
+                if (o.durationMin >= minutes) return 'long';
+                return 'occupied';
+              };
+              const roster = tablesData?.roster ?? [];
+              const floorList = tablesData?.floors ?? [];
+              const floorIds = new Set(floorList.map((f: any) => f.id));
+              const groups = [
+                ...floorList.map((f: any) => ({ key: f.id, name: f.name, tables: roster.filter((t: any) => t.floorId === f.id) })),
+                { key: 'unassigned', name: 'Unassigned', tables: roster.filter((t: any) => !t.floorId || !floorIds.has(t.floorId)) },
+              ].filter((g) => g.tables.length > 0);
 
-            {/* Top Selling Items */}
-            <motion.section className="card col-span-2 p-5" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.15 }}>
-              <h4 className="text-base font-bold mb-3">⭐ Top Selling Items</h4>
-              {topItems.length === 0 ? (
-                <p className="text-sm text-ink-3">Not enough orders to rank bestsellers.</p>
-              ) : (
-                <div className="grid gap-2">
-                  {topItems.map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-sm py-1 border-b" style={{ borderColor: 'var(--line-2)' }}>
-                      <span><b>{idx + 1}.</b> {item.name}</span>
-                      <span className="font-mono text-ink-2">{item.qty} sold</span>
+              const renderTile = (t: any) => {
+                const st = statusOf(t.id);
+                const s = STATUS[st];
+                const o = occMap.get(t.id);
+                return (
+                  <div
+                    key={t.id}
+                    onClick={o ? () => openTableOrders(t) : undefined}
+                    role={o ? 'button' : undefined}
+                    tabIndex={o ? 0 : undefined}
+                    onKeyDown={o ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTableOrders(t); } } : undefined}
+                    title={o ? 'View orders on this table' : undefined}
+                    className={`rounded-xl border p-3 flex flex-col gap-1${o ? ' cursor-pointer transition hover:-translate-y-0.5' : ''}`}
+                    style={{ background: `color-mix(in srgb, ${s.color} 8%, var(--paper-3))`, borderColor: s.color, borderTopWidth: 3, borderTopColor: s.color }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-display font-bold text-lg">{t.label}</span>
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
                     </div>
-                  ))}
-                </div>
-              )}
-            </motion.section>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wide" style={{ color: s.color }}>{s.label}</span>
+                    {o ? (
+                      <div className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>
+                        <div className="flex justify-between"><span>{o.durationMin} min</span><span className="font-mono">{formatINR(o.billPaise)}</span></div>
+                        <span className="flex justify-between"><span>{o.orders} order{o.orders > 1 ? 's' : ''}</span><span style={{ color: s.color }}>view ▸</span></span>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>{'•'.repeat(t.seats)} · open</span>
+                    )}
+                  </div>
+                );
+              };
 
-            {/* AI Assistant grounded box */}
-            {features.ai_assistant !== false && <Assistant />}
+              return (
+                <section className="card p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <h4 className="font-bold">Live Floor</h4>
+                    <div className="flex flex-wrap gap-3">
+                      {Object.entries(STATUS).map(([k, s]) => (
+                        <span key={k} className="inline-flex items-center gap-1.5 text-xs font-bold" style={{ color: 'var(--ink-2)' }}>
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />{s.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  {tablesLoading && !tablesData ? (
+                    <TeaLoader label="Loading tables…" size={44} />
+                  ) : roster.length === 0 ? (
+                    <p className="text-sm text-ink-3">No tables configured yet.</p>
+                  ) : (
+                    <div className="flex flex-col gap-5">
+                      {groups.map((g) => (
+                        <div key={g.key}>
+                          <h5 className="font-bold text-xs uppercase tracking-wider mb-2.5" style={{ color: 'var(--ink-3)' }}>{g.name} · {g.tables.length} table{g.tables.length === 1 ? '' : 's'}</h5>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                            {g.tables.map(renderTile)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
           </div>
         )}
 
@@ -5110,6 +5255,7 @@ export default function DashboardClient({
         onSelect={(k) => { setActiveMenu(k); setLiveOrders(0); }}
         plan={outlet.plan}
         onLogout={logout}
+        staffRole={staff.role}
       />
       <BottomNav
         items={visibleBottomNav as NavItem[]}

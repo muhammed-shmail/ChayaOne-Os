@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   const today = ymd(todayKey);
   const isTodayOnly = from === to && to === today;
 
-  if (session.role !== 'owner' && session.role !== 'manager' && !(session.role === 'cashier' && isTodayOnly)) {
+  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant' && !(session.role === 'cashier' && isTodayOnly)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 

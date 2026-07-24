@@ -29,7 +29,7 @@ export default function LoginClient() {
   const [showPassword, setShowPassword] = useState(false); // reveal/hide the password field
   const [notice, setNotice] = useState<string | null>(null); // info hint, e.g. "use password"
 
-  const dest = staff?.role === 'owner' || staff?.role === 'manager' || staff?.role === 'cashier' ? '/dashboard' : '/pos';
+  const dest = staff?.role === 'owner' || staff?.role === 'manager' || staff?.role === 'cashier' || staff?.role === 'accountant' ? '/dashboard' : '/pos';
 
   // shared post-login step: cookie is set — check today's attendance then show confirm
   async function enterWith(who: Staff) {

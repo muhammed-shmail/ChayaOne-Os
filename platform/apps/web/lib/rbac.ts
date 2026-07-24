@@ -22,6 +22,7 @@ export const ROLE_LABELS: Record<StaffRole, string> = {
   cashier: 'Cashier',
   waiter: 'Waiter',
   kitchen: 'Kitchen',
+  accountant: 'Accountant',
 };
 
 export const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
@@ -30,11 +31,12 @@ export const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
   cashier: 'Cashier dashboard, point of sale and kitchen display.',
   waiter: 'Point of sale and QR order approvals.',
   kitchen: 'Kitchen display only.',
+  accountant: 'Financial reports, invoices, taxes, ledger and supplier payments.',
 };
 
 /** Which roles may reach each surface. */
 const ACCESS: Record<Surface, StaffRole[]> = {
-  dashboard: ['owner', 'manager', 'cashier'],
+  dashboard: ['owner', 'manager', 'cashier', 'accountant'],
   pos: ['owner', 'manager', 'cashier', 'waiter'],
   kds: ['owner', 'manager', 'cashier', 'kitchen'],
   approvals: ['owner', 'manager', 'cashier', 'waiter', 'kitchen'], // kitchen is view-only (enforced in the approvals API)
@@ -59,16 +61,16 @@ export function canManageStaff(role: string): boolean {
 
 /** Roles an actor is allowed to assign/create. Managers can't mint owners/managers. */
 export function assignableRoles(actorRole: string): StaffRole[] {
-  if (actorRole === 'owner') return ['owner', 'manager', 'cashier', 'waiter', 'kitchen'];
-  if (actorRole === 'manager') return ['cashier', 'waiter', 'kitchen'];
+  if (actorRole === 'owner') return ['owner', 'manager', 'cashier', 'waiter', 'kitchen', 'accountant'];
+  if (actorRole === 'manager') return ['cashier', 'waiter', 'kitchen', 'accountant'];
   return [];
 }
 
 /** Whether `actor` may edit/deactivate a user who currently holds `targetRole`. */
 export function canManageTarget(actorRole: string, targetRole: string): boolean {
   if (actorRole === 'owner') return true;
-  if (actorRole === 'manager') return ['cashier', 'waiter', 'kitchen'].includes(targetRole);
+  if (actorRole === 'manager') return ['cashier', 'waiter', 'kitchen', 'accountant'].includes(targetRole);
   return false;
 }
 
-export const ALL_ROLES: StaffRole[] = ['owner', 'manager', 'cashier', 'waiter', 'kitchen'];
+export const ALL_ROLES: StaffRole[] = ['owner', 'manager', 'cashier', 'waiter', 'kitchen', 'accountant'];

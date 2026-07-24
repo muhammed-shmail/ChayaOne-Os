@@ -8,7 +8,8 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { LogOut, Table2, Menu, type LucideIcon } from '@/components/ui';
+import { LogOut, Table2, Menu, LayoutDashboard, type LucideIcon } from '@/components/ui';
+import { ShiftStatus } from '@/components/ShiftStatus';
 
 export type NavItem = { key: string; label: string; icon: LucideIcon };
 
@@ -28,6 +29,7 @@ export function MobileDrawer({
   onSelect,
   plan,
   onLogout,
+  staffRole,
 }: {
   open: boolean;
   onClose: () => void;
@@ -36,6 +38,7 @@ export function MobileDrawer({
   onSelect: (key: string) => void;
   plan: string;
   onLogout: () => void;
+  staffRole?: string;
 }) {
   const panelRef = useRef<HTMLElement>(null);
 
@@ -102,7 +105,7 @@ export function MobileDrawer({
           paddingTop: 'calc(1rem + env(safe-area-inset-top))',
         }}
       >
-        <div className="flex items-center justify-center px-2 py-3 mb-2">
+        <div className="flex items-center justify-center px-2 py-3 mb-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/logo chaya one.png"
@@ -110,6 +113,10 @@ export function MobileDrawer({
             style={{ width: '100%', height: 'auto', maxWidth: 150 }}
             className="brand-logo object-contain"
           />
+        </div>
+
+        <div className="px-2 mb-4 shrink-0 flex justify-center">
+          <ShiftStatus />
         </div>
 
         <nav className="flex flex-col gap-0.5">
@@ -144,6 +151,16 @@ export function MobileDrawer({
         >
           <Table2 size={16} aria-hidden /> Open Till (POS)
         </a>
+
+        {staffRole === 'manager' && (
+          <a
+            href="/dashboard"
+            className="flex items-center gap-2 px-3 py-2 mt-1 text-sm rounded-xl transition font-bold"
+            style={{ color: 'var(--turmeric-d)' }}
+          >
+            <LayoutDashboard size={16} aria-hidden /> Manager Dashboard
+          </a>
+        )}
 
         <div className="card p-3 mt-1" style={{ background: 'var(--paper-3)' }}>
           <b className="text-sm capitalize">{plan} plan</b>

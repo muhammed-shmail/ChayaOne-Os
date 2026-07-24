@@ -33,7 +33,7 @@ function cleanStr(v: unknown, max = 200): string | null {
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager')
+  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   if (!(await tenantHasFeature(session.tenantId, 'crm')))
     return NextResponse.json({ error: 'feature_not_in_plan', feature: 'crm' }, { status: 402 });
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager')
+  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   if (!(await tenantHasFeature(session.tenantId, 'crm')))
     return NextResponse.json({ error: 'feature_not_in_plan', feature: 'crm' }, { status: 402 });

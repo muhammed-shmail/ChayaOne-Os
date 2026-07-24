@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager')
+  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const [profile, timeline] = await Promise.all([

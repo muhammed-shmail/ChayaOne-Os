@@ -28,6 +28,7 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
         { href: '/pos', label: 'Open POS', icon: ShoppingCart, tone: 'primary' },
         { href: '/kds', label: 'Kitchen Display', icon: ChefHat },
         { href: '/approvals', label: 'QR Approvals', icon: QrCode },
+        { href: '/dashboard?view=owner', label: 'Owner Dashboard', icon: LayoutDashboard },
       ]
     : [
         { href: '/pos', label: 'Open POS', icon: ShoppingCart, tone: 'primary' },
@@ -38,9 +39,6 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
   return (
     <main className="min-h-screen p-4 md:p-6" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
       <header className="flex flex-wrap items-center gap-3 mb-5">
-        <div className="grid place-items-center w-11 h-11 rounded-[14px]" style={{ background: 'var(--ink)', color: 'var(--paper-2)' }}>
-          <LayoutDashboard size={22} aria-hidden />
-        </div>
         <div className="min-w-0">
           <h1 className="text-xl md:text-2xl font-display font-extrabold">
             {isManager ? 'Manager Dashboard' : 'Cashier Dashboard'}
@@ -53,43 +51,43 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
         </div>
       </header>
 
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        <Metric label="Today Sales" value={formatINR(kpi.todaySalesPaise)} />
-        <Metric label="Orders" value={String(kpi.todayOrders)} />
-        <Metric label="AOV" value={formatINR(kpi.aovPaise)} />
-        <Metric label="Footfall" value={String(kpi.footfall)} />
-      </section>
+      {isManager ? (
+        <>
+          <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            <Metric label="Today Sales" value={formatINR(kpi.todaySalesPaise)} />
+            <Metric label="Orders" value={String(kpi.todayOrders)} />
+            <Metric label="AOV" value={formatINR(kpi.aovPaise)} />
+            <Metric label="Footfall" value={String(kpi.footfall)} />
+          </section>
 
-      <section className="grid lg:grid-cols-[1.1fr_.9fr] gap-4">
-        <div className="card p-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <h2 className="font-display font-bold text-lg">Quick Actions</h2>
-            <span className="pill capitalize">{staff.role}</span>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-2.5">
-            {actions.map(({ href, label, icon: Icon, tone }) => (
-              <Link key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
-                <Icon size={18} aria-hidden /> {label}
-              </Link>
-            ))}
-          </div>
-          <div className="mt-4">
-            <ShiftStatus />
-          </div>
-        </div>
+          <section className="grid lg:grid-cols-[1.1fr_.9fr] gap-4">
+            <div className="card p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <h2 className="font-display font-bold text-lg">Quick Actions</h2>
+                <span className="pill capitalize">{staff.role}</span>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-2.5">
+                {actions.map(({ href, label, icon: Icon, tone }) => (
+                  <Link key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                    <Icon size={18} aria-hidden /> {label}
+                  </Link>
+                ))}
+              </div>
+              <div className="mt-4">
+                <ShiftStatus />
+              </div>
+            </div>
 
-        <div className="card p-4">
-          <h2 className="font-display font-bold text-lg mb-3">Live Focus</h2>
-          <div className="flex flex-col gap-2">
-            <Focus icon={Wifi} label="Service rhythm" value={kpi.todayOrders > 0 ? 'Orders are flowing' : 'No orders yet'} />
-            <Focus icon={Table2} label="Tables and queue" value={`${data.loyalty.qrScanPct}% dine-in QR share`} />
-            <Focus icon={Package} label="Stock alerts" value={`${data.lowStock.length} item${data.lowStock.length === 1 ? '' : 's'} need attention`} />
-            {isManager && <Focus icon={UsersIcon} label="CRM" value={crmEnabled ? `${data.loyalty.customers} customers tracked` : 'Not included in plan'} />}
-          </div>
-        </div>
+            <div className="card p-4">
+              <h2 className="font-display font-bold text-lg mb-3">Live Focus</h2>
+              <div className="flex flex-col gap-2">
+                <Focus icon={Wifi} label="Service rhythm" value={kpi.todayOrders > 0 ? 'Orders are flowing' : 'No orders yet'} />
+                <Focus icon={Table2} label="Tables and queue" value={`${data.loyalty.qrScanPct}% dine-in QR share`} />
+                <Focus icon={Package} label="Stock alerts" value={`${data.lowStock.length} item${data.lowStock.length === 1 ? '' : 's'} need attention`} />
+                {crmEnabled && <Focus icon={UsersIcon} label="CRM" value={`${data.loyalty.customers} customers tracked`} />}
+              </div>
+            </div>
 
-        {isManager && (
-          <>
             <div className="card p-4">
               <h2 className="font-display font-bold text-lg mb-3">Top Items</h2>
               <div className="flex flex-col gap-2">
@@ -114,20 +112,40 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
                 ))}
               </div>
             </div>
-          </>
-        )}
-
-        {!isManager && (
-          <div className="card p-4 lg:col-span-2">
-            <h2 className="font-display font-bold text-lg mb-3">Cashier Control</h2>
-            <div className="grid sm:grid-cols-3 gap-2.5">
-              <Focus icon={ShoppingCart} label="Billing" value="Create and settle orders from POS" />
-              <Focus icon={ClipboardList} label="Approvals" value="Accept customer QR orders" />
-              <Focus icon={BarChart3} label="Shift sales" value={formatINR(kpi.todaySalesPaise)} />
+          </section>
+        </>
+      ) : (
+        /* Cashier Dashboard — Single Panel Layout */
+        <div className="card p-5 max-w-4xl mx-auto flex flex-col gap-6">
+          <div>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="font-display font-bold text-lg">Quick Actions</h2>
+              <span className="pill capitalize">{staff.role}</span>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-3">
+              {actions.map(({ href, label, icon: Icon, tone }) => (
+                <Link key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                  <Icon size={18} aria-hidden /> {label}
+                </Link>
+              ))}
+            </div>
+            <div className="mt-4">
+              <ShiftStatus />
             </div>
           </div>
-        )}
-      </section>
+
+          <hr className="border-line" style={{ borderColor: 'var(--line)' }} />
+
+          <div>
+            <h2 className="font-display font-bold text-lg mb-4">Live Focus</h2>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <Focus icon={Wifi} label="Service rhythm" value={kpi.todayOrders > 0 ? 'Orders are flowing' : 'No orders yet'} />
+              <Focus icon={Table2} label="Tables and queue" value={`${data.loyalty.qrScanPct}% dine-in QR share`} />
+              <Focus icon={Package} label="Stock alerts" value={`${data.lowStock.length} item${data.lowStock.length === 1 ? '' : 's'} need attention`} />
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

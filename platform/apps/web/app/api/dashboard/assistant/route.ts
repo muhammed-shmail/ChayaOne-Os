@@ -122,7 +122,7 @@ ${JSON.stringify(d, null, 2)}`;
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager')
+  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   // feature gate (G9): the AI assistant is a plan feature (Pro+)

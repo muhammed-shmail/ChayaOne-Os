@@ -10,7 +10,7 @@ import {
   ThemeToggle, Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
   Plus, Minus, X, Check, Printer, Receipt, Smartphone, Banknote, CreditCard,
   CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
-  ShoppingCart, ChevronUp, Menu, Search, Download, type LucideIcon,
+  ShoppingCart, ChevronUp, Menu, Search, Download, LogOut, type LucideIcon,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
@@ -515,11 +515,6 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       {/* ── Mobile top bar + category chips — sticky, phones only (md:hidden) ── */}
       <div className="md:hidden sticky top-0 z-30" style={{ paddingTop: 'env(safe-area-inset-top)', background: 'color-mix(in srgb, var(--paper) 90%, transparent)', backdropFilter: 'blur(10px)', borderBottom: '1px solid var(--line)' }}>
         <div className="flex items-center gap-2 px-3 py-2">
-          {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
-            <a href="/dashboard" title="Dashboard" className="btn btn-icon btn-sm btn-ghost shrink-0">
-              <LayoutDashboard size={18} aria-hidden />
-            </a>
-          )}
           <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost shrink-0" />
           <div className="flex rounded-full p-[3px] border flex-1 min-w-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
             {(['dine_in', 'takeaway'] as const).map((t) => (
@@ -632,10 +627,13 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             <Download size={17} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
           </button>
         )}
+        <a href="/api/auth/logout" className="flex items-center justify-center gap-2 py-2.5 rounded-[14px] font-bold text-[13px] transition hover:bg-[var(--paper-3)] mt-auto" style={{ color: 'var(--ink-3)' }}>
+          <LogOut size={16} aria-hidden /> Logout
+        </a>
       </aside>
 
       {/* menu grid */}
-      <section className="flex flex-col min-w-0 pb-[calc(76px_+_env(safe-area-inset-bottom))] md:pb-0">
+      <section className="flex flex-col min-w-0 pb-[calc(120px_+_env(safe-area-inset-bottom))] md:pb-0">
         <div className="flex items-center gap-3 mb-3.5">
           <h2 className="text-2xl md:text-[28px] shrink-0">{q ? `“${search.trim()}”` : cat?.name}</h2>
           {/* desktop search — tablet/desktop only; phones search from the top bar */}
@@ -935,8 +933,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       {/* ── Mobile sticky cart bar — taps open the bottom-sheet (phones only) ── */}
       {!cartSheetOpen && cartCount > 0 && (
         <button onClick={() => setCartSheetOpen(true)} aria-haspopup="dialog" aria-label={`View ticket · ${cartCount} items · ${formatINR(bill.totalPaise)}`}
-          className="md:hidden fixed bottom-0 inset-x-0 z-40 flex items-center gap-3 px-5 anim-slide-in"
-          style={{ paddingTop: '0.85rem', paddingBottom: 'max(0.85rem, env(safe-area-inset-bottom))', background: 'var(--ink)', color: 'var(--paper-2)', boxShadow: 'var(--sh-3)' }}>
+          className="md:hidden fixed inset-x-0 z-40 flex items-center gap-3 px-5 anim-slide-in"
+          style={{ bottom: 'calc(58px + env(safe-area-inset-bottom))', paddingTop: '0.85rem', paddingBottom: '0.85rem', background: 'var(--ink)', color: 'var(--paper-2)', boxShadow: 'var(--sh-3)' }}>
           <span className="relative grid place-items-center w-9 h-9 rounded-full shrink-0" style={{ background: 'color-mix(in srgb, var(--paper-2) 16%, transparent)' }}>
             <ShoppingCart size={18} aria-hidden />
           </span>
@@ -983,6 +981,71 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
         </div>
       )}
 
+      {/* ── Mobile bottom navigation bar (phones only) ── */}
+      <nav
+        className="fixed bottom-0 inset-x-0 z-40 grid md:hidden"
+        style={{
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          background: 'color-mix(in srgb, var(--paper-2) 92%, transparent)',
+          backdropFilter: 'blur(12px)',
+          borderTop: '1px solid var(--line)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
+        aria-label="Mobile navigation"
+      >
+        <button
+          onClick={() => { setFloorOpen(false); setMoreOpen(false); }}
+          className="relative flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold transition"
+          style={{ minHeight: 58, color: (!floorOpen && !moreOpen) ? 'var(--turmeric-d)' : 'var(--ink-2)' }}
+        >
+          <ShoppingCart size={20} aria-hidden />
+          <span className="leading-none">Billing</span>
+          {(!floorOpen && !moreOpen) && (
+            <span className="absolute top-0 left-1/2 -translate-x-1/2 h-[3px] w-8 rounded-full" style={{ background: 'var(--turmeric)' }} />
+          )}
+        </button>
+
+        <button
+          onClick={() => { setFloorOpen(true); setMoreOpen(false); }}
+          className="relative flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold transition"
+          style={{ minHeight: 58, color: floorOpen ? 'var(--turmeric-d)' : 'var(--ink-2)' }}
+        >
+          <Table2 size={20} aria-hidden />
+          <span className="leading-none">Floor Map</span>
+          {floorOpen && (
+            <span className="absolute top-0 left-1/2 -translate-x-1/2 h-[3px] w-8 rounded-full" style={{ background: 'var(--turmeric)' }} />
+          )}
+        </button>
+
+        <a
+          href="/approvals"
+          className="relative flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold transition"
+          style={{ minHeight: 58, color: 'var(--ink-2)' }}
+        >
+          <span className="relative">
+            <ClipboardList size={20} aria-hidden />
+            {pendingApprovals > 0 && (
+              <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 grid place-items-center rounded-full text-[9px] font-extrabold text-white" style={{ background: 'var(--clay)' }}>
+                {pendingApprovals}
+              </span>
+            )}
+          </span>
+          <span className="leading-none">Approvals</span>
+        </a>
+
+        <button
+          onClick={() => setMoreOpen(true)}
+          className="relative flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold transition"
+          style={{ minHeight: 58, color: moreOpen ? 'var(--turmeric-d)' : 'var(--ink-2)' }}
+        >
+          <Menu size={20} aria-hidden />
+          <span className="leading-none">More</span>
+          {moreOpen && (
+            <span className="absolute top-0 left-1/2 -translate-x-1/2 h-[3px] w-8 rounded-full" style={{ background: 'var(--turmeric)' }} />
+          )}
+        </button>
+      </nav>
+
       {/* ── Mobile "More" drawer — staff, shift, floor map, approvals, dashboard ── */}
       {moreOpen && (
         <div className="md:hidden fixed inset-0 z-[700]" role="dialog" aria-modal="true" aria-label="Menu">
@@ -1004,6 +1067,11 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>{staff.role}</span>
             </div>
             <ShiftStatus />
+            {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
+              <a href="/dashboard" className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                <LayoutDashboard size={18} aria-hidden /> Dashboard
+              </a>
+            )}
             <button onClick={() => { setMoreOpen(false); setFloorOpen(true); }} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] border-[1.5px] border-dashed font-bold text-[14px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
               <Table2 size={18} aria-hidden /> Floor map &amp; tables
             </button>
@@ -1018,6 +1086,9 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                 <Download size={18} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
               </button>
             )}
+            <a href="/api/auth/logout" className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px] mt-auto" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}>
+              <LogOut size={18} aria-hidden /> Log out
+            </a>
           </aside>
         </div>
       )}
