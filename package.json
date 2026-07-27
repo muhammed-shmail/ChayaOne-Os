@@ -13,5 +13,8 @@
     "db:seed:full": "npm run db:seed:full --prefix platform",
     "db:generate": "npm run db:generate --prefix platform",
     "db:studio": "npm run db:studio --prefix platform"
+  },
+  "dependencies": {
+    "typescript": "^7.0.2"
   }
 }

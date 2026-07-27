@@ -1,13 +1,3 @@
-/**
- * Cafe OS — GST billing engine (single source of truth).
- *
- * Indian GST: intra-state orders split tax into CGST + SGST (half each);
- * inter-state orders use IGST. Cafes are almost always intra-state, so the
- * outlet's state vs the place-of-supply decides. Prices are tax-EXCLUSIVE.
- *
- * All amounts are integer paise. Ported & hardened from the prototype's
- * store.js so the POS UI and the server compute IDENTICAL totals.
- */
 import type { Paise } from './money';
 import { roundToRupee } from './money';
 
@@ -19,6 +9,11 @@ export interface BillLine {
   /** GST rate percent, e.g. 5, 12, 18 */
   gstRate: number;
   qty: number;
+  categoryType?: string | null; // e.g. 'food', 'beverage', 'combo'
+  taxExempt?: boolean;
+  zeroRated?: boolean;
+  nilRated?: boolean;
+  hsnCode?: string | null;
 }
 
 export interface BillOptions {
@@ -53,6 +48,29 @@ export interface BillOptions {
    * through the exact same exclusive math, so exclusive results never change.
    */
   gstInclusive?: boolean;
+
+  // GST application rules (Section 8)
+  gstOnFood?: boolean;
+  gstOnBeverage?: boolean;
+  gstOnCombo?: boolean;
+  gstOnDelivery?: boolean;
+  gstOnPackaging?: boolean;
+  gstOnServiceCharge?: boolean;
+  gstOnConvenience?: boolean;
+
+  // Charge values (Section 8 & 12)
+  deliveryChargePaise?: number;
+  packagingChargePaise?: number;
+  convenienceFeePaise?: number;
+  chargeGstRate?: number; // rate for charges (default 5%)
+
+  // Discount rules (Section 9)
+  calculateGstBeforeDiscount?: boolean;
+  applyGstToCoupon?: boolean;
+  applyGstToManual?: boolean;
+
+  // Restaurant-specific type rules (Section 12)
+  orderTypeRateOverride?: number | null;
 }
 
 export interface Bill {
@@ -63,6 +81,9 @@ export interface Bill {
   sgstPaise: Paise;
   igstPaise: Paise;
   serviceChargePaise: Paise;
+  deliveryChargePaise: Paise;
+  packagingChargePaise: Paise;
+  convenienceFeePaise: Paise;
   roundOffPaise: Paise; // can be negative
   totalPaise: Paise;
   /** tax grouped by rate, for the receipt's GST summary */
@@ -79,32 +100,77 @@ export function computeBill(lines: BillLine[], opts: BillOptions = {}): Bill {
   const flatDiscountPaise = Math.max(0, Math.round(opts.discountFlatPaise ?? 0));
   const scPct = clampPct(opts.serviceChargePct ?? 0);
   const interState = !!opts.interState;
-  // GST gating: off ⇒ no tax; a flat override replaces every line's own rate.
+  
+  // GST gating
   const gstEnabled = opts.gstEnabled !== false;
   const rawOverride = opts.gstRateOverride;
   const rateOverride =
     gstEnabled && rawOverride != null && !Number.isNaN(rawOverride) && rawOverride > 0
       ? clampPct(rawOverride)
       : null;
+  const orderTypeRate =
+    gstEnabled && opts.orderTypeRateOverride != null && !Number.isNaN(opts.orderTypeRateOverride) && opts.orderTypeRateOverride > 0
+      ? clampPct(opts.orderTypeRateOverride)
+      : null;
+
   const inclusive = gstEnabled && !!opts.gstInclusive;
 
-  // Normalize every line to (net-of-tax unit price, effective rate). For
-  // EXCLUSIVE billing the unit price is untouched, so the computation below is
-  // byte-identical to the original engine. For INCLUSIVE billing we strip the
-  // embedded tax out of the price here, then run the same exclusive math — that
-  // makes the tax-exclusive total land back on the original menu price.
+  // GST application rules defaults
+  const gstOnFood = opts.gstOnFood !== false;
+  const gstOnBeverage = opts.gstOnBeverage !== false;
+  const gstOnCombo = opts.gstOnCombo !== false;
+  const gstOnDelivery = !!opts.gstOnDelivery;
+  const gstOnPackaging = !!opts.gstOnPackaging;
+  const gstOnServiceCharge = !!opts.gstOnServiceCharge;
+  const gstOnConvenience = !!opts.gstOnConvenience;
+
+  const chargeGstRate = opts.chargeGstRate ?? 5; // default 5% charge tax
+
+  // Normalize every line to (net-of-tax unit price, effective rate)
   const norm = lines.map((l) => {
     const unit = l.pricePaise + (l.modPaise ?? 0);
-    const effRate = !gstEnabled ? 0 : rateOverride ?? l.gstRate;
+    
+    // Determine effective rate
+    let effRate = 0;
+    if (gstEnabled) {
+      if (l.taxExempt || l.zeroRated || l.nilRated) {
+        effRate = 0;
+      } else if (orderTypeRate != null) {
+        effRate = orderTypeRate;
+      } else if (rateOverride != null) {
+        effRate = rateOverride;
+      } else if (l.categoryType === 'food' && !gstOnFood) {
+        effRate = 0;
+      } else if (l.categoryType === 'beverage' && !gstOnBeverage) {
+        effRate = 0;
+      } else if (l.categoryType === 'combo' && !gstOnCombo) {
+        effRate = 0;
+      } else {
+        effRate = l.gstRate;
+      }
+    }
+
     const unitNet = inclusive && effRate > 0 ? Math.round((unit * 100) / (100 + effRate)) : unit;
     return { gross: unitNet * l.qty, effRate };
   });
 
   const subtotalPaise = norm.reduce((sum, l) => sum + l.gross, 0);
-  // percent + flat, clamped to the subtotal so the taxable base never goes negative
+  
+  // Discount rules
+  const applyGstToCoupon = opts.applyGstToCoupon !== false;
+  const applyGstToManual = opts.applyGstToManual !== false;
+
   const discountPaise = Math.min(
     subtotalPaise,
     Math.round((subtotalPaise * discountPct) / 100) + flatDiscountPaise,
+  );
+
+  // Discount to deduct from taxable base for GST calculation
+  const gstDiscountPct = applyGstToCoupon ? discountPct : 0;
+  const gstFlatDiscount = applyGstToManual ? flatDiscountPaise : 0;
+  const gstDiscountPaise = Math.min(
+    subtotalPaise,
+    Math.round((subtotalPaise * gstDiscountPct) / 100) + gstFlatDiscount,
   );
 
   let cgstPaise = 0;
@@ -112,11 +178,17 @@ export function computeBill(lines: BillLine[], opts: BillOptions = {}): Bill {
   let igstPaise = 0;
   const taxByRate: Record<string, Paise> = {};
 
+  const calculateGstBeforeDiscount = !!opts.calculateGstBeforeDiscount;
+
   for (const l of norm) {
     const gross = l.gross;
     const share = subtotalPaise > 0 ? gross / subtotalPaise : 0;
-    const lineTaxable = gross - Math.round(discountPaise * share);
-    // effective rate: 0 when GST is off, the flat override when set, else the line's own rate
+    
+    // Taxable base for this line
+    const lineTaxable = calculateGstBeforeDiscount
+      ? gross
+      : gross - Math.round(gstDiscountPaise * share);
+
     const effRate = l.effRate;
     const lineTax = Math.round((lineTaxable * effRate) / 100);
 
@@ -125,16 +197,48 @@ export function computeBill(lines: BillLine[], opts: BillOptions = {}): Bill {
     } else {
       const half = Math.round(lineTax / 2);
       cgstPaise += half;
-      sgstPaise += lineTax - half; // remainder to SGST → no lost paise
+      sgstPaise += lineTax - half;
     }
+    
     const key = effRate.toFixed(2);
-    taxByRate[key] = (taxByRate[key] ?? 0) + lineTax;
+    if (lineTax > 0) {
+      taxByRate[key] = (taxByRate[key] ?? 0) + lineTax;
+    }
   }
 
   const taxablePaise = subtotalPaise - discountPaise;
   const serviceChargePaise = Math.round((taxablePaise * scPct) / 100);
+  
+  const deliveryChargePaise = opts.deliveryChargePaise ?? 0;
+  const packagingChargePaise = opts.packagingChargePaise ?? 0;
+  const convenienceFeePaise = opts.convenienceFeePaise ?? 0;
+
+  // Calculate tax on charges
+  let chargesTax = 0;
+  const applyChargeTax = (chargeAmount: number, enabled: boolean) => {
+    if (!gstEnabled || !enabled || chargeAmount <= 0) return 0;
+    const tax = Math.round((chargeAmount * chargeGstRate) / 100);
+    chargesTax += tax;
+    const chargeKey = chargeGstRate.toFixed(2);
+    taxByRate[chargeKey] = (taxByRate[chargeKey] ?? 0) + tax;
+    return tax;
+  };
+
+  applyChargeTax(serviceChargePaise, gstOnServiceCharge);
+  applyChargeTax(deliveryChargePaise, gstOnDelivery);
+  applyChargeTax(packagingChargePaise, gstOnPackaging);
+  applyChargeTax(convenienceFeePaise, gstOnConvenience);
+
+  if (interState) {
+    igstPaise += chargesTax;
+  } else {
+    const half = Math.round(chargesTax / 2);
+    cgstPaise += half;
+    sgstPaise += chargesTax - half;
+  }
+
   const taxTotal = cgstPaise + sgstPaise + igstPaise;
-  const preRound = taxablePaise + taxTotal + serviceChargePaise;
+  const preRound = taxablePaise + taxTotal + serviceChargePaise + deliveryChargePaise + packagingChargePaise + convenienceFeePaise;
   const totalPaise = roundToRupee(preRound);
   const roundOffPaise = totalPaise - preRound;
 
@@ -146,6 +250,9 @@ export function computeBill(lines: BillLine[], opts: BillOptions = {}): Bill {
     sgstPaise,
     igstPaise,
     serviceChargePaise,
+    deliveryChargePaise,
+    packagingChargePaise,
+    convenienceFeePaise,
     roundOffPaise,
     totalPaise,
     taxByRate,
@@ -156,3 +263,4 @@ function clampPct(n: number): number {
   if (Number.isNaN(n)) return 0;
   return Math.min(100, Math.max(0, n));
 }
+

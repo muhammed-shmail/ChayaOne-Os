@@ -36,6 +36,193 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
 
+  // ---- Advanced GST Settings Saving & Resets ----
+  if (body.action === 'gst_save') {
+    const inputGst = body.gst ?? {};
+    const enabled = !!inputGst.enabled;
+    const gstin = String(inputGst.gstin ?? '').trim().toUpperCase();
+    const legalName = String(inputGst.legalName ?? '').trim();
+    const stateCode = String(inputGst.stateCode ?? '').trim().toUpperCase().slice(0, 2);
+    const registrationType = inputGst.registrationType === 'composition' ? 'composition' : 'regular';
+    const gstType = inputGst.gstType === 'inclusive' ? 'inclusive' : 'exclusive';
+    const calculationMethod = inputGst.calculationMethod === 'flat' ? 'flat' : 'per_item';
+    const defaultRate = Number(inputGst.defaultRate ?? 5);
+    const reason = String(body.reason ?? 'GST Settings Updated').trim();
+
+    if (enabled) {
+      if (!gstin) return NextResponse.json({ error: 'missing_gstin', message: 'GSTIN is required when GST is enabled.' }, { status: 400 });
+      const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/i;
+      if (!gstinRegex.test(gstin)) {
+        return NextResponse.json({ error: 'invalid_gstin', message: 'GSTIN format is invalid.' }, { status: 400 });
+      }
+      if (!legalName) return NextResponse.json({ error: 'missing_legal_name', message: 'Legal Business Name is required.' }, { status: 400 });
+      if (!stateCode) return NextResponse.json({ error: 'missing_state_code', message: 'State code is required.' }, { status: 400 });
+    }
+
+    const currentOutlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true, gstin: true, stateCode: true } });
+    const settings = (currentOutlet?.settings as Record<string, unknown>) ?? {};
+    
+    // Save previous GST for audit
+    const prevGst = settings.gst ?? {};
+
+    // Check duplicate GSTIN across other outlets (excluding this one)
+    if (enabled && gstin) {
+      const duplicate = await prisma.outlet.findFirst({
+        where: { gstin, id: { not: session.outletId } },
+        select: { id: true, name: true }
+      });
+      if (duplicate) {
+        return NextResponse.json({ error: 'duplicate_gstin', message: `GSTIN is already registered to outlet: ${duplicate.name}` }, { status: 400 });
+      }
+    }
+
+    const nextGst = {
+      ...prevGst,
+      enabled,
+      gstin: enabled ? gstin : '',
+      legalName: enabled ? legalName : '',
+      stateCode: enabled ? stateCode : '',
+      registrationType,
+      gstType,
+      calculationMethod,
+      defaultRate: Number.isFinite(defaultRate) ? defaultRate : 5,
+      
+      // Rules
+      gstOnFood: inputGst.gstOnFood === undefined ? true : !!inputGst.gstOnFood,
+      gstOnBeverage: inputGst.gstOnBeverage === undefined ? true : !!inputGst.gstOnBeverage,
+      gstOnCombo: inputGst.gstOnCombo === undefined ? true : !!inputGst.gstOnCombo,
+      gstOnDelivery: !!inputGst.gstOnDelivery,
+      gstOnPackaging: !!inputGst.gstOnPackaging,
+      gstOnServiceCharge: !!inputGst.gstOnServiceCharge,
+      gstOnConvenience: !!inputGst.gstOnConvenience,
+      chargeGstRate: typeof inputGst.chargeGstRate === 'number' ? inputGst.chargeGstRate : 5,
+
+      // Discount rules
+      calculateGstBeforeDiscount: !!inputGst.calculateGstBeforeDiscount,
+      applyGstToCoupon: inputGst.applyGstToCoupon === undefined ? true : !!inputGst.applyGstToCoupon,
+      applyGstToManual: inputGst.applyGstToManual === undefined ? true : !!inputGst.applyGstToManual,
+
+      // Specific overrides
+      dineInRate: typeof inputGst.dineInRate === 'number' ? inputGst.dineInRate : null,
+      takeawayRate: typeof inputGst.takeawayRate === 'number' ? inputGst.takeawayRate : null,
+      deliveryRate: typeof inputGst.deliveryRate === 'number' ? inputGst.deliveryRate : null,
+      qrOrderingRate: typeof inputGst.qrOrderingRate === 'number' ? inputGst.qrOrderingRate : null,
+      cloudKitchenRate: typeof inputGst.cloudKitchenRate === 'number' ? inputGst.cloudKitchenRate : null,
+
+      // Receipt settings
+      showGstin: inputGst.showGstin === undefined ? true : !!inputGst.showGstin,
+      showTaxSummary: inputGst.showTaxSummary === undefined ? true : !!inputGst.showTaxSummary,
+      showCgst: inputGst.showCgst === undefined ? true : !!inputGst.showCgst,
+      showSgst: inputGst.showSgst === undefined ? true : !!inputGst.showSgst,
+      showIgst: inputGst.showIgst === undefined ? true : !!inputGst.showIgst,
+      showHsn: inputGst.showHsn === undefined ? true : !!inputGst.showHsn,
+      showTaxPct: inputGst.showTaxPct === undefined ? true : !!inputGst.showTaxPct,
+      showTaxAmt: inputGst.showTaxAmt === undefined ? true : !!inputGst.showTaxAmt,
+      receiptFooter: typeof inputGst.receiptFooter === 'string' ? inputGst.receiptFooter : 'Thank you! Visit again.',
+      taxInvoiceTitle: typeof inputGst.taxInvoiceTitle === 'string' ? inputGst.taxInvoiceTitle : 'TAX INVOICE',
+
+      // Invoice Settings
+      invoicePrefix: typeof inputGst.invoicePrefix === 'string' ? inputGst.invoicePrefix : 'CHY',
+      invoiceFormat: typeof inputGst.invoiceFormat === 'string' ? inputGst.invoiceFormat : 'YYYY/MM/DD/NNNN',
+      roundOff: inputGst.roundOff === undefined ? true : !!inputGst.roundOff,
+      roundingPrecision: typeof inputGst.roundingPrecision === 'number' ? inputGst.roundingPrecision : 0,
+      printTaxInvoice: inputGst.printTaxInvoice === undefined ? true : !!inputGst.printTaxInvoice,
+      duplicateInvoice: inputGst.duplicateInvoice === undefined ? true : !!inputGst.duplicateInvoice,
+    };
+
+    settings.gst = nextGst;
+
+    const userAgent = req.headers.get('user-agent') ?? 'Unknown Device';
+    const ip = req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? '127.0.0.1';
+    const staff = await prisma.staffUser.findUnique({ where: { id: session.staffId }, select: { name: true } });
+
+    await prisma.$transaction([
+      prisma.outlet.update({
+        where: { id: session.outletId },
+        data: {
+          gstin: enabled ? gstin : null,
+          stateCode: enabled ? stateCode : null,
+          settings: settings as Prisma.InputJsonValue,
+        }
+      }),
+      prisma.auditLog.create({
+        data: {
+          outletId: session.outletId,
+          actorId: session.staffId,
+          action: 'gst.updated',
+          entity: 'gst_config',
+          entityId: session.outletId,
+          before: { gst: prevGst } as Prisma.InputJsonValue,
+          after: {
+            gst: nextGst,
+            audit: {
+              user: staff?.name ?? 'Unknown',
+              ip,
+              device: userAgent,
+              reason
+            }
+          } as Prisma.InputJsonValue
+        }
+      })
+    ]);
+
+    return NextResponse.json({ ok: true, gst: nextGst });
+  }
+
+  if (body.action === 'gst_reset') {
+    const currentOutlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const settings = (currentOutlet?.settings as Record<string, unknown>) ?? {};
+    const prevGst = settings.gst ?? {};
+    
+    settings.gst = {
+      enabled: false,
+      gstin: '',
+      legalName: '',
+      stateCode: '',
+      registrationType: 'regular',
+      gstType: 'exclusive',
+      inclusive: false,
+      calculationMethod: 'per_item',
+      defaultRate: 5,
+    };
+
+    const userAgent = req.headers.get('user-agent') ?? 'Unknown Device';
+    const ip = req.headers.get('x-forwarded-for') ?? '127.0.0.1';
+    const staff = await prisma.staffUser.findUnique({ where: { id: session.staffId }, select: { name: true } });
+
+    await prisma.$transaction([
+      prisma.outlet.update({
+        where: { id: session.outletId },
+        data: {
+          gstin: null,
+          stateCode: null,
+          settings: settings as Prisma.InputJsonValue,
+        }
+      }),
+      prisma.auditLog.create({
+        data: {
+          outletId: session.outletId,
+          actorId: session.staffId,
+          action: 'gst.reset',
+          entity: 'gst_config',
+          entityId: session.outletId,
+          before: { gst: prevGst } as Prisma.InputJsonValue,
+          after: {
+            gst: settings.gst,
+            audit: {
+              user: staff?.name ?? 'Unknown',
+              ip,
+              device: userAgent,
+              reason: 'Restored default settings'
+            }
+          } as Prisma.InputJsonValue
+        }
+      })
+    ]);
+
+    return NextResponse.json({ ok: true, gst: settings.gst });
+  }
+
   // ---- device registry (stored in Outlet.settings.devices) ----
   if (body.action === 'device_save') {
     const d = body.device ?? {};

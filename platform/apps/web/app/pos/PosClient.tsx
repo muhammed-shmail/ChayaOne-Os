@@ -32,10 +32,11 @@ export type MenuItemDto = {
   gstRate: number;
   station: string | null; // kitchen slug — configurable per outlet (Outlet.settings.kitchens)
   tags: string[];
+  hsnCode?: string | null;
 };
 export type MenuCategory = { id: string; name: string; items: MenuItemDto[] };
 export type TableDto = { id: string; label: string; seats: number; state: string; floorId: string | null };
-type Outlet = { id: string; name: string; gstin: string | null; stateCode: string; gstEnabled: boolean; gstRate: number | null; gstInclusive: boolean; receipt: ReceiptConfig; kitchenWorkflow: KitchenWorkflowConfig };
+type Outlet = { id: string; name: string; gstin: string | null; stateCode: string; gstEnabled: boolean; gstRate: number | null; gstInclusive: boolean; receipt: ReceiptConfig; kitchenWorkflow: KitchenWorkflowConfig; gstConfig?: any };
 type Staff = { id: string; name: string; role: string };
 
 type Line = {
@@ -290,19 +291,86 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   const escRcpt = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
   function receiptHeaderHtml() {
     const r = outlet.receipt;
+    const isGst = outlet.gstEnabled && outlet.gstConfig?.enabled;
+    const title = isGst ? (outlet.gstConfig?.taxInvoiceTitle || 'TAX INVOICE') : 'INVOICE';
     return [
       r.showLogo && r.logoUrl ? `<img src="${r.logoUrl}" alt="" />` : '',
       `<h2>${escRcpt((outlet.name.split('—')[0] ?? outlet.name).trim())}</h2>`,
+      `<div style="text-align:center;font-size:11px;font-weight:bold;letter-spacing:1px;margin-bottom:8px;">${title}</div>`,
       r.header.trim() ? `<div class="muted">${escRcpt(r.header).replace(/\n/g, '<br/>')}</div>` : '',
       r.phone.trim() ? `<div class="muted">☎ ${escRcpt(r.phone)}</div>` : '',
-      r.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escRcpt(outlet.gstin)}</div>` : '',
+      outlet.gstEnabled && outlet.gstConfig?.enabled && outlet.gstConfig?.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escRcpt(outlet.gstin)}</div>` : '',
     ].filter(Boolean).join('\n');
   }
-  const receiptFooterText = () => (outlet.receipt.footer.trim() ? escRcpt(outlet.receipt.footer).replace(/\n/g, ' · ') : 'Thank you!');
+  const receiptFooterText = () => {
+    if (outlet.gstEnabled && outlet.gstConfig?.enabled && outlet.gstConfig?.receiptFooter) {
+      return escRcpt(outlet.gstConfig.receiptFooter).replace(/\n/g, ' · ');
+    }
+    return outlet.receipt.footer.trim() ? escRcpt(outlet.receipt.footer).replace(/\n/g, ' · ') : 'Thank you!';
+  };
+
+  function taxSummaryTableHtml(billObj: any) {
+    if (!outlet.gstEnabled || !outlet.gstConfig?.enabled || !outlet.gstConfig?.showTaxSummary) return '';
+    const summaryMap = new Map<number, { taxable: number; cgst: number; sgst: number; igst: number; hsnCodes: Set<string> }>();
+    for (const line of billObj.lines) {
+      const rate = line.gstRate ?? 0;
+      const existing = summaryMap.get(rate) || { taxable: 0, cgst: 0, sgst: 0, igst: 0, hsnCodes: new Set<string>() };
+      existing.taxable += line.taxableValuePaise ?? 0;
+      existing.cgst += line.cgstPaise ?? 0;
+      existing.sgst += line.sgstPaise ?? 0;
+      existing.igst += line.igstPaise ?? 0;
+      if (line.hsnCode) existing.hsnCodes.add(line.hsnCode);
+      summaryMap.set(rate, existing);
+    }
+    if (summaryMap.size === 0) return '';
+    const hasInterstate = Array.from(summaryMap.values()).some(v => v.igst > 0);
+    const rows = Array.from(summaryMap.entries()).map(([rate, val]) => {
+      const hsnStr = Array.from(val.hsnCodes).join(', ') || '—';
+      return `
+        <tr style="border-bottom:1px dotted #ccc; font-size:10px;">
+          <td>${rate}%</td>
+          <td>${hsnStr}</td>
+          <td class="r">${formatINR(val.taxable)}</td>
+          ${hasInterstate 
+            ? `<td class="r" colspan="2">${formatINR(val.igst)}</td>`
+            : `<td class="r">${formatINR(val.cgst)}</td><td class="r">${formatINR(val.sgst)}</td>`
+          }
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <div class="line"></div>
+      <div style="font-size:10px; font-weight:bold; text-align:center; margin-bottom:4px; letter-spacing:0.5px;">GST TAX SUMMARY</div>
+      <table style="width:100%; border-collapse:collapse; font-size:9px; margin-bottom:8px;">
+        <thead>
+          <tr style="border-bottom:1px dashed #000; font-weight:bold;">
+            <th align="left">Rate</th>
+            <th align="left">HSN</th>
+            <th class="r">Taxable V.</th>
+            ${hasInterstate 
+              ? `<th class="r" colspan="2">IGST</th>`
+              : `<th class="r">CGST</th><th class="r">SGST</th>`
+            }
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    `;
+  }
 
   function printBill() {
     if (!tableOrder) return;
-    const rows = tableOrder.lines.map((l: any) => `<tr><td>${l.qty}× ${l.name}</td><td class="r">${formatINR(l.linePaise)}</td></tr>`).join('');
+    const isGstConfig = outlet.gstEnabled && outlet.gstConfig?.enabled;
+    const showHsn = isGstConfig && outlet.gstConfig?.showHsn;
+
+    const rows = tableOrder.lines.map((l: any) => {
+      const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId || it.name === l.name);
+      const hsnText = showHsn && dbItem?.hsnCode ? `<br/><span style="font-size:9px;color:#555;">HSN: ${dbItem.hsnCode}</span>` : '';
+      return `<tr><td>${l.qty}× ${escRcpt(l.name)}${hsnText}</td><td class="r">${formatINR(l.linePaise)}</td></tr>`;
+    }).join('');
     const custLine = `${billCustomer}${custPhone.trim() ? ` · ${custPhone.trim()}` : ''}`;
     printDoc(`Bill · ${tableAction?.label ?? ''}`, `
       ${receiptHeaderHtml()}
@@ -311,9 +379,15 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       <table>${rows}</table><div class="line"></div>
       <table>
         <tr><td>Subtotal</td><td class="r">${formatINR(tableOrder.totals.subtotalPaise)}</td></tr>
-        <tr><td>GST</td><td class="r">${formatINR(tableOrder.totals.taxPaise)}</td></tr>
+        ${tableOrder.totals.discountPaise > 0 ? `<tr><td>Discount</td><td class="r">− ${formatINR(tableOrder.totals.discountPaise)}</td></tr>` : ''}
+        ${isGstConfig && outlet.gstConfig?.showCgst && tableOrder.totals.cgstPaise > 0 ? `<tr><td>CGST</td><td class="r">${formatINR(tableOrder.totals.cgstPaise)}</td></tr>` : ''}
+        ${isGstConfig && outlet.gstConfig?.showSgst && tableOrder.totals.sgstPaise > 0 ? `<tr><td>SGST</td><td class="r">${formatINR(tableOrder.totals.sgstPaise)}</td></tr>` : ''}
+        ${isGstConfig && outlet.gstConfig?.showIgst && tableOrder.totals.igstPaise > 0 ? `<tr><td>IGST</td><td class="r">${formatINR(tableOrder.totals.igstPaise)}</td></tr>` : ''}
+        ${tableOrder.totals.serviceChargePaise > 0 ? `<tr><td>Service charge</td><td class="r">${formatINR(tableOrder.totals.serviceChargePaise)}</td></tr>` : ''}
+        <tr><td>Round-off</td><td class="r">${tableOrder.totals.roundOffPaise >= 0 ? '+' : '−'} ${formatINR(Math.abs(tableOrder.totals.roundOffPaise))}</td></tr>
         <tr class="tot"><td>Total</td><td class="r">${formatINR(tableOrder.totals.totalPaise)}</td></tr>
       </table>
+      ${taxSummaryTableHtml(tableOrder)}
       <div class="line"></div><div class="muted">${receiptFooterText()} · Served by ${staff.name}</div>`);
   }
 
@@ -346,7 +420,14 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   // receipt for a just-charged POS order (cart/bill captured at confirm time)
   function printReceipt(number: number, method: string, tipPaise: number, customer: { name: string; phone: string } | null) {
     const esc = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
-    const rows = cart.map((l) => `<tr><td>${l.qty}× ${esc(l.name)}</td><td class="r">${formatINR(l.pricePaise * l.qty)}</td></tr>`).join('');
+    const isGstConfig = outlet.gstEnabled && outlet.gstConfig?.enabled;
+    const showHsn = isGstConfig && outlet.gstConfig?.showHsn;
+
+    const rows = cart.map((l) => {
+      const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId);
+      const hsnText = showHsn && dbItem?.hsnCode ? `<br/><span style="font-size:9px;color:#555;">HSN: ${dbItem.hsnCode}</span>` : '';
+      return `<tr><td>${l.qty}× ${esc(l.name)}${hsnText}</td><td class="r">${formatINR(l.pricePaise * l.qty)}</td></tr>`;
+    }).join('');
     const when = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
     const cust = customer && (customer.name || customer.phone)
       ? `<div class="muted">${[esc(customer.name), esc(customer.phone)].filter(Boolean).join(' · ')}</div>` : '';
@@ -358,13 +439,18 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       <table>
         <tr><td>${outlet.gstEnabled && outlet.gstInclusive ? 'Taxable value' : 'Subtotal'}</td><td class="r">${formatINR(bill.subtotalPaise)}</td></tr>
         ${bill.discountPaise > 0 ? `<tr><td>Discount${discountPct > 0 ? ` (${discountPct}%)` : ''}</td><td class="r">− ${formatINR(bill.discountPaise)}</td></tr>` : ''}
-        ${outlet.gstEnabled ? `<tr><td>CGST</td><td class="r">${formatINR(bill.cgstPaise)}</td></tr>` : ''}
-        ${outlet.gstEnabled ? `<tr><td>SGST</td><td class="r">${formatINR(bill.sgstPaise)}</td></tr>` : ''}
+        ${isGstConfig && outlet.gstConfig?.showCgst && bill.cgstPaise > 0 ? `<tr><td>CGST</td><td class="r">${formatINR(bill.cgstPaise)}</td></tr>` : ''}
+        ${isGstConfig && outlet.gstConfig?.showSgst && bill.sgstPaise > 0 ? `<tr><td>SGST</td><td class="r">${formatINR(bill.sgstPaise)}</td></tr>` : ''}
+        ${isGstConfig && outlet.gstConfig?.showIgst && bill.igstPaise > 0 ? `<tr><td>IGST</td><td class="r">${formatINR(bill.igstPaise)}</td></tr>` : ''}
         ${scPct > 0 ? `<tr><td>Service charge</td><td class="r">${formatINR(bill.serviceChargePaise)}</td></tr>` : ''}
+        ${bill.deliveryChargePaise > 0 ? `<tr><td>Delivery charge</td><td class="r">${formatINR(bill.deliveryChargePaise)}</td></tr>` : ''}
+        ${bill.packagingChargePaise > 0 ? `<tr><td>Packaging charge</td><td class="r">${formatINR(bill.packagingChargePaise)}</td></tr>` : ''}
+        ${bill.convenienceFeePaise > 0 ? `<tr><td>Convenience fee</td><td class="r">${formatINR(bill.convenienceFeePaise)}</td></tr>` : ''}
         <tr><td>Round-off</td><td class="r">${bill.roundOffPaise >= 0 ? '+' : '−'} ${formatINR(Math.abs(bill.roundOffPaise))}</td></tr>
         ${tipPaise > 0 ? `<tr><td>Tip</td><td class="r">${formatINR(tipPaise)}</td></tr>` : ''}
         <tr class="tot"><td>Total</td><td class="r">${formatINR(bill.totalPaise + tipPaise)}</td></tr>
       </table>
+      ${taxSummaryTableHtml(bill)}
       <div class="line"></div>
       <div class="muted">Paid · ${method.toUpperCase()}</div>
       <div class="muted">${receiptFooterText()} · Served by ${staff.name}</div>`);
@@ -424,6 +510,15 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   }
 
   function add(item: MenuItemDto) {
+    const limitTag = item.tags?.find((t) => t.startsWith('limit:'));
+    const limitVal = limitTag ? parseInt(limitTag.split(':')[1] ?? '0') : null;
+    if (limitVal !== null) {
+      const currentQty = cart.find((l) => l.itemId === item.id)?.qty ?? 0;
+      if (currentQty >= limitVal) {
+        flash(`Cannot add: Only ${limitVal} available today`);
+        return;
+      }
+    }
     setCart((c) => {
       const ex = c.find((l) => l.itemId === item.id);
       if (ex) return c.map((l) => (l.itemId === item.id ? { ...l, qty: l.qty + 1 } : l));
@@ -431,6 +526,20 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     });
   }
   function bump(key: string, d: number) {
+    if (d > 0) {
+      const line = cart.find((l) => l.key === key);
+      if (line) {
+        const item = menu.flatMap((c) => c.items).find((it) => it.id === line.itemId);
+        if (item) {
+          const limitTag = item.tags?.find((t) => t.startsWith('limit:'));
+          const limitVal = limitTag ? parseInt(limitTag.split(':')[1] ?? '0') : null;
+          if (limitVal !== null && line.qty >= limitVal) {
+            flash(`Only ${limitVal} available today`);
+            return;
+          }
+        }
+      }
+    }
     setCart((c) => c.flatMap((l) => (l.key === key ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
   }
   function clear() {
@@ -667,6 +776,18 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               className="relative text-left p-3.5 rounded-[14px] border flex flex-col gap-2 transition hover:-translate-y-0.5"
               style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', boxShadow: 'var(--sh-1)' }}>
               {m.tags.includes('bestseller') && <span className="absolute top-0 left-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--turmeric-d)', borderRadius: '14px 0 14px 0' }}>★ Bestseller</span>}
+              {(() => {
+                const limitTag = m.tags.find((t) => t.startsWith('limit:'));
+                const limitVal = limitTag ? parseInt(limitTag.split(':')[1] ?? '0') : null;
+                if (limitVal !== null) {
+                  return (
+                    <span className="absolute top-0 right-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--clay)', borderRadius: '0 14px 0 14px' }}>
+                      {limitVal} left
+                    </span>
+                  );
+                }
+                return null;
+              })()}
               <div className="text-3xl" aria-hidden>{EMOJI[m.catName] ?? '🍽'}</div>
               <div className="font-bold text-sm leading-tight">{m.name}</div>
               {q && <div className="text-[10.5px] font-bold" style={{ color: 'var(--ink-3)' }}>{m.catName}</div>}

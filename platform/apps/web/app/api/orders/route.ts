@@ -72,12 +72,48 @@ export async function POST(req: NextRequest) {
   }
 
   // --- authoritative bill (server recomputes; client total is ignored) ---
-  const billLines: BillLine[] = input.lines.map((l) => ({
-    pricePaise: l.unitPricePaise,
-    modPaise: (l.modifiers ?? []).reduce((s, m) => s + m.pricePaise, 0),
-    gstRate: l.gstRate,
-    qty: l.qty,
-  }));
+  const itemIds = input.lines.map((l) => l.itemId);
+  const dbItems = await prisma.menuItem.findMany({
+    where: { id: { in: itemIds }, outletId },
+    include: { category: true },
+  });
+  const dbItemMap = new Map(dbItems.map((i) => [i.id, i]));
+
+  const billLines: BillLine[] = input.lines.map((l) => {
+    const dbItem = dbItemMap.get(l.itemId);
+    const catName = dbItem?.category?.name?.toLowerCase() ?? '';
+    let categoryType = 'food';
+    if (
+      catName.includes('beverage') ||
+      catName.includes('drink') ||
+      catName.includes('juice') ||
+      catName.includes('coffee') ||
+      catName.includes('tea') ||
+      catName.includes('soda')
+    ) {
+      categoryType = 'beverage';
+    } else if (catName.includes('combo') || catName.includes('meal')) {
+      categoryType = 'combo';
+    }
+
+    const tags = dbItem?.tags ?? [];
+    const taxExempt = tags.includes('tax_exempt') || tags.includes('taxexempt');
+    const zeroRated = tags.includes('zero_rated') || tags.includes('zerorated');
+    const nilRated = tags.includes('nil_rated') || tags.includes('nilrated');
+
+    return {
+      pricePaise: l.unitPricePaise,
+      modPaise: (l.modifiers ?? []).reduce((s, m) => s + m.pricePaise, 0),
+      gstRate: dbItem ? Number(dbItem.gstRate) : l.gstRate,
+      qty: l.qty,
+      categoryType,
+      taxExempt,
+      zeroRated,
+      nilRated,
+      hsnCode: dbItem?.hsnCode ?? null,
+    };
+  });
+
   const gst = await getOutletGst(outletId);
   const pwa = await getOutletPwa(outletId);
 
@@ -89,12 +125,41 @@ export async function POST(req: NextRequest) {
     customerId = await findOrCreateCustomerByPhone(session.tenantId, input.customer);
   }
 
+  // Automatically detect interstate supply
+  let interState = !!input.interState;
+  if (!interState && customerId) {
+    const outlet = await prisma.outlet.findUnique({
+      where: { id: outletId },
+      select: { stateCode: true },
+    });
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { address: true },
+    });
+    if (outlet?.stateCode && customer?.address) {
+      const custAddrLower = customer.address.toLowerCase();
+      const states = ["AN", "AP", "AR", "AS", "BR", "CH", "CT", "DN", "DD", "DL", "GA", "GJ", "HR", "HP", "JK", "JH", "KA", "KL", "LA", "LD", "MP", "MH", "MN", "ML", "MZ", "NL", "OD", "PY", "PB", "RJ", "SK", "TN", "TS", "TR", "UP", "UK", "WB"];
+      const matchState = states.find(
+        (s) =>
+          custAddrLower.includes(` ${s.toLowerCase()}`) ||
+          custAddrLower.includes(`,${s.toLowerCase()}`) ||
+          custAddrLower.includes(s.toLowerCase()),
+      );
+      if (matchState && matchState.toUpperCase() !== outlet.stateCode.toUpperCase()) {
+        interState = true;
+      }
+    }
+  }
+
   const bill = computeBill(billLines, {
     discountPct: input.discountPct,
     discountFlatPaise: input.discountFlatPaise,
     serviceChargePct: input.serviceChargePct,
-    interState: input.interState,
-    ...gstBillOptions(gst),
+    deliveryChargePaise: input.deliveryChargePaise,
+    packagingChargePaise: input.packagingChargePaise,
+    convenienceFeePaise: input.convenienceFeePaise,
+    interState: interState,
+    ...gstBillOptions(gst, input.type),
   });
 
   const settling = !!input.payment;
@@ -131,16 +196,60 @@ export async function POST(req: NextRequest) {
           totalPaise: bill.totalPaise,
           settledAt: settling ? new Date() : null,
           items: {
-            create: input.lines.map((l) => ({
-              itemId: l.itemId,
-              nameSnapshot: l.nameSnapshot,
-              qty: l.qty,
-              unitPricePaise: l.unitPricePaise,
-              modifiers: (l.modifiers ?? []) as Prisma.InputJsonValue,
-              notes: l.notes,
-              station: l.station ?? null,
-              kotStatus: 'queued',
-            })),
+            create: [
+              ...input.lines.map((l) => ({
+                itemId: l.itemId,
+                nameSnapshot: l.nameSnapshot,
+                qty: l.qty,
+                unitPricePaise: l.unitPricePaise,
+                modifiers: (l.modifiers ?? []) as Prisma.InputJsonValue,
+                notes: l.notes,
+                station: l.station ?? null,
+                kotStatus: 'queued' as any,
+              })),
+              ...(input.deliveryChargePaise > 0
+                ? [
+                    {
+                      itemId: null,
+                      nameSnapshot: 'Delivery Charge',
+                      qty: 1,
+                      unitPricePaise: input.deliveryChargePaise,
+                      modifiers: [] as any,
+                      notes: null,
+                      station: null,
+                      kotStatus: 'served' as any,
+                    },
+                  ]
+                : []),
+              ...(input.packagingChargePaise > 0
+                ? [
+                    {
+                      itemId: null,
+                      nameSnapshot: 'Packaging Charge',
+                      qty: 1,
+                      unitPricePaise: input.packagingChargePaise,
+                      modifiers: [] as any,
+                      notes: null,
+                      station: null,
+                      kotStatus: 'served' as any,
+                    },
+                  ]
+                : []),
+              ...(input.convenienceFeePaise > 0
+                ? [
+                    {
+                      itemId: null,
+                      nameSnapshot: 'Convenience Fee',
+                      qty: 1,
+                      unitPricePaise: input.convenienceFeePaise,
+                      modifiers: [] as any,
+                      notes: null,
+                      station: null,
+                      kotStatus: 'served' as any,
+                    },
+                  ]
+                : []),
+            ],
           },
           kots: {
             create: stations.map((station, idx) => ({
@@ -151,8 +260,36 @@ export async function POST(req: NextRequest) {
             })),
           },
         },
-        include: { items: true, kots: true, table: { select: { label: true } }, customer: { select: { name: true } } },
+        include: {
+          items: true,
+        },
       });
+
+      // Decrement any daily limits stored in tags
+      for (const line of input.lines) {
+        if (!line.itemId) continue;
+        const menuItem = await tx.menuItem.findFirst({
+          where: { id: line.itemId, outletId },
+          select: { id: true, tags: true, isAvailable: true }
+        });
+        if (menuItem) {
+          const limitTag = menuItem.tags.find((t) => t.startsWith('limit:'));
+          if (limitTag) {
+            const currentLimit = parseInt(limitTag.split(':')[1] ?? '0') || 0;
+            const newLimit = Math.max(0, currentLimit - line.qty);
+            const otherTags = menuItem.tags.filter((t) => !t.startsWith('limit:'));
+            const nextTags = [...otherTags, `limit:${newLimit}`];
+            const isAvailable = newLimit > 0;
+            await tx.menuItem.update({
+              where: { id: menuItem.id },
+              data: {
+                tags: nextTags,
+                isAvailable: isAvailable ? menuItem.isAvailable : false
+              }
+            });
+          }
+        }
+      }
 
       if (input.payment) {
         await tx.payment.create({

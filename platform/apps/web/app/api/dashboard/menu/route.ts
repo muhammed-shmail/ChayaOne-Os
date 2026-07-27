@@ -52,7 +52,15 @@ export async function POST(req: NextRequest) {
     if (!name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
     const pricePaise = Math.round(Number(body.pricePaise));
     if (!Number.isFinite(pricePaise) || pricePaise < 0) return NextResponse.json({ error: 'invalid_price' }, { status: 400 });
-    const gstRate = GST_RATES.includes(Number(body.gstRate)) ? Number(body.gstRate) : 5;
+    
+    // Support custom rates
+    let gstRate = 5.0;
+    if (body.gstRate !== undefined) {
+      const rate = Number(body.gstRate);
+      if (Number.isFinite(rate) && rate >= 0 && rate <= 100) {
+        gstRate = rate;
+      }
+    }
 
     // verify category ownership when provided
     let categoryId: string | null = null;
@@ -68,10 +76,12 @@ export async function POST(req: NextRequest) {
         name,
         pricePaise,
         gstRate: new Prisma.Decimal(gstRate),
+        hsnCode: body.hsnCode ? String(body.hsnCode).trim() : null,
         station: cleanStation(body.station),
         categoryId,
         description: body.description ? String(body.description).trim() : null,
-        isAvailable: true,
+        isAvailable: body.isAvailable !== undefined ? !!body.isAvailable : true,
+        tags: Array.isArray(body.tags) ? body.tags.map((t: any) => String(t).trim()) : [],
       },
       select: { id: true, name: true },
     });
@@ -106,10 +116,25 @@ export async function POST(req: NextRequest) {
       if (!Number.isFinite(pricePaise) || pricePaise < 0) return NextResponse.json({ error: 'invalid_price' }, { status: 400 });
       data.pricePaise = pricePaise;
     }
-    if (body.gstRate !== undefined && GST_RATES.includes(Number(body.gstRate))) data.gstRate = new Prisma.Decimal(Number(body.gstRate));
+    
+    // Support custom rates
+    if (body.gstRate !== undefined) {
+      const rate = Number(body.gstRate);
+      if (Number.isFinite(rate) && rate >= 0 && rate <= 100) {
+        data.gstRate = new Prisma.Decimal(rate);
+      }
+    }
+    
+    if (body.hsnCode !== undefined) {
+      data.hsnCode = body.hsnCode ? String(body.hsnCode).trim() : null;
+    }
+    
     if (body.station !== undefined) data.station = cleanStation(body.station);
     if (body.description !== undefined) data.description = body.description ? String(body.description).trim() : null;
     if (body.isAvailable !== undefined) data.isAvailable = !!body.isAvailable;
+    if (body.tags !== undefined && Array.isArray(body.tags)) {
+      data.tags = body.tags.map((t: any) => String(t).trim());
+    }
     if (body.categoryId !== undefined) {
       if (body.categoryId) {
         const cat = await prisma.category.findFirst({ where: { id: body.categoryId, outletId: session.outletId }, select: { id: true } });

@@ -32,6 +32,8 @@ import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffDevices from '@/components/StaffDevices';
 import { MobileDrawer, BottomNav, type NavItem } from '@/components/dashboard/MobileNav';
 import FinanceManagement from './FinanceManagement';
+import SettingsCenter from './components/SettingsCenter';
+
 
 type FloorTable = { id: string; label: string; seats: number; state: string; qrToken: string; floorId: string | null; activeOrders: number };
 type Floor = { id: string; name: string; sort: number };
@@ -903,6 +905,31 @@ export default function DashboardClient({
     }
   };
 
+  const handleSaveItemLimit = async (item: any, limit: number | null) => {
+    try {
+      const otherTags = item.tags?.filter((t: string) => !t.startsWith('limit:')) || [];
+      const nextTags = limit === null ? otherTags : [...otherTags, `limit:${limit}`];
+      
+      const res = await fetch('/api/dashboard/menu', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          itemId: item.id,
+          tags: nextTags,
+        }),
+      });
+      if (res.ok) {
+        flashMessage(limit === null ? 'Limit cleared' : `Daily limit set to ${limit}`);
+        loadInventoryData();
+      } else {
+        flashMessage('Could not save limit');
+      }
+    } catch (err) {
+      console.error(err);
+      flashMessage('Error saving limit');
+    }
+  };
+
   // inline price editing
   const [priceEditId, setPriceEditId] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState('');
@@ -914,7 +941,7 @@ export default function DashboardClient({
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
   const [menuCategories, setMenuCategories] = useState<{ id: string; name: string }[]>([]);
   const [menuCatFilter, setMenuCatFilter] = useState('all'); // 'all' | category id | 'none'
-  const blankProduct = { name: '', price: '', gstRate: '5', station: 'kitchen', categoryId: '', description: '' };
+  const blankProduct = { name: '', price: '', gstRate: '5', station: 'kitchen', categoryId: '', description: '', isAvailable: true, hsnCode: '', tags: [] as string[] };
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [newProduct, setNewProduct] = useState({ ...blankProduct });
   const [newCategory, setNewCategory] = useState('');
@@ -971,6 +998,9 @@ export default function DashboardClient({
           station: newProduct.station,
           categoryId: newProduct.categoryId || undefined,
           description: newProduct.description.trim() || undefined,
+          isAvailable: newProduct.isAvailable,
+          hsnCode: newProduct.hsnCode.trim() || undefined,
+          tags: newProduct.tags,
         }),
       });
       if (res.ok) {
@@ -991,6 +1021,9 @@ export default function DashboardClient({
       station: item.station ?? 'kitchen',
       categoryId: item.categoryId ?? '',
       description: item.description ?? '',
+      isAvailable: !!item.isAvailable,
+      hsnCode: item.hsnCode ?? '',
+      tags: Array.isArray(item.tags) ? item.tags : [],
     });
   };
 
@@ -1010,6 +1043,9 @@ export default function DashboardClient({
           station: editDraft.station,
           categoryId: editDraft.categoryId || null,
           description: editDraft.description.trim(),
+          isAvailable: editDraft.isAvailable,
+          hsnCode: editDraft.hsnCode.trim() || null,
+          tags: editDraft.tags,
         }),
       });
       if (res.ok) { flashMessage('Product updated'); setEditProductId(null); loadInventoryData(); }
@@ -1364,6 +1400,13 @@ export default function DashboardClient({
       return null;
     } catch { flashMessage('Upload failed'); return null; }
   };
+
+  const handleSavePwa = async (cfg: PwaConfig) => {
+    await pwaSave({ action: 'theme_save', theme: cfg.theme }, 'Theme branding saved');
+    await pwaSave({ action: 'table_save', table: cfg.table }, 'Table QR routing saved');
+    await pwaSave({ action: 'registration_save', registration: cfg.registration }, 'Customer access settings saved');
+  };
+
 
   const loadProfile = async () => {
     try {
@@ -2283,8 +2326,8 @@ export default function DashboardClient({
         {activeMenu === 'home' && (
           <div className="flex flex-col gap-4">
             {/* Home Sub Tabs */}
-            <div className="flex justify-start pb-1">
-              <div className="flex gap-1 p-1 rounded-full border shadow-sm w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist" aria-label="Home sections">
+            <div className="flex justify-start md:justify-center pb-1 overflow-x-auto no-scrollbar w-full">
+              <div className="flex flex-nowrap gap-1 p-1 rounded-full border shadow-sm w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist" aria-label="Home sections">
                 {[
                   { key: 'overview', label: '📊 Overview' },
                   { key: 'floor', label: '🍽️ Live Floor' }
@@ -2655,8 +2698,8 @@ export default function DashboardClient({
         {activeMenu === 'inventory' && (
           <div className="flex flex-col gap-4">
             {/* Tabs */}
-            <div className="flex justify-start pb-2">
-              <div className="flex flex-wrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+            <div className="flex justify-start md:justify-center pb-2 overflow-x-auto no-scrollbar w-full">
+              <div className="flex flex-nowrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
                 {[
                   { key: 'stock', label: 'Basic Stock' },
                   { key: 'consumption', label: `Consumption` },
@@ -2941,8 +2984,8 @@ export default function DashboardClient({
         {/* ── 3b. Suppliers & Credit View ── */}
         {activeMenu === 'suppliers' && (
           <div className="flex flex-col gap-4">
-            <div className="flex justify-start pb-2">
-              <div className="flex flex-wrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+            <div className="flex justify-start md:justify-center pb-2 overflow-x-auto no-scrollbar w-full">
+              <div className="flex flex-nowrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
                 {[
                   { key: 'ledger', label: 'Ledger & Dues' },
                   { key: 'invoice', label: 'New Invoice' },
@@ -3182,8 +3225,8 @@ export default function DashboardClient({
         {/* ── 3c. Tables: occupancy & revenue ── */}
         {activeMenu === 'tables' && (
           <div className="flex flex-col gap-4">
-            <div className="flex justify-start pb-2">
-              <div className="flex flex-wrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+            <div className="flex justify-start md:justify-center pb-2 overflow-x-auto no-scrollbar w-full">
+              <div className="flex flex-nowrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
                 {[
                   { key: 'floor', label: 'Live Floor' },
                   { key: 'profit', label: 'Profitability' },
@@ -3425,8 +3468,8 @@ export default function DashboardClient({
         {activeMenu === 'reports' && (
           <div className="flex flex-col gap-4">
             {/* Tabs */}
-            <div className="flex justify-start pb-2">
-              <div className="flex flex-wrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+            <div className="flex justify-start md:justify-center pb-2 overflow-x-auto no-scrollbar w-full">
+              <div className="flex flex-nowrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
                 {[
                   { key: 'daily', label: 'Daily Sales' },
                   { key: 'best', label: 'Top Items' },
@@ -3651,1248 +3694,582 @@ export default function DashboardClient({
         {/* ── 5. Settings View (also hosts the top-level Menu Items page) ── */}
         {(activeMenu === 'settings' || activeMenu === 'menu') && (
           <div className="flex flex-col gap-4">
-            {/* Settings nav cards — only on the Settings page; the Menu Items page renders bare */}
             {activeMenu === 'settings' && (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              {([
-                { key: 'general', icon: Settings, label: 'General', sub: 'Store profile & logo' },
-                { key: 'tax', icon: Percent, label: 'Tax & GST', sub: 'GST toggle, rate & type' },
-                { key: 'floor', icon: Table2, label: 'Floor & QR', sub: 'Tables & scan-to-order' },
-                { key: 'kitchen', icon: ChefHat, label: 'Kitchen', sub: 'KDS, KOT & workflow' },
-                { key: 'pwa', icon: Smartphone, label: 'PWA Settings', sub: 'Customer app & loyalty' },
-                ...(staff.role === 'owner' ? [{ key: 'location', icon: MapPin, label: 'Location Gate', sub: 'Require on-site to order & clock in' }] : []),
-                { key: 'devices', icon: Printer, label: 'Devices & Printers', sub: 'Printers & receipt layout' },
-                ...(staff.role === 'owner' ? [{ key: 'audit', icon: ClipboardList, label: 'Audit Logs', sub: 'Activity & changes' }] : []),
-                ...(isAdvanced ? [{ key: 'multibranch', icon: Store, label: 'Multi Branch', sub: 'Other outlets' }] : []),
-              ] as { key: 'general' | 'tax' | 'floor' | 'kitchen' | 'location' | 'devices' | 'pwa' | 'audit' | 'multibranch'; icon: LucideIcon; label: string; sub: string }[]).map((t) => {
-                const on = settingsModalOpen && settingsPanel === t.key;
-                const Icon = t.icon;
-                return (
-                  <button
-                    key={t.key}
-                    onClick={() => openSettings(t.key)}
-                    aria-pressed={on}
-                    className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition border cursor-pointer hover:shadow-sm"
-                    style={on
-                      ? { background: 'var(--turmeric)', color: '#2A1607', borderColor: 'transparent' }
-                      : { background: 'var(--paper-2)', borderColor: 'var(--line)' }}
-                  >
-                    <span className="grid place-items-center rounded-xl shrink-0" style={{ width: 38, height: 38, background: on ? 'rgba(42,22,7,.12)' : 'var(--paper-3)', color: on ? '#2A1607' : 'var(--turmeric)' }}>
-                      <Icon size={18} aria-hidden />
-                    </span>
-                    <span className="leading-tight min-w-0">
-                      <b className="block text-sm truncate">{t.label}</b>
-                      <span className="text-xs block truncate" style={{ color: on ? '#5a3a14' : 'var(--ink-3)' }}>{t.sub}</span>
-                    </span>
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => { setActiveMenu('reports'); setActiveSubTab('daily'); }}
-                className="flex items-center gap-3 px-4 py-3 rounded-2xl text-left transition border cursor-pointer hover:shadow-sm"
-                style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
-              >
-                <span className="grid place-items-center rounded-xl shrink-0" style={{ width: 38, height: 38, background: 'var(--paper-3)', color: 'var(--turmeric)' }}>
-                  <BarChart3 size={18} aria-hidden />
-                </span>
-                <span className="leading-tight min-w-0">
-                  <b className="block text-sm truncate">Reports</b>
-                  <span className="text-xs block truncate" style={{ color: 'var(--ink-3)' }}>Sales & analytics ↗</span>
-                </span>
-              </button>
-            </div>
+              <SettingsCenter
+                outlet={outlet}
+                staff={staff}
+                features={features}
+                profile={profile}
+                setProfile={setProfile}
+                handleSaveProfile={handleSaveProfile}
+                handleSaveGst={handleSaveGst}
+                gstSaving={gstSaving}
+                location={location}
+                setLocation={setLocation}
+                handleSaveLocation={handleSaveLocation}
+                locationSaving={locationSaving}
+                logoUrl={logoUrl}
+                logoBusy={logoBusy}
+                handleLogoFile={handleLogoFile}
+                saveLogo={saveLogo}
+                kwForm={kwForm}
+                setKwForm={setKwForm}
+                handleSaveKitchenWorkflow={handleSaveKitchenWorkflow}
+                kwSaving={kwSaving}
+                receiptForm={receiptForm}
+                setReceiptForm={setReceiptForm}
+                handleSaveReceipt={handleSaveReceipt}
+                receiptSaving={receiptSaving}
+                devices={devices}
+                setDevices={setDevices}
+                handleSaveDevice={handleSaveDevice}
+                handleDeleteDevice={handleDeleteDevice}
+                handleSetDefaultDevice={handleSetDefaultDevice}
+                deviceForm={deviceForm}
+                setDeviceForm={setDeviceForm}
+                showDeviceForm={showDeviceForm}
+                setShowDeviceForm={setShowDeviceForm}
+                openDeviceForm={openDeviceForm}
+                floors={floors}
+                floorTables={floorTables}
+                kitchens={kitchens}
+                setKitchens={setKitchens}
+                kitchenApi={kitchenApi}
+                kitchenBusy={kitchenBusy}
+                pwaCfg={pwaCfg}
+                setPwaCfg={setPwaCfg}
+                handleSavePwa={handleSavePwa}
+                pwaSaving={pwaBusy}
+                uploadImage={uploadImage}
+                auditList={auditEntries}
+                auditTotal={auditHasMore ? (auditPage * 20 + 1) : auditEntries.length}
+                auditPage={auditPage}
+                loadAudit={loadAudit}
+                flashMessage={flashMessage}
+                isAdvanced={isAdvanced}
+                handleToggleAdvanced={handleToggleAdvanced}
+              />
             )}
 
-            {activeMenu === 'settings' && settingsModalOpen && settingsPanel === 'general' && (
-              <SettingsModal title="General" icon={Settings} onClose={closeSettings}>
-              <section className="card p-5 max-w-md flex flex-col gap-4">
-                <Toggle label="Advanced Mode" desc="Enable recipes, vendors, forecasting, and deep stats." on={isAdvanced} onChange={(v) => handleToggleAdvanced(v)} />
-
-                {/* Store Logo — shown on printed bills/receipts */}
-                <div className="flex flex-col gap-2 pt-1">
-                  <h4 className="font-bold">Store Logo</h4>
-                  <p className="text-xs" style={{ color: 'var(--ink-3)' }}>Appears on printed bills &amp; receipts. PNG or JPG; a square image works best.</p>
-                  <div className="flex items-center gap-3">
-                    {logoUrl
-                      ? <img src={logoUrl} alt="Store logo" className="rounded-lg object-contain" style={{ width: 56, height: 56, background: 'var(--paper-3)' }} />
-                      : <div className="rounded-lg grid place-items-center" style={{ width: 56, height: 56, background: 'var(--paper-3)', color: 'var(--ink-3)' }}><ImageIcon size={22} aria-hidden /></div>}
-                    <label className={`btn btn-sm ${logoBusy ? 'opacity-60 pointer-events-none' : ''}`} style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
-                      {logoBusy ? 'Uploading…' : logoUrl ? 'Replace logo' : 'Upload logo'}
-                      <input type="file" accept="image/*" className="hidden" disabled={logoBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f); e.currentTarget.value = ''; }} />
-                    </label>
-                    {logoUrl && <button type="button" onClick={() => saveLogo(null)} disabled={logoBusy} className="btn btn-danger btn-sm">Remove</button>}
-                  </div>
-                </div>
-
-                {/* Store Profile — editable */}
-                <form onSubmit={handleSaveProfile} className="flex flex-col gap-3">
-                  <h4 className="font-bold">Store Profile</h4>
-                  <Field label="Outlet Name"><input value={profile.name} onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))} required className="inp" /></Field>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="GSTIN"><input value={profile.gstin} onChange={(e) => setProfile((p) => ({ ...p, gstin: e.target.value }))} placeholder="None" className="inp" /></Field>
-                    <Field label="State Code"><input value={profile.stateCode} onChange={(e) => setProfile((p) => ({ ...p, stateCode: e.target.value }))} placeholder="KA" maxLength={2} className="inp uppercase" /></Field>
-                  </div>
-
-                  {/* GST now lives in its own Tax & GST panel */}
-                  <button type="button" onClick={() => setSettingsPanel('tax')} className="rounded-xl border p-3 text-left flex items-center justify-between gap-3 hover:brightness-105 transition" style={{ borderColor: 'var(--line)', background: 'var(--paper-3)' }}>
-                    <span>
-                      <span className="block text-sm font-bold">Tax &amp; GST</span>
-                      <span className="block text-xs" style={{ color: 'var(--ink-3)' }}>{profile.gstEnabled ? `GST on · ${profile.gstType === 'inclusive' ? 'inclusive' : 'exclusive'}${profile.gstRate ? ` · ${profile.gstRate}%` : ' · per-item'}` : 'GST off — bills are tax-free'}</span>
-                    </span>
-                    <span className="text-ink-3">Manage →</span>
-                  </button>
-
-                  <Field label="Address">
-                    <input value={profile.line1} onChange={(e) => setProfile((p) => ({ ...p, line1: e.target.value }))} placeholder="Street / area" className="inp mb-2" />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <input value={profile.city} onChange={(e) => setProfile((p) => ({ ...p, city: e.target.value }))} placeholder="City" className="inp" />
-                      <input value={profile.pincode} onChange={(e) => setProfile((p) => ({ ...p, pincode: e.target.value }))} placeholder="Pincode" className="inp" />
-                    </div>
-                  </Field>
-                  <button type="submit" className="btn btn-primary mt-1 w-fit">Save profile</button>
-                </form>
-              </section>
-              </SettingsModal>
-            )}
-
-            {activeMenu === 'menu' && (() => {
-              const q = menuSearch.trim().toLowerCase();
-              // search + category filter
-              const filtered = menuItems.filter((m) => {
-                if (q && !m.name.toLowerCase().includes(q)) return false;
-                if (menuCatFilter === 'all') return true;
-                if (menuCatFilter === 'none') return !m.categoryId;
-                return m.categoryId === menuCatFilter;
-              });
-              // only offer the "Uncategorised" chip when such items exist
-              const hasUncategorised = menuItems.some((m) => !m.categoryId);
-              // group the filtered items by category, following the category sort order
-              const groups: { id: string; name: string; items: any[] }[] = [];
-              for (const c of menuCategories) {
-                const items = filtered.filter((m) => m.categoryId === c.id);
-                if (items.length) groups.push({ id: c.id, name: c.name, items });
-              }
-              const loose = filtered.filter((m) => !m.categoryId);
-              if (loose.length) groups.push({ id: 'none', name: 'Uncategorised', items: loose });
-              return (
-              <section className="card p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                  <h4 className="font-bold">Menu Management</h4>
-                  <div className="flex items-center gap-2">
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--ink-3)' }}>🔍</span>
-                      <input
-                        value={menuSearch}
-                        onChange={(e) => setMenuSearch(e.target.value)}
-                        placeholder="Search items…"
-                        className="pl-8 pr-3 py-2 rounded-xl border text-sm outline-none w-44"
-                        style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}
-                      />
-                    </div>
-                    <button onClick={() => setShowAddProduct((v) => !v)} className={`btn py-2 px-3 text-sm shrink-0 ${showAddProduct ? '' : 'btn-primary'}`} style={showAddProduct ? { background: 'var(--paper-2)', border: '1px solid var(--line)' } : undefined}>
-                      {showAddProduct ? '✕ Cancel' : '+ Add Product'}
+            {activeMenu === 'menu' && (
+              <div className="flex flex-col gap-4">
+                {/* Menu sub-tabs */}
+                <div className="flex justify-start md:justify-center pb-1 overflow-x-auto no-scrollbar w-full">
+                  <div className="flex flex-nowrap gap-1 p-1 rounded-full border shadow-sm w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+                    <button
+                      role="tab"
+                      aria-selected={activeSubTab === 'menu'}
+                      onClick={() => setActiveSubTab('menu')}
+                      className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                      style={activeSubTab === 'menu'
+                        ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                        : { color: 'var(--ink-2)', background: 'transparent' }}
+                    >
+                      📝 Menu Management
+                    </button>
+                    <button
+                      role="tab"
+                      aria-selected={activeSubTab === 'availability'}
+                      onClick={() => setActiveSubTab('availability')}
+                      className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                      style={activeSubTab === 'availability'
+                        ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                        : { color: 'var(--ink-2)', background: 'transparent' }}
+                    >
+                      ⚡ Availability & Limits
                     </button>
                   </div>
                 </div>
 
-                {/* category filter chips */}
-                {menuCategories.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {[{ id: 'all', name: 'All' }, ...menuCategories, ...(hasUncategorised ? [{ id: 'none', name: 'Uncategorised' }] : [])].map((c) => {
-                      const active = menuCatFilter === c.id;
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => setMenuCatFilter(c.id)}
-                          className="px-3 py-1.5 rounded-full text-xs font-bold transition"
-                          style={active
-                            ? { background: 'var(--turmeric)', color: '#2A1607' }
-                            : { background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line-2)' }}
-                        >
-                          {c.name}
+                {activeSubTab === 'menu' ? (() => {
+                  const q = menuSearch.trim().toLowerCase();
+                  // search + category filter
+                  const filtered = menuItems.filter((m) => {
+                    if (q && !m.name.toLowerCase().includes(q)) return false;
+                    if (menuCatFilter === 'all') return true;
+                    if (menuCatFilter === 'none') return !m.categoryId;
+                    return m.categoryId === menuCatFilter;
+                  });
+                  // only offer the "Uncategorised" chip when such items exist
+                  const hasUncategorised = menuItems.some((m) => !m.categoryId);
+                  // group the filtered items by category, following the category sort order
+                  const groups: { id: string; name: string; items: any[] }[] = [];
+                  for (const c of menuCategories) {
+                    const items = filtered.filter((m) => m.categoryId === c.id);
+                    if (items.length) groups.push({ id: c.id, name: c.name, items });
+                  }
+                  const loose = filtered.filter((m) => !m.categoryId);
+                  if (loose.length) groups.push({ id: 'none', name: 'Uncategorised', items: loose });
+                  return (
+                  <section className="card p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                      <h4 className="font-bold">Menu Management</h4>
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--ink-3)' }}>🔍</span>
+                          <input
+                            value={menuSearch}
+                            onChange={(e) => setMenuSearch(e.target.value)}
+                            placeholder="Search items…"
+                            className="pl-8 pr-3 py-2 rounded-xl border text-sm outline-none w-44"
+                            style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}
+                          />
+                        </div>
+                        <button onClick={() => setShowAddProduct((v) => !v)} className={`btn py-2 px-3 text-sm shrink-0 ${showAddProduct ? '' : 'btn-primary'}`} style={showAddProduct ? { background: 'var(--paper-2)', border: '1px solid var(--line)' } : undefined}>
+                          {showAddProduct ? '✕ Cancel' : '+ Add Product'}
                         </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Kitchens / prep stations — where each item routes on the KDS */}
-                <div className="p-4 mb-4 rounded-xl" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
-                  <h5 className="font-bold text-sm mb-1">Kitchens / prep stations</h5>
-                  <p className="text-xs text-ink-3 mb-3">Each product routes to one kitchen. Orders split into one ticket per kitchen on the KDS — a café with 2 kitchens (say Hot &amp; Cold) gets a screen tab for each.</p>
-                  <form onSubmit={handleAddKitchen} className="flex flex-wrap items-end gap-2 mb-3">
-                    <input value={newKitchenName} onChange={(e) => setNewKitchenName(e.target.value)} placeholder="e.g. Hot Kitchen" className="inp flex-1 min-w-[160px]" />
-                    <button type="submit" disabled={kitchenBusy} className="btn btn-primary disabled:opacity-50">Add kitchen</button>
-                  </form>
-                  <div className="flex flex-wrap gap-2">
-                    {kitchens.map((k) => editKitchenId === k.id ? (
-                      <div key={k.id} className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
-                        <input value={editKitchenName} onChange={(e) => setEditKitchenName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRenameKitchen(k.id); } if (e.key === 'Escape') setEditKitchenId(null); }} className="w-32 p-1 rounded-lg border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} autoFocus />
-                        <button onClick={() => handleRenameKitchen(k.id)} disabled={kitchenBusy} className="btn btn-primary py-1 px-2 text-xs disabled:opacity-50">Save</button>
-                        <button onClick={() => setEditKitchenId(null)} className="btn py-1 px-2 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>✕</button>
                       </div>
+                    </div>
+
+                    {/* category filter chips */}
+                    {menuCategories.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {[{ id: 'all', name: 'All' }, ...menuCategories, ...(hasUncategorised ? [{ id: 'none', name: 'Uncategorised' }] : [])].map((c) => {
+                          const active = menuCatFilter === c.id;
+                          return (
+                            <button
+                              key={c.id}
+                              onClick={() => setMenuCatFilter(c.id)}
+                              className="px-3 py-1.5 rounded-full text-xs font-bold transition"
+                              style={active
+                                ? { background: 'var(--turmeric)', color: '#2A1607' }
+                                : { background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line-2)' }}
+                            >
+                              {c.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Kitchens / prep stations — where each item routes on the KDS */}
+                    <div className="p-4 mb-4 rounded-xl" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
+                      <h5 className="font-bold text-sm mb-1">Kitchens / prep stations</h5>
+                      <p className="text-xs text-ink-3 mb-3">Each product routes to one kitchen. Orders split into one ticket per kitchen on the KDS — a café with 2 kitchens (say Hot &amp; Cold) gets a screen tab for each.</p>
+                      <form onSubmit={handleAddKitchen} className="flex flex-wrap items-end gap-2 mb-3">
+                        <input value={newKitchenName} onChange={(e) => setNewKitchenName(e.target.value)} placeholder="e.g. Hot Kitchen" className="inp flex-1 min-w-[160px]" />
+                        <button type="submit" disabled={kitchenBusy} className="btn btn-primary disabled:opacity-50">Add kitchen</button>
+                      </form>
+                      <div className="flex flex-wrap gap-2">
+                        {kitchens.map((k) => editKitchenId === k.id ? (
+                          <div key={k.id} className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
+                            <input value={editKitchenName} onChange={(e) => setEditKitchenName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRenameKitchen(k.id); } if (e.key === 'Escape') setEditKitchenId(null); }} className="w-32 p-1 rounded-lg border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} autoFocus />
+                            <button onClick={() => handleRenameKitchen(k.id)} disabled={kitchenBusy} className="btn btn-primary py-1 px-2 text-xs disabled:opacity-50">Save</button>
+                            <button onClick={() => setEditKitchenId(null)} className="btn py-1 px-2 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>✕</button>
+                          </div>
+                        ) : (
+                          <span key={k.id} className="inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-sm font-bold" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: k.color ?? 'var(--turmeric)' }} />
+                            {k.name}
+                            <button onClick={() => { setEditKitchenId(k.id); setEditKitchenName(k.name); }} className="text-xs text-ink-3 hover:text-ink" title="Rename" aria-label={`Rename ${k.name}`}>✎</button>
+                            <button onClick={() => handleDeleteKitchen(k)} className="text-xs" style={{ color: 'var(--clay)' }} title="Delete" aria-label={`Delete ${k.name}`}>🗑</button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {showAddProduct && (
+                      <form onSubmit={handleCreateProduct} className="grid gap-3 p-4 mb-4 rounded-xl" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="lbl">Product name</label>
+                            <input value={newProduct.name} onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))} required placeholder="e.g. Masala Chai" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                          </div>
+                          <div>
+                            <label className="lbl">Price (₹)</label>
+                            <input value={newProduct.price} onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))} required type="number" step="0.01" min="0" placeholder="0.00" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                          </div>
+                        </div>
+                        <div className="grid sm:grid-cols-5 gap-3">
+                          <div>
+                            <label className="lbl">Category</label>
+                            <select value={newProduct.categoryId} onChange={(e) => setNewProduct((p) => ({ ...p, categoryId: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
+                              <option value="">— Uncategorised —</option>
+                              {menuCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="lbl">HSN/SAC Code</label>
+                            <input value={newProduct.hsnCode} onChange={(e) => setNewProduct((p) => ({ ...p, hsnCode: e.target.value }))} placeholder="e.g. 996331" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                          </div>
+                          <div>
+                            <label className="lbl">GST rate (%)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              disabled={newProduct.tags?.includes('tax_exempt') || newProduct.tags?.includes('zero_rated') || newProduct.tags?.includes('nil_rated')}
+                              value={newProduct.gstRate}
+                              onChange={(e) => setNewProduct((p) => ({ ...p, gstRate: e.target.value }))}
+                              className="w-full p-2.5 rounded-xl border text-sm outline-none"
+                              style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}
+                            />
+                          </div>
+                          <div>
+                            <label className="lbl">Station</label>
+                            <select value={newProduct.station} onChange={(e) => setNewProduct((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
+                              {stationOptions(newProduct.station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="lbl">Availability</label>
+                            <select value={newProduct.isAvailable ? 'true' : 'false'} onChange={(e) => setNewProduct((p) => ({ ...p, isAvailable: e.target.value === 'true' }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
+                              <option value="true">Available</option>
+                              <option value="false">Sold Out</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-4 items-center p-2 rounded-xl bg-paper-2 border" style={{ borderColor: 'var(--line-2)' }}>
+                          <span className="text-xs font-bold text-ink-3">Exemptions:</span>
+                          <label className="flex items-center gap-1.5 text-xs text-ink-2 select-none cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={newProduct.tags?.includes('tax_exempt') ?? false}
+                              onChange={(e) => {
+                                const updated = e.target.checked
+                                  ? [...(newProduct.tags ?? []).filter(t => t !== 'zero_rated' && t !== 'nil_rated'), 'tax_exempt']
+                                  : (newProduct.tags ?? []).filter(t => t !== 'tax_exempt');
+                                setNewProduct((p) => ({ ...p, tags: updated, gstRate: e.target.checked ? '0' : p.gstRate }));
+                              }}
+                              className="rounded border-line-2 text-turmeric accent-turmeric"
+                            />
+                            Tax Exempt (0% GST)
+                          </label>
+                          <label className="flex items-center gap-1.5 text-xs text-ink-2 select-none cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={newProduct.tags?.includes('zero_rated') ?? false}
+                              onChange={(e) => {
+                                const updated = e.target.checked
+                                  ? [...(newProduct.tags ?? []).filter(t => t !== 'tax_exempt' && t !== 'nil_rated'), 'zero_rated']
+                                  : (newProduct.tags ?? []).filter(t => t !== 'zero_rated');
+                                setNewProduct((p) => ({ ...p, tags: updated, gstRate: e.target.checked ? '0' : p.gstRate }));
+                              }}
+                              className="rounded border-line-2 text-turmeric accent-turmeric"
+                            />
+                            Zero Rated (0% GST)
+                          </label>
+                          <label className="flex items-center gap-1.5 text-xs text-ink-2 select-none cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={newProduct.tags?.includes('nil_rated') ?? false}
+                              onChange={(e) => {
+                                const updated = e.target.checked
+                                  ? [...(newProduct.tags ?? []).filter(t => t !== 'tax_exempt' && t !== 'zero_rated'), 'nil_rated']
+                                  : (newProduct.tags ?? []).filter(t => t !== 'nil_rated');
+                                setNewProduct((p) => ({ ...p, tags: updated, gstRate: e.target.checked ? '0' : p.gstRate }));
+                              }}
+                              className="rounded border-line-2 text-turmeric accent-turmeric"
+                            />
+                            Nil Rated (0% GST)
+                          </label>
+                        </div>
+                        <div>
+                          <label className="lbl">Description (optional)</label>
+                          <input value={newProduct.description} onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))} placeholder="Short description shown to customers" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                        </div>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <div className="flex-1 min-w-[180px]">
+                            <label className="lbl">New category (optional)</label>
+                            <div className="flex gap-2">
+                              <input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="e.g. Beverages" className="flex-1 p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                              <button type="button" onClick={handleCreateCategory} className="btn py-2 px-3 text-sm" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>Add</button>
+                            </div>
+                          </div>
+                          <button type="submit" className="btn btn-primary">Create product</button>
+                        </div>
+                      </form>
+                    )}
+                    {inventoryLoading ? (
+                      <p className="text-sm">Loading Menu...</p>
+                    ) : menuItems.length === 0 ? (
+                      <p className="text-sm text-ink-3">No menu items found.</p>
+                    ) : filtered.length === 0 ? (
+                      <p className="text-sm text-ink-3">{menuSearch ? `No items match “${menuSearch}”.` : 'No items in this category.'}</p>
                     ) : (
-                      <span key={k.id} className="inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-sm font-bold" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: k.color ?? 'var(--turmeric)' }} />
-                        {k.name}
-                        <button onClick={() => { setEditKitchenId(k.id); setEditKitchenName(k.name); }} className="text-xs text-ink-3 hover:text-ink" title="Rename" aria-label={`Rename ${k.name}`}>✎</button>
-                        <button onClick={() => handleDeleteKitchen(k)} className="text-xs" style={{ color: 'var(--clay)' }} title="Delete" aria-label={`Delete ${k.name}`}>🗑</button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {showAddProduct && (
-                  <form onSubmit={handleCreateProduct} className="grid gap-3 p-4 mb-4 rounded-xl" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="lbl">Product name</label>
-                        <input value={newProduct.name} onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))} required placeholder="e.g. Masala Chai" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
-                      </div>
-                      <div>
-                        <label className="lbl">Price (₹)</label>
-                        <input value={newProduct.price} onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))} required type="number" step="0.01" min="0" placeholder="0.00" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
-                      </div>
-                    </div>
-                    <div className="grid sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="lbl">Category</label>
-                        <select value={newProduct.categoryId} onChange={(e) => setNewProduct((p) => ({ ...p, categoryId: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
-                          <option value="">— Uncategorised —</option>
-                          {menuCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="lbl">GST rate</label>
-                        <select value={newProduct.gstRate} onChange={(e) => setNewProduct((p) => ({ ...p, gstRate: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
-                          {GST_OPTIONS.map((g) => <option key={g} value={g}>{g}%</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="lbl">Station</label>
-                        <select value={newProduct.station} onChange={(e) => setNewProduct((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
-                          {stationOptions(newProduct.station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="lbl">Description (optional)</label>
-                      <input value={newProduct.description} onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))} placeholder="Short description shown to customers" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
-                    </div>
-                    <div className="flex flex-wrap items-end gap-2">
-                      <div className="flex-1 min-w-[180px]">
-                        <label className="lbl">New category (optional)</label>
-                        <div className="flex gap-2">
-                          <input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="e.g. Beverages" className="flex-1 p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
-                          <button type="button" onClick={handleCreateCategory} className="btn py-2 px-3 text-sm" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>Add</button>
-                        </div>
-                      </div>
-                      <button type="submit" className="btn btn-primary">Create product</button>
-                    </div>
-                  </form>
-                )}
-                {inventoryLoading ? (
-                  <p className="text-sm">Loading Menu...</p>
-                ) : menuItems.length === 0 ? (
-                  <p className="text-sm text-ink-3">No menu items found.</p>
-                ) : filtered.length === 0 ? (
-                  <p className="text-sm text-ink-3">{menuSearch ? `No items match “${menuSearch}”.` : 'No items in this category.'}</p>
-                ) : (
-                  <div className="flex flex-col gap-5">
-                    {groups.map((g) => (
-                      <div key={g.id}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <h5 className="font-bold text-sm">{g.name}</h5>
-                          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--paper-3)', color: 'var(--ink-3)' }}>{g.items.length}</span>
-                        </div>
-                        <div className="grid gap-2">
-                    {g.items.map((item) => (
-                      <div key={item.id} className="rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                        <div className="flex justify-between items-center gap-2 text-sm p-3">
-                          <div className="min-w-0">
-                            <b className="block truncate">{item.name}</b>
-                            {priceEditId === item.id ? (
-                              <div className="flex items-center gap-1 mt-1">
-                                <span className="text-xs text-ink-3">₹</span>
-                                <input autoFocus type="number" step="0.01" value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') handleSavePrice(item.id); if (e.key === 'Escape') setPriceEditId(null); }}
-                                  className="w-24 p-1 rounded-lg border text-xs outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
-                                <button onClick={() => handleSavePrice(item.id)} className="btn py-1 px-2 text-xs btn-primary">Save</button>
-                                <button onClick={() => setPriceEditId(null)} className="btn py-1 px-2 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>✕</button>
+                      <div className="flex flex-col gap-5">
+                        {groups.map((g) => (
+                          <div key={g.id}>
+                            <div className="flex items-center gap-2 mb-2">
+                              <h5 className="font-bold text-sm">{g.name}</h5>
+                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--paper-3)', color: 'var(--ink-3)' }}>{g.items.length}</span>
+                            </div>
+                            <div className="grid gap-2">
+                        {g.items.map((item) => (
+                          <div key={item.id} className="rounded-xl" style={{ background: 'var(--paper-3)' }}>
+                            <div className="flex justify-between items-center gap-2 text-sm p-3">
+                              <div className="min-w-0">
+                                <b className="block truncate">{item.name}</b>
+                                {priceEditId === item.id ? (
+                                  <div className="flex items-center gap-1 mt-1">
+                                    <span className="text-xs text-ink-3">₹</span>
+                                    <input autoFocus type="number" step="0.01" value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') handleSavePrice(item.id); if (e.key === 'Escape') setPriceEditId(null); }}
+                                      className="w-24 p-1 rounded-lg border text-xs outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                                    <button onClick={() => handleSavePrice(item.id)} className="btn py-1 px-2 text-xs btn-primary">Save</button>
+                                    <button onClick={() => setPriceEditId(null)} className="btn py-1 px-2 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>✕</button>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-ink-3">
+                                    <button onClick={() => { setPriceEditId(item.id); setPriceDraft((item.pricePaise / 100).toString()); }} className="underline decoration-dotted">
+                                      {formatINR(item.pricePaise)}
+                                    </button>
+                                    {item.station ? <span> · {kitchens.find((k) => k.id === item.station)?.name ?? item.station}</span> : null} · GST {item.gstRate}%
+                                  </span>
+                                )}
                               </div>
-                            ) : (
-                              <span className="text-xs text-ink-3">
-                                <button onClick={() => { setPriceEditId(item.id); setPriceDraft((item.pricePaise / 100).toString()); }} className="underline decoration-dotted">
-                                  {formatINR(item.pricePaise)}
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  onClick={() => (editProductId === item.id ? setEditProductId(null) : startEditProduct(item))}
+                                  className="btn py-1 px-3 text-xs"
+                                  style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
+                                >
+                                  {editProductId === item.id ? 'Close' : 'Customize'}
                                 </button>
-                                {item.station ? <span> · {kitchens.find((k) => k.id === item.station)?.name ?? item.station}</span> : null} · GST {item.gstRate}%
-                              </span>
+                                <button
+                                  onClick={() => handleToggleMenuAvailability(item.id, !item.isAvailable)}
+                                  className={`btn py-1 px-3 text-xs ${item.isAvailable ? 'btn-primary' : 'btn-dark'}`}
+                                >
+                                  {item.isAvailable ? 'Available' : 'Sold Out'}
+                                </button>
+                              </div>
+                            </div>
+
+                            {editProductId === item.id && (
+                              <div className="grid gap-3 px-3 pb-3 pt-1 border-t" style={{ borderColor: 'var(--line-2)' }}>
+                                <div className="grid sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="lbl">Name</label>
+                                    <input value={editDraft.name} onChange={(e) => setEditDraft((p) => ({ ...p, name: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                                  </div>
+                                  <div>
+                                    <label className="lbl">Price (₹)</label>
+                                    <input value={editDraft.price} onChange={(e) => setEditDraft((p) => ({ ...p, price: e.target.value }))} type="number" step="0.01" min="0" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                                  </div>
+                                </div>
+                                <div className="grid sm:grid-cols-5 gap-3">
+                                  <div>
+                                    <label className="lbl">Category</label>
+                                    <select value={editDraft.categoryId} onChange={(e) => setEditDraft((p) => ({ ...p, categoryId: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
+                                      <option value="">— Uncategorised —</option>
+                                      {menuCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="lbl">HSN/SAC Code</label>
+                                    <input value={editDraft.hsnCode} onChange={(e) => setEditDraft((p) => ({ ...p, hsnCode: e.target.value }))} placeholder="e.g. 996331" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                                  </div>
+                                  <div>
+                                    <label className="lbl">GST rate (%)</label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      max="100"
+                                      disabled={editDraft.tags?.includes('tax_exempt') || editDraft.tags?.includes('zero_rated') || editDraft.tags?.includes('nil_rated')}
+                                      value={editDraft.gstRate}
+                                      onChange={(e) => setEditDraft((p) => ({ ...p, gstRate: e.target.value }))}
+                                      className="w-full p-2.5 rounded-xl border text-sm outline-none"
+                                      style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="lbl">Station</label>
+                                    <select value={editDraft.station} onChange={(e) => setEditDraft((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
+                                      {stationOptions(editDraft.station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="lbl">Availability</label>
+                                    <select value={editDraft.isAvailable ? 'true' : 'false'} onChange={(e) => setEditDraft((p) => ({ ...p, isAvailable: e.target.value === 'true' }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
+                                      <option value="true">Available</option>
+                                      <option value="false">Sold Out</option>
+                                    </select>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-4 items-center p-2 rounded-xl bg-paper-2 border" style={{ borderColor: 'var(--line-2)' }}>
+                                  <span className="text-xs font-bold text-ink-3">Exemptions:</span>
+                                  <label className="flex items-center gap-1.5 text-xs text-ink-2 select-none cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={editDraft.tags?.includes('tax_exempt') ?? false}
+                                      onChange={(e) => {
+                                        const updated = e.target.checked
+                                          ? [...(editDraft.tags ?? []).filter(t => t !== 'zero_rated' && t !== 'nil_rated'), 'tax_exempt']
+                                          : (editDraft.tags ?? []).filter(t => t !== 'tax_exempt');
+                                        setEditDraft((p) => ({ ...p, tags: updated, gstRate: e.target.checked ? '0' : p.gstRate }));
+                                      }}
+                                      className="rounded border-line-2 text-turmeric accent-turmeric"
+                                    />
+                                    Tax Exempt (0% GST)
+                                  </label>
+                                  <label className="flex items-center gap-1.5 text-xs text-ink-2 select-none cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={editDraft.tags?.includes('zero_rated') ?? false}
+                                      onChange={(e) => {
+                                        const updated = e.target.checked
+                                          ? [...(editDraft.tags ?? []).filter(t => t !== 'tax_exempt' && t !== 'nil_rated'), 'zero_rated']
+                                          : (editDraft.tags ?? []).filter(t => t !== 'zero_rated');
+                                        setEditDraft((p) => ({ ...p, tags: updated, gstRate: e.target.checked ? '0' : p.gstRate }));
+                                      }}
+                                      className="rounded border-line-2 text-turmeric accent-turmeric"
+                                    />
+                                    Zero Rated (0% GST)
+                                  </label>
+                                  <label className="flex items-center gap-1.5 text-xs text-ink-2 select-none cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={editDraft.tags?.includes('nil_rated') ?? false}
+                                      onChange={(e) => {
+                                        const updated = e.target.checked
+                                          ? [...(editDraft.tags ?? []).filter(t => t !== 'tax_exempt' && t !== 'zero_rated'), 'nil_rated']
+                                          : (editDraft.tags ?? []).filter(t => t !== 'nil_rated');
+                                        setEditDraft((p) => ({ ...p, tags: updated, gstRate: e.target.checked ? '0' : p.gstRate }));
+                                      }}
+                                      className="rounded border-line-2 text-turmeric accent-turmeric"
+                                    />
+                                    Nil Rated (0% GST)
+                                  </label>
+                                </div>
+                                <div>
+                                  <label className="lbl">Description</label>
+                                  <input value={editDraft.description} onChange={(e) => setEditDraft((p) => ({ ...p, description: e.target.value }))} placeholder="Short description" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
+                                </div>
+                                <div className="flex flex-wrap justify-between gap-2">
+                                  <button onClick={() => handleDeleteProduct(item.id, item.name)} className="btn py-2 px-3 text-sm" style={{ background: 'var(--paper-2)', border: '1px solid var(--clay)', color: 'var(--clay)' }}>Delete</button>
+                                  <div className="flex gap-2">
+                                    <button onClick={() => setEditProductId(null)} className="btn py-2 px-3 text-sm" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>Cancel</button>
+                                    <button onClick={() => handleUpdateProduct(item.id)} className="btn btn-primary py-2 px-4 text-sm">Save changes</button>
+                                  </div>
+                                </div>
+                              </div>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              onClick={() => (editProductId === item.id ? setEditProductId(null) : startEditProduct(item))}
-                              className="btn py-1 px-3 text-xs"
-                              style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
-                            >
-                              {editProductId === item.id ? 'Close' : 'Customize'}
-                            </button>
-                            <button
-                              onClick={() => handleToggleMenuAvailability(item.id, !item.isAvailable)}
-                              className={`btn py-1 px-3 text-xs ${item.isAvailable ? 'btn-primary' : 'btn-dark'}`}
-                            >
-                              {item.isAvailable ? 'Available' : 'Sold Out'}
-                            </button>
-                          </div>
-                        </div>
-
-                        {editProductId === item.id && (
-                          <div className="grid gap-3 px-3 pb-3 pt-1 border-t" style={{ borderColor: 'var(--line-2)' }}>
-                            <div className="grid sm:grid-cols-2 gap-3">
-                              <div>
-                                <label className="lbl">Name</label>
-                                <input value={editDraft.name} onChange={(e) => setEditDraft((p) => ({ ...p, name: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
-                              </div>
-                              <div>
-                                <label className="lbl">Price (₹)</label>
-                                <input value={editDraft.price} onChange={(e) => setEditDraft((p) => ({ ...p, price: e.target.value }))} type="number" step="0.01" min="0" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
-                              </div>
-                            </div>
-                            <div className="grid sm:grid-cols-3 gap-3">
-                              <div>
-                                <label className="lbl">Category</label>
-                                <select value={editDraft.categoryId} onChange={(e) => setEditDraft((p) => ({ ...p, categoryId: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
-                                  <option value="">— Uncategorised —</option>
-                                  {menuCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="lbl">GST rate</label>
-                                <select value={editDraft.gstRate} onChange={(e) => setEditDraft((p) => ({ ...p, gstRate: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
-                                  {GST_OPTIONS.map((g) => <option key={g} value={g}>{g}%</option>)}
-                                </select>
-                              </div>
-                              <div>
-                                <label className="lbl">Station</label>
-                                <select value={editDraft.station} onChange={(e) => setEditDraft((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
-                                  {stationOptions(editDraft.station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                </select>
-                              </div>
-                            </div>
-                            <div>
-                              <label className="lbl">Description</label>
-                              <input value={editDraft.description} onChange={(e) => setEditDraft((p) => ({ ...p, description: e.target.value }))} placeholder="Short description" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
-                            </div>
-                            <div className="flex flex-wrap justify-between gap-2">
-                              <button onClick={() => handleDeleteProduct(item.id, item.name)} className="btn py-2 px-3 text-sm" style={{ background: 'var(--paper-2)', border: '1px solid var(--clay)', color: 'var(--clay)' }}>Delete</button>
-                              <div className="flex gap-2">
-                                <button onClick={() => setEditProductId(null)} className="btn py-2 px-3 text-sm" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>Cancel</button>
-                                <button onClick={() => handleUpdateProduct(item.id)} className="btn btn-primary py-2 px-4 text-sm">Save changes</button>
-                              </div>
+                        ))}
                             </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-              );
-            })()}
-
-
-
-            {/* All other settings panels open inside one popup window */}
-            {activeMenu === 'settings' && settingsModalOpen && settingsPanel !== 'general' && (
-              <SettingsModal title={SETTINGS_TITLE[settingsPanel] ?? 'Settings'} icon={SETTINGS_ICON[settingsPanel]} onClose={closeSettings}>
-
-            {/* ── Tax & GST ── */}
-            {settingsPanel === 'tax' && (
-              <form onSubmit={handleSaveGst} className="card p-5 max-w-md flex flex-col gap-4">
-                <div>
-                  <h4 className="font-bold">Tax &amp; GST</h4>
-                  <p className="text-xs text-ink-3">Turn GST on only if your outlet is GST-registered. While off, every bill, KOT and receipt shows item prices and totals with no tax.</p>
-                </div>
-
-                {/* Enable GST */}
-                <Toggle label="Enable GST" desc={profile.gstEnabled ? 'Tax is calculated on bills' : 'Off — bills are tax-free'} on={profile.gstEnabled} onChange={(v) => setProfile((p) => ({ ...p, gstEnabled: v }))} />
-
-                {profile.gstEnabled && (
-                  <>
-                    {/* Tax type */}
-                    <div>
-                      <label className="lbl">Tax type</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {([
-                          { key: 'exclusive', title: 'Exclusive', sub: 'GST added on top of price' },
-                          { key: 'inclusive', title: 'Inclusive', sub: 'GST already in the price' },
-                        ] as const).map((o) => {
-                          const on = profile.gstType === o.key;
-                          return (
-                            <button type="button" key={o.key} onClick={() => setProfile((p) => ({ ...p, gstType: o.key }))}
-                              className="rounded-xl border p-3 text-left transition"
-                              style={on ? { background: 'var(--turmeric)', color: '#2A1607', borderColor: 'transparent' } : { background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
-                              <b className="block text-sm">{o.title}</b>
-                              <span className="block text-[11px]" style={{ color: on ? '#5a3a14' : 'var(--ink-3)' }}>{o.sub}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* GST percentage */}
-                    <div>
-                      <label className="lbl">GST percentage</label>
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {['', '0', '5', '12', '18', '28'].map((r) => {
-                          const on = profile.gstRate === r;
-                          return (
-                            <button type="button" key={r || 'per-item'} onClick={() => setProfile((p) => ({ ...p, gstRate: r }))}
-                              className="px-3 py-2 rounded-xl border text-sm font-semibold transition"
-                              style={on ? { background: 'var(--turmeric)', color: '#2A1607', borderColor: 'transparent' } : { background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
-                              {r === '' ? 'Per-item' : `${r}%`}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <input
-                        value={profile.gstRate}
-                        onChange={(e) => setProfile((p) => ({ ...p, gstRate: e.target.value.replace(/[^0-9.]/g, '') }))}
-                        inputMode="decimal"
-                        placeholder="Custom rate %, or leave blank for per-item"
-                        className="inp"
-                      />
-                      <span className="block text-[11px] mt-1" style={{ color: 'var(--ink-3)' }}>
-                        <b>Per-item</b> keeps each menu item’s own GST rate (set 0% on an item to make it tax-free). A flat rate overrides every item.
-                      </span>
-                    </div>
-
-                    <div className="rounded-xl border p-3 text-[11px]" style={{ borderColor: 'var(--line)', background: 'var(--paper-3)', color: 'var(--ink-3)' }}>
-                      Intra-state bills split into CGST + SGST automatically; inter-state orders use IGST. Multi-slab and country-specific tax stay supported.
-                    </div>
-                  </>
-                )}
-
-                <button type="submit" disabled={gstSaving} className="btn btn-primary w-fit disabled:opacity-50">{gstSaving ? 'Saving…' : 'Save GST settings'}</button>
-              </form>
-            )}
-
-            {/* ── Kitchen Workflow ── */}
-            {settingsPanel === 'kitchen' && (
-              <form onSubmit={handleSaveKitchenWorkflow} className="flex flex-col gap-4 max-w-2xl">
-                <section className="card p-5 flex flex-col gap-4">
-                  <div>
-                    <h4 className="font-bold">Kitchen Workflow</h4>
-                    <p className="text-xs text-ink-3">Choose how your kitchen receives orders. A single-chef tea shop can print paper tickets and never touch a screen; a busy kitchen can run the live display — or do both.</p>
-                  </div>
-
-                  <Toggle
-                    label="Enable Kitchen Display System"
-                    desc="A live digital screen for chefs to receive and bump orders. Turn off to run a paper-ticket-only kitchen."
-                    on={kwForm.kdsEnabled}
-                    onChange={(v) => setKw('kdsEnabled', v)}
-                  />
-
-                  <div>
-                    <label className="lbl">Workflow mode</label>
-                    <div className="grid sm:grid-cols-3 gap-2">
-                      {([
-                        { key: 'digital', label: 'Digital KDS', desc: 'Only the kitchen display is used.' },
-                        { key: 'printed', label: 'Printed KOT', desc: 'Auto-print paper tickets. No screen needed.' },
-                        { key: 'hybrid', label: 'Hybrid', desc: 'Show on the display and print — a backup for both.' },
-                      ] as { key: KitchenWorkflowConfig['mode']; label: string; desc: string }[]).map((m) => {
-                        const on = kwForm.mode === m.key;
-                        return (
-                          <button
-                            type="button"
-                            key={m.key}
-                            onClick={() => setKw('mode', m.key)}
-                            aria-pressed={on}
-                            className="text-left rounded-2xl border p-3 transition cursor-pointer hover:shadow-sm"
-                            style={on ? { background: 'var(--turmeric)', color: '#2A1607', borderColor: 'transparent' } : { background: 'var(--paper-2)', borderColor: 'var(--line)' }}
-                          >
-                            <b className="block text-sm">{m.label}</b>
-                            <span className="text-xs block mt-0.5" style={{ color: on ? '#5a3a14' : 'var(--ink-3)' }}>{m.desc}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </section>
-
-                {/* Printed KOT — only relevant when tickets print */}
-                {kwForm.mode !== 'digital' && (
-                  <section className="card p-5 flex flex-col gap-4">
-                    <div>
-                      <h4 className="font-bold">Printed KOT</h4>
-                      <p className="text-xs text-ink-3">Kitchen tickets print from the POS when an order is sent to the kitchen. Register the KOT printer under <b>Devices &amp; Printers</b>.</p>
-                    </div>
-                    <Toggle label="Auto-print KOT" desc="Print the kitchen ticket automatically after send-to-KOT / billing." on={kwForm.autoPrintKot} onChange={(v) => setKw('autoPrintKot', v)} />
-                    <div className="sm:max-w-[200px]">
-                      <label className="lbl">Copies</label>
-                      <select value={kwForm.kotCopies} onChange={(e) => setKw('kotCopies', Number(e.target.value))} className="inp">
-                        {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
-                      </select>
-                    </div>
-                  </section>
-                )}
-
-                {/* KDS display options — only when the screen is enabled */}
-                {kwForm.kdsEnabled && (
-                  <section className="card p-5 flex flex-col gap-4">
-                    <div>
-                      <h4 className="font-bold">Kitchen Display options</h4>
-                      <p className="text-xs text-ink-3">How the live screen looks and behaves. Changes apply the next time the display loads.</p>
-                    </div>
-
-                    <Toggle label="Auto-accept orders" desc="Skip the on-screen “accept” tap — new tickets show as Preparing at once." on={kwForm.autoAcceptOrders} onChange={(v) => setKw('autoAcceptOrders', v)} />
-                    <Toggle label="Sound notification" desc="Play a chime when a new order lands." on={kwForm.soundNotification} onChange={(v) => setKw('soundNotification', v)} />
-
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="lbl">Auto-clear completed orders</label>
-                        <select value={kwForm.autoClearSec} onChange={(e) => setKw('autoClearSec', Number(e.target.value))} className="inp">
-                          {AUTO_CLEAR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="lbl">Order sorting</label>
-                        <select value={kwForm.sorting} onChange={(e) => setKw('sorting', e.target.value as KitchenWorkflowConfig['sorting'])} className="inp">
-                          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </div>
-                    </div>
-
-                    <Toggle label="Highlight delayed orders" desc="Flag tickets that have been waiting too long." on={kwForm.highlightDelayed} onChange={(v) => setKw('highlightDelayed', v)} />
-                    {kwForm.highlightDelayed && (
-                      <div className="sm:max-w-[200px]">
-                        <label className="lbl">Delay threshold</label>
-                        <select value={kwForm.delayThresholdMin} onChange={(e) => setKw('delayThresholdMin', Number(e.target.value))} className="inp">
-                          {DELAY_THRESHOLD_OPTIONS.map((m) => <option key={m} value={m}>{m} min</option>)}
-                        </select>
+                        ))}
                       </div>
                     )}
-
-                    <div>
-                      <label className="lbl">Show on each ticket</label>
-                      <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2 mt-1">
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input type="checkbox" checked={kwForm.showCustomerName} onChange={(e) => setKw('showCustomerName', e.target.checked)} /> Customer name
-                        </label>
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input type="checkbox" checked={kwForm.showTableNumber} onChange={(e) => setKw('showTableNumber', e.target.checked)} /> Table number
-                        </label>
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input type="checkbox" checked={kwForm.showNotes} onChange={(e) => setKw('showNotes', e.target.checked)} /> Kitchen notes
-                        </label>
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
-                          <input type="checkbox" checked={kwForm.showPrepTime} onChange={(e) => setKw('showPrepTime', e.target.checked)} /> Preparation timer
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="lbl">Display theme</label>
-                        <select value={kwForm.theme} onChange={(e) => setKw('theme', e.target.value as KitchenWorkflowConfig['theme'])} className="inp">
-                          {THEME_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="lbl">Font size</label>
-                        <select value={kwForm.fontSize} onChange={(e) => setKw('fontSize', e.target.value as KitchenWorkflowConfig['fontSize'])} className="inp">
-                          {FONT_SIZE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </div>
-                    </div>
                   </section>
-                )}
-
-                <button type="submit" disabled={kwSaving} className="btn btn-primary w-fit disabled:opacity-50">{kwSaving ? 'Saving…' : 'Save kitchen workflow'}</button>
-              </form>
-            )}
-
-            {/* ── Location Gate (owner only) ── */}
-            {settingsPanel === 'location' && (
-              <form onSubmit={handleSaveLocation} className="card p-5 max-w-md flex flex-col gap-4">
-                <div>
-                  <h4 className="font-bold">Location Gate</h4>
-                  <p className="text-xs text-ink-3">Require people to be physically at the cafe. Stops customers ordering when they’re not here, and stops staff clocking in from off-site. You (the owner) are never blocked.</p>
-                </div>
-
-                <Toggle label="Require on-site presence" desc={location.enabled ? 'Gate is ON for everyone except you' : 'Off — no location check'} on={location.enabled} onChange={(v) => setLocation((p) => ({ ...p, enabled: v }))} />
-
-                {location.enabled && (
-                  <>
-                    {/* Cafe pin */}
-                    <div className="flex flex-col gap-2">
-                      <label className="lbl">Cafe location</label>
-                      <button type="button" onClick={useMyLocation} disabled={geoBusy} className="btn btn-sm w-fit inline-flex items-center gap-1.5" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
-                        <MapPin size={14} aria-hidden /> {geoBusy ? 'Getting location…' : 'Use my current location'}
-                      </button>
-                      <span className="text-[11px]" style={{ color: 'var(--ink-3)' }}>Stand at the cafe and tap this, or enter coordinates manually.</span>
-                      <div className="grid grid-cols-2 gap-3">
-                        <Field label="Latitude"><input value={location.lat} onChange={(e) => setLocation((p) => ({ ...p, lat: e.target.value.replace(/[^0-9.\-]/g, '') }))} inputMode="decimal" placeholder="e.g. 12.9716" className="inp" /></Field>
-                        <Field label="Longitude"><input value={location.lng} onChange={(e) => setLocation((p) => ({ ...p, lng: e.target.value.replace(/[^0-9.\-]/g, '') }))} inputMode="decimal" placeholder="e.g. 77.5946" className="inp" /></Field>
-                      </div>
-                      {(!location.lat || !location.lng) && (
-                        <span className="text-[11px]" style={{ color: 'var(--turmeric)' }}>Set a location — the gate stays inactive until the cafe is pinned.</span>
-                      )}
-                    </div>
-
-                    {/* Radius */}
-                    <div>
-                      <label className="lbl">Allowed radius</label>
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {['50', '100', '200', '500'].map((r) => {
-                          const on = location.radiusM === r;
-                          return (
-                            <button type="button" key={r} onClick={() => setLocation((p) => ({ ...p, radiusM: r }))}
-                              className="px-3 py-2 rounded-xl border text-sm font-semibold transition"
-                              style={on ? { background: 'var(--turmeric)', color: '#2A1607', borderColor: 'transparent' } : { background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
-                              {r} m
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <input value={location.radiusM} onChange={(e) => setLocation((p) => ({ ...p, radiusM: e.target.value.replace(/[^0-9]/g, '') }))} inputMode="numeric" placeholder="Radius in metres" className="inp" />
-                      <span className="block text-[11px] mt-1" style={{ color: 'var(--ink-3)' }}>How far from the pin still counts as “at the cafe”. Between 10 and 5000 m.</span>
-                    </div>
-
-                    {/* Which actions */}
-                    <div className="flex flex-col gap-2">
-                      <label className="lbl">Apply the gate to</label>
-                      <Toggle label="Customer QR ordering" desc="Customers must be at the cafe to order" on={location.gateQrOrders} onChange={(v) => setLocation((p) => ({ ...p, gateQrOrders: v }))} />
-                      <Toggle label="Staff POS orders" desc="POS orders only from on-site staff" on={location.gatePosOrders} onChange={(v) => setLocation((p) => ({ ...p, gatePosOrders: v }))} />
-                      <Toggle label="Staff attendance" desc="Clock-in only from the cafe" on={location.gateAttendance} onChange={(v) => setLocation((p) => ({ ...p, gateAttendance: v }))} />
-                    </div>
-
-                    <div className="rounded-xl border p-3 text-[11px]" style={{ borderColor: 'var(--line)', background: 'var(--paper-3)', color: 'var(--ink-3)' }}>
-                      Orders are lenient — a customer or POS is only blocked when GPS confirms they’re too far. Attendance is strict — staff must share location to clock in. You (the owner) are always exempt.
-                    </div>
-                  </>
-                )}
-
-                <button type="submit" disabled={locationSaving} className="btn btn-primary w-fit disabled:opacity-50">{locationSaving ? 'Saving…' : 'Save location settings'}</button>
-              </form>
-            )}
-
-            {/* ── Floor & QR ── */}
-            {settingsPanel === 'floor' && (
-              <div className="flex flex-col gap-4">
-                <section className="card p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h4 className="font-bold">Floor &amp; QR codes</h4>
-                      <p className="text-xs text-ink-3 max-w-md">Add the tables in your café and print a QR for each. Guests scan it to open the menu and order from their phone — orders land in the approval queue for a waiter to confirm.</p>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0 text-right">
-                      <div>
-                        <b className="block text-lg font-mono leading-none">{floorTables.length}</b>
-                        <span className="text-[11px] text-ink-3">tables</span>
-                      </div>
-                      <div>
-                        <b className="block text-lg font-mono leading-none" style={{ color: 'var(--cardamom-d)' }}>{floorTables.filter((t) => t.activeOrders > 0).length}</b>
-                        <span className="text-[11px] text-ink-3">occupied</span>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                {/* floors / areas */}
-                <section className="card p-5">
-                  <h4 className="font-bold mb-1">Floors &amp; areas</h4>
-                  <p className="text-xs text-ink-3 mb-3">Group tables into areas like Ground Floor, Rooftop or AC Hall. Optional — tables without a floor show under “Unassigned”.</p>
-                  <form onSubmit={handleAddFloor} className="flex flex-wrap items-end gap-2 mb-3">
-                    <div className="flex-1 min-w-[160px]">
-                      <label className="lbl">New floor / area</label>
-                      <input value={newFloorName} onChange={(e) => setNewFloorName(e.target.value)} placeholder="e.g. Rooftop" className="inp" />
-                    </div>
-                    <button type="submit" disabled={floorBusy} className="btn btn-primary py-2.5 px-4 text-sm disabled:opacity-50">+ Add floor</button>
-                  </form>
-                  {floors.length === 0 ? (
-                    <p className="text-xs text-ink-3">No floors yet — that’s fine for a single-area café.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {floors.map((f) => {
-                        const n = floorTables.filter((t) => t.floorId === f.id).length;
-                        return editFloorId === f.id ? (
-                          <span key={f.id} className="flex items-center gap-1 rounded-xl border px-2 py-1.5" style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
-                            <input value={editFloorName} onChange={(e) => setEditFloorName(e.target.value)} className="w-28 p-1 rounded-lg border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} autoFocus />
-                            <button onClick={() => handleRenameFloor(f.id)} disabled={floorBusy} className="btn btn-primary py-1 px-2 text-xs disabled:opacity-50">Save</button>
-                            <button onClick={() => setEditFloorId(null)} className="btn py-1 px-2 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>✕</button>
-                          </span>
-                        ) : (
-                          <span key={f.id} className="flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm" style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
-                            <b>{f.name}</b>
-                            <span className="text-[11px] text-ink-3">{n} table{n === 1 ? '' : 's'}</span>
-                            <button onClick={() => { setEditFloorId(f.id); setEditFloorName(f.name); }} className="text-xs text-ink-3 hover:text-ink" title="Rename" aria-label={`Rename ${f.name}`}>✎</button>
-                            <button onClick={() => handleDeleteFloor(f)} className="text-xs" style={{ color: 'var(--clay)' }} title="Delete" aria-label={`Delete ${f.name}`}>🗑</button>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-
-                {/* add a table + bulk */}
-                <section className="card p-5">
-                  <form onSubmit={handleAddTable} className="flex flex-wrap items-end gap-3">
-                    <div className="flex-1 min-w-[140px]">
-                      <label className="lbl">Table name</label>
-                      <input value={tableForm.label} onChange={(e) => setTableForm((p) => ({ ...p, label: e.target.value }))} placeholder="e.g. T7 or Patio 2" className="inp" />
-                    </div>
-                    <div className="w-24">
-                      <label className="lbl">Seats</label>
-                      <input type="number" min={1} max={50} value={tableForm.seats} onChange={(e) => setTableForm((p) => ({ ...p, seats: e.target.value }))} className="inp" />
-                    </div>
-                    {floors.length > 0 && (
-                      <div className="w-36">
-                        <label className="lbl">Floor</label>
-                        <select value={tableForm.floorId} onChange={(e) => setTableForm((p) => ({ ...p, floorId: e.target.value }))} className="inp">
-                          <option value="">Unassigned</option>
-                          {floors.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                        </select>
-                      </div>
-                    )}
-                    <button type="submit" disabled={floorBusy} className="btn btn-primary py-2.5 px-4 text-sm disabled:opacity-50">+ Add table</button>
-                    <button type="button" onClick={() => setShowBulk((v) => !v)} className="btn py-2.5 px-3 text-sm" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>{showBulk ? 'Close bulk' : 'Bulk add'}</button>
-                  </form>
-
-                  {showBulk && (
-                    <form onSubmit={handleBulkAdd} className="mt-4 pt-4 border-t flex flex-wrap items-end gap-3" style={{ borderColor: 'var(--line)' }}>
-                      <div className="w-28">
-                        <label className="lbl">How many</label>
-                        <input type="number" min={1} max={50} value={bulkForm.count} onChange={(e) => setBulkForm((p) => ({ ...p, count: e.target.value }))} className="inp" />
-                      </div>
-                      <div className="w-28">
-                        <label className="lbl">Name prefix</label>
-                        <input value={bulkForm.prefix} onChange={(e) => setBulkForm((p) => ({ ...p, prefix: e.target.value }))} placeholder="T" className="inp" />
-                      </div>
-                      <div className="w-24">
-                        <label className="lbl">Seats</label>
-                        <input type="number" min={1} max={50} value={bulkForm.seats} onChange={(e) => setBulkForm((p) => ({ ...p, seats: e.target.value }))} className="inp" />
-                      </div>
-                      {floors.length > 0 && (
-                        <div className="w-36">
-                          <label className="lbl">Floor</label>
-                          <select value={bulkForm.floorId} onChange={(e) => setBulkForm((p) => ({ ...p, floorId: e.target.value }))} className="inp">
-                            <option value="">Unassigned</option>
-                            {floors.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                          </select>
+                  );
+                })() : (() => {
+                  const q = menuSearch.trim().toLowerCase();
+                  const filtered = menuItems.filter((m) => {
+                    if (q && !m.name.toLowerCase().includes(q)) return false;
+                    if (menuCatFilter === 'all') return true;
+                    if (menuCatFilter === 'none') return !m.categoryId;
+                    return m.categoryId === menuCatFilter;
+                  });
+                  const hasUncategorised = menuItems.some((m) => !m.categoryId);
+                  return (
+                    <section className="card p-5">
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div>
+                          <h4 className="font-bold">⚡ Availability & Daily Limits</h4>
+                          <p className="text-xs text-ink-3 mt-1">Set items as Sold Out or configure a daily quantity limit (e.g. 15 remaining today).</p>
                         </div>
-                      )}
-                      <button type="submit" disabled={floorBusy} className="btn btn-primary py-2.5 px-4 text-sm disabled:opacity-50">Create tables</button>
-                      <span className="text-[11px] text-ink-3 self-center">Numbers continue after your highest existing one.</span>
-                    </form>
-                  )}
-                </section>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--ink-3)' }}>🔍</span>
+                          <input
+                            value={menuSearch}
+                            onChange={(e) => setMenuSearch(e.target.value)}
+                            placeholder="Search items…"
+                            className="pl-8 pr-3 py-2 rounded-xl border text-sm outline-none w-44"
+                            style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}
+                          />
+                        </div>
+                      </div>
 
-                {/* table grid — grouped by floor */}
-                <section className="card p-5">
-                  <h4 className="font-bold mb-3">Tables {floorTables.length > 0 && <span className="text-xs text-ink-3">({floorTables.length})</span>}</h4>
-                  {floorTables.length === 0 ? (
-                    <div className="text-sm text-ink-3 p-6 rounded-xl text-center" style={{ background: 'var(--paper-3)' }}>
-                      No tables yet. Add your first table above to start printing QR codes.
-                    </div>
-                  ) : floors.length === 0 ? (
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {floorTables.map(renderTableCard)}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-5">
-                      {[...floors, { id: '', name: 'Unassigned', sort: 999 }].map((f) => {
-                        const group = floorTables.filter((t) => (t.floorId ?? '') === f.id);
-                        if (group.length === 0) return null;
-                        return (
-                          <div key={f.id || 'unassigned'}>
-                            <div className="flex items-center gap-2 mb-2">
-                              <h5 className="font-bold text-sm">{f.name}</h5>
-                              <span className="text-[11px] text-ink-3">{group.length} table{group.length === 1 ? '' : 's'}</span>
-                            </div>
-                            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                              {group.map(renderTableCard)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              </div>
-            )}
-
-            {/* ── PWA Settings (customer app) ── */}
-            {settingsPanel === 'pwa' && (
-              <div className="flex flex-col gap-4">
-                <section className="card p-5">
-                  <h4 className="font-bold">PWA Settings</h4>
-                  <p className="text-xs text-ink-3">Configure the customer scan-to-order app: home content, games, wallet and loyalty. Changes are live for new customer sessions; nothing here affects the POS or KDS.</p>
-                </section>
-
-                <div className="grid gap-4 lg:grid-cols-[220px_1fr] items-start">
-                  {/* grouped sub-nav */}
-                  <nav className="flex flex-col gap-3 lg:sticky lg:top-4">
-                    {PWA_NAV.map((grp) => (
-                      <div key={grp.group}>
-                        <p className="text-[11px] font-bold uppercase tracking-wide mb-1.5 px-1" style={{ color: 'var(--ink-3)' }}>{grp.group}</p>
-                        <div className="flex flex-wrap lg:flex-col gap-1.5">
-                          {grp.items.map(([key, label]) => {
-                            const on = pwaTab === key;
+                      {/* category filter chips */}
+                      {menuCategories.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {[{ id: 'all', name: 'All' }, ...menuCategories, ...(hasUncategorised ? [{ id: 'none', name: 'Uncategorised' }] : [])].map((c) => {
+                            const active = menuCatFilter === c.id;
                             return (
-                              <button key={key} onClick={() => setPwaTab(key as typeof pwaTab)} className="px-3 py-2 rounded-xl text-sm font-semibold text-left border transition"
-                                style={on ? { background: 'var(--turmeric)', color: '#2A1607', borderColor: 'transparent' } : { background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
-                                {label}
+                              <button
+                                key={c.id}
+                                onClick={() => setMenuCatFilter(c.id)}
+                                className="px-3 py-1.5 rounded-full text-xs font-bold transition"
+                                style={active
+                                  ? { background: 'var(--turmeric)', color: '#2A1607' }
+                                  : { background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line-2)' }}
+                              >
+                                {c.name}
                               </button>
                             );
                           })}
                         </div>
-                      </div>
-                    ))}
-                  </nav>
+                      )}
 
-                  {/* content pane */}
-                  <div className="min-w-0 flex flex-col gap-4">
-                  {!pwaCfg ? (
-                    <section className="card p-5"><p className="text-sm text-ink-3">Loading…</p></section>
-                  ) : (
-                  <>
-                    {/* FEATURED DISHES */}
-                    {pwaTab === 'featured' && (
-                      <SettingsSection title="Featured Dishes" desc="Pick dishes to spotlight on the app home with a label and priority.">
-                        <PwaFeaturedForm items={pwaItems} busy={pwaBusy} uploadImage={uploadImage} onAdd={(dish) => pwaSave({ action: 'featured_save', dish }, 'Featured dish saved')} />
-                        {pwaCfg.featured.length === 0 ? (
-                          <p className="text-sm text-ink-3 p-4 rounded-xl text-center" style={{ background: 'var(--paper-3)' }}>No featured dishes yet.</p>
-                        ) : (
-                          <div className="grid gap-2">
-                            {pwaCfg.featured.map((f) => {
-                              const it = pwaItems.find((x) => x.id === f.itemId);
-                              const img = f.imageUrl || it?.imageUrl;
-                              return (
-                                <div key={f.itemId} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                                  {img ? <img src={img} alt="" width={44} height={44} className="rounded-lg object-cover" style={{ width: 44, height: 44 }} /> : <span className="w-11 h-11 rounded-lg grid place-items-center text-lg" style={{ background: 'var(--paper-2)' }}>🍽️</span>}
-                                  <div className="min-w-0 flex-1">
-                                    <b className="text-sm block truncate">{it?.name ?? 'Unknown item'}</b>
-                                    <span className="text-xs text-ink-3">{FEATURED_LABELS.find((l) => l.value === f.label)?.label ?? 'No label'} · priority {f.priority}</span>
-                                  </div>
-                                  <button onClick={() => pwaSave({ action: 'featured_delete', itemId: f.itemId }, 'Removed')} className="btn btn-danger btn-sm">Remove</button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </SettingsSection>
-                    )}
-
-                    {/* PROMOTIONAL BANNERS */}
-                    {pwaTab === 'banners' && (
-                      <SettingsSection title="Promotional Banners" desc="Auto-sliding carousel on the app home. Upload a poster, set an optional schedule and order.">
-                        <PwaBannerForm busy={pwaBusy} uploadImage={uploadImage} onAdd={(banner) => pwaSave({ action: 'banner_save', banner }, 'Banner saved')} />
-                        {pwaCfg.banners.length === 0 ? (
-                          <p className="text-sm text-ink-3 p-4 rounded-xl text-center" style={{ background: 'var(--paper-3)' }}>No banners yet.</p>
-                        ) : (
-                          <div className="grid gap-2">
-                            {pwaCfg.banners.map((b) => (
-                              <div key={b.id} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                                <img src={b.imageUrl} alt="" className="rounded-lg object-cover" style={{ width: 64, height: 40 }} />
-                                <div className="min-w-0 flex-1">
-                                  <b className="text-sm block truncate">{b.title || '(untitled)'}</b>
-                                  <span className="text-xs text-ink-3">order {b.order}{b.startAt ? ` · from ${b.startAt}` : ''}{b.endAt ? ` · to ${b.endAt}` : ''}</span>
-                                </div>
-                                <button onClick={() => pwaSave({ action: 'banner_delete', id: b.id }, 'Removed')} className="btn btn-danger btn-sm">Remove</button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </SettingsSection>
-                    )}
-
-                    {/* HOME LAYOUT */}
-                    {pwaTab === 'home' && (
-                      <SettingsSection title="Home Layout" desc="Tap to show/hide sections; click order sets the display order." className="max-w-md"
-                        footer={<SaveButton busy={pwaBusy} onClick={() => pwaSave({ action: 'home_save', sections: pwaCfg.home.sections }, 'Home layout saved')}>Save layout</SaveButton>}>
-                        {(['banners', 'featured', 'track', 'loyalty'] as const).map((s) => {
-                          const idx = pwaCfg.home.sections.indexOf(s);
-                          const on = idx >= 0;
-                          const label = { banners: 'Promo banners', featured: 'Featured dishes', track: 'Order tracking', loyalty: 'Loyalty snapshot' }[s];
-                          return (
-                            <button key={s} onClick={() => setCfg((c) => ({ ...c, home: { sections: on ? c.home.sections.filter((x) => x !== s) : [...c.home.sections, s] } }))}
-                              className="flex items-center justify-between p-3 rounded-xl border text-left" style={{ borderColor: 'var(--line)', background: on ? 'var(--paper-2)' : 'var(--paper-3)' }}>
-                              <span className="text-sm font-semibold">{label}</span>
-                              <span className="text-xs" style={{ color: on ? 'var(--cardamom-d)' : 'var(--ink-3)' }}>{on ? `● shown · #${idx + 1}` : '○ hidden'}</span>
-                            </button>
-                          );
-                        })}
-                      </SettingsSection>
-                    )}
-
-                    {/* GAMES */}
-                    {pwaTab === 'gamification' && (
-                      <SettingsSection title="Games" desc="Enable games, gate them by order value, cap plays and set availability hours (IST)."
-                        footer={<SaveButton busy={pwaBusy} onClick={() => pwaSave({ action: 'gamification_save', ...pwaCfg.gamification }, 'Games saved')}>Save games</SaveButton>}>
-                        <Toggle label="Games enabled" desc="Master switch for all in-app games." on={pwaCfg.gamification.enabledGlobal} onChange={(v) => setCfg((c) => ({ ...c, gamification: { ...c.gamification, enabledGlobal: v } }))} />
-                        <div className="grid sm:grid-cols-2 gap-3 max-w-md">
-                          <Field label="Max games / day" hint="0 = unlimited"><input type="number" min={0} value={pwaCfg.gamification.maxGamesPerDay} onChange={(e) => setCfg((c) => ({ ...c, gamification: { ...c.gamification, maxGamesPerDay: Number(e.target.value) || 0 } }))} className="inp" /></Field>
-                          <Field label="Spin points multiplier"><input type="number" min={0} step={0.1} value={pwaCfg.gamification.spin.pointsMultiplier} onChange={(e) => setCfg((c) => ({ ...c, gamification: { ...c.gamification, spin: { ...c.gamification.spin, pointsMultiplier: Number(e.target.value) || 0 } } }))} className="inp" /></Field>
-                          <Field label="Available from (IST hour)" hint="blank = always"><input type="number" min={0} max={23} value={pwaCfg.gamification.availability?.startHour ?? ''} onChange={(e) => setCfg((c) => ({ ...c, gamification: { ...c.gamification, availability: e.target.value === '' ? null : { startHour: Number(e.target.value) || 0, endHour: c.gamification.availability?.endHour ?? 23 } } }))} className="inp" /></Field>
-                          <Field label="Available to (IST hour)"><input type="number" min={0} max={23} value={pwaCfg.gamification.availability?.endHour ?? ''} onChange={(e) => setCfg((c) => ({ ...c, gamification: { ...c.gamification, availability: c.gamification.availability ? { ...c.gamification.availability, endHour: Number(e.target.value) || 0 } : { startHour: 0, endHour: Number(e.target.value) || 0 } } }))} className="inp" /></Field>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <b className="text-sm">Per-game controls</b>
-                          <div className="hidden sm:grid grid-cols-[1fr_56px_130px_90px] gap-2 px-2.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--ink-3)' }}>
-                            <span>Game</span><span>On</span><span>Min order ₹</span><span>× points</span>
-                          </div>
-                          {DEFAULT_GAME_KEYS.map((key) => {
-                            const g = pwaCfg.gamification.games.find((x) => x.key === key) ?? { key, enabled: true, minOrderPaise: 0, pointsMultiplier: 1 };
-                            const upd = (patch: Partial<typeof g>) => setCfg((c) => ({ ...c, gamification: { ...c.gamification, games: c.gamification.games.some((x) => x.key === key) ? c.gamification.games.map((x) => (x.key === key ? { ...x, ...patch } : x)) : [...c.gamification.games, { ...g, ...patch }] } }));
+                      {filtered.length === 0 ? (
+                        <p className="text-sm text-ink-3">{menuSearch ? `No items match “${menuSearch}”.` : 'No items in this category.'}</p>
+                      ) : (
+                        <div className="grid gap-2.5">
+                          {filtered.map((item) => {
+                            const limitTag = item.tags?.find((t: string) => t.startsWith('limit:'));
+                            const limitVal = limitTag ? limitTag.split(':')[1] : '';
                             return (
-                              <div key={key} className="grid grid-cols-1 sm:grid-cols-[1fr_56px_130px_90px] sm:items-center gap-2 p-2.5 rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                                <b className="text-sm capitalize">{key.replace(/_/g, ' ')}</b>
-                                <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={g.enabled} onChange={(e) => upd({ enabled: e.target.checked })} /><span className="sm:hidden">Enabled</span></label>
-                                <label className="flex items-center gap-2 text-xs"><span className="sm:hidden whitespace-nowrap">Min ₹</span><input type="number" min={0} value={Math.round(g.minOrderPaise / 100)} onChange={(e) => upd({ minOrderPaise: (Number(e.target.value) || 0) * 100 })} className="inp" style={{ minHeight: 38 }} /></label>
-                                <label className="flex items-center gap-2 text-xs"><span className="sm:hidden whitespace-nowrap">× pts</span><input type="number" min={0} step={0.1} value={g.pointsMultiplier} onChange={(e) => upd({ pointsMultiplier: Number(e.target.value) || 0 })} className="inp" style={{ minHeight: 38 }} /></label>
+                              <div key={item.id} className="p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3 text-sm" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
+                                <div className="min-w-0">
+                                  <b className="block truncate">{item.name}</b>
+                                  <span className="text-xs text-ink-3">
+                                    {item.categoryId ? menuCategories.find(c => c.id === item.categoryId)?.name : 'Uncategorised'} · {formatINR(item.pricePaise)}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3">
+                                  {/* availability toggle */}
+                                  <button
+                                    onClick={() => handleToggleMenuAvailability(item.id, !item.isAvailable)}
+                                    className={`btn py-1 px-3 text-xs ${item.isAvailable ? 'btn-success' : 'btn-dark'}`}
+                                    style={{ minHeight: '36px' }}
+                                  >
+                                    {item.isAvailable ? '🟢 Available' : '🔴 Sold Out'}
+                                  </button>
+
+                                  {/* quantity limit (only if Available) */}
+                                  {item.isAvailable && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-bold text-ink-3">Daily Limit:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="No limit"
+                                        defaultValue={limitVal}
+                                        onBlur={(e) => {
+                                          const val = e.target.value.trim();
+                                          const newLimit = val === '' ? null : parseInt(val);
+                                          handleSaveItemLimit(item, newLimit);
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            const val = (e.target as HTMLInputElement).value.trim();
+                                            const newLimit = val === '' ? null : parseInt(val);
+                                            handleSaveItemLimit(item, newLimit);
+                                          }
+                                        }}
+                                        className="w-20 px-2 py-1 rounded-lg border text-xs text-center font-mono outline-none"
+                                        style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
                         </div>
-                      </SettingsSection>
-                    )}
-
-                    {/* REWARD POINTS */}
-                    {pwaTab === 'points' && (
-                      <SettingsSection title="Reward Points" desc="How fast customers earn points from spend (applied at order settlement)." className="max-w-md"
-                        footer={<SaveButton busy={pwaBusy} onClick={() => pwaSave({ action: 'points_save', earnRatePaisePerPoint: pwaCfg.points.earnRatePaisePerPoint }, 'Points rate saved')} />}>
-                        <Field label="₹ spent to earn 1 point" hint="e.g. 10 = 1 point per ₹10 spent (the current default).">
-                          <input type="number" min={1} value={Math.round(pwaCfg.points.earnRatePaisePerPoint / 100)} onChange={(e) => setCfg((c) => ({ ...c, points: { earnRatePaisePerPoint: Math.max(1, Number(e.target.value) || 1) * 100 } }))} className="inp" />
-                        </Field>
-                      </SettingsSection>
-                    )}
-
-                    {/* WALLET */}
-                    {pwaTab === 'wallet' && (
-                      <SettingsSection title="Wallet Conversion" desc="Let customers spend points as a ₹ discount at checkout." className="max-w-md"
-                        footer={<SaveButton busy={pwaBusy} onClick={() => pwaSave({ action: 'wallet_save', ...pwaCfg.wallet }, 'Wallet saved')}>Save wallet</SaveButton>}>
-                        <Toggle label="Wallet redemption" desc={pwaCfg.wallet.enabled ? 'Customers can apply points as a discount.' : 'Off — points can’t be redeemed at checkout.'} on={pwaCfg.wallet.enabled} onChange={(v) => setCfg((c) => ({ ...c, wallet: { ...c.wallet, enabled: v } }))} />
-                        <Field label="Points per ₹1 of discount"><input type="number" min={1} value={pwaCfg.wallet.pointsPerRupee} onChange={(e) => setCfg((c) => ({ ...c, wallet: { ...c.wallet, pointsPerRupee: Math.max(1, Number(e.target.value) || 1) } }))} className="inp" /></Field>
-                        <Field label="Max discount (% of bill)"><input type="number" min={0} max={100} value={pwaCfg.wallet.maxRedeemPctOfBill} onChange={(e) => setCfg((c) => ({ ...c, wallet: { ...c.wallet, maxRedeemPctOfBill: Number(e.target.value) || 0 } }))} className="inp" /></Field>
-                        <Field label="Min points to redeem"><input type="number" min={0} value={pwaCfg.wallet.minPointsToRedeem} onChange={(e) => setCfg((c) => ({ ...c, wallet: { ...c.wallet, minPointsToRedeem: Number(e.target.value) || 0 } }))} className="inp" /></Field>
-                      </SettingsSection>
-                    )}
-
-                    {/* LOYALTY TIERS */}
-                    {pwaTab === 'loyalty' && (
-                      <SettingsSection title="Loyalty Tiers" desc="Tier names and thresholds (qualify by spend OR visits). The stored “vip” tier is shown as your top-tier name."
-                        footer={<SaveButton busy={pwaBusy} onClick={() => pwaSave({ action: 'loyalty_save', tiers: pwaCfg.loyalty.tiers }, 'Loyalty saved')}>Save loyalty</SaveButton>}>
-                        <div className="grid gap-2 max-w-2xl">
-                          <div className="hidden sm:grid grid-cols-[64px_1fr_130px_100px] gap-2 px-2.5 text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--ink-3)' }}>
-                            <span>Tier</span><span>Display name</span><span>Min spend ₹</span><span>Min visits</span>
-                          </div>
-                          {pwaCfg.loyalty.tiers.map((t, i) => (
-                            <div key={t.tier} className="grid grid-cols-1 sm:grid-cols-[64px_1fr_130px_100px] sm:items-center gap-2 p-2.5 rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                              <span className="text-xs capitalize text-ink-3 self-center">{t.tier}</span>
-                              <input value={t.displayName} onChange={(e) => setCfg((c) => ({ ...c, loyalty: { rewards: c.loyalty.rewards, tiers: c.loyalty.tiers.map((x, j) => (j === i ? { ...x, displayName: e.target.value } : x)) } }))} className="inp" style={{ minHeight: 38 }} />
-                              <label className="flex items-center gap-2 text-xs"><span className="sm:hidden whitespace-nowrap">Min ₹</span><input type="number" min={0} value={Math.round(t.minSpendPaise / 100)} onChange={(e) => setCfg((c) => ({ ...c, loyalty: { rewards: c.loyalty.rewards, tiers: c.loyalty.tiers.map((x, j) => (j === i ? { ...x, minSpendPaise: (Number(e.target.value) || 0) * 100 } : x)) } }))} className="inp" style={{ minHeight: 38 }} /></label>
-                              <label className="flex items-center gap-2 text-xs"><span className="sm:hidden whitespace-nowrap">Visits</span><input type="number" min={0} value={t.minVisits} onChange={(e) => setCfg((c) => ({ ...c, loyalty: { rewards: c.loyalty.rewards, tiers: c.loyalty.tiers.map((x, j) => (j === i ? { ...x, minVisits: Number(e.target.value) || 0 } : x)) } }))} className="inp" style={{ minHeight: 38 }} /></label>
-                            </div>
-                          ))}
-                        </div>
-                      </SettingsSection>
-                    )}
-
-                    {/* QR TABLE */}
-                    {pwaTab === 'table' && (
-                      <SettingsSection title="QR Table" desc="What the customer sees when they scan a table QR." className="max-w-md"
-                        footer={<SaveButton busy={pwaBusy} onClick={() => pwaSave({ action: 'table_save', ...pwaCfg.table }, 'Table config saved')} />}>
-                        <Field label="Welcome prefix" hint={`Shown as “${pwaCfg.table.welcomePrefix} 12”.`}><input value={pwaCfg.table.welcomePrefix} onChange={(e) => setCfg((c) => ({ ...c, table: { ...c.table, welcomePrefix: e.target.value } }))} className="inp" /></Field>
-                        <Toggle label="Manual table pick" desc="Let guests choose a table when the scanned QR has none." on={pwaCfg.table.allowManualPick} onChange={(v) => setCfg((c) => ({ ...c, table: { ...c.table, allowManualPick: v } }))} />
-                      </SettingsSection>
-                    )}
-
-                    {/* CUSTOMER LOGIN (OTP) */}
-                    {pwaTab === 'registration' && (
-                      <SettingsSection title="Customer Login" desc="Require customers to verify their mobile with a one-time code (OTP) before ordering. Default: off." className="max-w-md"
-                        footer={<SaveButton busy={pwaBusy} onClick={() => pwaSave({ action: 'registration_save', ...pwaCfg.registration }, 'Customer login saved')} />}>
-                        <Toggle label="Require login (OTP)" desc={pwaCfg.registration.enabled ? 'Guests verify their mobile with a one-time code before using the app.' : 'Off — guests can browse and order without logging in.'} on={pwaCfg.registration.enabled} onChange={(v) => setCfg((c) => ({ ...c, registration: { ...c.registration, enabled: v } }))} />
-                        <Toggle label="Collect name" desc="Ask new customers for their name after they verify (otherwise mobile only)." on={pwaCfg.registration.collectName} onChange={(v) => setCfg((c) => ({ ...c, registration: { ...c.registration, collectName: v } }))} />
-                      </SettingsSection>
-                    )}
-
-                    {/* THEME */}
-                    {pwaTab === 'theme' && (
-                      <SettingsSection title="Theme" desc="Accent colour, logo and a hero tagline for the app home." className="max-w-md"
-                        footer={<SaveButton busy={pwaBusy} onClick={() => pwaSave({ action: 'theme_save', ...pwaCfg.theme }, 'Theme saved')}>Save theme</SaveButton>}>
-                        <Field label="Accent colour"><input type="color" value={pwaCfg.theme.accent || '#E8902A'} onChange={(e) => setCfg((c) => ({ ...c, theme: { ...c.theme, accent: e.target.value } }))} className="w-16 h-10 rounded-lg border cursor-pointer" style={{ borderColor: 'var(--line-2)' }} /></Field>
-                        <Field label="Hero tagline"><input value={pwaCfg.theme.heroTagline} onChange={(e) => setCfg((c) => ({ ...c, theme: { ...c.theme, heroTagline: e.target.value } }))} placeholder="Freshly brewed, just for you" className="inp" /></Field>
-                        <Field label="Logo">
-                          <div className="flex items-center gap-3">
-                            {pwaCfg.theme.logoUrl && <img src={pwaCfg.theme.logoUrl} alt="" className="rounded-lg object-contain" style={{ width: 44, height: 44, background: 'var(--paper-3)' }} />}
-                            <label className="btn btn-sm cursor-pointer">
-                              {pwaCfg.theme.logoUrl ? 'Replace logo' : 'Upload logo'}
-                              <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { const url = await uploadImage(f); if (url) setCfg((c) => ({ ...c, theme: { ...c.theme, logoUrl: url } })); } }} />
-                            </label>
-                            {pwaCfg.theme.logoUrl && <button onClick={() => setCfg((c) => ({ ...c, theme: { ...c.theme, logoUrl: null } }))} className="btn btn-danger btn-sm">Remove</button>}
-                          </div>
-                        </Field>
-                      </SettingsSection>
-                    )}
-                  </>
-                  )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {isAdvanced && settingsPanel === 'multibranch' && (
-              <section className="card p-5">
-                <h4 className="font-bold mb-3">Multi Branch Configuration</h4>
-                <div className="p-4 rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                  <p className="text-sm">Add other outlets to sync settings and consolidate brand reporting.</p>
-                </div>
-              </section>
-            )}
-
-            {/* ── Devices & Printers ── */}
-            {settingsPanel === 'devices' && (
-              <div className="flex flex-col gap-4">
-                <section className="card p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
-                    <div>
-                      <h4 className="font-bold">Devices &amp; Printers</h4>
-                      <p className="text-xs text-ink-3">Register receipt &amp; KOT printers, cash drawers and displays. The default printer of each type is used automatically.</p>
-                    </div>
-                    <button onClick={() => openDeviceForm()} className="btn btn-primary py-2 px-3 text-sm shrink-0">+ Add Device</button>
-                  </div>
-                </section>
-
-                {/* Receipt Layout — header / footer text printed on bills & receipts */}
-                <form onSubmit={handleSaveReceipt} className="card p-5 grid gap-3">
-                  <div>
-                    <h4 className="font-bold">Receipt Layout</h4>
-                    <p className="text-xs text-ink-3">Customise what prints on the bill / receipt. The store logo is set in <b>General</b>.</p>
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div className="sm:col-span-2">
-                      <label className="lbl">Header lines</label>
-                      <textarea value={receiptForm.header} onChange={(e) => setReceiptForm((p) => ({ ...p, header: e.target.value }))} rows={2} maxLength={280} placeholder="e.g. 123 MG Road, Bengaluru" className="inp" />
-                      <span className="text-[11px] text-ink-3">Printed under the business name. One line per row.</span>
-                    </div>
-                    <div>
-                      <label className="lbl">Phone / contact number</label>
-                      <input value={receiptForm.phone} onChange={(e) => setReceiptForm((p) => ({ ...p, phone: e.target.value }))} maxLength={60} placeholder="+91 98xxxxxxx" className="inp" />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="lbl">Footer text</label>
-                      <textarea value={receiptForm.footer} onChange={(e) => setReceiptForm((p) => ({ ...p, footer: e.target.value }))} rows={2} maxLength={280} placeholder="Thank you! Visit again." className="inp" />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-4">
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="checkbox" checked={receiptForm.showLogo} onChange={(e) => setReceiptForm((p) => ({ ...p, showLogo: e.target.checked }))} />
-                      Print logo on top
-                    </label>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="checkbox" checked={receiptForm.showGstin} onChange={(e) => setReceiptForm((p) => ({ ...p, showGstin: e.target.checked }))} />
-                      Print GSTIN
-                    </label>
-                  </div>
-                  {/* tiny live preview */}
-                  <div className="rounded-xl p-3 text-center" style={{ background: 'var(--paper-3)', fontFamily: 'var(--font-mono)' }}>
-                    {receiptForm.showLogo && logoUrl && <img src={logoUrl} alt="" className="mx-auto mb-1 object-contain" style={{ width: 40, height: 40 }} />}
-                    <div className="font-bold text-sm">{outlet.brand}</div>
-                    {receiptForm.header.trim() && <div className="text-[11px] text-ink-3 whitespace-pre-line">{receiptForm.header}</div>}
-                    {receiptForm.phone.trim() && <div className="text-[11px] text-ink-3">☎ {receiptForm.phone}</div>}
-                    {receiptForm.showGstin && outlet.gstin && <div className="text-[11px] text-ink-3">GSTIN {outlet.gstin}</div>}
-                    <div className="text-[11px] text-ink-3 mt-1 border-t pt-1" style={{ borderColor: 'var(--line)' }}>{receiptForm.footer.trim() || 'Thank you!'}</div>
-                  </div>
-                  <button type="submit" disabled={receiptSaving} className="btn btn-primary w-fit disabled:opacity-60">{receiptSaving ? 'Saving…' : 'Save receipt layout'}</button>
-                </form>
-
-                {showDeviceForm && (
-                  <section className="card p-5">
-                    <h4 className="font-bold mb-3">{deviceForm.id ? 'Edit device' : 'New device'}</h4>
-                    <form onSubmit={handleSaveDevice} className="grid gap-3">
-                      <div className="grid sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="lbl">Device name</label>
-                          <input value={deviceForm.name} onChange={(e) => setDeviceForm((p) => ({ ...p, name: e.target.value }))} required placeholder="e.g. Counter receipt printer" className="inp" />
-                        </div>
-                        <div>
-                          <label className="lbl">Type</label>
-                          <select value={deviceForm.type} onChange={(e) => setDeviceForm((p) => ({ ...p, type: e.target.value }))} className="inp">
-                            {DEVICE_TYPES.map((t) => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                      <div className="grid sm:grid-cols-3 gap-3">
-                        <div>
-                          <label className="lbl">Connection</label>
-                          <select value={deviceForm.connection} onChange={(e) => setDeviceForm((p) => ({ ...p, connection: e.target.value }))} className="inp">
-                            {DEVICE_CONNECTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="lbl">{deviceForm.connection === 'network' ? 'IP address : port' : 'Device path / id'}</label>
-                          <input value={deviceForm.target} onChange={(e) => setDeviceForm((p) => ({ ...p, target: e.target.value }))} placeholder={deviceForm.connection === 'network' ? '192.168.1.50:9100' : 'optional'} className="inp font-mono" />
-                        </div>
-                        <div>
-                          <label className="lbl">Copies</label>
-                          <input type="number" min={1} max={5} value={deviceForm.copies} onChange={(e) => setDeviceForm((p) => ({ ...p, copies: e.target.value }))} className="inp" />
-                        </div>
-                      </div>
-                      {deviceForm.type === 'kot_printer' && (
-                        <div className="sm:max-w-[200px]">
-                          <label className="lbl">Kitchen station</label>
-                          <select value={deviceForm.station} onChange={(e) => setDeviceForm((p) => ({ ...p, station: e.target.value }))} className="inp">
-                            {stationOptions(deviceForm.station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                          </select>
-                        </div>
                       )}
-                      <label className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input type="checkbox" checked={deviceForm.isDefault} onChange={(e) => setDeviceForm((p) => ({ ...p, isDefault: e.target.checked }))} />
-                        Set as default for this device type
-                      </label>
-                      <div className="flex gap-2">
-                        <button type="submit" className="btn btn-primary">{deviceForm.id ? 'Save device' : 'Add device'}</button>
-                        <button type="button" onClick={() => setShowDeviceForm(false)} className="btn" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>Cancel</button>
-                      </div>
-                    </form>
-                  </section>
-                )}
-
-                <section className="card p-5">
-                  <h4 className="font-bold mb-3">Registered devices {devices.length > 0 && <span className="text-xs text-ink-3">({devices.length})</span>}</h4>
-                  {devices.length === 0 ? (
-                    <div className="text-sm text-ink-3 p-4 rounded-xl text-center" style={{ background: 'var(--paper-3)' }}>
-                      No devices yet. Click <b>+ Add Device</b> to register your first printer.
-                    </div>
-                  ) : (
-                    <div className="grid gap-2">
-                      {devices.map((dev) => {
-                        const meta = DEVICE_TYPES.find((t) => t.value === dev.type);
-                        return (
-                          <div key={dev.id} className="flex flex-wrap items-center gap-3 text-sm p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                            <span className="text-2xl shrink-0">{meta?.icon ?? '🖨️'}</span>
-                            <div className="min-w-[140px] flex-1">
-                              <b className="block">{dev.name}{dev.isDefault && <span className="ml-2 pill" style={{ color: 'var(--cardamom-d)' }}>● default</span>}</b>
-                              <span className="text-xs text-ink-3">
-                                {meta?.label ?? dev.type}
-                                {dev.station ? <span> · {kitchens.find((k) => k.id === dev.station)?.name ?? dev.station}</span> : null}
-                                {' · '}{DEVICE_CONNECTIONS.find((c) => c.value === dev.connection)?.label ?? dev.connection}
-                                {dev.target ? <span className="font-mono"> · {dev.target}</span> : null}
-                                {' · '}{dev.copies} cop{dev.copies === 1 ? 'y' : 'ies'}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {!dev.isDefault && <button onClick={() => handleSetDefaultDevice(dev)} className="btn py-1 px-3 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>Set default</button>}
-                              <button onClick={() => openDeviceForm(dev)} className="btn py-1 px-3 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>Edit</button>
-                              <button onClick={() => handleDeleteDevice(dev.id, dev.name)} className="btn py-1 px-3 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--clay)', color: 'var(--clay)' }}>Remove</button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
+                    </section>
+                  );
+                })()}
               </div>
             )}
 
-            {settingsPanel === 'audit' && (
-              <div className="flex flex-col gap-4">
-                <section className="card p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                    <div>
-                      <h4 className="font-bold">Audit Logs</h4>
-                      <p className="text-xs text-ink-3">Who changed what, and when — across orders, staff, customers, settings and more. Newest first; click a row to see the change.</p>
-                    </div>
-                    <button onClick={() => loadAudit(1)} disabled={auditBusy} className="btn py-2 px-3 text-sm shrink-0 disabled:opacity-50" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>↻ Refresh</button>
-                  </div>
-                  <div className="grid sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="lbl">Action</label>
-                      <select value={auditFilters.action} onChange={(e) => setAuditFilters((f) => ({ ...f, action: e.target.value }))} className="inp">
-                        <option value="">All actions</option>
-                        {auditOptions.actions.map((a) => <option key={a} value={a}>{prettyAction(a)}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="lbl">Entity</label>
-                      <select value={auditFilters.entity} onChange={(e) => setAuditFilters((f) => ({ ...f, entity: e.target.value }))} className="inp capitalize">
-                        <option value="">All entities</option>
-                        {auditOptions.entities.map((en) => <option key={en} value={en}>{en}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="lbl">Staff</label>
-                      <select value={auditFilters.actorId} onChange={(e) => setAuditFilters((f) => ({ ...f, actorId: e.target.value }))} className="inp">
-                        <option value="">All staff</option>
-                        {auditOptions.staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  {(auditFilters.action || auditFilters.entity || auditFilters.actorId) && (
-                    <button onClick={() => setAuditFilters({ action: '', entity: '', actorId: '' })} className="btn mt-3 py-1.5 px-3 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>Clear filters</button>
-                  )}
-                </section>
 
-                <section className="card p-5">
-                  {auditEntries.length === 0 ? (
-                    <div className="text-sm text-ink-3 p-4 rounded-xl text-center" style={{ background: 'var(--paper-3)' }}>
-                      {auditBusy ? 'Loading…' : 'No audit entries match these filters yet.'}
-                    </div>
-                  ) : (
-                    <div className="grid gap-2">
-                      <div className="hidden sm:grid grid-cols-[150px_140px_1fr_130px] gap-3 text-[10px] font-bold uppercase text-ink-3 px-3">
-                        <span>Time</span><span>Staff</span><span>Action</span><span>Entity</span>
-                      </div>
-                      {auditEntries.map((en) => {
-                        const open = expandedAuditId === en.id;
-                        const diff = auditDiff(en.before, en.after);
-                        return (
-                          <div key={en.id} className="rounded-xl overflow-hidden" style={{ background: 'var(--paper-3)' }}>
-                            <button onClick={() => setExpandedAuditId(open ? null : en.id)} className="w-full text-left grid sm:grid-cols-[150px_140px_1fr_130px] gap-1 sm:gap-3 text-sm p-3 items-center hover:brightness-105 transition">
-                              <span className="text-xs text-ink-3 font-mono">{new Date(en.at).toLocaleString()}</span>
-                              <span className="font-bold truncate">{en.actorName}</span>
-                              <span className="truncate">{prettyAction(en.action)}</span>
-                              <span className="text-xs text-ink-3 truncate">{en.entity}{en.entityId ? <span className="font-mono"> · {en.entityId.slice(0, 8)}</span> : null}</span>
-                            </button>
-                            {open && (
-                              <div className="px-3 pb-3 border-t" style={{ borderColor: 'var(--line)' }}>
-                                {diff.length === 0 ? (
-                                  <p className="text-xs text-ink-3 pt-3">No field-level change recorded for this entry.</p>
-                                ) : (
-                                  <div className="grid gap-1 pt-3">
-                                    {diff.map((row) => (
-                                      <div key={row.key} className="grid sm:grid-cols-[160px_1fr] gap-1 sm:gap-3 items-start">
-                                        <span className="text-xs font-bold">{row.key}</span>
-                                        <span className="text-xs font-mono break-all">
-                                          <span style={{ color: 'var(--clay)' }}>{row.before}</span>
-                                          <span className="text-ink-3"> → </span>
-                                          <span style={{ color: 'var(--cardamom-d)' }}>{row.after}</span>
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {auditHasMore && (
-                        <button onClick={() => loadAudit(auditPage + 1, true)} disabled={auditBusy} className="btn mt-1 py-2 text-sm disabled:opacity-50" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
-                          {auditBusy ? 'Loading…' : 'Load more'}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </section>
-              </div>
-            )}
-              </SettingsModal>
-            )}
+
+            {/* Settings modals cleaned up — handled inline in SettingsCenter */}
           </div>
         )}
       </main>

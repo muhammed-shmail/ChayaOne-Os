@@ -58,7 +58,18 @@ export default async function PosPage() {
 
   return (
     <PosClient
-      outlet={{ id: outlet.id, name: outlet.name, gstin: outlet.gstin, stateCode: outlet.stateCode ?? 'KA', gstEnabled: gst.enabled, gstRate: gst.rateOverride, gstInclusive: gst.inclusive, receipt, kitchenWorkflow }}
+      outlet={{
+        id: outlet.id,
+        name: outlet.name,
+        gstin: outlet.gstin,
+        stateCode: outlet.stateCode ?? 'KA',
+        gstEnabled: gst.enabled,
+        gstRate: gst.calculationMethod === 'flat' ? gst.defaultRate : null,
+        gstInclusive: gst.inclusive,
+        receipt,
+        kitchenWorkflow,
+        gstConfig: gst,
+      }}
       staff={{ id: session.staffId, name: session.name, role: session.role }}
       menu={menu}
       tables={tableDtos}

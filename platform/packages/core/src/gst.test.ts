@@ -56,6 +56,60 @@ const off = computeBill([{ pricePaise: 10500, gstRate: 5, qty: 1 }], { gstInclus
 eq('disabled = no tax', off.cgstPaise + off.sgstPaise + off.igstPaise, 0);
 eq('disabled total == price', off.totalPaise, 10500);
 
+// --- Advanced GST Features Tests ---
+
+// 1. Charges and Fees Tax Application
+const chargesBill = computeBill(
+  [{ pricePaise: 20000, gstRate: 5, qty: 1 }],
+  {
+    gstEnabled: true,
+    gstOnDelivery: true,
+    gstOnPackaging: true,
+    gstOnServiceCharge: true,
+    deliveryChargePaise: 4000,  // ₹40 delivery charge
+    packagingChargePaise: 1000, // ₹10 packing charge
+    serviceChargePct: 10,       // 10% service charge on ₹200 item = ₹20
+    chargeGstRate: 18,          // Charges are taxed at 18%
+  }
+);
+eq('charges subtotal', chargesBill.subtotalPaise, 20000);
+eq('charges service charge paise', chargesBill.serviceChargePaise, 2000);
+eq('charges cgst+sgst total tax', chargesBill.cgstPaise + chargesBill.sgstPaise, 2260);
+
+// 2. Discount Rules: GST before discount
+const beforeDisc = computeBill(
+  [{ pricePaise: 10000, gstRate: 5, qty: 1 }],
+  {
+    gstEnabled: true,
+    discountPct: 10,
+    calculateGstBeforeDiscount: true,
+  }
+);
+eq('gst before discount: discount amount', beforeDisc.discountPaise, 1000);
+eq('gst before discount: cgst+sgst tax', beforeDisc.cgstPaise + beforeDisc.sgstPaise, 500);
+eq('gst before discount: total', beforeDisc.totalPaise, 9500);
+
+// 3. Discount Rules: GST after discount
+const afterDisc = computeBill(
+  [{ pricePaise: 10000, gstRate: 5, qty: 1 }],
+  {
+    gstEnabled: true,
+    discountPct: 10,
+    calculateGstBeforeDiscount: false,
+  }
+);
+eq('gst after discount: cgst+sgst tax', afterDisc.cgstPaise + afterDisc.sgstPaise, 450);
+
+// 4. Restaurant Specific Override Rates
+const takeawayBill = computeBill(
+  [{ pricePaise: 10000, gstRate: 5, qty: 1 }],
+  {
+    gstEnabled: true,
+    gstRateOverride: 12, // takeaway rate override mapped to gstRateOverride
+  }
+);
+eq('takeaway overridden tax', takeawayBill.cgstPaise + takeawayBill.sgstPaise, 1200);
+
 console.log(`\nformatINR sample: ${formatINR(bill.totalPaise)}`);
 console.log(failed === 0 ? '\nALL PASS' : `\n${failed} FAILED`);
 if (failed) process.exit(1);

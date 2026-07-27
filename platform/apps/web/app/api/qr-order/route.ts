@@ -129,6 +129,31 @@ export async function POST(req: NextRequest) {
       include: { items: true, table: { select: { label: true } } },
     });
 
+    // Decrement any daily limits stored in tags
+    for (const line of lines) {
+      const menuItem = await tx.menuItem.findFirst({
+        where: { id: line.itemId, outletId },
+        select: { id: true, tags: true, isAvailable: true }
+      });
+      if (menuItem) {
+        const limitTag = menuItem.tags.find((t) => t.startsWith('limit:'));
+        if (limitTag) {
+          const currentLimit = parseInt(limitTag.split(':')[1] ?? '0') || 0;
+          const newLimit = Math.max(0, currentLimit - line.qty);
+          const otherTags = menuItem.tags.filter((t) => !t.startsWith('limit:'));
+          const nextTags = [...otherTags, `limit:${newLimit}`];
+          const isAvailable = newLimit > 0;
+          await tx.menuItem.update({
+            where: { id: menuItem.id },
+            data: {
+              tags: nextTags,
+              isAvailable: isAvailable ? menuItem.isAvailable : false
+            }
+          });
+        }
+      }
+    }
+
     // burn the held points atomically (re-check balance to avoid overspend)
     if (walletPointsUsed > 0 && customerId) {
       const fresh = await tx.customer.findUnique({ where: { id: customerId }, select: { points: true } });

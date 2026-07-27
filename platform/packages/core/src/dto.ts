@@ -47,6 +47,9 @@ export const CreateOrderSchema = z.object({
   /** flat ₹-amount discount in paise, applied on top of discountPct */
   discountFlatPaise: z.number().int().min(0).default(0),
   serviceChargePct: z.number().min(0).max(100).default(0),
+  deliveryChargePaise: z.number().int().min(0).default(0),
+  packagingChargePaise: z.number().int().min(0).default(0),
+  convenienceFeePaise: z.number().int().min(0).default(0),
   interState: z.boolean().default(false),
   /** when present, settle immediately with this payment */
   payment: z

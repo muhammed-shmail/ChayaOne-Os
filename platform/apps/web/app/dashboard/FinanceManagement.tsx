@@ -663,9 +663,9 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   return (
     <div className="flex flex-col gap-5 min-h-[80vh]">
       {/* Redesigned Premium Top Tab Navigation */}
-      <div className="flex justify-start sticky top-0 bg-background z-20 pb-3">
+      <div className="flex justify-start md:justify-center sticky top-0 bg-background z-20 pb-3 overflow-x-auto no-scrollbar w-full">
         <div 
-          className="inline-flex flex-wrap p-1 rounded-full border shadow-sm"
+          className="inline-flex flex-nowrap p-1 rounded-full border shadow-sm"
           style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
           role="tablist"
         >
