@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { STAGES, STAGE_ORDER, stageOf } from '@/lib/orderStatus';
-import { LogOut, Download } from '@/components/ui';
+import { LogOut, Download, LayoutDashboard } from '@/components/ui';
 import StaffBell from '@/components/StaffBell';
 import { useStaffInstall } from '@/components/staff-install';
 import { isOffline } from '@/components/online';
@@ -75,6 +75,13 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
   const [connected, setConnected] = useState(false);
   const liveRef = useRef<HTMLSpanElement>(null);
   const audioRef = useRef<AudioContext | null>(null);
+
+  const [inIframe, setInIframe] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.self !== window.top) {
+      setInIframe(true);
+    }
+  }, []);
 
   // age-based urgency, honouring the outlet's delay threshold + highlight toggle
   const lateMs = wf.delayThresholdMin * 60_000;
@@ -261,6 +268,19 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
         <div className="kds-bar">
           <div className="kds-title"><span className="kds-live" style={{ background: 'var(--ink-3)', animation: 'none' }} />Kitchen Display <em>· {outletName}</em></div>
           <div className="kds-stats">
+            {inIframe && (
+              <button
+                className="kds-logout"
+                onClick={() => {
+                  if (typeof window !== 'undefined' && window.parent !== window) {
+                    window.parent.postMessage({ type: 'close-kds' }, '*');
+                  }
+                }}
+                title="Back to Dashboard"
+              >
+                <LayoutDashboard size={14} aria-hidden style={{ verticalAlign: '-2px', marginRight: 4 }} /> Exit KDS
+              </button>
+            )}
             <StaffBell role={staff.role} staffId={staff.id} triggerClassName="kds-logout" />
             <button className="kds-logout" onClick={logout} title="Log out"><LogOut size={14} aria-hidden style={{ verticalAlign: '-2px', marginRight: 4 }} /> Log out</button>
           </div>
@@ -302,6 +322,19 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
           {showInstallApp && (
             <button className="kds-logout" onClick={() => staffInstall.promptInstall()} title="Install the Staff App">
               <Download size={14} aria-hidden style={{ verticalAlign: '-2px', marginRight: 4 }} /> {staffInstall.iosHint ? 'Add to Home Screen' : 'Install app'}
+            </button>
+          )}
+          {inIframe && (
+            <button
+              className="kds-logout"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.parent !== window) {
+                  window.parent.postMessage({ type: 'close-kds' }, '*');
+                }
+              }}
+              title="Back to Dashboard"
+            >
+              <LayoutDashboard size={14} aria-hidden style={{ verticalAlign: '-2px', marginRight: 4 }} /> Exit KDS
             </button>
           )}
           <StaffBell role={staff.role} staffId={staff.id} triggerClassName="kds-logout" />

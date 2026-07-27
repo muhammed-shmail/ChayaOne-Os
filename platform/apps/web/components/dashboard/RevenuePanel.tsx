@@ -187,7 +187,7 @@ function RevenueChart({ points }: { points: Daily[] }) {
 
   return (
     <div ref={wrapRef} className="relative" onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="none" style={{ display: 'block', height: 'clamp(140px, 22vw, 200px)' }}>
+      <svg viewBox={`0 0 ${W} ${H - padBottom}`} width="100%" preserveAspectRatio="none" style={{ display: 'block', height: '160px' }}>
         <defs>
           <linearGradient id="rev-fill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--gold)" stopOpacity="0.34" />
@@ -209,10 +209,17 @@ function RevenueChart({ points }: { points: Daily[] }) {
             <circle cx={x(hover)} cy={y(points[hover]!.grossPaise)} r="4.5" fill="var(--gold-d)" stroke="var(--paper-2)" strokeWidth="2" />
           </>
         )}
-        {labelIdx.map((i) => (
-          <text key={i} x={Math.min(Math.max(x(i), 20), W - 20)} y={H - 8} textAnchor="middle" fontSize="11" fill="var(--ink-3)">{points[i]?.dateLabel ?? ''}</text>
-        ))}
       </svg>
+      {/* Date labels rendered as HTML to avoid SVG text stretching */}
+      <div className="relative flex justify-between px-1 mt-1" style={{ color: 'var(--ink-3)' }}>
+        {labelIdx.map((i) => (
+          <span key={i} className="text-[11px]" style={{ position: 'absolute', left: `${(x(i) / W) * 100}%`, transform: 'translateX(-50%)' }}>
+            {points[i]?.dateLabel ?? ''}
+          </span>
+        ))}
+        {/* spacer for height */}
+        <span className="text-[11px] invisible">_</span>
+      </div>
       {hover !== null && points[hover] && (
         <div className="pointer-events-none absolute -translate-x-1/2 px-2.5 py-1.5 rounded-lg text-xs shadow"
           style={{ left: `${(x(hover) / W) * 100}%`, top: 0, background: 'var(--ink)', color: 'var(--paper-2)', whiteSpace: 'nowrap' }}>

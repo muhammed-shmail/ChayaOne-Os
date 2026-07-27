@@ -99,6 +99,13 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [occupied, setOccupied] = useState<Record<string, { number: number; sinceMs: number; billPaise: number; orders: number; status: string }>>({});
 
+  const handleDashboardClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      e.preventDefault();
+      window.parent.postMessage({ type: 'close-pos' }, '*');
+    }
+  };
+
   // 1s clock so the live-order stage colours age (New → Preparing) on their own
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -571,6 +578,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
               <a
                 href="/dashboard"
+                onClick={handleDashboardClick}
                 title="Go to Dashboard"
                 className="btn btn-icon btn-sm btn-ghost"
                 style={{ color: 'var(--ink-2)' }}
@@ -1068,7 +1076,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             </div>
             <ShiftStatus />
             {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
-              <a href="/dashboard" className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+              <a href="/dashboard" onClick={handleDashboardClick} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
                 <LayoutDashboard size={18} aria-hidden /> Dashboard
               </a>
             )}

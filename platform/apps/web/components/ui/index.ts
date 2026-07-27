@@ -28,7 +28,7 @@ export {
   Star, Heart, Sparkles, Gamepad2, Dices, PartyPopper, Crown, Coins,
   // status / feedback
   CircleCheckBig, TriangleAlert, Info, CircleX, Loader, RefreshCw, Eye, EyeOff,
-  Wifi, WifiOff, Lock, Phone, MapPin, Image as ImageIcon, Upload, Download,
+  Wifi, WifiOff, Lock, Phone, MapPin, Image as ImageIcon, Upload, Download, FileSpreadsheet,
 } from 'lucide-react';
 
 export type { LucideIcon } from 'lucide-react';

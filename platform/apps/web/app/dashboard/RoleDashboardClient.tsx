@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import type React from 'react';
 import { formatINR } from '@cafeos/core';
 import type { DashboardData } from '@/lib/analytics';
@@ -68,9 +67,9 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
               </div>
               <div className="grid sm:grid-cols-2 gap-2.5">
                 {actions.map(({ href, label, icon: Icon, tone }) => (
-                  <Link key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                  <a key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
                     <Icon size={18} aria-hidden /> {label}
-                  </Link>
+                  </a>
                 ))}
               </div>
               <div className="mt-4">
@@ -124,9 +123,9 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
             </div>
             <div className="grid sm:grid-cols-3 gap-3">
               {actions.map(({ href, label, icon: Icon, tone }) => (
-                <Link key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                <a key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
                   <Icon size={18} aria-hidden /> {label}
-                </Link>
+                </a>
               ))}
             </div>
             <div className="mt-4">

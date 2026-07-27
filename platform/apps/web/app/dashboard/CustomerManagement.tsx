@@ -77,9 +77,27 @@ export default function CustomerManagement({ role, flash }: { role: string; flas
   return (
     <div className="grid gap-4">
       {/* sub-tabs */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <TabBtn on={tab === 'list'} onClick={() => setTab('list')}>Customer Database</TabBtn>
-        <TabBtn on={tab === 'settings'} onClick={() => setTab('settings')}>Loyalty Settings</TabBtn>
+      <div className="flex items-center gap-2 flex-wrap pb-1">
+        <div className="flex gap-1.5 p-1 rounded-full border max-w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+          <button
+            onClick={() => setTab('list')}
+            className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+            style={tab === 'list'
+              ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+              : { color: 'var(--ink-2)', background: 'transparent' }}
+          >
+            Customer Database
+          </button>
+          <button
+            onClick={() => setTab('settings')}
+            className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+            style={tab === 'settings'
+              ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+              : { color: 'var(--ink-2)', background: 'transparent' }}
+          >
+            Loyalty Settings
+          </button>
+        </div>
         {tab === 'list' && (
           <div className="ml-auto flex gap-2">
             <button className="btn" onClick={() => setShowImport(true)}>⬆ Import</button>

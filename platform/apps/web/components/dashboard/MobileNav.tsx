@@ -145,7 +145,6 @@ export function MobileDrawer({
 
         <a
           href="/pos"
-          target="_blank"
           className="flex items-center gap-2 px-3 py-2 mt-1 text-sm rounded-xl transition font-bold"
           style={{ color: 'var(--turmeric-d)' }}
         >

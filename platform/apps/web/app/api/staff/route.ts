@@ -23,7 +23,7 @@ export async function GET() {
   const rows = await prisma.staffUser.findMany({
     where: { tenantId: session.tenantId },
     orderBy: [{ active: 'desc' }, { name: 'asc' }],
-    select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true },
+    select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true, permissions: true },
   });
   const members = rows.map(({ pinHash, passwordHash, ...m }) => ({ ...m, hasPin: !!pinHash, hasLogin: !!passwordHash }));
   return NextResponse.json({ members, assignable: assignableRoles(session.role) });
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     if (!/^\d{4,6}$/.test(String(pin ?? ''))) return NextResponse.json({ error: 'pin_must_be_4_to_6_digits' }, { status: 400 });
 
     const pinHash = hashPin(String(pin));
-    const clash = await prisma.staffUser.findFirst({ where: { pinHash }, select: { id: true } });
+    const clash = await prisma.staffUser.findFirst({ where: { pinHash, active: true }, select: { id: true } });
     if (clash) return NextResponse.json({ error: 'pin_in_use' }, { status: 409 });
 
     // optional username + password login (secure dashboard access)
@@ -88,8 +88,9 @@ export async function POST(req: NextRequest) {
         username,
         passwordHash,
         active: true,
+        permissions: body.permissions ? (body.permissions as Prisma.InputJsonValue) : []
       },
-      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true },
+      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, permissions: true },
     });
     await bumpUsage(session.tenantId, 'staff').catch(() => {});
     await audit(session, 'staff.created', created.id, { name: created.name, role: created.role });
@@ -129,10 +130,16 @@ export async function POST(req: NextRequest) {
     if (body.phone !== undefined) data.phone = body.phone ? String(body.phone).trim() : null;
     if (body.employeeCode !== undefined) data.employeeCode = body.employeeCode ? String(body.employeeCode).trim() : null;
     if (body.role !== undefined) {
-      if (!isRole(body.role) || !assignableRoles(session.role).includes(body.role)) {
+      let dbRole = body.role;
+      if (dbRole === 'delivery') dbRole = 'waiter';
+      if (dbRole === 'inventory') dbRole = 'cashier';
+      if (!isRole(dbRole) || !assignableRoles(session.role).includes(dbRole)) {
         return NextResponse.json({ error: 'role_not_allowed' }, { status: 403 });
       }
-      data.role = body.role;
+      data.role = dbRole;
+    }
+    if (body.permissions !== undefined) {
+      data.permissions = body.permissions as Prisma.InputJsonValue;
     }
     if (body.active !== undefined) {
       // never let an admin lock themselves out
@@ -141,7 +148,7 @@ export async function POST(req: NextRequest) {
       }
       data.active = !!body.active;
     }
-    const updated = await prisma.staffUser.update({ where: { id }, data, select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true } });
+    const updated = await prisma.staffUser.update({ where: { id }, data, select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, permissions: true } });
     await audit(session, 'staff.updated', id, { role: updated.role, active: updated.active });
     return NextResponse.json({ ok: true, member: { ...updated, hasPin: !!target.pinHash } });
   }
@@ -175,7 +182,7 @@ export async function POST(req: NextRequest) {
   if (action === 'setpin') {
     if (!/^\d{4,6}$/.test(String(body.pin ?? ''))) return NextResponse.json({ error: 'pin_must_be_4_to_6_digits' }, { status: 400 });
     const pinHash = hashPin(String(body.pin));
-    const clash = await prisma.staffUser.findFirst({ where: { pinHash, NOT: { id } }, select: { id: true } });
+    const clash = await prisma.staffUser.findFirst({ where: { pinHash, active: true, NOT: { id } }, select: { id: true } });
     if (clash) return NextResponse.json({ error: 'pin_in_use' }, { status: 409 });
     await prisma.staffUser.update({ where: { id }, data: { pinHash } });
     await audit(session, 'staff.pin_reset', id, {});
@@ -210,10 +217,19 @@ export async function POST(req: NextRequest) {
 
   if (action === 'remove') {
     if (id === session.staffId) return NextResponse.json({ error: 'cannot_remove_self' }, { status: 400 });
-    // soft-delete: deactivate so historical orders keep their attribution
-    const updated = await prisma.staffUser.update({ where: { id }, data: { active: false }, select: { id: true, name: true, role: true, phone: true, active: true } });
-    await audit(session, 'staff.removed', id, { name: updated.name });
-    return NextResponse.json({ ok: true, member: updated });
+    try {
+      await prisma.staffUser.delete({ where: { id } });
+      await audit(session, 'staff.deleted', id, { name: target.name });
+      return NextResponse.json({ ok: true, deleted: true });
+    } catch (e) {
+      const updated = await prisma.staffUser.update({
+        where: { id },
+        data: { active: false, pinHash: null, username: null, passwordHash: null },
+        select: { id: true, name: true, role: true, phone: true, active: true, permissions: true }
+      });
+      await audit(session, 'staff.removed', id, { name: updated.name });
+      return NextResponse.json({ ok: true, member: updated });
+    }
   }
 
   return NextResponse.json({ error: 'invalid_action' }, { status: 400 });

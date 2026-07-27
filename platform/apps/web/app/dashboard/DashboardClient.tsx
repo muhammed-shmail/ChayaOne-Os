@@ -25,11 +25,13 @@ import { prettyAction } from '@/lib/audit-labels';
 import {
   ThemeToggle, Bell, Table2, LogOut, LayoutDashboard, Wifi, ChefHat, Menu,
   ClipboardList, UtensilsCrossed, Package, Truck, Users, User, Settings, type LucideIcon,
-  Percent, Printer, Smartphone, Store, BarChart3, ImageIcon, Download, X, MapPin, Megaphone,
+  Percent, Printer, Smartphone, Store, BarChart3, ImageIcon, Download, X, MapPin, Megaphone, FileSpreadsheet,
+  ChevronLeft, ChevronRight,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffDevices from '@/components/StaffDevices';
 import { MobileDrawer, BottomNav, type NavItem } from '@/components/dashboard/MobileNav';
+import FinanceManagement from './FinanceManagement';
 
 type FloorTable = { id: string; label: string; seats: number; state: string; qrToken: string; floorId: string | null; activeOrders: number };
 type Floor = { id: string; name: string; sort: number };
@@ -40,13 +42,13 @@ type Msg = { who: 'ai' | 'me'; html: string };
 const MENUS: { key: string; label: string; icon: LucideIcon }[] = [
   { key: 'home',      label: 'Home',         icon: LayoutDashboard },
   { key: 'orders',    label: 'Orders',        icon: ClipboardList },
-  { key: 'kitchen',   label: 'Kitchen',       icon: ChefHat },
   { key: 'menu',      label: 'Menu',          icon: UtensilsCrossed },
   { key: 'inventory', label: 'Inventory',     icon: Package },
+  { key: 'suppliers', label: 'Suppliers',     icon: Truck },
   { key: 'customers', label: 'Customers',     icon: Users },
   { key: 'staff',     label: 'Staff',         icon: User },
   { key: 'finance',   label: 'Finance',       icon: BarChart3 },
-  { key: 'reports',   label: 'Reports',       icon: ImageIcon },
+  { key: 'reports',   label: 'Reports',       icon: FileSpreadsheet },
   { key: 'settings',  label: 'Settings',      icon: Settings },
 ];
 
@@ -138,9 +140,9 @@ export default function DashboardClient({
     if (staff.role === 'cashier') {
       return ['home', 'orders', 'finance'].includes(m.key);
     }
-    // accountant: home, orders, inventory, customers, finance, reports
+    // accountant: home, orders, inventory, suppliers, customers, finance, reports
     if (staff.role === 'accountant') {
-      return ['home', 'orders', 'inventory', 'customers', 'finance', 'reports'].includes(m.key);
+      return ['home', 'orders', 'inventory', 'suppliers', 'customers', 'finance', 'reports'].includes(m.key);
     }
     // kitchen staff: home, orders, kitchen only
     if (staff.role === 'kitchen') {
@@ -165,6 +167,30 @@ export default function DashboardClient({
   const [isPending, startTransition] = useTransition();
   const { kpi, trend, hourly, topItems, menuQuadrant, lowStock, loyalty, briefing } = data;
 
+  const [showPos, setShowPos] = useState(false);
+  const [showKds, setShowKds] = useState(false);
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data && e.data.type === 'close-pos') {
+        setShowPos(false);
+      }
+      if (e.data && e.data.type === 'close-kds') {
+        setShowKds(false);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!showPos && !showKds) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showPos, showKds]);
+
   // 1. Beginner vs Advanced Mode (stored in localStorage)
   const [isAdvanced, setIsAdvanced] = useState(false);
   useEffect(() => {
@@ -180,19 +206,11 @@ export default function DashboardClient({
     flashMessage(val ? 'Advanced Mode unlocked!' : 'Beginner Mode active (simple layout).');
   };
 
-  // Sidebar (menu) visibility — visible by default, choice persisted per device.
+  // Sidebar states
   const reduceMotion = useReducedMotion();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  useEffect(() => {
-    if (localStorage.getItem('cafeos_sidebar') === '0') setSidebarOpen(false);
-  }, []);
-  const toggleSidebar = () => {
-    setSidebarOpen((v) => {
-      const next = !v;
-      localStorage.setItem('cafeos_sidebar', next ? '1' : '0');
-      return next;
-    });
-  };
+  const [isHovered, setIsHovered] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<{ label: string; top: number; right: number } | null>(null);
+
   // Mobile-only slide-out drawer (the full menu); desktop uses the sidebar above.
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -224,6 +242,7 @@ export default function DashboardClient({
     else if (activeMenu === 'kitchen') setActiveSubTab('kds');
     else if (activeMenu === 'menu') setActiveSubTab('menu');
     else if (activeMenu === 'inventory') setActiveSubTab('stock');
+    else if (activeMenu === 'suppliers') setActiveSubTab('ledger');
     else if (activeMenu === 'customers') setActiveSubTab('list');
     else if (activeMenu === 'staff') setActiveSubTab('activity');
     else if (activeMenu === 'finance') setActiveSubTab('operations');
@@ -542,8 +561,8 @@ export default function DashboardClient({
   };
 
   useEffect(() => {
-    // suppliers is now a tab inside Inventory — load when inventory opens
-    if (activeMenu === 'inventory') loadSuppliers();
+    // load suppliers data when inventory or suppliers menu opens
+    if (activeMenu === 'inventory' || activeMenu === 'suppliers') loadSuppliers();
   }, [activeMenu]);
 
   const postSupplier = async (payload: any, okMsg: string) => {
@@ -1807,76 +1826,179 @@ export default function DashboardClient({
   const totalSales = kpi.todaySalesPaise;
   const estimatedProfit = Math.round(totalSales * 0.70);
 
+  const isExpanded = isHovered;
+
   return (
     <div className="flex min-h-screen" style={{ background: 'var(--paper)' }}>
       {/* sidebar rail — collapsible (hidden on mobile; nav uses the header dropdown there) */}
-      <motion.aside
-        className="hidden lg:flex shrink-0 overflow-hidden lg:sticky lg:top-0 lg:h-screen lg:self-start"
-        initial={false}
-        animate={{ width: sidebarOpen ? 248 : 0 }}
-        transition={{ duration: reduceMotion ? 0 : 0.3, ease: [0.25, 0.8, 0.25, 1] }}
-        style={{ borderRight: sidebarOpen ? '1px solid var(--line)' : 'none', background: 'var(--paper-2)' }}
+      <aside
+        className="hidden md:flex flex-col shrink-0 md:sticky md:top-0 md:h-screen md:self-start overflow-hidden"
+        style={{
+          width: isExpanded ? 248 : 72,
+          borderRight: '1px solid var(--line)',
+          background: 'var(--paper-2)',
+          transition: 'width 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => {
+          setIsHovered(false);
+          setHoveredItem(null);
+        }}
       >
-      <div className="flex flex-col gap-1 p-4 w-full h-full min-h-0" style={{ width: 248 }}>
-        <div className="flex items-center justify-center px-2 py-3 mb-2">
-          <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: '100%', height: 'auto', margin: 0, maxWidth: 140 }} className="brand-logo object-contain" />
+      <div className={`flex flex-col gap-1 w-full h-full min-h-0 relative ${isExpanded ? 'p-4' : 'pt-4 pb-4 px-2'}`} style={{ width: isExpanded ? 248 : 72 }}>
+        {/* Logo container with smooth transitions */}
+        <div className="flex items-center justify-center h-16 mb-4 relative w-full shrink-0">
+          <motion.div
+            initial={false}
+            animate={{ opacity: isExpanded ? 1 : 0, scale: isExpanded ? 1 : 0.8 }}
+            transition={{ duration: 0.2 }}
+            className={`absolute inset-0 flex items-center justify-center ${isExpanded ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          >
+            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: '100%', height: 'auto', margin: 0, maxWidth: 140 }} className="brand-logo object-contain" />
+          </motion.div>
+          <motion.div
+            initial={false}
+            animate={{ opacity: isExpanded ? 0 : 1, scale: isExpanded ? 0.8 : 1 }}
+            transition={{ duration: 0.2 }}
+            className={`absolute inset-0 flex items-center justify-center ${!isExpanded ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          >
+            <img src="/app.png" alt="ChayaOne" style={{ width: 36, height: 36, margin: 0 }} className="object-contain" />
+          </motion.div>
         </div>
 
-        <nav className="flex flex-col gap-0.5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar">
+        <nav className="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar shrink-0">
           {visibleMenus.map((m, i) => {
-            // Sidebar active state — reports no longer lives under settings
             const on = activeMenu === m.key;
             const Ic = m.icon;
             return (
-              <motion.button
+              <button
                 key={m.key}
                 onClick={() => {
                   setActiveMenu(m.key);
                   setLiveOrders(0);
                 }}
                 aria-current={on ? 'page' : undefined}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.4, ease: [0.25, 0.8, 0.25, 1], delay: i * 0.04 }}
-                whileHover={{ x: on ? 0 : 2 }}
-                className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-left transition ${on ? '' : 'hover:bg-[var(--paper-3)]'}`}
-                style={on
-                  ? { background: 'var(--turmeric)', color: '#2A1607', fontWeight: 700, boxShadow: '0 6px 16px -6px color-mix(in srgb, var(--turmeric) 75%, transparent)' }
-                  : { color: 'var(--ink-2)' }}
+                className={`group relative flex items-center rounded-xl transition ${
+                  isExpanded ? 'gap-2.5 px-2 py-1 w-full text-left' : 'justify-center w-8 h-8 mx-auto shrink-0'
+                } ${
+                  isExpanded
+                    ? on
+                      ? 'text-white font-bold'
+                      : 'text-[var(--ink-2)] hover:bg-[var(--paper-3)] hover:text-[var(--ink)]'
+                    : ''
+                }`}
+                style={
+                  isExpanded && on
+                    ? {
+                        background: 'var(--turmeric)',
+                        boxShadow: '0 4px 12px -3px color-mix(in srgb, var(--turmeric) 70%, transparent)',
+                      }
+                    : undefined
+                }
+                onMouseEnter={(e) => {
+                  if (!isExpanded) {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHoveredItem({
+                      label: m.label,
+                      top: rect.top + rect.height / 2,
+                      right: rect.right,
+                    });
+                  }
+                }}
+                onMouseLeave={() => {
+                  setHoveredItem(null);
+                }}
               >
-                <Ic size={18} aria-hidden className="shrink-0" />
-                {m.label}
-                {m.key === 'dashboard' && liveOrders > 0 && (
+                {/* Icon wrapper */}
+                <div
+                  className={`grid place-items-center w-8 h-8 rounded-full transition shrink-0 ${
+                    !isExpanded
+                      ? on
+                        ? 'bg-[var(--turmeric)] text-white shadow-sm'
+                        : 'text-[var(--ink-2)] group-hover:bg-[var(--paper-3)] group-hover:text-[var(--ink)]'
+                      : 'text-inherit'
+                  }`}
+                  style={
+                    !isExpanded && on
+                      ? { boxShadow: '0 4px 12px -3px color-mix(in srgb, var(--turmeric) 70%, transparent)' }
+                      : undefined
+                  }
+                >
+                  <Ic size={16} aria-hidden />
+                </div>
+                {/* Text Label */}
+                {isExpanded && (
+                  <span className="font-semibold text-sm transition-opacity duration-200 whitespace-nowrap">
+                    {m.label}
+                  </span>
+                )}
+                {/* Live orders badge */}
+                {m.key === 'dashboard' && liveOrders > 0 && isExpanded && (
                   <span className="ml-auto bg-[var(--clay)] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
                     {liveOrders}
                   </span>
                 )}
-              </motion.button>
+              </button>
             );
           })}
         </nav>
 
-        <a href="/pos" target="_blank" className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl transition font-bold" style={{ color: 'var(--turmeric-d)' }}>
-          <Table2 size={16} aria-hidden /> Open Till (POS)
-        </a>
-
-        {staff.role === 'manager' && (
-          <Link href="/dashboard" className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl transition font-bold" style={{ color: 'var(--turmeric-d)' }}>
-            <LayoutDashboard size={16} aria-hidden /> Manager Dashboard
-          </Link>
-        )}
-
-        <div className="card p-3 mt-1" style={{ background: 'var(--paper-3)' }}>
-          <b className="text-sm capitalize">{outlet.plan} plan</b>
-          <span className="block text-xs mb-2" style={{ color: 'var(--ink-3)' }}>14 days left in trial</span>
-          <button className="btn btn-primary w-full" style={{ padding: '8px' }}>Upgrade</button>
+        {/* Open Till (POS) Link */}
+        <div className={`transition-all duration-200 overflow-hidden shrink-0 ${isExpanded ? 'opacity-100 h-auto mt-2' : 'opacity-0 h-0 pointer-events-none'}`}>
+          <button
+            onClick={() => setShowPos(true)}
+            className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl transition font-bold cursor-pointer text-left w-full hover:bg-[var(--paper-3)]"
+            style={{ color: 'var(--turmeric-d)' }}
+          >
+            <Table2 size={16} aria-hidden /> Open Till (POS)
+          </button>
         </div>
 
-        <button onClick={logout} className="flex items-center gap-2 px-3 py-2 mt-1 text-sm text-left rounded-xl transition" style={{ color: 'var(--ink-3)' }}>
-          <LogOut size={16} aria-hidden /> Log out
+        {/* Manager Dashboard Link */}
+        {staff.role === 'manager' && (
+          <div className={`transition-all duration-200 overflow-hidden shrink-0 ${isExpanded ? 'opacity-100 h-auto mt-1' : 'opacity-0 h-0 pointer-events-none'}`}>
+            <Link href="/dashboard" className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl transition font-bold hover:bg-[var(--paper-3)]" style={{ color: 'var(--turmeric-d)' }}>
+              <LayoutDashboard size={16} aria-hidden /> Manager Dashboard
+            </Link>
+          </div>
+        )}
+
+
+
+        {/* Logout Button */}
+        <button
+          onClick={logout}
+          className={`group flex items-center text-sm text-left transition-all duration-200 shrink-0 ${
+            isExpanded
+              ? 'px-2 py-1 rounded-xl gap-2 w-full mt-2 hover:bg-[var(--paper-3)] text-[var(--ink-3)] hover:text-[var(--ink)]'
+              : 'justify-center w-8 h-8 rounded-xl mx-auto mt-auto'
+          }`}
+          title={!isExpanded ? 'Log out' : undefined}
+          onMouseEnter={(e) => {
+            if (!isExpanded) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              setHoveredItem({
+                label: 'Log out',
+                top: rect.top + rect.height / 2,
+                right: rect.right,
+              });
+            }
+          }}
+          onMouseLeave={() => {
+            setHoveredItem(null);
+          }}
+        >
+          <div
+            className={`grid place-items-center w-8 h-8 rounded-full transition shrink-0 ${
+              !isExpanded ? 'group-hover:bg-[var(--paper-3)] group-hover:text-[var(--ink)]' : ''
+            }`}
+          >
+            <LogOut size={16} aria-hidden />
+          </div>
+          {isExpanded && <span>Log out</span>}
         </button>
       </div>
-      </motion.aside>
+      </aside>
 
       <main className="min-w-0 flex-1 flex flex-col gap-4 px-5 pt-5 md:px-7 md:pt-7 pb-[calc(76px_+_env(safe-area-inset-bottom))] lg:pb-7">
         {/* Header */}
@@ -1889,18 +2011,7 @@ export default function DashboardClient({
               aria-label="Open menu"
               aria-expanded={drawerOpen}
               aria-haspopup="dialog"
-              className="btn btn-icon btn-sm lg:hidden shrink-0"
-            >
-              <Menu size={18} aria-hidden />
-            </button>
-            {/* Desktop: collapse/expand the sidebar */}
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              aria-label={sidebarOpen ? 'Hide menu' : 'Show menu'}
-              aria-expanded={sidebarOpen}
-              title={sidebarOpen ? 'Hide menu' : 'Show menu'}
-              className="btn btn-icon btn-sm hidden lg:inline-flex shrink-0"
+              className="btn btn-icon btn-sm md:hidden shrink-0"
             >
               <Menu size={18} aria-hidden />
             </button>
@@ -1933,9 +2044,14 @@ export default function DashboardClient({
               </button>
             )}
             {/* Open POS — always visible in header; replaces sidebar POS link */}
-            <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition" id="header-open-pos" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}>
+            <button
+              onClick={() => setShowPos(true)}
+              className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition cursor-pointer"
+              id="header-open-pos"
+              style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+            >
               <Store size={15} aria-hidden /> Open POS
-            </a>
+            </button>
             <span className="pill" style={{ color: connected ? 'var(--cardamom-d)' : 'var(--ink-3)' }}>
               <span
                 ref={liveDot}
@@ -2061,189 +2177,16 @@ export default function DashboardClient({
               <h2 className="font-display text-2xl font-bold mb-2">Kitchen Display</h2>
               <p className="text-sm" style={{ color: 'var(--ink-3)' }}>The KDS opens in a dedicated full-screen view.</p>
             </div>
-            <a href="/kds" target="_blank" rel="noopener noreferrer" className="btn btn-primary px-8 py-3 text-base">
+            <button onClick={() => setShowKds(true)} className="btn btn-primary px-8 py-3 text-base cursor-pointer">
               Open Kitchen Display (KDS)
-            </a>
+            </button>
             <p className="text-xs" style={{ color: 'var(--ink-3)' }}>Tip: Bookmark /kds on your kitchen screen for instant access.</p>
           </div>
         )}
 
         {/* ── Finance section ── */}
         {activeMenu === 'finance' && (
-          <div className="flex flex-col gap-4">
-            {/* Finance Sub Tabs */}
-            <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Finance sections">
-              {[
-                { key: 'operations', label: '⚡ Operations' },
-                ...(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant' ? [
-                  { key: 'revenue',  label: '💰 Revenue' },
-                  { key: 'gst',      label: '📋 GST' },
-                  { key: 'expenses', label: '🧾 Expenses' },
-                  { key: 'closing',  label: '🔒 Daily Closing' },
-                ] : []),
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  role="tab"
-                  aria-selected={activeSubTab === tab.key}
-                  onClick={() => setActiveSubTab(tab.key)}
-                  className="px-4 py-2 rounded-xl text-sm font-bold transition"
-                  style={activeSubTab === tab.key
-                    ? { background: 'var(--turmeric)', color: '#2A1607' }
-                    : { background: 'var(--paper-2)', color: 'var(--ink-2)', border: '1px solid var(--line)' }}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Operations Tab — available to cashier, manager, owner */}
-            {activeSubTab === 'operations' && (
-              <div className="grid gap-4">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <section className="card p-4">
-                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Today Cash Sales</p>
-                    <p className="text-2xl font-display font-extrabold tnum">{formatINR(monitor?.today?.cashPaise ?? 0)}</p>
-                  </section>
-                  <section className="card p-4">
-                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Today UPI Sales</p>
-                    <p className="text-2xl font-display font-extrabold tnum">{formatINR(monitor?.today?.upiPaise ?? 0)}</p>
-                  </section>
-                  <section className="card p-4">
-                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Today Total Sales</p>
-                    <p className="text-2xl font-display font-extrabold tnum">{formatINR(monitor?.today?.salesPaise ?? 0)}</p>
-                  </section>
-                  <section className="card p-4">
-                    <p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Orders Today</p>
-                    <p className="text-2xl font-display font-extrabold tnum">{monitor?.today?.orders ?? kpi.todayOrders}</p>
-                  </section>
-                </div>
-
-                <div className="grid lg:grid-cols-2 gap-4">
-                  <section className="card p-5">
-                    <h4 className="font-bold mb-3">⚡ Quick Actions</h4>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn btn-primary justify-start gap-2">
-                        <Store size={16} aria-hidden /> Open POS
-                      </a>
-                      <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn justify-start gap-2" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
-                        <Printer size={16} aria-hidden /> X Report
-                      </a>
-                      <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn justify-start gap-2" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
-                        <Package size={16} aria-hidden /> Cash In / Out
-                      </a>
-                      <a href="/pos" target="_blank" rel="noopener noreferrer" className="btn justify-start gap-2" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
-                        <ClipboardList size={16} aria-hidden /> Close Shift (Z)
-                      </a>
-                    </div>
-                    <p className="text-xs mt-3" style={{ color: 'var(--ink-3)' }}>Shift operations (X Report, cash drop, Z Report) are available inside the POS terminal for cashiers.</p>
-                  </section>
-
-                  <section className="card p-5">
-                    <h4 className="font-bold mb-3">💳 Payment Methods Today</h4>
-                    <div className="flex flex-col gap-2">
-                      {(monitor?.payMix ?? []).length === 0 ? (
-                        <p className="text-sm" style={{ color: 'var(--ink-3)' }}>No payments recorded yet today.</p>
-                      ) : (
-                        (monitor?.payMix ?? []).map((p: any) => (
-                          <div key={p.method} className="flex items-center justify-between py-2 px-3 rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                            <span className="text-sm font-bold capitalize">{p.method}</span>
-                            <span className="text-sm tnum font-mono" style={{ color: 'var(--ink-2)' }}>{formatINR(p.amountPaise ?? 0)}</span>
-                          </div>
-                        ))
-                      )}
-                      <p className="text-xs mt-2" style={{ color: 'var(--ink-3)' }}>Settlement status: UPI & card amounts settled by Razorpay are reflected in your bank within T+1.</p>
-                    </div>
-                  </section>
-                </div>
-              </div>
-            )}
-
-            {/* Revenue Tab — manager + owner */}
-            {activeSubTab === 'revenue' && (staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant') && (
-              <div className="grid gap-4">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <section className="card p-4"><p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Today Sales</p><p className="text-2xl font-display font-extrabold tnum">{formatINR(kpi.todaySalesPaise)}</p></section>
-                  <section className="card p-4"><p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Orders</p><p className="text-2xl font-display font-extrabold tnum">{kpi.todayOrders}</p></section>
-                  <section className="card p-4"><p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>AOV</p><p className="text-2xl font-display font-extrabold tnum">{formatINR(kpi.aovPaise)}</p></section>
-                  <section className="card p-4"><p className="text-xs font-bold mb-2" style={{ color: 'var(--ink-3)' }}>Estimated Profit</p><p className="text-2xl font-display font-extrabold tnum">{formatINR(Math.round(kpi.todaySalesPaise * 0.7))}</p></section>
-                </div>
-                <section className="card p-5">
-                  <h4 className="font-bold mb-3">Revenue Trend</h4>
-                  <SectionView section="sales" />
-                </section>
-              </div>
-            )}
-
-            {/* GST Tab */}
-            {activeSubTab === 'gst' && (staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant') && (
-              <div className="grid gap-4">
-                <section className="card p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-bold">GST Summary</h4>
-                    <span className="pill text-xs">Last 30 days</span>
-                  </div>
-                  {!salesGst ? (
-                    <p className="text-sm" style={{ color: 'var(--ink-3)' }}>Loading GST data…</p>
-                  ) : (
-                    <div className="grid gap-3">
-                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div className="p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}><p className="text-xs mb-1" style={{ color: 'var(--ink-3)' }}>Taxable Value</p><p className="font-bold tnum">{formatINR(salesGst?.totals?.grossPaise ?? 0)}</p></div>
-                        <div className="p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}><p className="text-xs mb-1" style={{ color: 'var(--ink-3)' }}>CGST</p><p className="font-bold tnum">{formatINR((salesGst?.totals?.taxPaise ?? 0) / 2)}</p></div>
-                        <div className="p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}><p className="text-xs mb-1" style={{ color: 'var(--ink-3)' }}>SGST</p><p className="font-bold tnum">{formatINR((salesGst?.totals?.taxPaise ?? 0) / 2)}</p></div>
-                        <div className="p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}><p className="text-xs mb-1" style={{ color: 'var(--ink-3)' }}>Total Tax</p><p className="font-bold tnum">{formatINR(salesGst?.totals?.taxPaise ?? 0)}</p></div>
-                      </div>
-                      {outlet.gstin && <p className="text-xs" style={{ color: 'var(--ink-3)' }}>GSTIN: {outlet.gstin}</p>}
-                      {!outlet.gstin && <p className="text-xs px-3 py-2 rounded-lg" style={{ background: 'color-mix(in srgb, var(--clay) 10%, transparent)', color: 'var(--clay)' }}>⚠ No GSTIN on file. Add it in Settings → Outlet to enable GST invoicing.</p>}
-                    </div>
-                  )}
-                </section>
-              </div>
-            )}
-
-            {/* Daily Closing Tab */}
-            {activeSubTab === 'closing' && (staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant') && (
-              <div className="grid gap-4">
-                <section className="card p-5">
-                  <h4 className="font-bold mb-4">🔒 Daily Closing Checklist</h4>
-                  <div className="flex flex-col gap-3">
-                    {[
-                      { label: 'All shifts closed (Z Reports done)', done: true },
-                      { label: 'Cash counted and deposited', done: false },
-                      { label: 'UPI settlements verified', done: true },
-                      { label: 'Card settlements verified', done: false },
-                      { label: 'Vendor payments logged', done: true },
-                      { label: 'Stock adjusted for waste', done: false },
-                    ].map((item, i) => (
-                      <div key={i} className="flex items-center gap-3 py-2.5 px-3 rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                        <span className="text-base">{item.done ? '✅' : '⏳'}</span>
-                        <span className="text-sm font-bold" style={{ color: item.done ? 'var(--ink)' : 'var(--ink-2)' }}>{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-4 p-4 rounded-xl" style={{ background: 'color-mix(in srgb, var(--turmeric) 12%, transparent)', border: '1px solid var(--turmeric-l)' }}>
-                    <p className="text-sm font-bold">Day Summary</p>
-                    <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
-                      <span style={{ color: 'var(--ink-3)' }}>Total Revenue</span><span className="font-bold tnum text-right">{formatINR(kpi.todaySalesPaise)}</span>
-                      <span style={{ color: 'var(--ink-3)' }}>Orders</span><span className="font-bold tnum text-right">{kpi.todayOrders}</span>
-                    </div>
-                  </div>
-                  <button className="btn btn-primary w-full mt-4">Lock Day & Close ↗</button>
-                </section>
-              </div>
-            )}
-
-            {/* Expenses Tab */}
-            {activeSubTab === 'expenses' && (staff.role === 'owner' || staff.role === 'manager' || staff.role === 'accountant') && (
-              <div className="card p-5">
-                <h4 className="font-bold mb-3">🧾 Expenses</h4>
-                <p className="text-sm" style={{ color: 'var(--ink-3)' }}>Expense tracking is coming soon. Log rent, utilities, and petty cash here.</p>
-                <div className="mt-4 p-3 rounded-xl" style={{ background: 'color-mix(in srgb, var(--turmeric) 8%, transparent)', border: '1px dashed var(--turmeric)' }}>
-                  <p className="text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>🚧 Coming in next release</p>
-                </div>
-              </div>
-            )}
-          </div>
+          <FinanceManagement outlet={outlet} staff={staff} kpi={kpi} formatINR={formatINR} />
         )}
 
         {/* ── Live Monitor (legacy — now embedded on Home) ── */}
@@ -2340,24 +2283,26 @@ export default function DashboardClient({
         {activeMenu === 'home' && (
           <div className="flex flex-col gap-4">
             {/* Home Sub Tabs */}
-            <div className="flex gap-1.5 p-1 rounded-[16px] border max-w-[340px]" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist" aria-label="Home sections">
-              {[
-                { key: 'overview', label: '📊 Overview' },
-                { key: 'floor', label: '🍽️ Live Floor' }
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  role="tab"
-                  aria-selected={activeSubTab === tab.key}
-                  onClick={() => setActiveSubTab(tab.key)}
-                  className="flex-1 px-4 py-2 rounded-[12px] text-sm font-bold transition"
-                  style={activeSubTab === tab.key
-                    ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
-                    : { color: 'var(--ink-2)' }}
-                >
-                  {tab.label}
-                </button>
-              ))}
+            <div className="flex justify-start pb-1">
+              <div className="flex gap-1 p-1 rounded-full border shadow-sm w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist" aria-label="Home sections">
+                {[
+                  { key: 'overview', label: '📊 Overview' },
+                  { key: 'floor', label: '🍽️ Live Floor' }
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={activeSubTab === tab.key}
+                    onClick={() => setActiveSubTab(tab.key)}
+                    className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                    style={activeSubTab === tab.key
+                      ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                      : { color: 'var(--ink-2)', background: 'transparent' }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Overview Tab */}
@@ -2530,20 +2475,20 @@ export default function DashboardClient({
           <div className="flex flex-col gap-4">
             {/* Quick launcher cards */}
             <div className="grid grid-cols-2 gap-4">
-              <a href="/pos" target="_blank" className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition">
+              <button onClick={() => setShowPos(true)} className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition text-left cursor-pointer">
                 <span className="text-3xl">⊞</span>
                 <div className="mt-3">
                   <h3 className="text-lg font-bold">Take Order (POS)</h3>
                   <p className="text-xs text-ink-3">Open interactive cashier till</p>
                 </div>
-              </a>
-              <a href="/kds" target="_blank" className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition">
+              </button>
+              <button onClick={() => setShowKds(true)} className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition text-left cursor-pointer">
                 <span className="text-3xl">⊟</span>
                 <div className="mt-3">
                   <h3 className="text-lg font-bold">Kitchen Display (KDS)</h3>
                   <p className="text-xs text-ink-3">Track live cooking queues</p>
                 </div>
-              </a>
+              </button>
             </div>
 
             <section className="card p-5">
@@ -2710,18 +2655,44 @@ export default function DashboardClient({
         {activeMenu === 'inventory' && (
           <div className="flex flex-col gap-4">
             {/* Tabs */}
-            <div className="flex flex-wrap gap-2 border-b" style={{ borderColor: 'var(--line)' }}>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'stock' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('stock')}>Basic Stock</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'consumption' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('consumption')}>Consumption {consumption.length > 0 && <span className="ml-1 text-[10px] align-top">●</span>}</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'purchase' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('purchase')}>Purchase Entry</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'adjust' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('adjust')}>Adjustment</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'recipes' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('recipes')}>Recipes 🧪</button>
-              {isAdvanced && (
-                <>
-                  <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'vendors' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('vendors')}>Vendors</button>
-                  <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'autopo' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('autopo')}>Auto POs</button>
-                </>
-              )}
+            <div className="flex justify-start pb-2">
+              <div className="flex flex-wrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+                {[
+                  { key: 'stock', label: 'Basic Stock' },
+                  { key: 'consumption', label: `Consumption` },
+                  { key: 'purchase', label: 'Purchase Entry' },
+                  { key: 'adjust', label: 'Adjustment' },
+                  { key: 'recipes', label: 'Recipes 🧪' },
+                  ...(isAdvanced ? [
+                    { key: 'vendors', label: 'Vendors' },
+                    { key: 'autopo', label: 'Auto POs' }
+                  ] : [])
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={activeSubTab === tab.key}
+                    onClick={() => {
+                      if (tab.key === 'vendors') {
+                        setActiveMenu('suppliers');
+                        setActiveSubTab('ledger');
+                      } else {
+                        setActiveSubTab(tab.key);
+                      }
+                    }}
+                    className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                    style={activeSubTab === tab.key
+                      ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                      : { color: 'var(--ink-2)', background: 'transparent' }}
+                  >
+                    {tab.label === 'Consumption' && consumption.length > 0 ? (
+                      <span className="flex items-center gap-1">
+                        Consumption <span className="w-1.5 h-1.5 rounded-full bg-turmeric-d" />
+                      </span>
+                    ) : tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {activeSubTab === 'stock' && (
@@ -2970,11 +2941,28 @@ export default function DashboardClient({
         {/* ── 3b. Suppliers & Credit View ── */}
         {activeMenu === 'suppliers' && (
           <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap gap-2 border-b" style={{ borderColor: 'var(--line)' }}>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'ledger' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('ledger')}>Ledger & Dues</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'invoice' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('invoice')}>New Invoice</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'payment' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('payment')}>Record Payment</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'addvendor' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('addvendor')}>Add Supplier</button>
+            <div className="flex justify-start pb-2">
+              <div className="flex flex-wrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+                {[
+                  { key: 'ledger', label: 'Ledger & Dues' },
+                  { key: 'invoice', label: 'New Invoice' },
+                  { key: 'payment', label: 'Record Payment' },
+                  { key: 'addvendor', label: 'Add Supplier' }
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={activeSubTab === tab.key}
+                    onClick={() => setActiveSubTab(tab.key)}
+                    className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                    style={activeSubTab === tab.key
+                      ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                      : { color: 'var(--ink-2)', background: 'transparent' }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {activeSubTab === 'ledger' && (
@@ -3000,24 +2988,37 @@ export default function DashboardClient({
                   ) : !suppliers?.vendors?.length ? (
                     <p className="text-sm text-ink-3">No suppliers yet. Add one under “Add Supplier”.</p>
                   ) : (
-                    <div className="grid gap-2">
+                    <div className="grid gap-2.5">
                       {suppliers.vendors.map((v: any) => (
-                        <button key={v.id} onClick={() => openStatement(v.id)} className="flex justify-between items-center text-sm p-3 rounded-xl text-left transition hover:-translate-y-0.5" style={{ background: 'var(--paper-3)' }}>
+                        <button
+                          key={v.id}
+                          onClick={() => openStatement(v.id)}
+                          className="flex justify-between items-center text-sm p-4 rounded-2xl text-left transition duration-200 hover:-translate-y-0.5 cursor-pointer"
+                          style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', boxShadow: 'var(--sh-1)' }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--turmeric)';
+                            e.currentTarget.style.boxShadow = 'var(--sh-2)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--line)';
+                            e.currentTarget.style.boxShadow = 'var(--sh-1)';
+                          }}
+                        >
                           <div>
-                            <span className="font-bold">{v.name}</span>
+                            <span className="font-bold text-slate-800">{v.name}</span>
                             {v.phone && <span className="text-xs text-ink-3 ml-2">{v.phone}</span>}
-                            <span className="block text-[11px] text-ink-3">Invoiced {formatINR(v.invoicedPaise)} · Paid {formatINR(v.paidPaise)}</span>
+                            <span className="block text-[11px] text-ink-3 mt-1">Invoiced {formatINR(v.invoicedPaise)} · Paid {formatINR(v.paidPaise)}</span>
                           </div>
                           <div className="text-right">
-                            <span className="font-mono font-bold" style={{ color: v.balancePaise > 0 ? 'var(--clay)' : 'var(--cardamom-d)' }}>{formatINR(v.balancePaise)}</span>
-                            <span className="block text-[10px] text-ink-3 uppercase">{v.balancePaise > 0 ? 'payable' : 'settled'}</span>
+                            <span className="font-mono font-bold text-sm" style={{ color: v.balancePaise > 0 ? 'var(--clay)' : 'var(--cardamom-d)' }}>{formatINR(v.balancePaise)}</span>
+                            <span className="block text-[10px] text-ink-3 uppercase mt-0.5">{v.balancePaise > 0 ? 'payable' : 'settled'}</span>
                           </div>
                         </button>
                       ))}
                     </div>
                   )}
                 </section>
-
+ 
                 <div className="grid lg:grid-cols-2 gap-4">
                   {/* recent invoices */}
                   <section className="card p-5">
@@ -3027,14 +3028,14 @@ export default function DashboardClient({
                     ) : (
                       <div className="grid gap-2">
                         {suppliers.invoices.map((inv: any) => (
-                          <div key={inv.id} className="flex justify-between items-center text-sm p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}>
+                          <div key={inv.id} className="flex justify-between items-center text-sm p-3.5 rounded-xl border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
                             <div>
-                              <span className="font-bold">{inv.vendorName}</span>
-                              <span className="block text-[11px] text-ink-3">{inv.invoiceNo ? `#${inv.invoiceNo} · ` : ''}{new Date(inv.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}{inv.dueDate ? ` · due ${new Date(inv.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}` : ''}</span>
+                              <span className="font-bold text-slate-800">{inv.vendorName}</span>
+                              <span className="block text-[11px] text-ink-3 mt-1">{inv.invoiceNo ? `#${inv.invoiceNo} · ` : ''}{new Date(inv.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}{inv.dueDate ? ` · due ${new Date(inv.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}` : ''}</span>
                             </div>
                             <div className="text-right">
-                              <span className="font-mono">{formatINR(inv.totalPaise)}</span>
-                              <span className="block text-[10px] font-bold uppercase" style={{ color: inv.overdue ? 'var(--clay)' : inv.payStatus === 'paid' ? 'var(--cardamom-d)' : 'var(--turmeric-d)' }}>
+                              <span className="font-mono font-bold">{formatINR(inv.totalPaise)}</span>
+                              <span className="block text-[10px] font-bold uppercase mt-0.5" style={{ color: inv.overdue ? 'var(--clay)' : inv.payStatus === 'paid' ? 'var(--cardamom-d)' : 'var(--turmeric-d)' }}>
                                 {inv.overdue ? 'overdue' : inv.payStatus}{inv.balancePaise > 0 ? ` · ${formatINR(inv.balancePaise)} left` : ''}
                               </span>
                             </div>
@@ -3043,7 +3044,7 @@ export default function DashboardClient({
                       </div>
                     )}
                   </section>
-
+ 
                   {/* recent payments */}
                   <section className="card p-5">
                     <h4 className="font-bold mb-3">Recent Payments</h4>
@@ -3052,12 +3053,12 @@ export default function DashboardClient({
                     ) : (
                       <div className="grid gap-2">
                         {suppliers.payments.map((p: any) => (
-                          <div key={p.id} className="flex justify-between items-center text-sm p-3 rounded-xl" style={{ background: 'var(--paper-3)' }}>
+                          <div key={p.id} className="flex justify-between items-center text-sm p-3.5 rounded-xl border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
                             <div>
-                              <span className="font-bold">{p.vendorName}</span>
-                              <span className="block text-[11px] text-ink-3 capitalize">{p.method}{p.reference ? ` · ${p.reference}` : ''} · {new Date(p.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                              <span className="font-bold text-slate-800">{p.vendorName}</span>
+                              <span className="block text-[11px] text-ink-3 mt-1 capitalize">{p.method}{p.reference ? ` · ${p.reference}` : ''} · {new Date(p.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
                             </div>
-                            <span className="font-mono" style={{ color: 'var(--cardamom-d)' }}>− {formatINR(p.amountPaise)}</span>
+                            <span className="font-mono font-bold text-sm" style={{ color: 'var(--cardamom-d)' }}>− {formatINR(p.amountPaise)}</span>
                           </div>
                         ))}
                       </div>
@@ -3181,11 +3182,28 @@ export default function DashboardClient({
         {/* ── 3c. Tables: occupancy & revenue ── */}
         {activeMenu === 'tables' && (
           <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap gap-2 border-b" style={{ borderColor: 'var(--line)' }}>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'floor' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('floor')}>Live Floor</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'profit' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('profit')}>Profitability</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'peak' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('peak')}>Peak Hours</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'tcfg' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('tcfg')}>Alert Settings</button>
+            <div className="flex justify-start pb-2">
+              <div className="flex flex-wrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+                {[
+                  { key: 'floor', label: 'Live Floor' },
+                  { key: 'profit', label: 'Profitability' },
+                  { key: 'peak', label: 'Peak Hours' },
+                  { key: 'tcfg', label: 'Alert Settings' }
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={activeSubTab === tab.key}
+                    onClick={() => setActiveSubTab(tab.key)}
+                    className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                    style={activeSubTab === tab.key
+                      ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                      : { color: 'var(--ink-2)', background: 'transparent' }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* KPI row (shared) */}
@@ -3407,16 +3425,31 @@ export default function DashboardClient({
         {activeMenu === 'reports' && (
           <div className="flex flex-col gap-4">
             {/* Tabs */}
-            <div className="subtabs border-b" style={{ borderColor: 'var(--line)' }}>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'daily' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('daily')}>Daily Sales</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'best' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('best')}>Top Items</button>
-              <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'gst' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('gst')}>GST Report</button>
-              {isAdvanced && (
-                <>
-                  <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'analytics' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('analytics')}>Advanced Analytics 📊</button>
-                  <button className={`pb-2 px-3 text-sm font-bold ${activeSubTab === 'forecast' ? 'border-b-2 border-turmeric text-ink' : 'text-ink-3'}`} onClick={() => setActiveSubTab('forecast')}>Demand Forecast</button>
-                </>
-              )}
+            <div className="flex justify-start pb-2">
+              <div className="flex flex-wrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
+                {[
+                  { key: 'daily', label: 'Daily Sales' },
+                  { key: 'best', label: 'Top Items' },
+                  { key: 'gst', label: 'GST Report' },
+                  ...(isAdvanced ? [
+                    { key: 'analytics', label: 'Advanced Analytics 📊' },
+                    { key: 'forecast', label: 'Demand Forecast' }
+                  ] : [])
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={activeSubTab === tab.key}
+                    onClick={() => setActiveSubTab(tab.key)}
+                    className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                    style={activeSubTab === tab.key
+                      ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                      : { color: 'var(--ink-2)', background: 'transparent' }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {activeSubTab === 'daily' && (
@@ -4916,7 +4949,7 @@ export default function DashboardClient({
                     <span>Entry</span><span className="text-right">Debit</span><span className="text-right">Credit</span><span className="text-right">Balance</span>
                   </div>
                   {statement.ledger.map((e: any) => (
-                    <div key={e.id} className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-1.5 sm:gap-3 text-sm p-3 rounded-xl sm:items-center" style={{ background: 'var(--paper-3)' }}>
+                    <div key={e.id} className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-1.5 sm:gap-3 text-sm p-3.5 rounded-xl sm:items-center border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
                       <div>
                         <span className="font-bold">{e.label}</span>
                         <span className="block text-[11px] text-ink-3">{new Date(e.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
@@ -5247,6 +5280,72 @@ export default function DashboardClient({
       )}
 
       {/* Mobile navigation — slide-out drawer (full menu) + bottom nav (key actions) */}
+      {showPos && (
+        <div className="fixed inset-0 z-[9500] flex flex-col" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
+          {/* Header bar */}
+          <div className="flex items-center justify-between px-5 py-3 border-b shrink-0" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }}>
+            <div className="flex items-center gap-2.5">
+              <span className="grid place-items-center rounded-xl shrink-0" style={{ width: 34, height: 34, background: 'var(--paper-3)', color: 'var(--turmeric)' }}>
+                <Store size={18} aria-hidden />
+              </span>
+              <div>
+                <h2 className="font-display text-sm font-bold leading-tight">POS Terminal</h2>
+                <p className="text-[10px]" style={{ color: 'var(--ink-3)' }}>{outlet.name} · {staff.name}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowPos(false)}
+              className="btn btn-sm btn-ghost flex items-center gap-1.5 px-3 py-1.5 font-bold cursor-pointer"
+              style={{ color: 'var(--ink-2)' }}
+            >
+              <X size={16} aria-hidden />
+              <span>Exit POS</span>
+            </button>
+          </div>
+          {/* Iframe */}
+          <div className="flex-1 relative overflow-hidden bg-background">
+            <iframe
+              src="/pos"
+              className="absolute inset-0 w-full h-full border-none"
+              title="POS Terminal"
+            />
+          </div>
+        </div>
+      )}
+
+      {showKds && (
+        <div className="fixed inset-0 z-[9500] flex flex-col" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
+          {/* Header bar */}
+          <div className="flex items-center justify-between px-5 py-3 border-b shrink-0" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }}>
+            <div className="flex items-center gap-2.5">
+              <span className="grid place-items-center rounded-xl shrink-0" style={{ width: 34, height: 34, background: 'var(--paper-3)', color: 'var(--turmeric)' }}>
+                <ChefHat size={18} aria-hidden />
+              </span>
+              <div>
+                <h2 className="font-display text-sm font-bold leading-tight">Kitchen Display System</h2>
+                <p className="text-[10px]" style={{ color: 'var(--ink-3)' }}>{outlet.name} · {staff.name}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowKds(false)}
+              className="btn btn-sm btn-ghost flex items-center gap-1.5 px-3 py-1.5 font-bold cursor-pointer"
+              style={{ color: 'var(--ink-2)' }}
+            >
+              <X size={16} aria-hidden />
+              <span>Exit KDS</span>
+            </button>
+          </div>
+          {/* Iframe */}
+          <div className="flex-1 relative overflow-hidden bg-background">
+            <iframe
+              src="/kds"
+              className="absolute inset-0 w-full h-full border-none"
+              title="Kitchen Display System"
+            />
+          </div>
+        </div>
+      )}
+
       <MobileDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -5265,6 +5364,24 @@ export default function DashboardClient({
         drawerOpen={drawerOpen}
         liveOrders={liveOrders}
       />
+
+      {/* Viewport tooltip for collapsed sidebar */}
+      {hoveredItem && (
+        <div
+          className="fixed z-[9999] px-2.5 py-1.5 text-xs font-bold rounded-lg shadow-md pointer-events-none whitespace-nowrap"
+          style={{
+            top: hoveredItem.top,
+            left: hoveredItem.right + 8,
+            transform: 'translateY(-50%)',
+            background: 'var(--espresso)',
+            color: 'var(--paper)',
+            boxShadow: 'var(--sh-2)',
+            border: '1px solid var(--line)',
+          }}
+        >
+          {hoveredItem.label}
+        </div>
+      )}
     </div>
   );
 }

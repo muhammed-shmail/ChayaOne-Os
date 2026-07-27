@@ -12,8 +12,10 @@ import type {
   SettingsData,
   SectionData,
 } from '@/lib/sections';
-import type { StaffRole } from '@cafeos/db';
 import { ROLE_LABELS, ALL_ROLES } from '@/lib/rbac';
+import type { StaffRole } from '@cafeos/db';
+import StaffRBACManagement from './components/StaffRBACManagement';
+
 
 /* maps a sidebar key → API section key (only those with a deep view) */
 export const SECTION_KEY: Record<string, SectionData['section'] | undefined> = {
@@ -82,7 +84,7 @@ function SectionBody({ payload, refresh }: { payload: SectionData; refresh: () =
     case 'inventory':
       return <Inventory d={payload.data} />;
     case 'staff':
-      return <Staff d={payload.data} refresh={refresh} />;
+      return <StaffRBACManagement d={payload.data} refresh={refresh} />;
     case 'loyalty':
       return <Loyalty d={payload.data} />;
     case 'marketing':

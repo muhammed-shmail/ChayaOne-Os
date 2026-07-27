@@ -106,6 +106,27 @@
   .pill-danger { background: var(--danger-bg); color: var(--danger-ink); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
   .pill-info   { background: var(--info-bg);   color: var(--info-ink);   border-color: color-mix(in srgb, var(--info) 35%, transparent); }
 
+/* ==== Dashboard Redesign Palette ==== */
+:root {
+  --primary-orange: #F4A261; /* orange */
+  --positive-green: #2F9E44; /* green */
+  --negative-red: #D64545;   /* red */
+  --warning-amber: #F9B424;  /* amber */
+  --neutral-gray: #A0A0A0;   /* gray */
+}
+/* Icon circle utilities */
+.icon-circle-primary { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--primary-orange)] text-white; }
+.icon-circle-positive { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--positive-green)] text-white; }
+.icon-circle-negative { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--negative-red)] text-white; }
+.icon-circle-warning { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--warning-amber)] text-white; }
+.icon-circle-neutral { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--neutral-gray)] text-white; }
+/* Typography utilities */
+.section-heading { @apply text-2xl font-bold text-[var(--ink-2)]; }
+.kpi-number { @apply text-5xl font-semibold text-[var(--ink)]; }
+.kpi-label { @apply uppercase text-sm text-[var(--ink-3)]; }
+
+
+
   /* ---- Responsive data table → stacked cards on mobile --------------- */
   /* Keep ALL the table's normal classes (w-full, text-sm, …) and add `rtable`.
      Below md each row collapses to a card; at md+ NOTHING here applies, so the
@@ -243,6 +264,52 @@
     background-position: right 0.5rem center !important;
     background-size: 1.25em !important;
     padding-right: 1.75rem !important;
+  }
+  select.inp {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236B5B4D' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.75rem center !important;
+    background-size: 1.25em !important;
+    padding-right: 2.5rem !important;
+  }
+  
+  /* Custom sleek scrollbar for select dropdown options list */
+  .select-scrollbar::-webkit-scrollbar {
+    width: 6px !important;
+  }
+  .select-scrollbar::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+  .select-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--line-2) !important;
+    border-radius: 999px !important;
+  }
+  .select-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-3) !important;
+  }
+  .select-scrollbar {
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--line-2) transparent !important;
+  }
+
+  /* Global native select option dropdown list styling */
+  select option {
+    background-color: var(--paper-2) !important;
+    color: var(--ink) !important;
+    font-family: var(--font-body), sans-serif !important;
+    font-size: 13px !important;
+    padding: 10px !important;
+  }
+  
+  select option:hover,
+  select option:focus,
+  select option:active,
+  select option:checked {
+    background-color: var(--turmeric) !important;
+    color: #2A1607 !important;
   }
 }
 

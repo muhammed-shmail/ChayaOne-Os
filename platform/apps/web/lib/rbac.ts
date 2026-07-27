@@ -37,9 +37,9 @@ export const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
 /** Which roles may reach each surface. */
 const ACCESS: Record<Surface, StaffRole[]> = {
   dashboard: ['owner', 'manager', 'cashier', 'accountant'],
-  pos: ['owner', 'manager', 'cashier', 'waiter'],
+  pos: ['owner', 'manager', 'cashier', 'waiter', 'accountant'],
   kds: ['owner', 'manager', 'cashier', 'kitchen'],
-  approvals: ['owner', 'manager', 'cashier', 'waiter', 'kitchen'], // kitchen is view-only (enforced in the approvals API)
+  approvals: ['owner', 'manager', 'cashier', 'waiter', 'kitchen', 'accountant'], // kitchen is view-only (enforced in the approvals API)
 };
 
 export function canAccess(role: string, surface: Surface): boolean {
