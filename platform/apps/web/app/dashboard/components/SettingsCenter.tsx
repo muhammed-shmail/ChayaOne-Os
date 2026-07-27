@@ -13,21 +13,6 @@ import type { Device } from '@/lib/devices';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
 import type { PwaConfig } from '@/lib/pwa';
 
-// Section structure
-interface SettingItem {
-  key: string;
-  label: string;
-  desc: string;
-  icon: React.ComponentType<any>;
-  sensitive?: boolean;
-  ownerOnly?: boolean;
-}
-
-interface SettingSection {
-  title: string;
-  items: SettingItem[];
-}
-
 // Category groups & metadata
 export interface SettingItem {
   key: string;
