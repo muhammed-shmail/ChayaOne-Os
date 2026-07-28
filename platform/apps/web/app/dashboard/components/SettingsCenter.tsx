@@ -2345,30 +2345,6 @@ export default function SettingsCenter({
                                   </table>
                                 </div>
                               )}
-                              
-                              {auditTotal > 10 && (
-                                <div className="flex justify-between items-center mt-3 pt-3 border-t" style={{ borderColor: 'var(--line-2)' }}>
-                                  <button
-                                    type="button"
-                                    disabled={auditPage <= 1}
-                                    onClick={() => handleAuditPageChange(auditPage - 1)}
-                                    className="btn py-1 px-2.5 text-[10px]"
-                                    style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
-                                  >
-                                    Previous
-                                  </button>
-                                  <span className="text-[10px] text-ink-3">Page {auditPage}</span>
-                                  <button
-                                    type="button"
-                                    disabled={auditPage * 10 >= auditTotal}
-                                    onClick={() => handleAuditPageChange(auditPage + 1)}
-                                    className="btn py-1 px-2.5 text-[10px]"
-                                    style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}
-                                  >
-                                    Next
-                                  </button>
-                                </div>
-                              )}
                             </div>
                           )}
                         </div>
