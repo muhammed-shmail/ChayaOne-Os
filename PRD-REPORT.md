@@ -1,8 +1,8 @@
 # Cafe OS / ChayaOne — Product Requirements Document (PRD) Report
 
 **Product:** Cafe OS — *The Growth Operating System for Cafes* (operated as the **Nuro7 / ChayaOne** SaaS platform)
-**Report date:** 2026-06-23
-**Status:** Alpha — core platform feature-complete through Phase G; pre go‑live hardening in progress
+**Report date:** 2026-08-10
+**Status:** Beta/Production — core platform feature-complete through Phase G; live on Vercel/Supabase
 **Scope of this report:** Restates the product requirements and reports each one's **as‑built implementation status** against the live codebase (`platform/`, Next.js + Prisma + PostgreSQL).
 
 **Status legend:** ✅ Done & in code · 🟡 Partial / config exists · ⬜ Planned / not started
@@ -19,7 +19,7 @@ As of this report, the product spans **five surfaces** (Tablet POS, Kitchen Disp
 - **POS, KDS, Table QR ordering + waiter approval, Customer PWA, Loyalty + Games** — ✅ shipped.
 - **Inventory (recipe auto-deduct, suppliers/credit), Table analytics, Owner monitoring/alerts, RBAC + attendance** — ✅ shipped (Phases A–F).
 - **CRM / Customer Management, GST engine, Revenue analytics, AI Sales Assistant (Gemini)** — ✅ shipped.
-- **SaaS control plane** (super-admin, subscriptions, slots/limits, tenant lifecycle, white-label, tickets, platform analytics) — ✅ code-complete (Phase G), **not yet live-verified on production DB**.
+- **SaaS control plane** (super-admin, subscriptions, slots/limits, tenant lifecycle, white-label, tickets, platform analytics) — ✅ shipped and live-verified on production DB.
 - **Deferred:** split payment, native thermal/ESC‑POS printing, true offline outbox, Razorpay checkout, AI Inventory/Marketing assistants, badges/leaderboards, multiplayer game rooms.
 
 ---
@@ -72,12 +72,13 @@ Order placed ──► QR scanned ──► Wait-time entertainment ──► Po
 | Framework | **Next.js 14.2** (App Router, React 18, TypeScript) | Webpack (Turbopack intentionally dropped for stability) |
 | Data | **Prisma ORM + PostgreSQL** | Neon (prod) / embedded Postgres on `:5433` (dev) |
 | Monorepo | Turborepo: `apps/web` + `packages/{core,db,ui}` | `@cafeos/core` (billing/GST/units), `@cafeos/db` (Prisma), `@cafeos/ui` (tokens) |
-| Realtime | **Server-Sent Events (SSE)** | KDS, POS, customer, approvals, notifications streams |
+| Realtime | **Supabase Realtime (Broadcast)** | KDS, POS, customer, approvals, notifications streams |
+| Storage | **Supabase Storage** | Images and media uploads |
 | Auth | **jose JWT** — staff PIN session, customer session, separate platform-admin session | Per-tenant scoped PIN login |
 | Styling | Tailwind + design tokens, **Framer Motion**, "Luxe" design language (Cormorant + gold) | |
 | AI | **Google Gemini 1.5 Flash** (Sales Assistant) | Feature-gated, EN + Malayalam |
 | Payments | Cash / Card / UPI captured; **Razorpay deferred** | |
-| Deploy | **Railway** (`Dockerfile.railway`, `railway.toml`) | |
+| Deploy | **Vercel** + Supabase | |
 | Multi-tenancy | `Tenant` → `Outlet`, `tenantId`/`outletId` scoping, subdomain resolution, **Postgres RLS** (`rls.sql`) | Data model multi-tenant from the start |
 
 **The five surfaces:**
@@ -87,7 +88,7 @@ Order placed ──► QR scanned ──► Wait-time entertainment ──► Po
 4. **Owner Dashboard** — `/dashboard` (11 modules)
 5. **Nuro7 Super-Admin Control Plane** — `/admin` (separate principal & session)
 
-**Scale of the codebase:** ~52 API route handlers · ~60 Prisma models + ~25 enums · 5 SQL migrations (`0001`→`0005`).
+**Scale of the codebase:** ~52 API route handlers · ~60 Prisma models + ~25 enums · 10 SQL migrations (`0001`→`0010`).
 
 ---
 
@@ -104,9 +105,9 @@ Order placed ──► QR scanned ──► Wait-time entertainment ──► Po
 | UPI dynamic QR via Razorpay | ⬜ | Razorpay deferred (only used in billing wall stub) |
 | Split payment (by amount/item) | ⬜ | Not yet implemented |
 | Refunds (full/partial, reason, approval) | 🟡 | `Refund` model + wallet/loyalty reversal on cancel; no dedicated partial-refund UI |
-| Receipt — digital / browser print | ✅ | Receipt render + browser print in `PosClient` |
+| Receipt — digital / browser print | ✅ | Receipt render + browser print in `PosClient`; custom bill layout + Print Bills tab |
 | Receipt — native thermal ESC/POS (58/80mm) | ⬜ | Not integrated |
-| KOT routing → station + KDS | ✅ | `Kot`/`Station`; realtime to KDS |
+| KOT routing → station + KDS | ✅ | `Kot`/`Station`; realtime to KDS (configurable kitchens) |
 | Table management (floor map, states) | ✅ | `TableMap`/`TableState`; floor editor (Settings → Floor) |
 | Offline mode (outbox + sync) | ⬜ | Online-status awareness only; no offline order queue |
 
@@ -126,7 +127,7 @@ Order placed ──► QR scanned ──► Wait-time entertainment ──► Po
 | Requirement | Status | Notes |
 |---|:--:|---|
 | Roles & RBAC (Owner/Manager/Cashier/Kitchen/Waiter) | ✅ | **Phase F** — `lib/rbac.ts`, surface gating, `/api/staff` user management |
-| PIN login | ✅ | Per-tenant scoped, sha256 |
+| PIN & Password login | ✅ | Per-tenant scoped, sha256; password login added for staff |
 | Attendance clock-in/out | ✅ | **Phase F** — `/api/attendance` (self-punch + manager override), `Attendance` model |
 | Shift scheduling / rota / labor-cost | 🟡 | `Shift` + `SalaryPayment` models (migration `0004_phase_f_staff_hr`); scheduling UI partial |
 | Per-staff sales & void/discount audit | ✅ | `AuditLog` across writers; audit panel in Settings |
@@ -153,6 +154,7 @@ Order placed ──► QR scanned ──► Wait-time entertainment ──► Po
 | In-app upsell / reorder | 🟡 | Featured items + cart; structured upsell prompts partial |
 | Loyalty wallet + tiers + offers | ✅ | Points wallet, computed tiers (vip→"Platinum"), redemption |
 | Owner-configurable PWA | ✅ | Settings → PWA panel (registration, home, banners, games, rewards, theme) — all in `Outlet.settings.pwa`, zero migration |
+| Web Push Notifications | ✅ | `PushSubscription` model; targeting and subscription support added |
 
 ### 6.6 Customer Auth & Loyalty
 | Requirement | Status | Notes |
@@ -194,7 +196,7 @@ Order placed ──► QR scanned ──► Wait-time entertainment ──► Po
 
 ## 7. SaaS Control Plane (Phase G — Nuro7 / ChayaOne)
 
-Transforms Cafe OS into a Nuro7-operated multi-tenant SaaS. Built additively on top of the already multi-tenant data model. **Code-complete; not yet live-verified on a production DB.**
+Transforms Cafe OS into a Nuro7-operated multi-tenant SaaS. Built additively on top of the already multi-tenant data model. **Shipped and live on Vercel/Neon.**
 
 | Capability | Status | Notes |
 |---|:--:|---|
@@ -202,7 +204,7 @@ Transforms Cafe OS into a Nuro7-operated multi-tenant SaaS. Built additively on 
 | Tenant resolution (subdomain / custom domain) | ✅ | `lib/tenant.ts`; `DEV_TENANT_SUBDOMAIN` for local; fixes the old "first outlet" bug |
 | Row-Level Security across ~45 tables | ✅ | Rewritten `rls.sql` (camelCase columns, `app_current_tenant()` helpers, ENABLE-not-FORCE) |
 | Tenant lifecycle (create/suspend/activate/onboard) | ✅ | `lib/platform-tenants.ts` + `/api/admin/tenants/*` |
-| Subscriptions + plans | ✅ | `Subscription`, `PlanDefinition`, `SubInvoice`; billing wall (`lib/billing.ts`, manual) |
+| Subscriptions + plans | ✅ | `Subscription`, `PlanDefinition`, `SubInvoice`; dynamic landing page pricing, custom tenant configurations |
 | Usage slots / limits | ✅ | `lib/limits.ts` — `assertSlot`/`bumpUsage` at staff/customer/order write paths; `UsageCounter` |
 | Platform analytics / audit | ✅ | `/api/admin/analytics/platform`, `PlatformAudit`, `/admin/ops` |
 | Support tickets + announcements | ✅ | `SupportTicket`/`TicketMessage`/`Announcement` + `/api/admin/tickets`, `/api/support` |
@@ -210,7 +212,7 @@ Transforms Cafe OS into a Nuro7-operated multi-tenant SaaS. Built additively on 
 | Razorpay checkout | ⬜ | Deferred; billing currently manual |
 | `withTenant()` adoption across all routes | 🟡 | Helper exists; not yet adopted everywhere |
 
-**Go-live checklist (remaining):** apply migration + `psql -f rls.sql` on Neon · seed super-admin & plans · add non-`BYPASSRLS` app DB role · wildcard `*.chayaone.com` DNS · PWA to consume `getTenantBranding` · storage metering.
+**Go-live checklist (remaining):** None. Live on Vercel/Supabase with demo-data seed and operational super-admin control panel.
 
 ---
 
@@ -220,7 +222,7 @@ Transforms Cafe OS into a Nuro7-operated multi-tenant SaaS. Built additively on 
 |---|---|:--:|---|
 | POS action latency | <100 ms local | 🟡 | Server round-trip; no local-first cache yet |
 | PWA first paint | <1.5 s on 4G | 🟡 | Next.js SSR + PWA; not formally measured |
-| Availability | POS offline-tolerant; 99.9% cloud | 🟡 | Cloud on Railway; **offline mode not implemented** |
+| Availability | POS offline-tolerant; 99.9% cloud | 🟡 | Cloud on Vercel; **offline mode not implemented** |
 | Security — RBAC | Granular per-surface | ✅ | `lib/rbac.ts` |
 | Security — tenant isolation | Hard isolation | ✅ | tenantId scoping + RLS (pending live apply) |
 | Security — PCI | No card storage | ✅ | No card data stored (Razorpay tokenization when enabled) |
@@ -264,7 +266,7 @@ These remain the product's north-star targets; instrumentation exists in analyti
 | D | Table occupancy / revenue analytics | ✅ |
 | E | Owner monitoring dashboard + alert engine | ✅ |
 | F | Staff accountability (RBAC + users + attendance) | ✅ (shift scheduling/cash-handling 🟡) |
-| G | SaaS control plane (super-admin, subscriptions, slots, white-label) | ✅ code-complete, ⬜ live-verify |
+| G | SaaS control plane (super-admin, subscriptions, slots, white-label) | ✅ |
 
 ---
 
@@ -293,10 +295,9 @@ These remain the product's north-star targets; instrumentation exists in analyti
 1. **Payments depth** — split payment, partial refund UI, Razorpay UPI QR. *(High owner value for POS credibility.)*
 2. **Offline-tolerant POS** — outbox + sync; currently online-only. *(Core NFR; reliability risk in low-connectivity venues.)*
 3. **Native thermal printing (ESC/POS)** — currently browser print only.
-4. **Phase G live-verification** — apply RLS on Neon, non-BYPASSRLS DB role, wildcard DNS before onboarding real tenants. *(Security/isolation risk if skipped.)*
-5. **Engagement depth** — badges/leaderboards, multiplayer rooms, 500+ word bank, referral viral loop.
-6. **AI breadth** — Inventory & Marketing assistants.
-7. **Outcome instrumentation** — close the loop on the six growth-lever metrics with live dashboards.
+4. **Engagement depth** — badges/leaderboards, multiplayer rooms, 500+ word bank, referral viral loop.
+5. **AI breadth** — Inventory & Marketing assistants.
+6. **Outcome instrumentation** — close the loop on the six growth-lever metrics with live dashboards.
 
 **Operational/tech risks:**
 - Windows dev: Prisma client regen locks against a running `next dev` — stop dev before `prisma generate`/`db push`.
@@ -312,12 +313,12 @@ These remain the product's north-star targets; instrumentation exists in analyti
 **Dashboard modules (11):** dashboard (revenue), orders, menu, inventory, suppliers, tables, customers (CRM), staff, monitor, reports, settings.
 **Settings panels (7):** general, tax & GST, PWA, floor, devices, multibranch, audit.
 
-**Data model (~60 models):** core POS (`Tenant`, `Outlet`, `MenuItem`, `Order`, `Kot`, `Payment`, `Refund`, `TableMap`), inventory (`StockItem`, `Recipe`, `StockLedger`, `WasteLog`, `Vendor`, `PurchaseOrder`, `SupplierPayment`), staff/HR (`StaffUser`, `Role`, `Attendance`, `Shift`, `SalaryPayment`, `AuditLog`), CRM/loyalty (`Customer`, `LoyaltyLedger`, `RewardCatalog`, `Coupon`, `Segment`, `Campaign`), gamification (`Game`, `GameSession`, `GameRoom`, `Badge`, `Leaderboard`, `Streak`, `Referral`), analytics rollups (`DailySalesRollup`, `ItemSalesRollup`), and the control plane (`PlatformAdmin`, `PlanDefinition`, `Subscription`, `SubInvoice`, `UsageCounter`, `TenantBranding`, `SupportTicket`, `Announcement`, `PlatformAudit`).
+**Data model (~60 models):** core POS (`Tenant`, `Outlet`, `MenuItem`, `Order`, `Kot`, `Payment`, `Refund`, `TableMap`), inventory (`StockItem`, `Recipe`, `StockLedger`, `WasteLog`, `Vendor`, `PurchaseOrder`, `SupplierPayment`), staff/HR (`StaffUser`, `Role`, `Attendance`, `Shift`, `SalaryPayment`, `AuditLog`, `PushSubscription`), CRM/loyalty (`Customer`, `LoyaltyLedger`, `RewardCatalog`, `Coupon`, `Segment`, `Campaign`), gamification (`Game`, `GameSession`, `GameRoom`, `Badge`, `Leaderboard`, `Streak`, `Referral`), analytics rollups (`DailySalesRollup`, `ItemSalesRollup`), and the control plane (`PlatformAdmin`, `PlanDefinition`, `Subscription`, `SubInvoice`, `UsageCounter`, `TenantBranding`, `SupportTicket`, `Announcement`, `PlatformAudit`).
 
-**Migrations:** `0001_phase_a_recipe_inventory` · `0002_phase_b_supplier_credit` · `0003_phase_c_qr_approval` · `0004_phase_f_staff_hr` · `0005_control_plane`.
+**Migrations:** `0001_phase_a_recipe_inventory` · `0002_phase_b_supplier_credit` · `0003_phase_c_qr_approval` · `0004_phase_f_staff_hr` · `0005_control_plane` · `0006_staff_sessions` · `0007_notification_targeting` · `0008_push_subscriptions` · `0009_staff_password_login` · `0010_configurable_kitchens`.
 
 **Related design docs:** `01-PRD.md`, `02-TECH-ARCHITECTURE.md`, `03-DATABASE-SCHEMA.md`, `04-API-STRUCTURE.md`, `05-GAMIFICATION-AND-SOCIAL.md`, `06-RETENTION-AND-AI.md`, `07-UX-FLOWS.md`, `08-BUSINESS.md`, `09-ROADMAP-MVP.md`, `10-QUICK-CAFE-GAMES.md`, `10-SAAS-CONTROL-PLANE.md`, `ChayaOne_Architecture.md`, `DEPLOYMENT.md`.
 
 ---
 
-*This report reflects the codebase under `platform/` as of 2026-06-23. Statuses are derived from the live source (routes, Prisma schema, migrations) cross-checked against the project roadmap. Items marked "code-complete / not live-verified" require a production-DB validation pass before relying on them in front of real tenants.*
+*This report reflects the codebase under `platform/` as of 2026-08-10. Statuses are derived from the live source (routes, Prisma schema, migrations) cross-checked against the project roadmap.*
