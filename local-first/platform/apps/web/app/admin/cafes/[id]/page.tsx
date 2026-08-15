@@ -187,7 +187,7 @@ export default async function CafeProfile({ params }: { params: { id: string } }
                 const cap = limit == null ? null : Number(limit);
                 const pct = cap ? Math.min(100, Math.round((Number(used) / cap) * 100)) : 0;
                 return (
-                  <div key={label.toString()}>
+                  <div key={String(label)}>
                     <div className="flex justify-between text-sm mb-1.5">
                       <span className="font-semibold text-[var(--ink-2)]">{label}</span>
                       <span className="font-bold text-[var(--ink)]">{String(used)} <span className="text-[var(--ink-3)]">/ {cap ?? '∞'}</span></span>

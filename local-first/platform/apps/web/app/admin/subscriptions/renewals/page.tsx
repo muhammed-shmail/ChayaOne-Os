@@ -54,7 +54,7 @@ export default async function RenewalsPage() {
                     <div className={isExpired ? 'text-[var(--danger)] font-bold' : diffDays <= 7 ? 'text-[var(--warn)] font-bold' : ''}>
                       {sub.currentEnd?.toLocaleDateString()}
                     </div>
-                    <div className="text-xs text-[var(--ink-3)] mt-0.5">{isExpired ? Expired  days ago : In  days}</div>
+                    <div className="text-xs text-[var(--ink-3)] mt-0.5">{isExpired ? `Expired ${Math.abs(diffDays)} days ago` : `In ${diffDays} days`}</div>
                   </td>
                   <td className="px-5 py-4 text-right">
                     <button className="btn btn-sm btn-ghost text-[var(--gold-d)] border-[var(--gold)]/30 hover:border-[var(--gold)]">Send Alert</button>

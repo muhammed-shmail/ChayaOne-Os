@@ -41,7 +41,7 @@ export default async function TicketsPage() {
                 <td className="px-5 py-4 font-bold">{t.tenant?.name ?? 'System'}</td>
                 <td className="px-5 py-4 font-medium text-[var(--ink-2)] truncate max-w-xs">{t.subject}</td>
                 <td className="px-5 py-4">
-                  <span className={px-2 py-1 rounded text-[10px] font-bold uppercase }>
+                  <span className="px-2 py-1 rounded text-[10px] font-bold uppercase bg-[var(--paper-2)] border border-[var(--line)] text-[var(--ink-2)]">
                     {t.priority}
                   </span>
                 </td>

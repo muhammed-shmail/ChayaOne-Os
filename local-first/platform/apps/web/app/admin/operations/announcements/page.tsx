@@ -43,7 +43,7 @@ export default async function AnnouncementsPage() {
             </div>
             <p className="text-sm text-[var(--ink-2)] flex-1 line-clamp-3">{a.body}</p>
             <div className="mt-4 pt-4 border-t border-[var(--line)] flex justify-between items-center text-xs text-[var(--ink-3)]">
-              <span>{a.publishedAt ? Published  : Created }</span>
+              <span>{a.publishedAt ? `Published ${a.publishedAt.toLocaleDateString()}` : `Created ${a.createdAt.toLocaleDateString()}`}</span>
               <button className="text-[var(--gold-d)] font-semibold hover:underline">Edit</button>
             </div>
           </div>

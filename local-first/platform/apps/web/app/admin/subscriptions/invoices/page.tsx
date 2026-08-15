@@ -1,4 +1,4 @@
-import { prisma } from '@cafeos/db';
+﻿import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { redirect } from 'next/navigation';
 import { Download } from 'lucide-react';
@@ -36,11 +36,11 @@ export default async function InvoicesPage() {
           <tbody>
             {invoices.map((inv) => (
               <tr key={inv.id} className="border-b border-[var(--line)] hover:bg-[var(--paper-3)] transition-colors">
-                <td className="px-5 py-4 font-mono text-xs">{inv.id.split('-')[0].toUpperCase()}</td>
-                <td className="px-5 py-4 font-bold">{inv.subscription.tenant.name}</td>
-                <td className="px-5 py-4 font-medium">?{(inv.amountPaise / 100).toLocaleString()}</td>
+                <td className="px-5 py-4 font-mono text-xs">{inv.id?.split('-')[0]?.toUpperCase()}</td>
+                <td className="px-5 py-4 font-bold">{inv.subscription?.tenant ? inv.subscription.tenant.name : 'â€”'}</td>
+                <td className="px-5 py-4 font-medium">â‚¹{(inv.amountPaise / 100).toLocaleString()}</td>
                 <td className="px-5 py-4">
-                  <span className={px-2 py-1 rounded text-[10px] font-bold uppercase }>
+                  <span className="px-2 py-1 rounded text-[10px] font-bold uppercase bg-[var(--paper-2)] border border-[var(--line)] text-[var(--ink-2)]">
                     {inv.status}
                   </span>
                 </td>
