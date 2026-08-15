@@ -76,7 +76,6 @@ Full setup lives in [`platform/README.md`](platform/README.md). The one thing th
 > **login**) returns **HTTP 500**.
 
 ```bash
-cd platform
 npm run db:local   # Terminal 1 — 🐘 Postgres on :5433 (leave running)
 npm run dev        # Terminal 2 — http://localhost:3000
 ```

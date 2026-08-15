@@ -1,0 +1,20 @@
+{
+  "name": "chayaone-os-root",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix local-first/platform",
+    "build": "npm run build --prefix local-first/platform",
+    "lint": "npm run lint --prefix local-first/platform",
+    "typecheck": "npm run typecheck --prefix local-first/platform",
+    "db:local": "npm run db:local --prefix local-first/platform",
+    "db:ensure": "npm run db:ensure --prefix local-first/platform",
+    "db:generate": "npm run db:generate --prefix local-first/platform",
+    "db:push": "npm run db:push --prefix local-first/platform",
+    "db:migrate": "npm run db:migrate --prefix local-first/platform",
+    "db:seed": "npm run db:seed --prefix local-first/platform",
+    "db:seed:demo": "npm run db:seed:demo --prefix local-first/platform",
+    "db:seed:full": "npm run db:seed:full --prefix local-first/platform",
+    "db:studio": "npm run db:studio --prefix local-first/platform"
+  }
+}
