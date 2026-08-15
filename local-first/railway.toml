@@ -1,0 +1,11 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.railway"
+
+# NOTE: schema sync (prisma db push) is intentionally NOT chained here. Running it
+# before `next start` blocks the web server behind a DB round-trip; against Neon's
+# serverless cold-starts that overran Railway's healthcheck window and the app
+# returned 502. Sync the schema out-of-band instead (manual `npm run -w @cafeos/db
+# deploy:push`, or a Railway preDeployCommand once verified).
+[deploy]
+startCommand = "npm run -w @cafeos/web start -- --port 3000"

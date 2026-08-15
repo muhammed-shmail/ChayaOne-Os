@@ -1,0 +1,27 @@
+FROM node:20-slim
+
+# Prisma's query engine needs OpenSSL at runtime. Debian slim doesn't ship it
+# by default, so install it (and CA certs for TLS to Neon).
+RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package and config files
+COPY platform/package.json .
+COPY platform/package-lock.json .
+COPY platform/turbo.json .
+COPY platform/tsconfig.base.json .
+
+# Copy the entire platform directory structure
+COPY platform/apps ./apps
+COPY platform/packages ./packages
+
+# Install dependencies
+RUN npm ci
+
+# Generate Prisma client and build
+RUN npm run db:generate && npm run build
+
+EXPOSE 3000
+
+CMD ["npm", "run", "-w", "@cafeos/web", "start"]

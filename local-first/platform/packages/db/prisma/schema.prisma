@@ -1,0 +1,1287 @@
+// =========================================================================
+// Cafe OS — Prisma schema  (translated from 03-DATABASE-SCHEMA.md)
+// Multi-tenant. Money is integer paise (*_paise). Timestamps are timestamptz.
+// Append-only ledgers: LoyaltyLedger, StockLedger, AuditLog.
+// Idempotency: Order.clientUuid (safe offline sync).
+// NOTE: Row-Level Security is added in a manual migration (see README §RLS).
+// =========================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" for local dev; "rhel-openssl-3.0.x" for Vercel's serverless (Amazon
+  // Linux) runtime. "debian-openssl-3.0.x" is kept for any Debian-based host.
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------- enums -----------------------------
+enum Plan {
+  starter
+  growth
+  pro
+  enterprise
+}
+
+enum StaffRole {
+  owner
+  manager
+  cashier
+  kitchen
+  waiter
+  accountant
+}
+
+// NOTE: kitchens/stations are configurable per outlet (Outlet.settings.kitchens,
+// see lib/kitchens.ts). The station columns below hold a kitchen *slug* (free
+// text) — the built-in defaults 'kitchen' | 'bar' | 'dessert' stay valid.
+
+enum OrderType {
+  dine_in
+  takeaway
+  delivery
+}
+
+enum OrderStatus {
+  open
+  pending_approval // QR order awaiting waiter confirmation (Phase C)
+  approved         // waiter confirmed, about to enter the kitchen
+  in_kitchen
+  ready
+  served
+  settled
+  cancelled
+}
+
+// where an order originated — POS till, customer QR, or online channel
+enum OrderChannel {
+  pos
+  qr
+  online
+}
+
+enum KotStatus {
+  queued
+  preparing
+  ready
+  served
+  void
+}
+
+enum TableState {
+  free
+  seated
+  billed
+}
+
+enum PayMethod {
+  cash
+  card
+  upi
+  wallet
+  points
+}
+
+enum PayStatus {
+  pending
+  success
+  failed
+  refunded
+}
+
+enum Tier {
+  bronze
+  silver
+  gold
+  vip
+}
+
+enum CustomerStatus {
+  active
+  inactive
+  blocked
+}
+
+enum CustomerSource {
+  pwa
+  manual
+  import
+}
+
+enum LedgerType {
+  earn
+  burn
+  expire
+  adjust
+}
+
+enum CouponStatus {
+  issued
+  redeemed
+  expired
+}
+
+enum PoStatus {
+  draft
+  sent
+  received
+  partial
+  cancelled
+}
+
+enum RoomStatus {
+  lobby
+  playing
+  finished
+}
+
+enum Channel {
+  whatsapp
+  sms
+  push
+}
+
+// ===================== 1. Tenancy & Identity =====================
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  // Subdomain slug for runtime tenant resolution (kaava.chayaone.com → "kaava").
+  // Nullable so the additive migration is safe on existing rows; the seed sets it.
+  subdomain String?  @unique
+  plan      Plan     @default(starter)
+  gstin     String?
+  status    String   @default("active")
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  // Custom payment settings per-tenant (Razorpay credentials)
+  customPaymentEnabled Boolean @default(false)
+  razorpayKeyId        String?
+  razorpayKeySecret    String?
+
+  outlets    Outlet[]
+  staff      StaffUser[]
+  roles      Role[]
+  customers  Customer[]
+  vendors    Vendor[]
+  rewards    RewardCatalog[]
+  coupons    Coupon[]
+  games      Game[]
+  badges     Badge[]
+  segments   Segment[]
+  campaigns  Campaign[]
+
+  // Control plane (Phase G) — all optional/additive back-relations.
+  subscription Subscription?
+  branding     TenantBranding?
+  usage        UsageCounter[]
+  tickets      SupportTicket[]
+
+  @@map("tenants")
+}
+
+model Outlet {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  name      String
+  address   Json?
+  gstin     String?
+  stateCode String?  // for CGST/SGST vs IGST
+  timezone  String   @default("Asia/Kolkata")
+  settings  Json     @default("{}")
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categories   Category[]
+  menuItems    MenuItem[]
+  modifierGrps ModifierGroup[]
+  combos       Combo[]
+  tables       TableMap[]
+  orders       Order[]
+  kots         Kot[]
+  payments     Payment[]
+  stockItems   StockItem[]
+  stockLedger  StockLedger[]
+  wasteLogs    WasteLog[]
+  purchaseOrders PurchaseOrder[]
+  supplierPayments SupplierPayment[]
+  attendance   Attendance[]
+  shifts       Shift[]
+  salaryPayments SalaryPayment[]
+  auditLogs    AuditLog[]
+  loyaltyLedger LoyaltyLedger[]
+  gameSessions GameSession[]
+  gameRooms    GameRoom[]
+  leaderboards Leaderboard[]
+  dailyRollups DailySalesRollup[]
+  itemRollups  ItemSalesRollup[]
+  notifications Notification[]
+
+  @@index([tenantId])
+  @@map("outlets")
+}
+
+model StaffUser {
+  id          String     @id @default(uuid()) @db.Uuid
+  tenantId    String     @db.Uuid
+  outletId    String?    @db.Uuid
+  name        String
+  phone       String?
+  email       String?
+  pinHash     String?    // fast POS login
+  username    String?    // optional username for secure password login (owner/manager)
+  passwordHash String?   // scrypt hash (scrypt$salt$key) for username+password login
+  role        StaffRole
+  permissions Json       @default("[]")
+  active      Boolean    @default(true)
+  employeeCode String?   // human-facing employee ID / badge
+  payType     String?    // "monthly" | "hourly"
+  payRatePaise Int?       // monthly salary or hourly rate, in paise
+  createdAt   DateTime   @default(now()) @db.Timestamptz(6)
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders   Order[]
+  attendance Attendance[]
+  shifts   Shift[]
+  salaryPayments SalaryPayment[]
+  audits   AuditLog[]   @relation("ActorAudits")
+  sessions StaffSession[]
+  pushSubs PushSubscription[]
+
+  @@unique([tenantId, username])
+  @@index([tenantId, outletId])
+  @@map("staff_users")
+}
+
+/// A persistent login on one device (the staff PWA "stay logged in" model).
+/// Login mints a short-lived access JWT (cookie) + a long-lived refresh token
+/// bound to this row; the refresh endpoint rotates the access token and slides
+/// `expiresAt`/`lastSeenAt`. The owner can revoke a row (lost phone) — revocation
+/// bites on the next refresh (≤ access-token TTL), since edge middleware stays
+/// stateless. `lastSeenAt` also powers live staff presence on the dashboard.
+model StaffSession {
+  id         String    @id @default(uuid()) @db.Uuid // = the refresh token's `sid`
+  tenantId   String    @db.Uuid
+  staffId    String    @db.Uuid
+  label      String?   // friendly device label, e.g. "Android · Chrome"
+  userAgent  String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(6)
+  expiresAt  DateTime  @db.Timestamptz(6)
+  revokedAt  DateTime? @db.Timestamptz(6) // set on logout or owner remote-revoke
+
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, staffId])
+  @@index([staffId, revokedAt])
+  @@map("staff_sessions")
+}
+
+/// A Web Push subscription (one per browser/device that opted in). The notify
+/// dispatcher (lib/web-push.ts) sends to these so staff alerts reach the phone
+/// even when the app is closed. Keyed by the browser's push `endpoint`; dead
+/// endpoints (404/410 on send) are pruned automatically.
+model PushSubscription {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  staffId    String   @db.Uuid
+  sessionId  String?  @db.Uuid // the StaffSession (device) this sub belongs to, if known
+  endpoint   String   @unique
+  p256dh     String   // client public key (for payload encryption)
+  auth       String   // client auth secret
+  userAgent  String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  lastUsedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, staffId])
+  @@map("push_subscriptions")
+}
+
+model SalaryPayment {
+  id          String   @id @default(uuid()) @db.Uuid
+  outletId    String   @db.Uuid
+  staffId     String   @db.Uuid
+  periodLabel String   // e.g. "2026-06"
+  amountPaise Int
+  method      String   // cash|upi|bank
+  note        String?
+  paidAt      DateTime @default(now()) @db.Timestamptz(6)
+  createdById String?  @db.Uuid
+
+  outlet Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  staff  StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([outletId, staffId])
+  @@map("salary_payments")
+}
+
+model Role {
+  id          String @id @default(uuid()) @db.Uuid
+  tenantId    String @db.Uuid
+  name        String
+  permissions Json
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("roles")
+}
+
+// ===================== 2. Catalog / Menu =====================
+model Category {
+  id       String  @id @default(uuid()) @db.Uuid
+  outletId String  @db.Uuid
+  name     String
+  sort     Int     @default(0)
+  outlet   Outlet  @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  items    MenuItem[]
+
+  @@index([outletId])
+  @@map("categories")
+}
+
+model MenuItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  outletId    String   @db.Uuid
+  categoryId  String?  @db.Uuid
+  name        String
+  description String?
+  imageUrl    String?
+  pricePaise  Int
+  hsnCode     String?
+  gstRate     Decimal  @db.Decimal(4, 2) // 5.00, 12.00, 18.00
+  isAvailable Boolean  @default(true)
+  station     String?  // kitchen slug — see Outlet.settings.kitchens
+  tags        String[]
+
+  outlet     Outlet     @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  category   Category?  @relation(fields: [categoryId], references: [id])
+  modGroups  ItemModifierGroup[]
+  comboItems ComboItem[]
+  recipes    Recipe[]
+  orderItems OrderItem[]
+  itemRollups ItemSalesRollup[]
+
+  @@index([outletId, categoryId])
+  @@map("menu_items")
+}
+
+model ModifierGroup {
+  id       String  @id @default(uuid()) @db.Uuid
+  outletId String  @db.Uuid
+  name     String
+  min      Int     @default(0)
+  max      Int     @default(1)
+  outlet   Outlet  @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  modifiers Modifier[]
+  items    ItemModifierGroup[]
+
+  @@map("modifier_groups")
+}
+
+model Modifier {
+  id         String        @id @default(uuid()) @db.Uuid
+  groupId    String        @db.Uuid
+  name       String
+  pricePaise Int           @default(0)
+  group      ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@map("modifiers")
+}
+
+model ItemModifierGroup {
+  itemId  String        @db.Uuid
+  groupId String        @db.Uuid
+  item    MenuItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  group   ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, groupId])
+  @@map("item_modifier_groups")
+}
+
+model Combo {
+  id         String  @id @default(uuid()) @db.Uuid
+  outletId   String  @db.Uuid
+  name       String
+  pricePaise Int
+  outlet     Outlet  @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  items      ComboItem[]
+
+  @@map("combos")
+}
+
+model ComboItem {
+  comboId String   @db.Uuid
+  itemId  String   @db.Uuid
+  qty     Int      @default(1)
+  combo   Combo    @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  item    MenuItem @relation(fields: [itemId], references: [id])
+
+  @@id([comboId, itemId])
+  @@map("combo_items")
+}
+
+// ===================== 3. Orders, KOT & Payments =====================
+model TableMap {
+  id       String     @id @default(uuid()) @db.Uuid
+  outletId String     @db.Uuid
+  label    String     // "T3"
+  qrToken  String     @unique
+  state    TableState @default(free)
+  seats    Int        @default(2)
+  outlet   Outlet     @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  orders   Order[]
+
+  @@index([outletId])
+  @@map("tables_map")
+}
+
+model Order {
+  id                String      @id @default(uuid()) @db.Uuid
+  clientUuid        String      @unique @db.Uuid // idempotency for offline sync
+  number            Int         // human-friendly per-outlet sequence
+  outletId          String      @db.Uuid
+  tableId           String?     @db.Uuid
+  customerId        String?     @db.Uuid
+  staffId           String?     @db.Uuid
+  type              OrderType
+  status            OrderStatus @default(open)
+  // Phase C — channel + waiter approval trail. Existing POS orders default to
+  // `pos` and skip approval entirely, preserving current behaviour.
+  channel           OrderChannel @default(pos)
+  approvedById      String?     @db.Uuid
+  approvedAt        DateTime?   @db.Timestamptz(6)
+  subtotalPaise     Int         @default(0)
+  discountPaise     Int         @default(0)
+  cgstPaise         Int         @default(0)
+  sgstPaise         Int         @default(0)
+  igstPaise         Int         @default(0)
+  serviceChargePaise Int        @default(0)
+  roundOffPaise     Int         @default(0)
+  totalPaise        Int         @default(0)
+  placedAt          DateTime    @default(now()) @db.Timestamptz(6)
+  settledAt         DateTime?   @db.Timestamptz(6)
+
+  outlet   Outlet      @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  table    TableMap?   @relation(fields: [tableId], references: [id])
+  customer Customer?   @relation(fields: [customerId], references: [id])
+  staff    StaffUser?  @relation(fields: [staffId], references: [id])
+  items    OrderItem[]
+  kots     Kot[]
+  payments Payment[]
+  refunds  Refund[]
+  gameSessions GameSession[]
+
+  @@index([outletId, placedAt])
+  @@index([status])
+  @@index([outletId, number])
+  @@index([outletId, tableId, settledAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id             String    @id @default(uuid()) @db.Uuid
+  orderId        String    @db.Uuid
+  itemId         String?   @db.Uuid
+  nameSnapshot   String    // historical bills never change
+  qty            Int
+  unitPricePaise Int
+  modifiers      Json?     // [{ name, pricePaise }]
+  notes          String?
+  station        String?   // kitchen slug snapshot — see Outlet.settings.kitchens
+  kotStatus      KotStatus @default(queued)
+
+  order Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item  MenuItem? @relation(fields: [itemId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Kot {
+  id        String   @id @default(uuid()) @db.Uuid
+  orderId   String   @db.Uuid
+  outletId  String   @db.Uuid
+  station   String   // kitchen slug — see Outlet.settings.kitchens
+  number    Int
+  status    KotStatus @default(queued)
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@index([outletId, status])
+  @@map("kots")
+}
+
+model Payment {
+  id          String    @id @default(uuid()) @db.Uuid
+  orderId     String    @db.Uuid
+  outletId    String    @db.Uuid
+  method      PayMethod
+  amountPaise Int
+  status      PayStatus @default(pending)
+  providerRef String?   // razorpay payment id
+  meta        Json?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  outlet  Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  refunds Refund[]
+
+  @@index([orderId])
+  @@map("payments")
+}
+
+model Refund {
+  id          String   @id @default(uuid()) @db.Uuid
+  paymentId   String   @db.Uuid
+  orderId     String   @db.Uuid
+  amountPaise Int
+  reason      String?
+  approvedBy  String?  @db.Uuid
+  providerRef String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("refunds")
+}
+
+// ===================== 4. Inventory & Supply =====================
+model StockItem {
+  id             String   @id @default(uuid()) @db.Uuid
+  outletId       String   @db.Uuid
+  name           String
+  unit           String   // g, ml, pcs
+  qtyOnHand      Decimal  @db.Decimal(12, 3) @default(0)
+  reorderLevel   Decimal  @db.Decimal(12, 3) @default(0)
+  avgCostPaise   Int      @default(0)
+  expiryTracking Boolean  @default(false)
+
+  outlet  Outlet        @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  recipes Recipe[]
+  ledger  StockLedger[]
+  waste   WasteLog[]
+  poItems PurchaseOrderItem[]
+
+  @@index([outletId])
+  @@map("stock_items")
+}
+
+model Recipe {
+  id          String    @id @default(uuid()) @db.Uuid
+  itemId      String    @db.Uuid
+  stockItemId String    @db.Uuid
+  qty         Decimal   @db.Decimal(12, 3)
+  // unit the recipe quantity is authored in (e.g. "ml" while stock is tracked in
+  // "l"). NULL ⇒ same unit as the stock item — keeps every existing recipe valid.
+  unit        String?
+  item        MenuItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@map("recipes")
+}
+
+model StockLedger {
+  id          String    @id @default(uuid()) @db.Uuid
+  outletId    String    @db.Uuid
+  stockItemId String    @db.Uuid
+  change      Decimal   @db.Decimal(12, 3) // +receive / -consume / -waste / +adjust
+  reason      String    // sale|waste|purchase|adjustment|count
+  refId       String?   @db.Uuid
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  outlet    Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  stockItem StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@index([stockItemId, createdAt])
+  @@map("stock_ledger")
+}
+
+model WasteLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  outletId    String   @db.Uuid
+  stockItemId String   @db.Uuid
+  qty         Decimal  @db.Decimal(12, 3)
+  reason      String   // spoilage|spill|training|return
+  costPaise   Int      @default(0)
+  loggedBy    String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  outlet    Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  stockItem StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@map("waste_logs")
+}
+
+model Vendor {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  name        String
+  contact     Json?
+  rating      Decimal? @db.Decimal(2, 1)
+  leadTimeDays Int?
+  // Phase B — supplier credit
+  phone       String?
+  email       String?
+  gstin       String?
+  // outstanding carried over when the supplier was onboarded (paise)
+  openingBalancePaise Int @default(0)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrders PurchaseOrder[]
+  payments    SupplierPayment[]
+
+  @@index([tenantId])
+  @@map("vendors")
+}
+
+model PurchaseOrder {
+  id         String   @id @default(uuid()) @db.Uuid
+  outletId   String   @db.Uuid
+  vendorId   String   @db.Uuid
+  status     PoStatus @default(draft)
+  totalPaise Int      @default(0)
+  // Phase B — invoice + credit tracking. paidPaise reflects payments allocated
+  // directly to this invoice; account-level payments are tracked at vendor level.
+  paidPaise   Int      @default(0)
+  invoiceNo   String?
+  invoiceDate DateTime? @db.Date
+  dueDate     DateTime? @db.Date
+  notes       String?
+  expectedAt DateTime? @db.Date
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  outlet   Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  vendor   Vendor @relation(fields: [vendorId], references: [id])
+  items    PurchaseOrderItem[]
+  payments SupplierPayment[]
+
+  @@index([outletId, createdAt])
+  @@index([vendorId])
+  @@map("purchase_orders")
+}
+
+// Phase B — supplier payments (append-only). A payment may target a specific
+// invoice (poId set) or be an on-account payment (poId null). Vendor balance =
+// openingBalance + Σ(non-cancelled PO totals) − Σ(payments).
+model SupplierPayment {
+  id          String   @id @default(uuid()) @db.Uuid
+  outletId    String   @db.Uuid
+  vendorId    String   @db.Uuid
+  poId        String?  @db.Uuid
+  amountPaise Int
+  method      String   // cash | upi | card | bank | cheque
+  reference   String?  // txn id / cheque no
+  note        String?
+  paidAt      DateTime @default(now()) @db.Timestamptz(6)
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  outlet Outlet         @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  vendor Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  po     PurchaseOrder? @relation(fields: [poId], references: [id])
+
+  @@index([vendorId, paidAt])
+  @@index([outletId, paidAt])
+  @@map("supplier_payments")
+}
+
+model PurchaseOrderItem {
+  poId          String    @db.Uuid
+  stockItemId   String    @db.Uuid
+  qty           Decimal   @db.Decimal(12, 3)
+  unitCostPaise Int
+  po            PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  stockItem     StockItem     @relation(fields: [stockItemId], references: [id])
+
+  @@id([poId, stockItemId])
+  @@map("purchase_order_items")
+}
+
+// ===================== 5. Staff Ops =====================
+model Attendance {
+  id       String    @id @default(uuid()) @db.Uuid
+  outletId String    @db.Uuid
+  staffId  String    @db.Uuid
+  clockIn  DateTime  @db.Timestamptz(6)
+  clockOut DateTime? @db.Timestamptz(6)
+  source   String    // pin|qr|geo
+  outlet   Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  staff    StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@map("attendance")
+}
+
+model Shift {
+  id       String    @id @default(uuid()) @db.Uuid
+  outletId String    @db.Uuid
+  staffId  String    @db.Uuid
+  startsAt DateTime  @db.Timestamptz(6)
+  endsAt   DateTime  @db.Timestamptz(6)
+  role     String?
+  status   String?
+  outlet   Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  staff    StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@map("shifts")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  outletId  String   @db.Uuid
+  actorId   String?  @db.Uuid
+  action    String
+  entity    String
+  entityId  String?  @db.Uuid
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  outlet Outlet     @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  actor  StaffUser? @relation("ActorAudits", fields: [actorId], references: [id])
+
+  @@index([outletId, createdAt])
+  @@map("audit_log")
+}
+
+// ===================== 6. Customers & Loyalty =====================
+model Customer {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @db.Uuid
+  phone              String?
+  phoneHash          String?  // lookups without exposing PII
+  name               String?
+  email              String?
+  gender             String?  // free-form: male|female|other (optional)
+  address            String?
+  notes              String?  // internal staff notes
+  status             CustomerStatus @default(active)
+  source             CustomerSource @default(manual) // how the profile was created
+  birthday           DateTime? @db.Date
+  anniversary        DateTime? @db.Date
+  tier               Tier     @default(bronze)
+  points             Int      @default(0)
+  coins              Int      @default(0)
+  lifetimeSpendPaise Int      @default(0)
+  visitCount         Int      @default(0)
+  firstVisit         DateTime? @db.Timestamptz(6)
+  lastVisit          DateTime? @db.Timestamptz(6)
+  referralCode       String?  @unique
+  referredBy         String?  @db.Uuid
+  deviceFingerprints String[] // anti-abuse
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders     Order[]
+  ledger     LoyaltyLedger[]
+  coupons    Coupon[]
+  sessions   GameSession[]
+  badges     CustomerBadge[]
+  streaks    Streak[]
+  refsMade   Referral[]      @relation("Referrer")
+  refsGot    Referral[]      @relation("Referred")
+  roomPlays  GameRoomPlayer[]
+  hostedRooms GameRoom[]     @relation("RoomHost")
+  campaignSends CampaignSend[]
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([phoneHash])
+  @@index([referralCode])
+  @@map("customers")
+}
+
+model LoyaltyLedger {
+  id         String     @id @default(uuid()) @db.Uuid
+  customerId String     @db.Uuid
+  outletId   String?    @db.Uuid
+  type       LedgerType
+  points     Int        @default(0)
+  coins      Int        @default(0)
+  source     String     // order|game|referral|checkin|birthday|streak
+  refId      String?    @db.Uuid
+  createdAt  DateTime   @default(now()) @db.Timestamptz(6)
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  outlet   Outlet?  @relation(fields: [outletId], references: [id])
+
+  @@index([customerId, createdAt])
+  @@map("loyalty_ledger")
+}
+
+model RewardCatalog {
+  id        String  @id @default(uuid()) @db.Uuid
+  tenantId  String  @db.Uuid
+  name      String
+  type      String  // coupon|free_item|bogo|cashback|topping
+  costPoints Int
+  value     Json?
+  stock     Int?
+  active    Boolean @default(true)
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  coupons   Coupon[]
+
+  @@map("rewards_catalog")
+}
+
+model Coupon {
+  id             String       @id @default(uuid()) @db.Uuid
+  tenantId       String       @db.Uuid
+  customerId     String?      @db.Uuid
+  code           String       @unique
+  rewardId       String?      @db.Uuid
+  status         CouponStatus @default(issued)
+  source         String?
+  expiresAt      DateTime?    @db.Timestamptz(6)
+  redeemedOrderId String?     @db.Uuid
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer?      @relation(fields: [customerId], references: [id])
+  reward   RewardCatalog? @relation(fields: [rewardId], references: [id])
+
+  @@index([customerId])
+  @@map("coupons")
+}
+
+// ===================== 7. Gamification & Social =====================
+model Game {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  key      String  // spin_wheel|scratch|trivia|memory
+  name     String
+  config   Json?
+  active   Boolean @default(true)
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessions GameSession[]
+
+  @@map("games")
+}
+
+model GameSession {
+  id                String   @id @default(uuid()) @db.Uuid
+  customerId        String   @db.Uuid
+  outletId          String   @db.Uuid
+  gameId            String   @db.Uuid
+  orderId           String?  @db.Uuid
+  result            Json?
+  rewardCouponId    String?  @db.Uuid
+  deviceFingerprint String?
+  ip                String?
+  startedAt         DateTime @default(now()) @db.Timestamptz(6)
+  endedAt           DateTime? @db.Timestamptz(6)
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  outlet   Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  game     Game     @relation(fields: [gameId], references: [id])
+  order    Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([customerId, startedAt])
+  @@map("game_sessions")
+}
+
+model GameRoom {
+  id             String     @id @default(uuid()) @db.Uuid
+  outletId       String     @db.Uuid
+  hostCustomerId String?    @db.Uuid
+  joinCode       String     @unique
+  gameKey        String
+  status         RoomStatus @default(lobby)
+  config         Json?
+  createdAt      DateTime   @default(now()) @db.Timestamptz(6)
+
+  outlet  Outlet           @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  host    Customer?        @relation("RoomHost", fields: [hostCustomerId], references: [id])
+  players GameRoomPlayer[]
+
+  @@map("game_rooms")
+}
+
+model GameRoomPlayer {
+  roomId     String   @db.Uuid
+  customerId String   @db.Uuid
+  score      Int      @default(0)
+  joinedAt   DateTime @default(now()) @db.Timestamptz(6)
+  room       GameRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, customerId])
+  @@map("game_room_players")
+}
+
+model Badge {
+  id          String  @id @default(uuid()) @db.Uuid
+  tenantId    String  @db.Uuid
+  key         String
+  name        String
+  description String?
+  icon        String?
+  criteria    Json?
+  tier        String? // bronze|silver|gold
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  earnedBy    CustomerBadge[]
+
+  @@map("badges")
+}
+
+model CustomerBadge {
+  customerId String   @db.Uuid
+  badgeId    String   @db.Uuid
+  earnedAt   DateTime @default(now()) @db.Timestamptz(6)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  badge      Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, badgeId])
+  @@map("customer_badges")
+}
+
+model Leaderboard {
+  id       String @id @default(uuid()) @db.Uuid
+  outletId String @db.Uuid
+  period   String // daily|weekly|all_time
+  metric   String // points|visits|games
+  outlet   Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@map("leaderboards")
+}
+
+model Streak {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @db.Uuid
+  kind       String   // daily_checkin|weekly_visit
+  current    Int      @default(0)
+  longest    Int      @default(0)
+  lastAt     DateTime? @db.Date
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("streaks")
+}
+
+model Referral {
+  id             String   @id @default(uuid()) @db.Uuid
+  referrerId     String   @db.Uuid
+  referredId     String   @db.Uuid
+  status         String   // pending|qualified|rewarded
+  rewardCouponId String?  @db.Uuid
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  referrer Customer @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred Customer @relation("Referred", fields: [referredId], references: [id], onDelete: Cascade)
+
+  @@map("referrals")
+}
+
+// ===================== 8. Campaigns & Notifications =====================
+model Segment {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  name     String
+  rules    Json
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+
+  @@map("segments")
+}
+
+model Campaign {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  channel     Channel
+  segmentId   String?  @db.Uuid
+  template    Json?
+  status      String?
+  scheduledAt DateTime? @db.Timestamptz(6)
+  createdBy   String?  @db.Uuid
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  segment Segment? @relation(fields: [segmentId], references: [id])
+  sends   CampaignSend[]
+
+  @@map("campaigns")
+}
+
+model CampaignSend {
+  id         String    @id @default(uuid()) @db.Uuid
+  campaignId String    @db.Uuid
+  customerId String    @db.Uuid
+  status     String?
+  sentAt     DateTime? @db.Timestamptz(6)
+  openedAt   DateTime? @db.Timestamptz(6)
+  clickedAt  DateTime? @db.Timestamptz(6)
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("campaign_sends")
+}
+
+// ===================== 9. Analytics Rollups =====================
+model DailySalesRollup {
+  outletId      String   @db.Uuid
+  day           DateTime @db.Date
+  orders        Int      @default(0)
+  grossPaise    Int      @default(0)
+  discountPaise Int      @default(0)
+  taxPaise      Int      @default(0)
+  cogsPaise     Int      @default(0)
+  netPaise      Int      @default(0)
+  outlet        Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@id([outletId, day])
+  @@map("daily_sales_rollup")
+}
+
+model ItemSalesRollup {
+  outletId     String   @db.Uuid
+  day          DateTime @db.Date
+  itemId       String   @db.Uuid
+  qty          Int      @default(0)
+  revenuePaise Int      @default(0)
+  outlet       Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  item         MenuItem @relation(fields: [itemId], references: [id])
+
+  @@id([outletId, day, itemId])
+  @@map("item_sales_rollup")
+}
+
+// ===================== 10. Notifications & Alerts =====================
+// Append-only operational alerts surfaced on the owner dashboard. Phase A emits
+// `low_stock`; later phases reuse this for occupancy/discount/cancellation alerts.
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  outletId  String    @db.Uuid
+  type      String    // low_stock | out_of_stock | order_ready | broadcast | ...
+  severity  String    @default("info") // info | warn | critical
+  title     String
+  body      String?
+  entity    String?   // e.g. "stock_item"
+  entityId  String?   @db.Uuid
+  meta      Json?
+  readAt    DateTime? @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+
+  // Targeting (Staff PWA P2). 'owner' = owner/manager monitor bell (existing
+  // alerts; default keeps old behaviour). 'floor' = all floor staff bar.
+  // 'role' uses targetRole; 'user' uses targetStaffId.
+  audience      String     @default("owner") // owner | floor | role | user
+  targetRole    StaffRole?
+  targetStaffId String?    @db.Uuid
+
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@index([outletId, createdAt])
+  @@index([outletId, type, entityId, readAt])
+  @@index([outletId, audience, createdAt])
+  @@map("notifications")
+}
+
+// ===================== CONTROL PLANE (Nuro7 — Phase G) =====================
+// Additive. Nuro7 operates these tables ABOVE all tenants; they are not
+// tenant-scoped (no RLS) except the tenant-linked ones (tenant_branding,
+// support_tickets, ticket_messages, sub_invoices). Money stays integer paise.
+
+enum PlatformRole {
+  super_admin
+  support
+  billing
+  readonly
+}
+
+enum BillingPeriod {
+  monthly
+  quarterly
+  half_yearly
+  yearly
+}
+
+enum SubStatus {
+  trialing
+  active
+  past_due
+  suspended
+  cancelled
+  expired
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  waiting
+  resolved
+  closed
+}
+
+// Level-1 platform owner. Separate identity from StaffUser — never shares a
+// table or a JWT secret. Password (argon2/bcrypt, NOT a 4-digit PIN) + TOTP.
+model PlatformAdmin {
+  id           String       @id @default(uuid()) @db.Uuid
+  email        String       @unique
+  name         String
+  passwordHash String
+  role         PlatformRole @default(super_admin)
+  totpSecret   String? // base32 secret; set during 2FA enrolment
+  totpEnabled  Boolean      @default(false)
+  active       Boolean      @default(true)
+  lastLoginAt  DateTime?    @db.Timestamptz(6)
+  createdAt    DateTime     @default(now()) @db.Timestamptz(6)
+
+  actions PlatformAudit[]
+  tickets SupportTicket[] @relation("AssignedAdmin")
+
+  @@map("platform_admins")
+}
+
+// A plan is a template of limits + features. Editable by Super Admin → no code
+// deploy to launch a tier or change a quota. null limit = unlimited (Enterprise).
+model PlanDefinition {
+  id               String  @id @default(uuid()) @db.Uuid
+  key              Plan    @unique // reuse existing Plan enum
+  name             String
+  maxBranches      Int?
+  maxStaff         Int?
+  maxCustomers     Int?
+  maxOrdersMonthly Int?
+  storageMb        Int?
+  features         Json    @default("{}") // { "whatsapp": true, "ai_assistant": false, ... }
+  pricePaise       Json    @default("{}") // { "monthly": 99900, "yearly": 999000 }
+  active           Boolean @default(true)
+
+  subscriptions Subscription[]
+
+  @@map("plan_definitions")
+}
+
+model Subscription {
+  id            String        @id @default(uuid()) @db.Uuid
+  tenantId      String        @unique @db.Uuid // one active subscription per tenant
+  planId        String        @db.Uuid
+  period        BillingPeriod @default(monthly)
+  status        SubStatus     @default(trialing)
+  trialEndsAt   DateTime?     @db.Timestamptz(6)
+  currentStart  DateTime      @default(now()) @db.Timestamptz(6)
+  currentEnd    DateTime?     @db.Timestamptz(6)
+  customPriceMonthlyPaise Int?
+  customPriceYearlyPaise  Int?
+  slotOverrides Json          @default("{}") // per-tenant grants on top of the plan, e.g. { "maxBranches": 4 }
+  featureOverrides Json       @default("{}") // per-tenant feature grants on top of the plan, e.g. { "games": false, "ai_assistant": true }
+  gateway       String? // "razorpay" — reserved for the later billing phase
+  gatewaySubId  String?
+  cancelAt      DateTime?     @db.Timestamptz(6)
+  createdAt     DateTime      @default(now()) @db.Timestamptz(6)
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan     PlanDefinition @relation(fields: [planId], references: [id])
+  invoices SubInvoice[]
+
+  @@index([status, currentEnd])
+  @@map("subscriptions")
+}
+
+model SubInvoice {
+  id             String        @id @default(uuid()) @db.Uuid
+  subscriptionId String        @db.Uuid
+  amountPaise    Int
+  period         BillingPeriod
+  status         String // draft|issued|paid|failed|refunded (manual in this phase)
+  gatewayRef     String?
+  issuedAt       DateTime      @default(now()) @db.Timestamptz(6)
+  paidAt         DateTime?     @db.Timestamptz(6)
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@map("sub_invoices")
+}
+
+// Cheap, queryable usage meters so slot checks never scan huge tables on the hot
+// path. Incremented in the same transaction as the entity insert.
+model UsageCounter {
+  tenantId  String   @db.Uuid
+  metric    String // branches|staff|customers|orders_month|storage_mb
+  period    String   @default("all") // "all" or "2026-06" for monthly metrics
+  value     Int      @default(0)
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, metric, period])
+  @@map("usage_counters")
+}
+
+// Per-tenant branding for white-label (Enterprise). Falls back to ChayaOne defaults.
+model TenantBranding {
+  tenantId     String  @id @db.Uuid
+  customDomain String? @unique // brewlab.com → CNAME to platform
+  logoUrl      String?
+  faviconUrl   String?
+  colors       Json    @default("{}") // { "primary": "#…", "accent": "#…" }
+  appName      String? // overrides "ChayaOne" in the PWA chrome
+  poweredBy    Boolean @default(true) // false = fully white-labelled
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_branding")
+}
+
+model SupportTicket {
+  id         String       @id @default(uuid()) @db.Uuid
+  tenantId   String?      @db.Uuid // null = platform-level
+  subject    String
+  body       String
+  priority   String       @default("normal") // low|normal|high|urgent
+  status     TicketStatus @default(open)
+  assignedTo String?      @db.Uuid
+  createdBy  String?      @db.Uuid // StaffUser id (soft ref)
+  createdAt  DateTime     @default(now()) @db.Timestamptz(6)
+
+  tenant   Tenant?         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  admin    PlatformAdmin?  @relation("AssignedAdmin", fields: [assignedTo], references: [id])
+  messages TicketMessage[]
+
+  @@index([status, priority])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id         String   @id @default(uuid()) @db.Uuid
+  ticketId   String   @db.Uuid
+  authorKind String // platform|tenant
+  authorId   String?  @db.Uuid
+  body       String
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_messages")
+}
+
+model Announcement {
+  id          String    @id @default(uuid()) @db.Uuid
+  title       String
+  body        String
+  audience    String    @default("all") // all|plan:pro|tenant:<id>
+  publishedAt DateTime? @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@map("announcements")
+}
+
+// Platform-level audit (distinct from the per-outlet AuditLog already in schema).
+model PlatformAudit {
+  id             String   @id @default(uuid()) @db.Uuid
+  adminId        String?  @db.Uuid
+  action         String // tenant.suspend, plan.change, slot.grant…
+  targetTenantId String?  @db.Uuid // soft ref (no relation; may be platform-level)
+  meta           Json?
+  ip             String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  admin PlatformAdmin? @relation(fields: [adminId], references: [id])
+
+  @@index([targetTenantId, createdAt])
+  @@map("platform_audit")
+}

@@ -1,0 +1,334 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================================================
+   Cafe OS — global component layer
+   Token-driven (see @cafeos/ui/tokens.css). Everything here re-themes
+   automatically in light / dark / KDS-roast.
+   ========================================================================= */
+
+@layer base {
+  /* Cormorant Garamond is high-contrast & delicate → ride at weight 600 with
+     near-zero tracking and tight leading so headings read crisp, not thin. */
+  h1, h2, h3, h4 {
+    font-family: var(--font-display), 'Cormorant Garamond', Georgia, serif;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.08;
+  }
+  ::selection { background: var(--gold); color: var(--espresso); }
+
+  /* Single, consistent keyboard-focus ring across the whole product.
+     Mouse clicks don't trigger it (focus-visible), so it never looks noisy. */
+  :where(a, button, input, select, textarea, [tabindex], [role="button"]):focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ring);
+    border-radius: 10px;
+  }
+
+  html { -webkit-tap-highlight-color: transparent; }
+  button, [role="button"] { touch-action: manipulation; }
+  input, textarea, select { font: inherit; }
+  /* Avoid iOS zoom-on-focus: inputs stay ≥16px on small screens */
+  @media (max-width: 640px) {
+    input, select, textarea { font-size: 16px; }
+  }
+}
+
+/* Brand wordmark — "logo chaya one.png" is dark ink, invisible on dark surfaces.
+   On any themeable surface running the dark theme, swap in the white version.
+   Only the ChayaOne brand mark carries `.brand-logo`; the always-light landing
+   footer/loader and tenant-uploaded logos deliberately opt out. Unlayered so it
+   wins over Tailwind utilities on the same <img>. */
+[data-theme="dark"] img.brand-logo { content: url("/chaya oneWhite.png"); }
+
+@layer components {
+  /* ---- Buttons ------------------------------------------------------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-[14px] px-4 font-bold text-sm transition;
+    min-height: 44px; /* touch target */
+    padding-top: .65rem; padding-bottom: .65rem;
+    background: var(--paper-3); color: var(--ink); border: 1px solid var(--line-2);
+    box-shadow: var(--sh-1);
+  }
+  .btn:hover { box-shadow: var(--sh-2); transform: translateY(-1px); }
+  .btn:active { transform: translateY(0) scale(.99); box-shadow: var(--sh-1); }
+  .btn:disabled { opacity: .45; pointer-events: none; transform: none; }
+
+  .btn-primary { background: var(--turmeric); color: #2A1607; border-color: var(--turmeric-d); }
+  .btn-primary:hover { box-shadow: var(--sh-2), var(--sh-glow); }
+  .btn-dark { background: var(--ink); color: var(--paper-2); border-color: var(--ink); }
+  .btn-ghost { background: transparent; border-color: transparent; box-shadow: none; }
+  .btn-ghost:hover { background: var(--paper-3); box-shadow: var(--sh-1); }
+  .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .btn-success { background: var(--cardamom); color: #fff; border-color: var(--cardamom-d); }
+
+  .btn-sm { min-height: 36px; @apply px-3 text-xs; padding-top: .4rem; padding-bottom: .4rem; }
+  .btn-lg { min-height: 52px; @apply px-6 text-base; }
+  .btn-block { @apply w-full; }
+  /* Icon-only button — square, still meets the 44px target */
+  .btn-icon { @apply px-0; width: 44px; min-width: 44px; }
+  .btn-icon.btn-sm { width: 36px; min-width: 36px; }
+
+  /* ---- Surfaces ------------------------------------------------------ */
+  .card {
+    background: var(--paper-2); border: 1px solid var(--line);
+    border-radius: 22px; box-shadow: var(--sh-1);
+  }
+  .card-hover { transition: box-shadow .2s ease, transform .2s ease; }
+  .card-hover:hover { box-shadow: var(--sh-2); transform: translateY(-2px); }
+  /* Premium hover: soft gold ring + lift (pairs with Framer's transform). */
+  .card-glow { transition: box-shadow .25s ease, border-color .25s ease; }
+  .card-glow:hover { box-shadow: var(--sh-2), 0 0 0 3px color-mix(in srgb, var(--gold) 16%, transparent); border-color: var(--gold-hair, rgba(176,135,40,.42)); }
+
+  /* ---- Inputs -------------------------------------------------------- */
+  .inp {
+    @apply w-full rounded-xl px-3 text-sm outline-none transition;
+    min-height: 44px; padding-top: .6rem; padding-bottom: .6rem;
+    background: var(--paper-3); color: var(--ink); border: 1px solid var(--line-2);
+  }
+  .inp::placeholder { color: var(--ink-3); }
+  .inp:focus-visible { border-color: var(--turmeric); box-shadow: 0 0 0 3px var(--ring); }
+  .inp:disabled { opacity: .5; cursor: not-allowed; }
+  .inp[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent); }
+  .lbl { @apply mb-1.5 block text-xs font-bold; color: var(--ink-2); }
+  .help { @apply mt-1 text-xs; color: var(--ink-3); }
+  .err { @apply mt-1 text-xs font-semibold; color: var(--danger-ink); }
+
+  /* ---- Pills / badges ------------------------------------------------ */
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold;
+    background: var(--paper-3); border: 1px solid var(--line); color: var(--ink-2);
+  }
+  .pill-ok     { background: var(--ok-bg);     color: var(--ok-ink);     border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+  .pill-warn   { background: var(--warn-bg);   color: var(--warn-ink);   border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+  .pill-danger { background: var(--danger-bg); color: var(--danger-ink); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+  .pill-info   { background: var(--info-bg);   color: var(--info-ink);   border-color: color-mix(in srgb, var(--info) 35%, transparent); }
+
+/* ==== Dashboard Redesign Palette ==== */
+:root {
+  --primary-orange: #F4A261; /* orange */
+  --positive-green: #2F9E44; /* green */
+  --negative-red: #D64545;   /* red */
+  --warning-amber: #F9B424;  /* amber */
+  --neutral-gray: #A0A0A0;   /* gray */
+}
+/* Icon circle utilities */
+.icon-circle-primary { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--primary-orange)] text-white; }
+.icon-circle-positive { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--positive-green)] text-white; }
+.icon-circle-negative { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--negative-red)] text-white; }
+.icon-circle-warning { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--warning-amber)] text-white; }
+.icon-circle-neutral { @apply flex items-center justify-center w-10 h-10 rounded-full bg-[var(--neutral-gray)] text-white; }
+/* Typography utilities */
+.section-heading { @apply text-2xl font-bold text-[var(--ink-2)]; }
+.kpi-number { @apply text-5xl font-semibold text-[var(--ink)]; }
+.kpi-label { @apply uppercase text-sm text-[var(--ink-3)]; }
+
+
+
+  /* ---- Responsive data table → stacked cards on mobile --------------- */
+  /* Keep ALL the table's normal classes (w-full, text-sm, …) and add `rtable`.
+     Below md each row collapses to a card; at md+ NOTHING here applies, so the
+     desktop table renders exactly as before. Usage:
+       <table class="rtable w-full …"> … <td data-label="Amount">₹120</td>
+     Each <td data-label> shows its column name on mobile (via ::before);
+     a <td> WITHOUT data-label (e.g. an actions cell) spans the full row. */
+  @media (max-width: 767px) {
+    .rtable { display: block; }
+    .rtable thead { display: none; }
+    .rtable tbody { display: grid; gap: 10px; }
+    .rtable tbody tr {
+      display: grid; gap: 2px;
+      background: var(--paper-3); border: 1px solid var(--line);
+      border-radius: 16px; padding: 11px 14px;
+    }
+    .rtable td {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 14px; min-width: 0; text-align: right;
+    }
+    .rtable td::before {
+      content: attr(data-label);
+      flex: 0 0 auto; text-align: left; text-transform: uppercase;
+      font-weight: 700; font-size: 10.5px; letter-spacing: .04em;
+      color: var(--ink-3);
+    }
+    .rtable td:not([data-label]) { justify-content: flex-start; text-align: left; }
+    .rtable td:not([data-label])::before { content: none; }
+  }
+
+  /* ---- Sub-tab bar — scrolls horizontally instead of overflowing ---- */
+  /* Drop-in for `flex gap-2 border-b` tab rows that have too many tabs to
+     fit a phone. Tabs keep their natural width and the row scrolls. */
+  .subtabs {
+    display: flex; gap: .5rem;
+    overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .subtabs::-webkit-scrollbar { display: none; }
+  .subtabs > * { flex: 0 0 auto; }
+
+  /* ---- Feedback: skeleton + spinner --------------------------------- */
+  .skeleton {
+    position: relative; overflow: hidden;
+    background: var(--paper-3); border-radius: 10px;
+  }
+  .skeleton::after {
+    content: ""; position: absolute; inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 8%, transparent), transparent);
+    animation: cafe-shimmer 1.3s infinite;
+  }
+  @keyframes cafe-shimmer { 100% { transform: translateX(100%); } }
+
+  .spinner {
+    width: 1.1em; height: 1.1em; border-radius: 999px;
+    border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+    border-top-color: currentColor; display: inline-block;
+    animation: cafe-spin .7s linear infinite;
+  }
+  @keyframes cafe-spin { 100% { transform: rotate(360deg); } }
+
+  /* ---- Overlays: scrim + entrances ----------------------------------- */
+  .scrim { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(2px); }
+  .anim-fade   { animation: cafe-fade .18s ease-out both; }
+  .anim-pop    { animation: cafe-pop .22s cubic-bezier(.2,.8,.2,1) both; }
+  .anim-sheet  { animation: cafe-sheet .26s cubic-bezier(.2,.8,.2,1) both; }
+  .anim-drawer-l { animation: cafe-drawer-l .26s cubic-bezier(.2,.8,.2,1) both; }
+  .anim-slide-in { animation: cafe-slide-in .22s ease-out both; }
+  @keyframes cafe-fade { from { opacity: 0; } }
+  @keyframes cafe-pop { from { opacity: 0; transform: scale(.96) translateY(6px); } }
+  @keyframes cafe-sheet { from { transform: translateY(100%); } }
+  @keyframes cafe-drawer-l { from { transform: translateX(-100%); } }
+  @keyframes cafe-slide-in { from { opacity: 0; transform: translateY(-8px); } }
+  /* Waving hand: pivots from the wrist, a few friendly waves then rests */
+  .anim-wave { display: inline-block; transform-origin: 50% 85%; animation: cafe-wave 2.4s ease-in-out .3s infinite; }
+  @keyframes cafe-wave {
+    0%, 60%, 100% { transform: rotate(0deg); }
+    10%, 30%, 50% { transform: rotate(14deg); }
+    20%, 40%      { transform: rotate(-8deg); }
+  }
+  @media (prefers-reduced-motion: reduce) { .anim-wave { animation: none; } }
+
+  /* ---- Luxe accents -------------------------------------------------- */
+  /* Gold hairline border + softer radius — the "fine-dining menu" card */
+  .lux-card {
+    background: var(--paper-2);
+    border: 1px solid var(--gold-hair);
+    border-radius: 24px;
+    box-shadow: var(--sh-2);
+  }
+  .hairline { border-color: var(--gold-hair) !important; }
+  /* Foil gold CTA — espresso text, subtle top highlight */
+  .btn-lux {
+    background: var(--gold-grad); color: var(--espresso);
+    border: 1px solid var(--gold-d);
+    box-shadow: var(--sh-2), inset 0 1px 0 rgba(255,255,255,.35);
+  }
+  .btn-lux:hover { box-shadow: var(--sh-2), var(--sh-glow), inset 0 1px 0 rgba(255,255,255,.4); }
+  /* Section kicker — letter-spaced gold eyebrow above a heading */
+  .lux-eyebrow {
+    font-family: var(--font-body); font-size: 11px; font-weight: 800;
+    letter-spacing: .22em; text-transform: uppercase; color: var(--gold-d);
+  }
+
+  /* ---- Alpha tag — refined caption that sits UNDER the logo ----------- */
+  .alpha-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px; border-radius: 999px;
+    background: color-mix(in srgb, var(--gold) 12%, var(--paper-3));
+    border: 1px solid var(--gold-hair);
+    font-family: var(--font-body); font-size: 10px; font-weight: 800;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--gold-d);
+    user-select: none;
+  }
+  .alpha-tag::before {
+    content: ""; width: 5px; height: 5px; border-radius: 999px;
+    background: var(--gold); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 22%, transparent);
+  }
+
+  /* Compact Input fields for spreadsheet-style lists (e.g. quick invoice rows) */
+  .inp-compact {
+    min-height: 36px !important;
+    height: 36px !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+    font-size: 0.8125rem !important;
+    border-radius: 10px !important;
+  }
+  select.inp-compact {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23888' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.5rem center !important;
+    background-size: 1.25em !important;
+    padding-right: 1.75rem !important;
+  }
+  select.inp {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236B5B4D' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.75rem center !important;
+    background-size: 1.25em !important;
+    padding-right: 2.5rem !important;
+  }
+  
+  /* Custom sleek scrollbar for select dropdown options list */
+  .select-scrollbar::-webkit-scrollbar {
+    width: 6px !important;
+  }
+  .select-scrollbar::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+  .select-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--line-2) !important;
+    border-radius: 999px !important;
+  }
+  .select-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-3) !important;
+  }
+  .select-scrollbar {
+    scrollbar-width: thin !important;
+    scrollbar-color: var(--line-2) transparent !important;
+  }
+
+  /* Global native select option dropdown list styling */
+  select option {
+    background-color: var(--paper-2) !important;
+    color: var(--ink) !important;
+    font-family: var(--font-body), sans-serif !important;
+    font-size: 13px !important;
+    padding: 10px !important;
+  }
+  
+  select option:hover,
+  select option:focus,
+  select option:active,
+  select option:checked {
+    background-color: var(--turmeric) !important;
+    color: #2A1607 !important;
+  }
+}
+
+@layer utilities {
+  /* Screen-reader-only text for icon-only controls */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* Honour reduced-motion globally: kill non-essential animation/transition */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
