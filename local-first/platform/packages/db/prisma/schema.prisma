@@ -20,6 +20,20 @@ datasource db {
 }
 
 // ----------------------------- enums -----------------------------
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  SYNCED
+  FAILED
+  DEAD
+}
+
+enum SyncOperation {
+  CREATE
+  UPDATE
+  DELETE
+}
+
 enum Plan {
   starter
   growth
@@ -1285,3 +1299,32 @@ model PlatformAudit {
   @@index([targetTenantId, createdAt])
   @@map("platform_audit")
 }
+
+// ===================== TRANSACTION OUTBOX (Step 5) =====================
+model SyncOutbox {
+  id           String        @id @default(uuid()) @db.Uuid
+  tenantId     String        @db.Uuid
+  outletId     String        @db.Uuid
+  eventId      String        @unique @db.Uuid
+  entityType   String        // e.g. "Order", "Payment", "Refund", "StockLedger", "Customer"
+  entityId     String        @db.Uuid
+  operation    SyncOperation @default(CREATE)
+  payload      Json          // Full event snapshot / payload required for cloud replay
+  status       SyncStatus    @default(PENDING)
+  attempts     Int           @default(0)
+  maxAttempts  Int           @default(10)
+  sequenceNo   BigInt        @default(autoincrement())
+  causalGroup  String?       // e.g. "order:<orderId>" for dependency grouping
+  availableAt  DateTime      @default(now()) @db.Timestamptz(6)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(6)
+  processedAt  DateTime?     @db.Timestamptz(6)
+  lastError    String?
+  errorCode    String?
+
+  @@index([status, availableAt, sequenceNo])
+  @@index([tenantId, outletId, status])
+  @@index([entityType, entityId])
+  @@index([causalGroup, sequenceNo])
+  @@map("sync_outbox")
+}
+

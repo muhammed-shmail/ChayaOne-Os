@@ -3,6 +3,7 @@ import { prisma, type Prisma } from '@cafeos/db';
 import { CreateOrderSchema, computeBill, type BillLine } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
+import { createOutboxEntry } from '@/lib/outbox';
 import { applyRecipeConsumption, emitLowStockAlerts } from '@/lib/inventory';
 import { alertLargeDiscount } from '@/lib/alerts';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
@@ -317,6 +318,31 @@ export async function POST(req: NextRequest) {
         outletId,
         orderId: created.id,
         lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
+      });
+
+      // Step 5: Write outbox event atomically with the business transaction
+      let resolvedTenantId = session?.tenantId;
+      if (!resolvedTenantId) {
+        const outletObj = await tx.outlet.findUnique({
+          where: { id: outletId },
+          select: { tenantId: true },
+        });
+        resolvedTenantId = outletObj?.tenantId ?? '00000000-0000-0000-0000-000000000000';
+      }
+
+      await createOutboxEntry(tx, {
+        tenantId: resolvedTenantId,
+        outletId,
+        eventId: input.clientUuid,
+        entityType: 'Order',
+        entityId: created.id,
+        operation: 'CREATE',
+        causalGroup: `order:${created.id}`,
+        payload: {
+          order: created,
+          bill,
+          settling,
+        },
       });
 
       return created;

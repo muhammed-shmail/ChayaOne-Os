@@ -3,6 +3,7 @@ import { prisma, type Prisma } from '@cafeos/db';
 import { computeBill, type BillLine } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
+import { createOutboxEntry } from '@/lib/outbox';
 import { applyRecipeConsumption, emitLowStockAlerts } from '@/lib/inventory';
 import { alertOrderCancelled } from '@/lib/alerts';
 import { getOutletGst, gstBillOptions, type GstConfig } from '@/lib/tax';
@@ -181,6 +182,15 @@ export async function POST(req: NextRequest) {
           after: { reason: reason ?? null } as Prisma.InputJsonValue,
         },
       });
+      await createOutboxEntry(tx, {
+        tenantId: session.tenantId,
+        outletId: session.outletId,
+        entityType: 'Order',
+        entityId: orderId,
+        operation: 'UPDATE',
+        causalGroup: `order:${orderId}`,
+        payload: { orderId, action: 'reject', reason: reason ?? null },
+      });
       return o;
     });
     await reverseWalletHold(orderId); // refund any provisional wallet points
@@ -231,6 +241,15 @@ export async function POST(req: NextRequest) {
         entityId: orderId,
         after: { approvedBy: session.name } as Prisma.InputJsonValue,
       },
+    });
+    await createOutboxEntry(tx, {
+      tenantId: session.tenantId,
+      outletId: session.outletId,
+      entityType: 'Order',
+      entityId: orderId,
+      operation: 'UPDATE',
+      causalGroup: `order:${orderId}`,
+      payload: { orderId, action: 'approve', approvedBy: session.name },
     });
     return o;
   });

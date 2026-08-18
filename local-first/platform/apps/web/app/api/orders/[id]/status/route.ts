@@ -3,6 +3,7 @@ import { prisma, type KotStatus, type OrderStatus, type Prisma } from '@cafeos/d
 import { AdvanceOrderSchema, computeBill } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
+import { createOutboxEntry } from '@/lib/outbox';
 import { alertOrderCancelled } from '@/lib/alerts';
 import { createNotification } from '@/lib/notify';
 import { reverseWalletHold } from '@/lib/wallet';
@@ -121,6 +122,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         data: { orderId: o.id, outletId: o.outletId, method, amountPaise: o.totalPaise, status: 'success' },
       });
     }
+    // Write outbox event for order status update
+    await createOutboxEntry(tx, {
+      tenantId: session.tenantId,
+      outletId: session.outletId,
+      entityType: 'Order',
+      entityId: o.id,
+      operation: 'UPDATE',
+      causalGroup: `order:${o.id}`,
+      payload: {
+        orderId: o.id,
+        status: next,
+        settledAt: o.settledAt,
+        settling,
+        method,
+      },
+    });
     return o;
   });
 
