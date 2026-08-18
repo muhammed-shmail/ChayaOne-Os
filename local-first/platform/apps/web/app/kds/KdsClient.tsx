@@ -134,7 +134,36 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
     });
   }, [now, wf.autoClearSec]);
 
-  // realtime subscription (Supabase private channel for this outlet)
+  const refetchActiveOrders = async () => {
+    try {
+      const res = await fetch('/api/orders?status=in_kitchen');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.orders) {
+          setTickets(data.orders.map((o: any) => ({
+            id: o.id,
+            number: o.number,
+            table: o.table?.label ?? (o.type === 'takeaway' ? 'TA' : '—'),
+            type: o.type,
+            status: o.status,
+            placedAt: new Date(o.placedAt).getTime(),
+            customerName: o.customer?.name ?? null,
+            items: (o.items || []).map((i: any) => ({
+              name: i.nameSnapshot,
+              qty: i.qty,
+              station: i.station,
+              modifiers: Array.isArray(i.modifiers) ? i.modifiers : [],
+              notes: i.notes ?? null,
+            })),
+          })));
+        }
+      }
+    } catch {
+      /* ignore refetch error */
+    }
+  };
+
+  // realtime subscription (Supabase or Local WebSocket channel for this outlet)
   useEffect(() => {
     return subscribeStaff(
       (msg) => {
@@ -156,7 +185,16 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
           });
         }
       },
-      (s) => setConnected(s === 'connected'),
+      (s) => {
+        const isNowConnected = s === 'connected';
+        setConnected((wasConnected) => {
+          if (!wasConnected && isNowConnected) {
+            // Reconnected -> resync authoritative state from local DB
+            refetchActiveOrders();
+          }
+          return isNowConnected;
+        });
+      },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wf.autoAcceptOrders, wf.autoClearSec, wf.soundNotification]);

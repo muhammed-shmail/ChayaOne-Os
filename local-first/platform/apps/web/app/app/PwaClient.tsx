@@ -90,15 +90,29 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
-  // live order status via this table's private Supabase channel (the QR token
+  // live order status via this table's private channel (the QR token
   // resolves to the table server-side, and the channel is scoped to it)
   useEffect(() => {
-    return subscribeCustomerTable(qrToken ?? '', (msg) => {
-      if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
-        setCtx((c) => (c ? { ...c, order: { ...(c.order ?? {}), ...msg.ticket } as OrderDto } : c));
-      }
-    });
-  }, [qrToken]);
+    let wasConnected = false;
+    return subscribeCustomerTable(
+      qrToken ?? '',
+      (msg) => {
+        if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
+          setCtx((c) => (c ? { ...c, order: { ...(c.order ?? {}), ...msg.ticket } as OrderDto } : c));
+        }
+      },
+      (status) => {
+        if (status === 'connected') {
+          if (!wasConnected) {
+            wasConnected = true;
+            load();
+          }
+        } else {
+          wasConnected = false;
+        }
+      },
+    );
+  }, [qrToken, load]);
 
   // Register the installable PWA's service worker (production only — keeps dev
   // clean). Also actively pull updates: check on load and whenever the app is

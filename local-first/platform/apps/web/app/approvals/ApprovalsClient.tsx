@@ -76,7 +76,15 @@ export default function ApprovalsClient({ outletName, role, initial }: { outletN
           setOrders((prev) => prev.filter((o) => o.id !== msg.ticket?.id));
         }
       },
-      (s) => setConnected(s === 'connected'),
+      (s) => {
+        const isNowConnected = s === 'connected';
+        setConnected((wasConnected) => {
+          if (!wasConnected && isNowConnected) {
+            refetch();
+          }
+          return isNowConnected;
+        });
+      },
     );
   }, []);
 
