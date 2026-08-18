@@ -1,0 +1,10 @@
+<service>
+  <id>ChayaOne-PostgreSQL</id>
+  <name>ChayaOne OS PostgreSQL Service</name>
+  <description>Manages local persistent PostgreSQL 16 database cluster on port 5433 for ChayaOne OS.</description>
+  <executable>%BASE%\database\bin\postgres.exe</executable>
+  <arguments>-D "%BASE%\data\pgdata" -p 5433</arguments>
+  <logmode>rotate</logmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <resetfailure>1 hour</resetfailure>
+</service>

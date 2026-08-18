@@ -35,8 +35,19 @@ The local runtime relies on an embedded PostgreSQL instance persisted in `local-
 Navigate to the local-first application directory:
 
 ```bash
-cd "local-first/platform"
+### Quick One-Click Launch (Zero Terminal Command Window)
+On Windows Main Cafe PC, simply double-click:
+```bash
+START_CHAYAONE.bat
 ```
+*(Or run `npm run start:local` from the `local-first/` root).*
+
+This script automatically:
+1. Probes & starts embedded PostgreSQL (`port 5433`).
+2. Starts the ChayaOne Web Platform, WebSocket, and Local Print Engine (`port 3000`).
+3. Auto-opens the POS interface in your default browser (`http://localhost:3000/pos`).
+
+---
 
 ### Step 3.1: Install Dependencies
 ```bash

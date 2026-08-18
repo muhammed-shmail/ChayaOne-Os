@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "npm run dev --prefix platform",
+    "start": "node platform/scripts/launch-local-server.mjs",
+    "start:local": "node platform/scripts/launch-local-server.mjs",
     "build": "npm run build --prefix platform",
     "lint": "npm run lint --prefix platform",
     "typecheck": "npm run typecheck --prefix platform",

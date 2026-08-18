@@ -35,8 +35,8 @@ export default async function WhiteLabelPage() {
             {branding.map((b) => (
               <tr key={b.tenantId} className="border-b border-[var(--line)] hover:bg-[var(--paper-3)] transition-colors">
                 <td className="px-5 py-4 font-bold">{b.tenant.name}</td>
-                <td className="px-5 py-4 font-mono text-[var(--gold-d)]">{b.customDomain ?? '—'}</td>
-                <td className="px-5 py-4">{b.appName ?? '—'}</td>
+                <td className="px-5 py-4 font-mono text-[var(--gold-d)]">{b.customDomain ?? 'ï¿½'}</td>
+                <td className="px-5 py-4">{b.appName ?? 'ï¿½'}</td>
                 <td className="px-5 py-4">
                   {b.poweredBy ? (
                     <span className="text-[var(--ok)] font-bold">Enabled</span>

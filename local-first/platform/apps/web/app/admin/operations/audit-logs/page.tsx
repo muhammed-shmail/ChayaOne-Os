@@ -38,8 +38,8 @@ export default async function AuditLogsPage() {
                 <td className="px-5 py-3 text-xs text-[var(--ink-3)]">{log.createdAt.toLocaleString()}</td>
                 <td className="px-5 py-3 font-medium">{log.admin?.name ?? 'System'}</td>
                 <td className="px-5 py-3 font-mono text-xs text-[var(--gold-d)]">{log.action}</td>
-                <td className="px-5 py-3 text-xs">{log.targetTenantId ?? '—'}</td>
-                <td className="px-5 py-3 text-xs font-mono text-[var(--ink-3)]">{log.ip ?? '—'}</td>
+                <td className="px-5 py-3 text-xs">{log.targetTenantId ?? 'ï¿½'}</td>
+                <td className="px-5 py-3 text-xs font-mono text-[var(--ink-3)]">{log.ip ?? 'ï¿½'}</td>
               </tr>
             ))}
             {logs.length === 0 && (

@@ -94,7 +94,10 @@ export function buildKotEscposBuffer(payload: KotPrintPayload, width = 42): Buff
   add(COMMANDS.DOUBLE_SIZE);
   
   if (payload.isReprint) {
-    add('*** REPRINT ***');
+    add('********************************');
+    add('***     REPRINT / RETRY      ***');
+    add('*** CHECK FOR DUPLICATE KOT  ***');
+    add('********************************');
   }
   add(`KOT #${payload.kotNumber}`);
 

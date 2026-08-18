@@ -105,7 +105,11 @@ export async function processPrintQueueBatch(batchSize = 10) {
         if (job.jobType === PrintJobType.RECEIPT || job.jobType === PrintJobType.BILL_PREVIEW) {
           escposBuffer = buildReceiptEscposBuffer(job.payload as unknown as ReceiptPrintPayload);
         } else {
-          escposBuffer = buildKotEscposBuffer(job.payload as unknown as KotPrintPayload);
+          const kotPayload = { ...(job.payload as unknown as KotPrintPayload) };
+          if (job.attempts > 0) {
+            kotPayload.isReprint = true;
+          }
+          escposBuffer = buildKotEscposBuffer(kotPayload);
         }
 
         // Primary LAN / Network Printing Architecture (Main PC ➔ Cafe LAN ➔ Printer IP ➔ TCP:9100 ➔ ESC/POS)

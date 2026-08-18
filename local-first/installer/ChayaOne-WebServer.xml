@@ -1,0 +1,15 @@
+<service>
+  <id>ChayaOne-WebServer</id>
+  <name>ChayaOne OS Web &amp; Realtime Server</name>
+  <description>Runs Next.js production web server, WebSocket server (:3001), ESC/POS Print Queue Worker, and Sync Outbox Worker for ChayaOne OS.</description>
+  <executable>%BASE%\runtime\node.exe</executable>
+  <arguments>"%BASE%\platform\apps\web\.next\standalone\server.js"</arguments>
+  <workingdirectory>%BASE%\platform\apps\web</workingdirectory>
+  <depend>ChayaOne-PostgreSQL</depend>
+  <logmode>rotate</logmode>
+  <env name="NODE_ENV" value="production"/>
+  <env name="PORT" value="3000"/>
+  <env name="WS_PORT" value="3001"/>
+  <onfailure action="restart" delay="5 sec"/>
+  <resetfailure>1 hour</resetfailure>
+</service>

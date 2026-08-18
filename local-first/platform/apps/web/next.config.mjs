@@ -7,6 +7,8 @@ const nextConfig = {
   experimental: {
     // keep the native Prisma engine external; @cafeos/db itself is transpiled above
     serverComponentsExternalPackages: ['@prisma/client', '.prisma/client'],
+    cpus: 1,
+    workerThreads: false,
   },
 };
 
