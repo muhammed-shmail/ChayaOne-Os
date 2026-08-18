@@ -17,9 +17,7 @@ export const DEVICE_TYPES = [
 export type DeviceType = (typeof DEVICE_TYPES)[number]['value'];
 
 export const DEVICE_CONNECTIONS = [
-  { value: 'network', label: 'Network (LAN/IP)' },
-  { value: 'usb', label: 'USB' },
-  { value: 'bluetooth', label: 'Bluetooth' },
+  { value: 'network', label: 'Network (LAN/IP — TCP 9100)' },
 ] as const;
 
 export type DeviceConnection = (typeof DEVICE_CONNECTIONS)[number]['value'];

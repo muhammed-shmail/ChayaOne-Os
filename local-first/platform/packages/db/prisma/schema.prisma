@@ -34,6 +34,21 @@ enum SyncOperation {
   DELETE
 }
 
+enum PrintJobStatus {
+  QUEUED
+  PRINTING
+  PRINTED
+  FAILED
+  CANCELLED
+}
+
+enum PrintJobType {
+  KOT
+  RECEIPT
+  BILL_PREVIEW
+  REPRINT
+}
+
 enum Plan {
   starter
   growth
@@ -1327,4 +1342,35 @@ model SyncOutbox {
   @@index([causalGroup, sequenceNo])
   @@map("sync_outbox")
 }
+
+// ===================== LOCAL PRINT QUEUE (Step 6) =====================
+model PrintJob {
+  id           String         @id @default(uuid()) @db.Uuid
+  tenantId     String         @db.Uuid
+  outletId     String         @db.Uuid
+  jobId        String         @unique @db.Uuid
+  orderId      String?        @db.Uuid
+  kotId        String?        @db.Uuid
+  printerId    String?        
+  stationId    String?        
+  jobType      PrintJobType   @default(KOT)
+  payload      Json           
+  status       PrintJobStatus @default(QUEUED)
+  attempts     Int            @default(0)
+  maxAttempts  Int            @default(5)
+  priority     Int            @default(0)
+  sequenceNo   BigInt         @default(autoincrement())
+  availableAt  DateTime       @default(now()) @db.Timestamptz(6)
+  createdAt    DateTime       @default(now()) @db.Timestamptz(6)
+  startedAt    DateTime?      @db.Timestamptz(6)
+  printedAt    DateTime?      @db.Timestamptz(6)
+  failedAt     DateTime?      @db.Timestamptz(6)
+  lastError    String?
+
+  @@index([status, availableAt, sequenceNo])
+  @@index([tenantId, outletId, status])
+  @@index([orderId, jobType])
+  @@map("print_jobs")
+}
+
 

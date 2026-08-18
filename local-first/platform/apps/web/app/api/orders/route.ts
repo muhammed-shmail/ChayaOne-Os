@@ -4,6 +4,9 @@ import { CreateOrderSchema, computeBill, type BillLine } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
 import { createOutboxEntry } from '@/lib/outbox';
+import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
+import { routeOrderToStations } from '@/lib/print/router';
+import { readKitchenWorkflow } from '@/lib/kitchenWorkflow';
 import { applyRecipeConsumption, emitLowStockAlerts } from '@/lib/inventory';
 import { alertLargeDiscount } from '@/lib/alerts';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
@@ -345,8 +348,45 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      // Step 6: Create PrintJob records for KOT station printers atomically
+      const outletRecord = await tx.outlet.findUnique({
+        where: { id: outletId },
+        select: { settings: true },
+      });
+      const kw = readKitchenWorkflow(outletRecord?.settings);
+      
+      if (kw.autoPrintKot || kw.mode !== 'digital') {
+        const routedJobs = routeOrderToStations(
+          {
+            id: created.id,
+            number,
+            table: { label: input.tableId ? 'Table' : '' },
+            type: input.type,
+            placedAt: created.placedAt,
+            items: created.items,
+          },
+          outletRecord?.settings,
+        );
+
+        for (const job of routedJobs) {
+          await createPrintJob(tx, {
+            tenantId: resolvedTenantId,
+            outletId,
+            jobId: `${created.id}-${job.stationId}`,
+            orderId: created.id,
+            printerId: job.targetDevice?.id ?? null,
+            stationId: job.stationId,
+            jobType: 'KOT' as any,
+            payload: job.payload,
+          });
+        }
+      }
+
       return created;
     });
+
+    // Step 6: Trigger background print queue processing (non-blocking)
+    processPrintQueueBatch().catch(() => {});
 
     // meter the committed order against the tenant's monthly quota (best effort)
     if (meterTenantId) await bumpUsage(meterTenantId, 'orders_month').catch(() => {});

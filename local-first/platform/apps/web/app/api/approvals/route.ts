@@ -4,6 +4,9 @@ import { computeBill, type BillLine } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
 import { createOutboxEntry } from '@/lib/outbox';
+import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
+import { routeOrderToStations } from '@/lib/print/router';
+import { readKitchenWorkflow } from '@/lib/kitchenWorkflow';
 import { applyRecipeConsumption, emitLowStockAlerts } from '@/lib/inventory';
 import { alertOrderCancelled } from '@/lib/alerts';
 import { getOutletGst, gstBillOptions, type GstConfig } from '@/lib/tax';
@@ -251,8 +254,45 @@ export async function POST(req: NextRequest) {
       causalGroup: `order:${orderId}`,
       payload: { orderId, action: 'approve', approvedBy: session.name },
     });
+
+    // Step 6: Create PrintJob records for approved order KOT station printers
+    const outletRecord = await tx.outlet.findUnique({
+      where: { id: session.outletId },
+      select: { settings: true },
+    });
+    const kw = readKitchenWorkflow(outletRecord?.settings);
+    if (kw.autoPrintKot || kw.mode !== 'digital') {
+      const routedJobs = routeOrderToStations(
+        {
+          id: o.id,
+          number: o.number,
+          table: o.table,
+          type: o.type,
+          placedAt: o.placedAt,
+          items: o.items,
+        },
+        outletRecord?.settings,
+      );
+
+      for (const job of routedJobs) {
+        await createPrintJob(tx, {
+          tenantId: session.tenantId,
+          outletId: session.outletId,
+          jobId: `approve-${o.id}-${job.stationId}`,
+          orderId: o.id,
+          printerId: job.targetDevice?.id ?? null,
+          stationId: job.stationId,
+          jobType: 'KOT' as any,
+          payload: job.payload,
+        });
+      }
+    }
+
     return o;
   });
+
+  // Step 6: Trigger background print queue processing (non-blocking)
+  processPrintQueueBatch().catch(() => {});
 
   await emitLowStockAlerts(session.outletId, consumed);
   // now it reaches the KDS (and the POS live rail + the customer's table stream)
