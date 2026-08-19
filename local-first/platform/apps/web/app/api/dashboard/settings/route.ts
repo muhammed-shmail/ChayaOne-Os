@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma, type Prisma } from '@cafeos/db';
+import net from 'net';
+import { prisma, PrintJobType, type Prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { readDevices, normalizeDefaults, type Device } from '@/lib/devices';
 import { readReceiptConfig, RECEIPT_FIELD_MAX } from '@/lib/receipt';
 import { normalizeLocationInput } from '@/lib/geo';
 import { readKitchens, kitchenSlug, KITCHEN_NAME_MAX, KITCHEN_PALETTE, type Kitchen } from '@/lib/kitchens';
 import { readKitchenWorkflow, normalizeKitchenWorkflowInput } from '@/lib/kitchenWorkflow';
+import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const TYPE_VALUES = ['receipt_printer', 'kot_printer', 'label_printer', 'cash_drawer', 'display'];
+const TYPE_VALUES = ['receipt_printer', 'kot_printer', 'label_printer', 'cash_drawer', 'display', 'other'];
 const CONN_VALUES = ['network', 'usb', 'bluetooth'];
 
 /** persist the device list back into Outlet.settings.devices (merged). */
@@ -231,13 +233,23 @@ export async function POST(req: NextRequest) {
     const type = TYPE_VALUES.includes(d.type) ? d.type : 'receipt_printer';
     const connection = CONN_VALUES.includes(d.connection) ? d.connection : 'network';
     const copies = Number(d.copies);
+    const ip = typeof d.ip === 'string' && d.ip ? d.ip.trim() : String(d.target ?? '').split(':')[0]?.trim() || '';
+    const port = d.port ? String(d.port).trim() : (String(d.target ?? '').split(':')[1] || '9100');
+    const target = String(d.target ?? '').trim() || (ip ? `${ip}:${port}` : '');
+    const priority = d.priority === 'backup' ? 'backup' : 'primary';
+    const kotRule = d.kotRule === 'all_items' ? 'all_items' : d.kotRule === 'custom' ? 'custom' : 'station_only';
+
     const entry: Device = {
       id: typeof d.id === 'string' && d.id ? d.id : crypto.randomUUID(),
       name,
       type,
       connection,
-      target: String(d.target ?? '').trim(),
-      station: type === 'kot_printer' && d.station ? String(d.station) : null,
+      target,
+      ip: ip || null,
+      port: port || '9100',
+      station: (type === 'kot_printer' || type === 'display') && d.station ? String(d.station).trim() : null,
+      priority,
+      kotRule,
       copies: Number.isFinite(copies) && copies >= 1 ? Math.min(5, Math.round(copies)) : 1,
       isDefault: !!d.isDefault,
     };
@@ -245,6 +257,16 @@ export async function POST(req: NextRequest) {
     const current = readDevices((await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } }))?.settings);
     const idx = current.findIndex((x) => x.id === entry.id);
     if (idx >= 0) current[idx] = entry; else current.push(entry);
+
+    // If marked as primary for a station, update other printers for the same station to backup
+    if (entry.type === 'kot_printer' && entry.station && entry.priority === 'primary') {
+      current.forEach((p) => {
+        if (p.id !== entry.id && p.type === 'kot_printer' && p.station === entry.station && p.priority === 'primary') {
+          p.priority = 'backup';
+        }
+      });
+    }
+
     const next = normalizeDefaults(current, entry.isDefault ? entry.id : undefined);
     await saveDevices(session.outletId, next);
     await prisma.auditLog.create({
@@ -259,6 +281,74 @@ export async function POST(req: NextRequest) {
     const next = current.filter((x) => x.id !== body.id);
     await saveDevices(session.outletId, next);
     return NextResponse.json({ ok: true, devices: next });
+  }
+
+  if (body.action === 'device_test_connection') {
+    const rawTarget = String(body.target || '').trim();
+    const rawIp = String(body.ip || '').trim();
+    const ip = rawIp || rawTarget.split(':')[0]?.trim() || '';
+    const port = parseInt(String(body.port || rawTarget.split(':')[1] || '9100').trim(), 10) || 9100;
+
+    if (!ip) return NextResponse.json({ error: 'missing_ip', reachable: false, message: 'IP address is required.' }, { status: 400 });
+
+    const reachable = await new Promise<boolean>((resolve) => {
+      const socket = new net.Socket();
+      socket.setTimeout(2500);
+      socket.on('connect', () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on('error', () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.on('timeout', () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.connect(port, ip);
+    });
+
+    return NextResponse.json({
+      ok: true,
+      reachable,
+      ip,
+      port,
+      message: reachable
+        ? `✓ Printer reachable at ${ip}:${port} (TCP 9100 active)`
+        : `✕ Printer unreachable at ${ip}:${port} (Connection timed out / refused)`
+    });
+  }
+
+  if (body.action === 'device_test_kot') {
+    const d = body.device ?? {};
+    const stationName = String(d.station || body.station || 'kitchen').trim();
+    const printerName = String(d.name || body.name || 'Kitchen Printer 01').trim();
+    const printerId = typeof d.id === 'string' ? d.id : null;
+
+    const job = await prisma.$transaction(async (tx) => {
+      return await createPrintJob(tx, {
+        tenantId: session.tenantId,
+        outletId: session.outletId,
+        printerId,
+        stationId: stationName,
+        jobType: PrintJobType.KOT,
+        payload: {
+          kotNumber: Math.floor(1000 + Math.random() * 9000),
+          orderNumber: 99,
+          tableLabel: 'TEST-01',
+          orderType: 'DINE_IN',
+          stationName,
+          placedAt: new Date(),
+          items: [
+            { name: `[TEST KOT] ${printerName}`, qty: 1, notes: 'ChayaOne Diagnostic Test Print' }
+          ]
+        }
+      });
+    });
+
+    processPrintQueueBatch().catch(() => {});
+    return NextResponse.json({ ok: true, job, message: `Test KOT dispatched to queue for ${printerName} (${stationName}).` });
   }
 
   // ---- kitchens / prep stations (stored in Outlet.settings.kitchens) ----

@@ -163,6 +163,10 @@ interface SettingsCenterProps {
   flashMessage: (msg: string) => void;
   isAdvanced: boolean;
   handleToggleAdvanced: (val: boolean) => void;
+
+  menuItems?: any[];
+  menuCategories?: any[];
+  setMenuItems?: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 export default function SettingsCenter({
@@ -217,13 +221,107 @@ export default function SettingsCenter({
   loadAudit,
   flashMessage,
   isAdvanced,
-  handleToggleAdvanced
+  handleToggleAdvanced,
+  menuItems = [],
+  menuCategories = [],
+  setMenuItems
 }: SettingsCenterProps) {
   // Navigation & States
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobileViewingForm, setIsMobileViewingForm] = useState<boolean>(false);
   const [isNavigatingByKeyboard, setIsNavigatingByKeyboard] = useState<boolean>(false);
+
+  // Device Test & Station Routing state
+  const [testConnectionStatus, setTestConnectionStatus] = useState<Record<string, { loading: boolean; ok?: boolean; message?: string }>>({});
+  const [testKotStatus, setTestKotStatus] = useState<Record<string, { loading: boolean; ok?: boolean; message?: string }>>({});
+  const [showStationRoutingModal, setShowStationRoutingModal] = useState<boolean>(false);
+  const [routingSearch, setRoutingSearch] = useState<string>('');
+  const [routingStationFilter, setRoutingStationFilter] = useState<string>('all');
+  const [savingMenuItemId, setSavingMenuItemId] = useState<string | null>(null);
+
+  const handleTestConnection = async (targetOrIp?: string, portVal?: string | number) => {
+    const key = targetOrIp || deviceForm.target || deviceForm.ip || 'form';
+    setTestConnectionStatus((prev) => ({ ...prev, [key]: { loading: true } }));
+    try {
+      const res = await fetch('/api/dashboard/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'device_test_connection',
+          target: targetOrIp || deviceForm.target,
+          ip: deviceForm.ip,
+          port: portVal || deviceForm.port,
+        }),
+      });
+      const data = await res.json();
+      setTestConnectionStatus((prev) => ({
+        ...prev,
+        [key]: { loading: false, ok: data.reachable, message: data.message },
+      }));
+      flashMessage(data.message || (data.reachable ? 'Printer reachable' : 'Printer unreachable'));
+    } catch {
+      setTestConnectionStatus((prev) => ({
+        ...prev,
+        [key]: { loading: false, ok: false, message: 'Connection test failed' },
+      }));
+      flashMessage('Connection test failed');
+    }
+  };
+
+  const handlePrintTestKot = async (dev?: Device) => {
+    const key = dev?.id || 'form';
+    setTestKotStatus((prev) => ({ ...prev, [key]: { loading: true } }));
+    try {
+      const res = await fetch('/api/dashboard/settings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'device_test_kot',
+          device: dev || deviceForm,
+          station: dev?.station || deviceForm.station || 'kitchen',
+          name: dev?.name || deviceForm.name || 'Kitchen Printer 01',
+        }),
+      });
+      const data = await res.json();
+      setTestKotStatus((prev) => ({
+        ...prev,
+        [key]: { loading: false, ok: res.ok, message: data.message },
+      }));
+      flashMessage(data.message || 'Test KOT dispatched');
+    } catch {
+      setTestKotStatus((prev) => ({
+        ...prev,
+        [key]: { loading: false, ok: false, message: 'Test KOT dispatch failed' },
+      }));
+      flashMessage('Test KOT dispatch failed');
+    }
+  };
+
+  const handleAssignItemStation = async (itemId: string, station: string) => {
+    setSavingMenuItemId(itemId);
+    try {
+      const res = await fetch('/api/dashboard/menu', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'update', itemId, station: station === 'none' ? null : station }),
+      });
+      if (res.ok) {
+        flashMessage('Item station updated!');
+        if (setMenuItems) {
+          setMenuItems((prev) =>
+            prev.map((i) => (i.id === itemId ? { ...i, station: station === 'none' ? null : station } : i))
+          );
+        }
+      } else {
+        flashMessage('Could not update station');
+      }
+    } catch {
+      flashMessage('Error updating station');
+    } finally {
+      setSavingMenuItemId(null);
+    }
+  };
 
   // Favorites & Recently Used
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -2960,131 +3058,648 @@ export default function SettingsCenter({
               {/* ── 10. DEVICES & PRINTERS ── */}
               {activePanel === 'devices' && (
                 <div className="card p-5 sm:p-6 flex flex-col gap-6 bg-paper-2">
-                  <div className="border-b pb-3 border-line flex items-center gap-3">
-                    <Printer className="text-turmeric" size={24} />
-                    <div>
-                      <h2 className="text-xl font-bold font-display">Devices &amp; Printers</h2>
-                      <p className="text-xs text-ink-3">Registry of thermal receipt printers, kitchen display systems, Bluetooth scales and POS drawer triggers.</p>
+                  <div className="border-b pb-3 border-line flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <Printer className="text-turmeric" size={26} />
+                      <div>
+                        <h2 className="text-xl font-bold font-display">Devices &amp; Printers</h2>
+                        <p className="text-xs text-ink-3">Configure KOT printers, station assignments, receipt output nodes, and LAN network parameters.</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowStationRoutingModal(true)}
+                        className="btn btn-sm"
+                        style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+                      >
+                        <BookOpen size={14} /> Station Routing
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDeviceForm({
+                            id: undefined,
+                            name: '',
+                            type: 'kot_printer',
+                            connection: 'network',
+                            target: '192.168.1.201:9100',
+                            ip: '192.168.1.201',
+                            port: '9100',
+                            station: 'kitchen',
+                            priority: 'primary',
+                            kotRule: 'station_only',
+                            isDefault: false
+                          });
+                          setShowDeviceForm(true);
+                        }}
+                        className="btn btn-sm btn-primary"
+                      >
+                        <Plus size={14} /> Register Printer / Device
+                      </button>
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-4">
+                  {/* UNASSIGNED ITEM WARNING BANNER */}
+                  {(() => {
+                    const unassignedCount = (menuItems || []).filter(i => !i.station || i.station === 'none').length;
+                    if (unassignedCount === 0) return null;
+                    return (
+                      <div className="p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs bg-amber-500/10 border-amber-500/30 text-amber-900">
+                        <div className="flex items-center gap-2 font-bold">
+                          <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+                          <span>⚠ {unassignedCount} menu items are not assigned to a KOT station.</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setRoutingStationFilter('unassigned');
+                            setShowStationRoutingModal(true);
+                          }}
+                          className="btn btn-sm bg-amber-600 text-white hover:bg-amber-700 font-bold"
+                        >
+                          Review Items
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  {/* KOT STATIONS SUMMARY CARDS */}
+                  <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-sm">Hardware Registry</h4>
+                      <div>
+                        <h4 className="font-bold text-sm">KOT STATIONS</h4>
+                        <p className="text-[11px] text-ink-3">Preparation stations and configured physical LAN printers.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {[
+                        { id: 'kitchen', name: 'Kitchen', icon: '🍳', desc: 'Food preparation' },
+                        { id: 'bar', name: 'Bar', icon: '☕', desc: 'Drinks & beverages' },
+                        { id: 'bakery', name: 'Bakery', icon: '🥐', desc: 'Bakery items' },
+                        { id: 'dessert', name: 'Dessert', icon: '🍰', desc: 'Desserts & sweets' },
+                        ...kitchens
+                          .filter(k => !['kitchen', 'bar', 'bakery', 'dessert'].includes(k.id))
+                          .map(k => ({ id: k.id, name: k.name, icon: '⚙️', desc: 'Custom station' }))
+                      ].map((st) => {
+                        const stationPrinters = devices.filter(d => d.type === 'kot_printer' && d.station === st.id);
+                        const primaryPrinter = stationPrinters.find(d => d.priority === 'primary' || d.isDefault) || stationPrinters[0];
+                        const backupPrinter = stationPrinters.find(d => d.id !== primaryPrinter?.id && d.priority === 'backup') || (stationPrinters.length > 1 ? stationPrinters[1] : null);
+                        const assignedItemsCount = (menuItems || []).filter(i => (i.station || 'kitchen') === st.id).length;
+
+                        return (
+                          <div key={st.id} className="card p-4 bg-paper-3 flex flex-col justify-between gap-3 border border-line rounded-xl">
+                            <div>
+                              <div className="flex items-center justify-between border-b pb-2 border-line">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xl">{st.icon}</span>
+                                  <div>
+                                    <b className="text-sm block font-bold">{st.name}</b>
+                                    <span className="text-[10px] text-ink-3 block">{st.desc}</span>
+                                  </div>
+                                </div>
+                                <span className="pill text-[10px] font-bold">{assignedItemsCount} Items</span>
+                              </div>
+
+                              <div className="mt-3 flex flex-col gap-1.5 text-xs">
+                                <div className="flex justify-between items-center text-[11px]">
+                                  <span className="text-ink-3">Printers:</span>
+                                  <b className="font-bold">{stationPrinters.length} Configured</b>
+                                </div>
+                                <div className="flex justify-between items-center text-[11px]">
+                                  <span className="text-ink-3">Primary:</span>
+                                  <span className="font-semibold text-turmeric-d truncate max-w-[110px]" title={primaryPrinter?.name || 'None'}>
+                                    {primaryPrinter ? primaryPrinter.name : '— Not set'}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center text-[11px]">
+                                  <span className="text-ink-3">Backup:</span>
+                                  <span className="font-semibold text-ink-2 truncate max-w-[110px]" title={backupPrinter?.name || 'None'}>
+                                    {backupPrinter ? backupPrinter.name : '— None'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 pt-2 border-t border-line">
+                              <button
+                                onClick={() => {
+                                  setRoutingStationFilter(st.id);
+                                  setShowStationRoutingModal(true);
+                                }}
+                                className="btn btn-xs flex-1 bg-paper-2 border hover:bg-paper"
+                              >
+                                Manage
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeviceForm({
+                                    id: undefined,
+                                    name: `${st.name} Printer ${stationPrinters.length + 1}`,
+                                    type: 'kot_printer',
+                                    connection: 'network',
+                                    target: `192.168.1.${201 + devices.length}:9100`,
+                                    ip: `192.168.1.${201 + devices.length}`,
+                                    port: '9100',
+                                    station: st.id,
+                                    priority: stationPrinters.length === 0 ? 'primary' : 'backup',
+                                    kotRule: 'station_only',
+                                    isDefault: false
+                                  });
+                                  setShowDeviceForm(true);
+                                }}
+                                className="btn btn-xs btn-primary px-2"
+                                title={`Add another printer for ${st.name}`}
+                              >
+                                + Add
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* HARDWARE REGISTRY TABLE */}
+                  <div className="flex flex-col gap-3 border-t pt-4 border-line">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-sm">Hardware Registry ({devices.length})</h4>
                       <button
-                        onClick={() => openDeviceForm()}
+                        onClick={() => {
+                          setDeviceForm({
+                            id: undefined,
+                            name: '',
+                            type: 'kot_printer',
+                            connection: 'network',
+                            target: '192.168.1.201:9100',
+                            ip: '192.168.1.201',
+                            port: '9100',
+                            station: 'kitchen',
+                            priority: 'primary',
+                            kotRule: 'station_only',
+                            isDefault: false
+                          });
+                          setShowDeviceForm(true);
+                        }}
                         className="btn btn-sm btn-primary"
                       >
                         <Plus size={14} /> Add Device
                       </button>
                     </div>
 
-                    {/* Active Printers List */}
-                    <div className="divide-y divide-line border rounded-xl overflow-hidden bg-paper-3">
-                      {devices.map((d) => (
-                        <div key={d.id} className="p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <b className="text-sm block">{d.name}</b>
-                              {d.isDefault && <span className="pill text-[9px] font-bold text-green-700 bg-green-500/10 border-green-500/20">Default</span>}
-                            </div>
-                            <span className="text-ink-3 capitalize">{d.type.replace('_', ' ')} · Connection: {d.connection} ({d.target})</span>
-                          </div>
+                    <div className="border rounded-xl overflow-hidden bg-paper-3">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="border-b bg-paper-2 text-ink-3 uppercase font-bold text-[10px]">
+                              <th className="p-3">Device</th>
+                              <th className="p-3">Type</th>
+                              <th className="p-3">IP / Port</th>
+                              <th className="p-3">Station</th>
+                              <th className="p-3">Priority</th>
+                              <th className="p-3">KOT Rule</th>
+                              <th className="p-3">Status</th>
+                              <th className="p-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-line">
+                            {devices.map((d) => {
+                              const targetStr = d.target || (d.ip ? `${d.ip}:${d.port || 9100}` : '—');
+                              const testRes = testConnectionStatus[d.id] || testConnectionStatus[targetStr];
+                              const testKot = testKotStatus[d.id];
 
-                          <div className="flex items-center gap-2">
-                            {!d.isDefault && (
-                              <button
-                                onClick={() => handleSetDefaultDevice(d)}
-                                className="px-2 py-1 bg-paper-2 hover:bg-line border rounded text-[11px]"
-                              >
-                                Make Default
-                              </button>
+                              return (
+                                <tr key={d.id} className="hover:bg-paper-2/50 transition-colors">
+                                  <td className="p-3">
+                                    <b className="font-bold text-sm block">{d.name}</b>
+                                    {d.isDefault && <span className="pill text-[9px] font-bold text-green-700 bg-green-500/10">Default</span>}
+                                  </td>
+                                  <td className="p-3 capitalize font-medium">
+                                    {d.type === 'kot_printer' ? '🍳 KOT Printer' : d.type === 'receipt_printer' ? '🧾 Receipt Printer' : d.type === 'display' ? '📺 KDS Display' : '⚙️ Other Device'}
+                                  </td>
+                                  <td className="p-3 font-mono font-semibold">{targetStr}</td>
+                                  <td className="p-3 capitalize font-semibold text-turmeric-d">
+                                    {d.station ? d.station : d.type === 'receipt_printer' ? 'Billing Counter' : '—'}
+                                  </td>
+                                  <td className="p-3">
+                                    {d.priority === 'backup' ? (
+                                      <span className="pill text-[10px] font-bold text-gray-700 bg-gray-200">BACKUP</span>
+                                    ) : (
+                                      <span className="pill text-[10px] font-bold text-amber-800 bg-amber-100">PRIMARY</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-[11px] text-ink-3">
+                                    {d.kotRule === 'all_items' ? 'All Order Items' : d.kotRule === 'custom' ? 'Custom Filter' : 'Station Items Only'}
+                                  </td>
+                                  <td className="p-3">
+                                    {testRes?.loading ? (
+                                      <span className="text-ink-3 text-[10px]">Testing…</span>
+                                    ) : testRes?.ok === true ? (
+                                      <span className="pill text-[10px] font-bold text-green-700 bg-green-50 border-green-200">✓ ONLINE</span>
+                                    ) : testRes?.ok === false ? (
+                                      <span className="pill text-[10px] font-bold text-red-700 bg-red-50 border-red-200">✕ UNREACHABLE</span>
+                                    ) : (
+                                      <span className="pill text-[10px] text-gray-600 bg-gray-100">ONLINE</span>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        onClick={() => handleTestConnection(targetStr)}
+                                        disabled={testRes?.loading}
+                                        className="btn btn-xs bg-paper-2 border hover:bg-paper"
+                                        title="Test TCP 9100 network socket reachability"
+                                      >
+                                        {testRes?.loading ? '…' : 'Test'}
+                                      </button>
+
+                                      {d.type === 'kot_printer' && (
+                                        <button
+                                          onClick={() => handlePrintTestKot(d)}
+                                          disabled={testKot?.loading}
+                                          className="btn btn-xs bg-paper-2 border hover:bg-paper"
+                                          title="Send test KOT to print manager queue"
+                                        >
+                                          {testKot?.loading ? '…' : 'Print Test'}
+                                        </button>
+                                      )}
+
+                                      <button
+                                        onClick={() => {
+                                          const parts = (d.target || '').split(':');
+                                          setDeviceForm({
+                                            id: d.id,
+                                            name: d.name,
+                                            type: d.type,
+                                            connection: d.connection || 'network',
+                                            target: d.target,
+                                            ip: d.ip || parts[0] || '192.168.1.201',
+                                            port: d.port || parts[1] || '9100',
+                                            station: d.station || 'kitchen',
+                                            priority: d.priority || 'primary',
+                                            kotRule: d.kotRule || 'station_only',
+                                            isDefault: !!d.isDefault
+                                          });
+                                          setShowDeviceForm(true);
+                                        }}
+                                        className="btn btn-xs border bg-paper-2"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteDevice(d.id, d.name)}
+                                        className="text-red-500 hover:text-red-600 p-1"
+                                        title="Delete device"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+
+                            {devices.length === 0 && (
+                              <tr>
+                                <td colSpan={8} className="p-8 text-center text-ink-3">
+                                  No hardware devices configured yet. Click Register Printer / Device above.
+                                </td>
+                              </tr>
                             )}
-                            <button
-                              onClick={() => openDeviceForm(d)}
-                              className="px-2 py-1 bg-paper-2 hover:bg-line border rounded text-[11px]"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteDevice(d.id, d.name)}
-                              className="text-red-500 hover:text-red-600 transition-colors ml-1"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-
-                      {devices.length === 0 && (
-                        <div className="p-8 text-center text-ink-3">No hardware devices configured yet. Click Add Device above.</div>
-                      )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Inline Modal Form for Device Add/Edit */}
+                  {/* INLINE FORM: REGISTER PRINTER / DEVICE */}
                   {showDeviceForm && (
-                    <div className="border border-line rounded-2xl p-4 bg-paper-3 mt-2">
-                      <div className="flex justify-between items-center border-b pb-2 mb-3">
-                        <b className="text-sm">{deviceForm.id ? 'Edit Device Properties' : 'Register New Device'}</b>
-                        <button onClick={() => setShowDeviceForm(false)} className="text-ink-3 hover:text-ink"><X size={16} /></button>
+                    <div className="border border-line rounded-2xl p-5 bg-paper-3 mt-2 flex flex-col gap-5 shadow-lg">
+                      <div className="flex justify-between items-center border-b pb-3 border-line">
+                        <div>
+                          <b className="text-base block font-bold font-display">
+                            {deviceForm.id ? 'EDIT DEVICE CONFIGURATION' : 'REGISTER PRINTER / DEVICE'}
+                          </b>
+                          <span className="text-xs text-ink-3">Configure LAN network parameters, station assignment &amp; KOT routing rules.</span>
+                        </div>
+                        <button onClick={() => setShowDeviceForm(false)} className="text-ink-3 hover:text-ink"><X size={18} /></button>
                       </div>
 
-                      <form onSubmit={handleSaveDevice} className="flex flex-col gap-3">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label className="lbl">Device Alias Name</label>
-                            <input
-                              value={deviceForm.name}
-                              onChange={(e) => setDeviceForm((prev: any) => ({ ...prev, name: e.target.value }))}
-                              placeholder="e.g. Billing Counter Printer"
-                              required
-                              className="inp bg-paper-2"
-                            />
+                      <form onSubmit={handleSaveDevice} className="flex flex-col gap-6">
+                        {/* 1. BASIC DEVICE INFORMATION */}
+                        <div className="flex flex-col gap-3">
+                          <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">1. Device Information</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="lbl">Device Name</label>
+                              <input
+                                value={deviceForm.name || ''}
+                                onChange={(e) => setDeviceForm((prev: any) => ({ ...prev, name: e.target.value }))}
+                                placeholder="e.g. Kitchen Printer 01"
+                                required
+                                className="inp bg-paper-2 font-semibold"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="lbl">Device Type</label>
+                              <select
+                                value={deviceForm.type || 'kot_printer'}
+                                onChange={(e) => setDeviceForm((prev: any) => ({ ...prev, type: e.target.value }))}
+                                className="inp bg-paper-2 font-semibold"
+                              >
+                                <option value="kot_printer">KOT Printer</option>
+                                <option value="receipt_printer">Receipt Printer</option>
+                                <option value="display">KDS Display</option>
+                                <option value="other">Other Device / Cash Drawer</option>
+                              </select>
+                            </div>
                           </div>
 
-                          <div>
-                            <label className="lbl">Device Hardware Class</label>
-                            <select
-                              value={deviceForm.type}
-                              onChange={(e) => setDeviceForm((prev: any) => ({ ...prev, type: e.target.value }))}
-                              className="inp bg-paper-2"
-                            >
-                              <option value="receipt_printer">Receipt Printer (80mm / 58mm)</option>
-                              <option value="kot_printer">Kitchen Ticket Printer (KOT)</option>
-                              <option value="label_printer">Label Barcode Printer</option>
-                              <option value="cash_drawer">Cash Drawer Trigger</option>
-                            </select>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                              <label className="lbl">Connection</label>
+                              <input
+                                value="Network / LAN"
+                                disabled
+                                className="inp bg-paper-1 font-semibold text-ink-3"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="lbl">IP Address</label>
+                              <input
+                                value={deviceForm.ip || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setDeviceForm((prev: any) => ({
+                                    ...prev,
+                                    ip: val,
+                                    target: `${val}:${prev.port || '9100'}`
+                                  }));
+                                }}
+                                placeholder="e.g. 192.168.1.201"
+                                required
+                                className="inp bg-paper-2 font-mono font-semibold"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="lbl">Port (Default 9100)</label>
+                              <input
+                                value={deviceForm.port || '9100'}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setDeviceForm((prev: any) => ({
+                                    ...prev,
+                                    port: val,
+                                    target: `${prev.ip || '192.168.1.201'}:${val}`
+                                  }));
+                                }}
+                                placeholder="9100"
+                                required
+                                className="inp bg-paper-2 font-mono font-semibold"
+                              />
+                            </div>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                          <div>
-                            <label className="lbl">Port Connection</label>
-                            <select
-                              value={deviceForm.connection}
-                              onChange={(e) => setDeviceForm((prev: any) => ({ ...prev, connection: e.target.value }))}
-                              className="inp bg-paper-2"
-                            >
-                              <option value="network">Network IP Address</option>
-                              <option value="usb">USB Raw Port</option>
-                              <option value="bluetooth">Bluetooth Device</option>
-                            </select>
-                          </div>
+                        {/* 2. CONDITIONAL: KOT PRINTER SPECIFIC SECTIONS */}
+                        {deviceForm.type === 'kot_printer' && (
+                          <>
+                            {/* KOT STATION */}
+                            <div className="flex flex-col gap-3 border-t pt-4 border-line">
+                              <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">2. KOT Station</h4>
+                              <p className="text-xs text-ink-3">Which station should this printer serve?</p>
 
-                          <div className="md:col-span-2">
-                            <label className="lbl">Target / IP / Port Descriptor</label>
-                            <input
-                              value={deviceForm.target}
-                              onChange={(e) => setDeviceForm((prev: any) => ({ ...prev, target: e.target.value }))}
-                              placeholder="e.g. 192.168.1.200, COM1, LPT1"
-                              required
-                              className="inp bg-paper-2"
-                            />
-                          </div>
-                        </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                                {[
+                                  { id: 'kitchen', name: 'Kitchen', icon: '🍳', desc: 'Food prep' },
+                                  { id: 'bar', name: 'Bar', icon: '☕', desc: 'Drinks & beverages' },
+                                  { id: 'bakery', name: 'Bakery', icon: '🥐', desc: 'Bakery items' },
+                                  { id: 'dessert', name: 'Dessert', icon: '🍰', desc: 'Desserts & sweets' },
+                                  { id: 'custom', name: 'Custom', icon: '⚙️', desc: 'Custom station' },
+                                ].map((st) => {
+                                  const isSel = (deviceForm.station || 'kitchen') === st.id;
+                                  return (
+                                    <button
+                                      key={st.id}
+                                      type="button"
+                                      onClick={() => setDeviceForm((prev: any) => ({ ...prev, station: st.id }))}
+                                      className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                                        isSel
+                                          ? 'bg-amber-500/10 border-turmeric text-ink ring-2 ring-turmeric/30'
+                                          : 'bg-paper-2 border-line hover:border-line-2'
+                                      }`}
+                                    >
+                                      <span className="text-2xl mb-1">{st.icon}</span>
+                                      <div>
+                                        <b className="text-xs block font-bold">{st.name}</b>
+                                        <span className="text-[10px] text-ink-3 block">{st.desc}</span>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
 
-                        <div className="flex items-center justify-between pt-2">
+                            {/* PRINTER PRIORITY */}
+                            <div className="flex flex-col gap-3 border-t pt-4 border-line">
+                              <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">3. Printer Priority</h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setDeviceForm((prev: any) => ({ ...prev, priority: 'primary' }))}
+                                  className={`p-3.5 rounded-xl border text-left transition-all ${
+                                    (deviceForm.priority || 'primary') === 'primary'
+                                      ? 'bg-amber-500/10 border-turmeric text-ink ring-2 ring-turmeric/30'
+                                      : 'bg-paper-2 border-line'
+                                  }`}
+                                >
+                                  <b className="text-xs block font-bold uppercase">PRIMARY PRINTER</b>
+                                  <span className="text-[11px] text-ink-3">Default destination for KOT tickets for this station.</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setDeviceForm((prev: any) => ({ ...prev, priority: 'backup' }))}
+                                  className={`p-3.5 rounded-xl border text-left transition-all ${
+                                    deviceForm.priority === 'backup'
+                                      ? 'bg-amber-500/10 border-turmeric text-ink ring-2 ring-turmeric/30'
+                                      : 'bg-paper-2 border-line'
+                                  }`}
+                                >
+                                  <b className="text-xs block font-bold uppercase">BACKUP PRINTER</b>
+                                  <span className="text-[11px] text-ink-3">Receives KOTs if the primary printer is unreachable.</span>
+                                </button>
+                              </div>
+
+                              {/* Priority warning if primary already exists */}
+                              {(() => {
+                                const targetStation = deviceForm.station || 'kitchen';
+                                const existingPrimary = devices.find(
+                                  (d) => d.type === 'kot_printer' && d.station === targetStation && d.priority === 'primary' && d.id !== deviceForm.id
+                                );
+                                if (!existingPrimary || deviceForm.priority === 'backup') return null;
+
+                                return (
+                                  <div className="p-3 rounded-xl border bg-amber-500/10 border-amber-500/30 text-amber-900 text-xs flex items-center justify-between gap-3">
+                                    <span>⚠️ Primary printer already configured for {targetStation} ({existingPrimary.name}).</span>
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeviceForm((prev: any) => ({ ...prev, priority: 'backup' }))}
+                                        className="btn btn-xs bg-amber-600 text-white font-bold"
+                                      >
+                                        Set as Backup
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+
+                            {/* KOT ITEM SEPARATION */}
+                            <div className="flex flex-col gap-3 border-t pt-4 border-line">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">4. KOT Item Separation</h4>
+                                  <p className="text-xs text-ink-3">What should this printer print?</p>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {[
+                                  {
+                                    id: 'station_only',
+                                    title: 'OPTION 1 (RECOMMENDED)',
+                                    label: 'Only items from this station',
+                                    desc: 'Print only menu items assigned to this station.'
+                                  },
+                                  {
+                                    id: 'all_items',
+                                    title: 'OPTION 2',
+                                    label: 'All items from order',
+                                    desc: 'Print the complete order on this printer.'
+                                  },
+                                  {
+                                    id: 'custom',
+                                    title: 'OPTION 3',
+                                    label: 'Custom item/category filter',
+                                    desc: 'Choose specific categories or items.'
+                                  }
+                                ].map((opt) => {
+                                  const isSel = (deviceForm.kotRule || 'station_only') === opt.id;
+                                  return (
+                                    <button
+                                      key={opt.id}
+                                      type="button"
+                                      onClick={() => setDeviceForm((prev: any) => ({ ...prev, kotRule: opt.id }))}
+                                      className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                                        isSel
+                                          ? 'bg-amber-500/10 border-turmeric text-ink ring-2 ring-turmeric/30'
+                                          : 'bg-paper-2 border-line hover:border-line-2'
+                                      }`}
+                                    >
+                                      <div>
+                                        <span className="text-[10px] font-bold uppercase block text-turmeric-d">{opt.title}</span>
+                                        <b className="text-xs font-bold block mt-0.5">{opt.label}</b>
+                                        <p className="text-[11px] text-ink-3 mt-1 leading-snug">{opt.desc}</p>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="p-3 rounded-xl bg-paper-2 border border-line text-[11px] text-ink-3 flex items-center gap-2">
+                                <Info size={16} className="text-turmeric shrink-0" />
+                                <span>Recommended: Use station-based printing to prevent duplicate KOTs across Kitchen, Bar and Bakery printers.</span>
+                              </div>
+                            </div>
+
+                            {/* KOT ROUTING PREVIEW */}
+                            <div className="flex flex-col gap-2 border-t pt-4 border-line">
+                              <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">5. KOT Routing Preview</h4>
+                              <div className="p-4 rounded-xl bg-paper-2 border border-line font-mono text-xs flex flex-col gap-2">
+                                <div className="flex items-center gap-2 text-ink">
+                                  <span className="font-bold">Order</span>
+                                  <span>↓</span>
+                                  <span className="font-bold text-turmeric-d uppercase">{deviceForm.station || 'Kitchen'} Station</span>
+                                  <span>↓</span>
+                                  <span className="font-bold">{deviceForm.name || 'Kitchen Printer 01'}</span>
+                                  <span className="pill text-[9px] uppercase">{deviceForm.priority || 'primary'}</span>
+                                </div>
+                                <div className="border-t pt-2 border-line-2 text-ink-2">
+                                  {deviceForm.kotRule === 'all_items' ? (
+                                    <div>
+                                      <b>Printed Items (Full Order):</b>
+                                      <div className="pl-3 mt-1 text-[11px]">Burger × 1</div>
+                                      <div className="pl-3 text-[11px]">Pizza × 2</div>
+                                      <div className="pl-3 text-[11px]">Iced Tea × 1 (Bar)</div>
+                                      <div className="pl-3 text-[11px]">Chocolate Muffin × 1 (Bakery)</div>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <b>Printed Items (Only {deviceForm.station || 'Kitchen'} items):</b>
+                                      <div className="pl-3 mt-1 text-[11px]">Burger × 1</div>
+                                      <div className="pl-3 text-[11px]">Pizza × 2</div>
+                                      <div className="text-[10px] text-ink-3 italic mt-1">(Bar &amp; Bakery items excluded from this ticket)</div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* TEST CONNECTION & TEST PRINT */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 border-line">
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleTestConnection(deviceForm.target, deviceForm.port)}
+                                  className="btn btn-sm bg-paper-2 border"
+                                >
+                                  🔌 Test Connection
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintTestKot()}
+                                  className="btn btn-sm bg-paper-2 border"
+                                >
+                                  🖨 Print Test KOT
+                                </button>
+                              </div>
+
+                              {testConnectionStatus['form'] && (
+                                <span className={`text-xs font-bold ${testConnectionStatus['form'].ok ? 'text-green-600' : 'text-red-500'}`}>
+                                  {testConnectionStatus['form'].message}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
+
+                        {/* CONDITIONAL: RECEIPT PRINTER */}
+                        {deviceForm.type === 'receipt_printer' && (
+                          <div className="flex flex-col gap-3 border-t pt-4 border-line">
+                            <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">Receipt Output Configuration</h4>
+                            <div className="p-3.5 rounded-xl bg-paper-2 border border-line text-xs flex flex-col gap-2">
+                              <b>Billing Counter Output Node</b>
+                              <span className="text-ink-3">Prints customer tax invoices and settlement duplicate receipts upon payment.</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* CONDITIONAL: KDS DISPLAY */}
+                        {deviceForm.type === 'display' && (
+                          <div className="flex flex-col gap-3 border-t pt-4 border-line">
+                            <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">KDS Display Configuration</h4>
+                            <div className="p-3.5 rounded-xl bg-paper-2 border border-line text-xs flex flex-col gap-2">
+                              <b>Digital Kitchen Display System</b>
+                              <span className="text-ink-3">Displays order queue cards digitally for kitchen staff on tablet screens.</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* FOOTER ACTIONS */}
+                        <div className="flex items-center justify-between border-t pt-4 border-line">
                           <label className="flex items-center gap-1.5 text-xs text-ink-2 select-none">
                             <input
                               type="checkbox"
@@ -3092,15 +3707,132 @@ export default function SettingsCenter({
                               onChange={(e) => setDeviceForm((prev: any) => ({ ...prev, isDefault: e.target.checked }))}
                               className="rounded border-line-2 text-turmeric accent-turmeric"
                             />
-                            Set as default output node
+                            Set as default output node for this device type
                           </label>
 
                           <div className="flex gap-2">
-                            <button type="button" onClick={() => setShowDeviceForm(false)} className="btn btn-sm">Cancel</button>
-                            <button type="submit" className="btn btn-sm btn-primary">Save Device</button>
+                            <button type="button" onClick={() => setShowDeviceForm(false)} className="btn btn-sm">
+                              Cancel
+                            </button>
+                            <button type="submit" className="btn btn-sm btn-primary px-5">
+                              Save Device
+                            </button>
                           </div>
                         </div>
                       </form>
+                    </div>
+                  )}
+
+                  {/* MODAL: MENU ITEM TO STATION ROUTING MANAGER */}
+                  {showStationRoutingModal && (
+                    <div className="fixed inset-0 z-[8500] grid place-items-center p-4 bg-black/50 backdrop-blur-sm">
+                      <div className="w-[min(750px,95vw)] max-h-[90vh] bg-paper-2 rounded-2xl border border-line shadow-2xl flex flex-col overflow-hidden">
+                        <div className="p-4 border-b border-line flex items-center justify-between bg-paper-3">
+                          <div>
+                            <h3 className="font-bold font-display text-base">Menu Item ➔ KOT Station Routing</h3>
+                            <p className="text-xs text-ink-3">Assign products to Kitchen, Bar, Bakery, Dessert or Custom stations.</p>
+                          </div>
+                          <button onClick={() => setShowStationRoutingModal(false)} className="text-ink-3 hover:text-ink">
+                            <X size={18} />
+                          </button>
+                        </div>
+
+                        {/* Search & Filter Bar */}
+                        <div className="p-3 border-b border-line bg-paper-2 flex flex-wrap gap-2 items-center justify-between">
+                          <input
+                            type="text"
+                            value={routingSearch}
+                            onChange={(e) => setRoutingSearch(e.target.value)}
+                            placeholder="Search menu items…"
+                            className="inp inp-compact w-48 bg-paper-3 text-xs"
+                          />
+
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              { id: 'all', label: 'All Items' },
+                              { id: 'unassigned', label: '⚠ Unassigned' },
+                              { id: 'kitchen', label: 'Kitchen' },
+                              { id: 'bar', label: 'Bar' },
+                              { id: 'bakery', label: 'Bakery' },
+                              { id: 'dessert', label: 'Dessert' },
+                            ].map((f) => (
+                              <button
+                                key={f.id}
+                                onClick={() => setRoutingStationFilter(f.id)}
+                                className={`px-2.5 py-1 rounded-full text-xs font-bold transition ${
+                                  routingStationFilter === f.id
+                                    ? 'bg-turmeric text-amber-950 shadow-sm'
+                                    : 'bg-paper-3 text-ink-2 border border-line-2'
+                                }`}
+                              >
+                                {f.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Items Table */}
+                        <div className="p-3 overflow-y-auto flex-1 max-h-[60vh]">
+                          {(() => {
+                            const q = routingSearch.trim().toLowerCase();
+                            const filtered = (menuItems || []).filter((item) => {
+                              if (q && !item.name.toLowerCase().includes(q)) return false;
+                              if (routingStationFilter === 'unassigned') return !item.station || item.station === 'none';
+                              if (routingStationFilter !== 'all') return (item.station || 'kitchen') === routingStationFilter;
+                              return true;
+                            });
+
+                            if (filtered.length === 0) {
+                              return (
+                                <div className="p-8 text-center text-ink-3 text-xs">
+                                  No menu items match your search or filter criteria.
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="divide-y divide-line border rounded-xl overflow-hidden bg-paper-3 text-xs">
+                                {filtered.map((item) => {
+                                  const curStation = item.station || 'kitchen';
+                                  return (
+                                    <div key={item.id} className="p-3 flex items-center justify-between gap-3 hover:bg-paper-2/50 transition-colors">
+                                      <div>
+                                        <b className="font-bold text-sm block">{item.name}</b>
+                                        <span className="text-[10px] text-ink-3">₹{(item.pricePaise / 100).toFixed(2)}</span>
+                                      </div>
+
+                                      <div className="flex items-center gap-3">
+                                        <select
+                                          value={curStation}
+                                          disabled={savingMenuItemId === item.id}
+                                          onChange={(e) => handleAssignItemStation(item.id, e.target.value)}
+                                          className="inp inp-compact bg-paper-2 font-bold text-xs cursor-pointer min-w-[140px]"
+                                        >
+                                          <option value="kitchen">🍳 Kitchen</option>
+                                          <option value="bar">☕ Bar</option>
+                                          <option value="bakery">🥐 Bakery</option>
+                                          <option value="dessert">🍰 Dessert</option>
+                                          {kitchens
+                                            .filter(k => !['kitchen', 'bar', 'bakery', 'dessert'].includes(k.id))
+                                            .map(k => (
+                                              <option key={k.id} value={k.id}>⚙️ {k.name}</option>
+                                            ))}
+                                        </select>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        <div className="p-3 border-t border-line bg-paper-3 flex justify-end shrink-0">
+                          <button onClick={() => setShowStationRoutingModal(false)} className="btn btn-sm btn-primary px-5">
+                            Done
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

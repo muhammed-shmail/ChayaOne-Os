@@ -3748,6 +3748,9 @@ export default function DashboardClient({
                 flashMessage={flashMessage}
                 isAdvanced={isAdvanced}
                 handleToggleAdvanced={handleToggleAdvanced}
+                menuItems={menuItems}
+                menuCategories={menuCategories}
+                setMenuItems={setMenuItems}
               />
             )}
 
