@@ -6,13 +6,14 @@ import { STAGES, posStageOf } from '@/lib/orderStatus';
 import type { Floor } from '@/lib/floors';
 import type { ReceiptConfig } from '@/lib/receipt';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
+import { ThemeToggle } from '@/components/ui';
 import {
-  ThemeToggle, Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
+  Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
   Plus, Minus, X, Check, Printer, Receipt, Smartphone, Banknote, CreditCard,
   CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
   ShoppingCart, ChevronUp, Menu, Search, Download, LogOut, type LucideIcon,
   ArrowLeftRight, ArrowRight, CircleAlert,
-} from '@/components/ui';
+} from 'lucide-react';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
 import { subscribeStaff } from '@/lib/realtime-client';

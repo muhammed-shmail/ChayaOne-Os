@@ -8,7 +8,7 @@ import {
   Table2, Search, RefreshCw, Printer, Receipt, ArrowLeft,
   X, User, Smartphone, CreditCard,
   Lock, DollarSign, History, HelpCircle
-} from '@/components/ui';
+} from 'lucide-react';
 import { LocalPrinterClient } from '@/lib/printer-client';
 import { subscribeStaff } from '@/lib/realtime-client';
 
