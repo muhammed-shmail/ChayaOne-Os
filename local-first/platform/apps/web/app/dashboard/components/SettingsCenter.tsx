@@ -40,6 +40,7 @@ const SECTIONS: SettingSection[] = [
       { key: 'tax', label: 'Tax & GST', desc: 'GSTIN, CGST/SGST, service & packaging charges', icon: Percent, sensitive: true, keywords: ['gstin', 'tax', 'cgst', 'sgst', 'igst', 'exclusive', 'inclusive', 'hsn', 'sac', 'composition', 'flat rate', 'billing', 'reports', 'audit'] },
       { key: 'menu', label: 'Menu Configuration', desc: 'Categories, variants, add-ons & happy hours', icon: BookOpen, keywords: ['veg', 'non-veg', 'dietary', 'combo', 'happy hours', 'discount', 'variants', 'add-ons'] },
       { key: 'floor', label: 'Floor & QR Codes', desc: 'Physical table layouts, QR generation & scans', icon: Sparkles, keywords: ['dining', 'table', 'section', 'layout', 'scan', 'qr code', 'branding', 'download qr'] },
+      { key: 'app_qrs', label: 'App QR Codes ', desc: 'Install Waiter and Customer PWAs via QR', icon: Smartphone, keywords: ['qr', 'pwa', 'waiter', 'customer', 'kds', 'install'] },
       { key: 'dining_modes', label: 'Dining Modes', desc: 'Dine-in, takeaway, delivery & QR order settings', icon: ChefHat, keywords: ['dine-in', 'takeaway', 'delivery', 'qr order', 'modes', 'enable modes'] },
       { key: 'branding', label: 'Store Branding', desc: 'Branding colors, font themes & header styles', icon: Sparkles, keywords: ['brand', 'colors', 'font', 'theme', 'header', 'styling', 'customization'] }
     ]
@@ -231,6 +232,9 @@ export default function SettingsCenter({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobileViewingForm, setIsMobileViewingForm] = useState<boolean>(false);
   const [isNavigatingByKeyboard, setIsNavigatingByKeyboard] = useState<boolean>(false);
+
+  const [appUrlOrigin, setAppUrlOrigin] = useState<string>('');
+  useEffect(() => setAppUrlOrigin(window.location.origin), []);
 
   // Device Test & Station Routing state
   const [testConnectionStatus, setTestConnectionStatus] = useState<Record<string, { loading: boolean; ok?: boolean; message?: string }>>({});
@@ -4023,6 +4027,42 @@ export default function SettingsCenter({
                 </div>
               )}
 
+              {/* ── App QR Codes  ── */}
+              {activePanel === 'app_qrs' && (
+                <div className="card p-5 sm:p-6 flex flex-col gap-6 bg-paper-2">
+                  <div className="border-b pb-3 border-line flex items-center gap-3">
+                    <Smartphone className="text-turmeric" size={24} />
+                    <div>
+                      <h2 className="text-xl font-bold font-display">Application QR Codes</h2>
+                      <p className="text-xs text-ink-3">Scan these QR codes to quickly install the local PWAs on your staff or customer devices.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[
+                      { title: 'Waiter POS', path: '/pos', desc: 'For taking orders at the table' },
+                      { title: 'Kitchen KDS', path: '/kds', desc: 'For kitchen order tickets' },
+                      { title: 'Customer App', path: '/app', desc: 'Main customer ordering app' }
+                    ].map(app => (
+                      <div key={app.path} className="p-6 border border-line rounded-2xl bg-paper-3 flex flex-col items-center gap-4 text-center shadow-sm hover:shadow-md transition-shadow">
+                        <h4 className="font-bold text-lg text-ink">{app.title}</h4>
+                        {appUrlOrigin ? (
+                          <img 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=4&data=${encodeURIComponent(appUrlOrigin + app.path)}`} 
+                            alt={`${app.title} QR Code`} 
+                            className="w-[160px] h-[160px] rounded-xl bg-white p-2 border shadow-sm"
+                          />
+                        ) : (
+                          <div className="w-[160px] h-[160px] rounded-xl bg-paper-2 border animate-pulse" />
+                        )}
+                        <p className="text-sm text-ink-3 mt-1 leading-tight">{app.desc}</p>
+                        <a href={app.path} target="_blank" rel="noreferrer" className="btn btn-primary mt-2 w-full">Open Application</a>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* ── 13. ONLINE ORDERING ── */}
               {activePanel === 'online_order' && (
                 <div className="card p-5 sm:p-6 flex flex-col gap-6 bg-paper-2">
@@ -5632,3 +5672,4 @@ export default function SettingsCenter({
     </div>
   );
 }
+

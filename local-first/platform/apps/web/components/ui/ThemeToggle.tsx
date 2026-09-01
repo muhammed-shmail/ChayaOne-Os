@@ -33,6 +33,7 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
     <button
       type="button"
       onClick={toggle}
+      suppressHydrationWarning
       className={`btn btn-icon btn-sm ${className}`}
       aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
       aria-pressed={dark}

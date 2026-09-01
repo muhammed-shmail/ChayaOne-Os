@@ -2,6 +2,7 @@ import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { redirect } from 'next/navigation';
 import { Megaphone, Plus } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,15 +17,14 @@ export default async function AnnouncementsPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Announcements</h1>
-          <p className="text-sm mt-2 text-[var(--ink-3)]">Broadcast messages to cafe owners.</p>
-        </div>
+      <PageHeader 
+        title="Announcements" 
+        description="Broadcast messages to cafe owners."
+      >
         <button className="btn btn-primary bg-[var(--gold)] text-[#2A1607] hover:bg-[var(--gold-d)] gap-2 flex items-center">
           <Plus size={16} /> New Announcement
         </button>
-      </header>
+      </PageHeader>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {announcements.map((a) => (

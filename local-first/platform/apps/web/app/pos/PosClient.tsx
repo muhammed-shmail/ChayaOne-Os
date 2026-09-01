@@ -11,6 +11,7 @@ import {
   Plus, Minus, X, Check, Printer, Receipt, Smartphone, Banknote, CreditCard,
   CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
   ShoppingCart, ChevronUp, Menu, Search, Download, LogOut, type LucideIcon,
+  ArrowLeftRight, ArrowRight, CircleAlert,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
@@ -124,7 +125,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   }, [cartSheetOpen, moreOpen]);
 
   // live table occupancy (occupied until the bill is settled)
-  const refreshTables = () => fetch('/api/tables').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.occupied) setOccupied(d.occupied); }).catch(() => {});
+  const refreshTables = () => fetch('/api/tables').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.occupied) setOccupied(d.occupied); }).catch(() => { });
   useEffect(() => { refreshTables(); }, []);
   useEffect(() => { if (floorOpen) { refreshTables(); setFloorFilter('all'); } }, [floorOpen]);
 
@@ -138,6 +139,18 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   // and the device can actually install (Android prompt ready, or iOS manual hint).
   const staffInstall = useStaffInstall();
   const showInstallApp = staffAppEnabled && staffInstall.available;
+
+  // T-Billing modal
+  const [showTBilling, setShowTBilling] = useState(false);
+  // Order-level customer field visibility (desktop right rail + mobile cart sheet)
+  const [showOrderCust, setShowOrderCust] = useState(false);
+
+  // Mount state for hydration-safe rendering of PWA install buttons
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // Derived counts
+  const cartCount = cart.reduce((s, l) => s + l.qty, 0);
 
   // ---- inline "add items" + per-line void, inside the table popup ----
   const [addMode, setAddMode] = useState(false);
@@ -155,26 +168,75 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
 
   // ---- optional customer attached to the current POS ticket (Send to KOT or Charge) ----
   // separate from the table-settle customer above; the server find-or-creates the CRM
-  // row from the phone so a walk-in reaches order history + loyalty. Undefined phone
-  // (name only) still prints but creates no CRM row.
   const [orderCustName, setOrderCustName] = useState('');
   const [orderCustPhone, setOrderCustPhone] = useState('');
-  const [showOrderCust, setShowOrderCust] = useState(false);
-  const orderCustomer = () =>
-    orderCustName.trim() || orderCustPhone.trim() ? { name: orderCustName.trim(), phone: orderCustPhone.trim() } : null;
+
+  // ---- Table Transfer System ----
+  const [transferMode, setTransferMode] = useState(false);
+  const [selectedDestTable, setSelectedDestTable] = useState<TableDto | null>(null);
+  const [transferFloorFilter, setTransferFloorFilter] = useState<string>('all');
+  const [transferReason, setTransferReason] = useState('');
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferSuccess, setTransferSuccess] = useState<{
+    orderNumber: number;
+    fromLabel: string;
+    toLabel: string;
+  } | null>(null);
+  const [transferOccupiedError, setTransferOccupiedError] = useState<string | null>(null);
 
   function closeTableActions() {
     setTableAction(null); setTableOrder(null); setAddMode(false); setTableCart([]); setAddSearch(''); resetCustomer();
+    setTransferMode(false); setSelectedDestTable(null); setTransferReason(''); setTransferSuccess(null); setTransferOccupiedError(null);
   }
 
-  async function openTableActions(t: TableDto) {
+  async function openTableActions(t: TableDto, startInTransfer = false) {
     setPendingAction(null); // tapping an occupied table diverts to its running order, not the new ticket
     setTableAction({ id: t.id, label: t.label });
     setTableOrder(null);
     setAskSettle(false);
     setAddMode(false); setTableCart([]); setAddSearch(''); resetCustomer();
+    setTransferMode(startInTransfer); setSelectedDestTable(null); setTransferReason(''); setTransferSuccess(null); setTransferOccupiedError(null);
     const d = await fetch(`/api/tables/order?tableId=${t.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     setTableOrder(d);
+  }
+
+  async function executeTableTransfer() {
+    if (!tableAction || !selectedDestTable) return;
+    if (isOffline()) { flash(OFFLINE_ORDER_MSG); return; }
+    setTransferBusy(true);
+    try {
+      const r = await fetch('/api/tables/transfer', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          fromTableId: tableAction.id,
+          toTableId: selectedDestTable.id,
+          reason: transferReason.trim() || undefined,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        if (d.error === 'destination_occupied') {
+          setTransferOccupiedError(d.message || `Table ${selectedDestTable.label} is already occupied.`);
+        } else {
+          flash(d.message || 'Could not transfer table');
+        }
+        return;
+      }
+      const num = d.orderNumber || (tableOrder?.orders?.[0]?.number ?? 0);
+      const fromL = tableAction.label;
+      const toL = selectedDestTable.label;
+      setTransferSuccess({ orderNumber: num, fromLabel: fromL, toLabel: toL });
+      flash(`✓ Order #${num} transferred: Table ${fromL} → Table ${toL}`);
+      refreshTables();
+      setTimeout(() => {
+        closeTableActions();
+      }, 1600);
+    } catch {
+      flash('Network error during transfer');
+    } finally {
+      setTransferBusy(false);
+    }
   }
 
   // refetch the open table's running order without resetting the add panel
@@ -331,10 +393,10 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
           <td>${rate}%</td>
           <td>${hsnStr}</td>
           <td class="r">${formatINR(val.taxable)}</td>
-          ${hasInterstate 
-            ? `<td class="r" colspan="2">${formatINR(val.igst)}</td>`
-            : `<td class="r">${formatINR(val.cgst)}</td><td class="r">${formatINR(val.sgst)}</td>`
-          }
+          ${hasInterstate
+          ? `<td class="r" colspan="2">${formatINR(val.igst)}</td>`
+          : `<td class="r">${formatINR(val.cgst)}</td><td class="r">${formatINR(val.sgst)}</td>`
+        }
         </tr>
       `;
     }).join('');
@@ -348,10 +410,10 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             <th align="left">Rate</th>
             <th align="left">HSN</th>
             <th class="r">Taxable V.</th>
-            ${hasInterstate 
-              ? `<th class="r" colspan="2">IGST</th>`
-              : `<th class="r">CGST</th><th class="r">SGST</th>`
-            }
+            ${hasInterstate
+        ? `<th class="r" colspan="2">IGST</th>`
+        : `<th class="r">CGST</th><th class="r">SGST</th>`
+      }
           </tr>
         </thead>
         <tbody>
@@ -459,7 +521,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   // count of QR orders awaiting approval (badge on the Approvals link)
   useEffect(() => {
     let alive = true;
-    const refresh = () => fetch('/api/approvals').then((r) => (r.ok ? r.json() : null)).then((d) => { if (alive && d) setPendingApprovals(d.orders?.length ?? 0); }).catch(() => {});
+    const refresh = () => fetch('/api/approvals').then((r) => (r.ok ? r.json() : null)).then((d) => { if (alive && d) setPendingApprovals(d.orders?.length ?? 0); }).catch(() => { });
     refresh();
     return () => { alive = false; };
   }, []);
@@ -468,10 +530,13 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   // instant the kitchen bumps a ticket. We only care about orders from this till.
   useEffect(() => {
     return subscribeStaff((msg) => {
-      // keep the approvals badge + floor occupancy live as orders arrive / settle
-      if (msg.type === 'order.pending' || msg.type === 'order.new' || msg.type === 'order.updated') {
-        fetch('/api/approvals').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setPendingApprovals(d.orders?.length ?? 0); }).catch(() => {});
+      // keep the approvals badge + floor occupancy live as orders arrive / settle / transfer
+      if (msg.type === 'order.pending' || msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'table.transferred') {
+        fetch('/api/approvals').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setPendingApprovals(d.orders?.length ?? 0); }).catch(() => { });
         refreshTables();
+      }
+      if (msg.type === 'table.transferred') {
+        flash(`Table ${msg.transfer.fromTableLabel} transferred to Table ${msg.transfer.toTableLabel} (#${msg.transfer.orderNumber})`);
       }
       if (msg.type !== 'order.updated') return;
       setLive((prev) => {
@@ -544,7 +609,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   }
   function clear() {
     setCart([]); setDiscountPct(0); setDiscountFlatPaise(0); setScPct(0);
-    setOrderCustName(''); setOrderCustPhone(''); setShowOrderCust(false);
+    setOrderCustName(''); setOrderCustPhone('');
   }
 
   // shared "Charge →" entry: dine-in needs a table first (opens the floor map)
@@ -562,7 +627,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     if (orderType === 'dine_in' && !tableId) { setCharging(false); setPendingAction('kot'); setFloorOpen(true); flash('Pick a table first'); return; }
     // customer: the charge modal passes an explicit value (may be null); a plain
     // Send-to-KOT (no opts) falls back to whatever was attached on the ticket panel.
-    const customer = opts ? (opts.customer ?? null) : orderCustomer();
+    const customer = opts ? (opts.customer ?? null) : (orderCustName.trim() || orderCustPhone.trim() ? { name: orderCustName.trim(), phone: orderCustPhone.trim() } : null);
     setBusy(true);
     try {
       const body = {
@@ -624,11 +689,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId, pendingAction]);
 
-  const cartCount = cart.reduce((s, l) => s + l.qty, 0);
-
   return (
     <>
-      {/* ── Mobile top bar + category chips — sticky, phones only (md:hidden) ── */}
       <div className="md:hidden sticky top-0 z-30" style={{ paddingTop: 'env(safe-area-inset-top)', background: 'color-mix(in srgb, var(--paper) 90%, transparent)', backdropFilter: 'blur(10px)', borderBottom: '1px solid var(--line)' }}>
         <div className="flex items-center gap-2 px-3 py-2">
           <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost shrink-0" />
@@ -672,392 +734,613 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
         </div>
       </div>
 
-    <div className="grid grid-cols-1 md:grid-cols-[180px_1fr_300px] lg:grid-cols-[232px_1fr_360px] gap-4 h-auto md:h-screen p-4 pt-3 md:pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-      {/* left rail — desktop / tablet only (mobile uses the top bar + More drawer) */}
-      <aside className="hidden md:flex flex-col gap-3.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            <img
-              src="/logo chaya one.png"
-              alt="ChayaOne"
-              className="brand-logo h-8 lg:h-9 w-auto object-contain shrink-0"
-            />
-          </div>
-          <div className="flex items-center gap-1">
-            {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
-              <a
-                href="/dashboard"
-                onClick={handleDashboardClick}
-                title="Go to Dashboard"
-                className="btn btn-icon btn-sm btn-ghost"
-                style={{ color: 'var(--ink-2)' }}
-              >
-                <LayoutDashboard size={18} aria-hidden />
-              </a>
-            )}
-            <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
-            <ThemeToggle />
-          </div>
-        </div>
-        <div className="flex items-center gap-2 px-1 -mt-1">
-          <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{staff.name[0]}</span>
-          <span className="text-[12.5px] font-bold">{staff.name}</span>
-          <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>{staff.role}</span>
-        </div>
-        <div className="px-1">
-          <ShiftStatus />
-        </div>
-        <div className="flex rounded-full p-[3px] border" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
-          {(['dine_in', 'takeaway'] as const).map((t) => (
-            <button key={t} onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
-              className="flex-1 py-2 rounded-full font-bold text-[13px] transition"
-              style={orderType === t ? { background: 'var(--ink)', color: 'var(--paper-2)' } : { color: 'var(--ink-2)' }}>
-              {t === 'dine_in' ? 'Dine-in' : 'Takeaway'}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-col gap-1.5 overflow-auto flex-1">
-          {menu.map((c) => {
-            const Ic = CAT_ICON[c.name] ?? Coffee;
-            const on = c.id === activeCat && !q;
-            return (
-              <button key={c.id} onClick={() => { setActiveCat(c.id); setSearch(''); }} aria-pressed={on}
-                className="flex items-center gap-3 px-3 py-3 rounded-[14px] border font-bold text-sm transition text-left"
-                style={on ? { background: 'var(--ink)', color: 'var(--paper-3)', borderColor: 'var(--ink)' } : { background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
-                <Ic size={18} aria-hidden className="shrink-0" />{c.name}
-                <span className="ml-auto text-[11px] opacity-60 tnum">{c.items.length}</span>
-              </button>
-            );
-          })}
-        </div>
-        <button onClick={() => setFloorOpen(true)} className="flex items-center justify-center gap-2 py-3 rounded-[14px] border-[1.5px] border-dashed font-bold text-[13.5px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
-          <Table2 size={17} aria-hidden /> Floor map &amp; tables
-        </button>
-        <a href="/approvals" className="relative flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-          <ClipboardList size={17} aria-hidden /> QR Approvals
-          {pendingApprovals > 0 && (
-            <span className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
-          )}
-        </a>
-        {showInstallApp && (
-          <button onClick={() => staffInstall.promptInstall()} className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-            <Download size={17} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
-          </button>
-        )}
-        <a href="/api/auth/logout" className="flex items-center justify-center gap-2 py-2.5 rounded-[14px] font-bold text-[13px] transition hover:bg-[var(--paper-3)] mt-auto" style={{ color: 'var(--ink-3)' }}>
-          <LogOut size={16} aria-hidden /> Logout
-        </a>
-      </aside>
-
-      {/* menu grid */}
-      <section className="flex flex-col min-w-0 pb-[calc(120px_+_env(safe-area-inset-bottom))] md:pb-0">
-        <div className="flex items-center gap-3 mb-3.5">
-          <h2 className="text-2xl md:text-[28px] shrink-0">{q ? `“${search.trim()}”` : cat?.name}</h2>
-          {/* desktop search — tablet/desktop only; phones search from the top bar */}
-          <div className="relative ml-auto hidden md:block w-full max-w-[240px]">
-            <Search size={16} aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-3)' }} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search menu…" aria-label="Search menu" type="search"
-              className="w-full pl-9 pr-9 py-2 rounded-full border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }} />
-            {search && <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center" style={{ color: 'var(--ink-3)' }}><X size={15} aria-hidden /></button>}
-          </div>
-          <span className="pill shrink-0 hidden lg:inline-flex">{outlet.stateCode} · GST intra-state</span>
-        </div>
-
-        {live.length > 0 && <LiveOrders tickets={live} now={now} />}
-
-        <div className="grid gap-3 overflow-visible md:overflow-auto content-start pr-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px,1fr))' }}>
-          {shownItems.length === 0 ? (
-            <div className="col-span-full grid place-content-center text-center gap-2 py-12" style={{ color: 'var(--ink-3)' }}>
-              <Search size={34} className="mx-auto opacity-40" aria-hidden />
-              <p>{q ? `No items match “${search.trim()}”.` : 'No items in this category.'}</p>
+      <div className="grid grid-cols-1 md:grid-cols-[180px_1fr_300px] lg:grid-cols-[232px_1fr_360px] gap-4 h-auto md:h-screen p-4 pt-3 md:pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+        <aside className="hidden md:flex flex-col gap-3.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <img
+                src="/logo chaya one.png"
+                alt="ChayaOne"
+                className="brand-logo h-8 lg:h-9 w-auto object-contain shrink-0"
+              />
             </div>
-          ) : shownItems.map((m) => (
-            <button key={m.id} onClick={() => add(m)}
-              className="relative text-left p-3.5 rounded-[14px] border flex flex-col gap-2 transition hover:-translate-y-0.5"
-              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', boxShadow: 'var(--sh-1)' }}>
-              {m.tags.includes('bestseller') && <span className="absolute top-0 left-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--turmeric-d)', borderRadius: '14px 0 14px 0' }}>★ Bestseller</span>}
-              {(() => {
-                const limitTag = m.tags.find((t) => t.startsWith('limit:'));
-                const limitVal = limitTag ? parseInt(limitTag.split(':')[1] ?? '0') : null;
-                if (limitVal !== null) {
-                  return (
-                    <span className="absolute top-0 right-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--clay)', borderRadius: '0 14px 0 14px' }}>
-                      {limitVal} left
-                    </span>
-                  );
-                }
-                return null;
-              })()}
-              <div className="text-3xl" aria-hidden>{EMOJI[m.catName] ?? '🍽'}</div>
-              <div className="font-bold text-sm leading-tight">{m.name}</div>
-              {q && <div className="text-[10.5px] font-bold" style={{ color: 'var(--ink-3)' }}>{m.catName}</div>}
-              <div className="flex items-center justify-between mt-auto">
-                <span className="tnum text-sm" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(m.pricePaise)}</span>
-                <span className="text-[10px] font-bold" style={{ color: 'var(--ink-3)' }}>GST {m.gstRate}%</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* cart — desktop / tablet right rail (mobile uses the bottom-sheet) */}
-      <aside className="card hidden md:flex flex-col p-[18px] min-h-0">
-        <div className="flex justify-between items-start mb-3.5">
-          <div>
-            <h3 className="text-[19px]">Current ticket</h3>
-            {orderType === 'dine_in' ? (
-              <button onClick={() => setFloorOpen(true)} title="Change table" className="text-[12.5px] font-bold underline-offset-2 hover:underline" style={{ color: !tableId ? 'var(--clay)' : 'var(--cardamom-d)' }}>
-                {selectedTable ? `Table ${selectedTable.label}` : 'Pick a table'}
-              </button>
-            ) : (
-              <span className="text-[12.5px] font-bold" style={{ color: 'var(--cardamom-d)' }}>Takeaway</span>
-            )}
-          </div>
-          <button onClick={clear} disabled={!cart.length} title="Clear ticket" aria-label="Clear ticket" className="btn btn-icon btn-sm btn-ghost"><RefreshCw size={16} aria-hidden /></button>
-        </div>
-
-        <CartBody cart={cart} bill={bill} outlet={outlet} discountPct={discountPct} discountFlatPaise={discountFlatPaise} scPct={scPct} setDiscountPct={setDiscountPct} setDiscountFlatPaise={setDiscountFlatPaise} setScPct={setScPct} bump={bump} />
-
-        {cart.length > 0 && (
-          <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
-            setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
-        )}
-
-        <div className="grid grid-cols-[1fr_1.2fr] gap-2.5 mt-3.5">
-          <button disabled={!cart.length || busy} onClick={() => submit(null)} className="btn btn-dark">Send to KOT</button>
-          <button disabled={!cart.length || busy} onClick={startCharge} className="btn btn-primary">Charge →</button>
-        </div>
-      </aside>
-
-      {/* floor modal */}
-      {floorOpen && (() => {
-        // group tables under their floor; a missing/stale floorId falls under "Unassigned"
-        const floorIds = new Set(floors.map((f) => f.id));
-        const hasUnassigned = tables.some((t) => !t.floorId || !floorIds.has(t.floorId));
-        const groups: { key: string; name: string; tables: TableDto[] }[] = [
-          ...floors.map((f) => ({ key: f.id, name: f.name, tables: tables.filter((t) => t.floorId === f.id) })),
-          { key: 'unassigned', name: 'Unassigned', tables: tables.filter((t) => !t.floorId || !floorIds.has(t.floorId)) },
-        ].filter((g) => g.tables.length > 0);
-
-        const renderTableButton = (t: TableDto) => {
-          const occ = occupied[t.id];
-          const stage = tableStage(occ?.status);
-          const s = TABLE_STAGES[stage];
-          const mins = occ ? Math.floor((now - occ.sinceMs) / 60000) : 0;
-          const selected = tableId === t.id;
-          return (
-            <button key={t.id} onClick={() => { if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); } }}
-              className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition"
-              style={{
-                borderColor: selected ? 'var(--turmeric-d)' : s.color,
-                borderTopWidth: 4, borderTopColor: s.color,
-                background: occ ? `color-mix(in srgb, ${s.color} 10%, var(--paper-3))` : 'var(--paper-3)',
-                boxShadow: selected ? 'var(--sh-glow)' : undefined,
-              }}>
-              <span className="font-display font-bold text-[22px]">{t.label}</span>
-              {occ ? (
-                <>
-                  <span className="text-[11px] font-bold tnum" style={{ color: 'var(--ink-2)' }}>#{occ.number} · {formatINR(occ.billPaise)}</span>
-                  <span className="text-[10px] font-bold uppercase" style={{ color: s.color }}>{s.label} · {mins}m</span>
-                </>
-              ) : (
-                <>
-                  <span className="tracking-widest" style={{ color: 'var(--ink-3)' }}>{'•'.repeat(t.seats)}</span>
-                  <span className="text-[10px] font-bold uppercase" style={{ color: 'var(--ink-3)' }}>Free</span>
-                </>
+            <div className="flex items-center gap-1">
+              {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
+                <a
+                  href="/dashboard"
+                  onClick={handleDashboardClick}
+                  title="Go to Dashboard"
+                  className="btn btn-icon btn-sm btn-ghost"
+                  style={{ color: 'var(--ink-2)' }}
+                >
+                  <LayoutDashboard size={18} aria-hidden />
+                </a>
               )}
-            </button>
-          );
-        };
-
-        const showAll = floorFilter === 'all';
-        const shownGroups = showAll ? groups : groups.filter((g) => g.key === floorFilter);
-
-        return (
-        <Modal onClose={() => { setFloorOpen(false); setPendingAction(null); }} title="Floor map">
-          {/* status legend — by order stage */}
-          <div className="flex flex-wrap gap-4 px-5 pt-4">
-            {TABLE_STAGE_ORDER.map((k) => (
-              <span key={k} className="inline-flex items-center gap-1.5 text-xs font-bold" style={{ color: 'var(--ink-2)' }}>
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: TABLE_STAGES[k].color }} />{TABLE_STAGES[k].label}
-              </span>
+              <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
+              <ThemeToggle />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 px-1 -mt-1">
+            <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{staff.name[0]}</span>
+            <span className="text-[12.5px] font-bold">{staff.name}</span>
+            <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>{staff.role}</span>
+          </div>
+          <div className="px-1">
+            <ShiftStatus />
+          </div>
+          <div className="flex rounded-full p-[3px] border" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
+            {(['dine_in', 'takeaway'] as const).map((t) => (
+              <button key={t} onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
+                className="flex-1 py-2 rounded-full font-bold text-[13px] transition"
+                style={orderType === t ? { background: 'var(--ink)', color: 'var(--paper-2)' } : { color: 'var(--ink-2)' }}>
+                {t === 'dine_in' ? 'Dine-in' : 'Takeaway'}
+              </button>
             ))}
           </div>
+          <div className="flex flex-col gap-1.5 overflow-auto flex-1">
+            {menu.map((c) => {
+              const Ic = CAT_ICON[c.name] ?? Coffee;
+              const on = c.id === activeCat && !q;
+              return (
+                <button key={c.id} onClick={() => { setActiveCat(c.id); setSearch(''); }} aria-pressed={on}
+                  className="flex items-center gap-3 px-3 py-3 rounded-[14px] border font-bold text-sm transition text-left"
+                  style={on ? { background: 'var(--ink)', color: 'var(--paper-3)', borderColor: 'var(--ink)' } : { background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
+                  <Ic size={18} aria-hidden className="shrink-0" />{c.name}
+                  <span className="ml-auto text-[11px] opacity-60 tnum">{c.items.length}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button onClick={() => setFloorOpen(true)} className="flex items-center justify-center gap-2 py-3 rounded-[14px] border-[1.5px] border-dashed font-bold text-[13.5px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
+            <Table2 size={17} aria-hidden /> Floor map &amp; tables
+          </button>
+          <a href="/approvals" className="relative flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+            <ClipboardList size={17} aria-hidden /> QR Approvals
+            {pendingApprovals > 0 && (
+              <span className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
+            )}
+          </a>
+          {(staff.role !== 'waiter' && staff.role !== 'kot') && (
+            <button onClick={() => setShowTBilling(true)} className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+              <Table2 size={17} aria-hidden /> T-Billing Terminal
+            </button>
+          )}
+          {showInstallApp && (
+            <button onClick={() => staffInstall.promptInstall()} className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+              <Download size={17} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
+            </button>
+          )}
+          <a href="/api/auth/logout" className="flex items-center justify-center gap-2 py-2.5 rounded-[14px] font-bold text-[13px] transition hover:bg-[var(--paper-3)] mt-auto" style={{ color: 'var(--ink-3)' }}>
+            <LogOut size={16} aria-hidden /> Logout
+          </a>
+        </aside>
 
-          {/* floor filter chips — only when floors are configured */}
-          {floors.length > 0 && (
-            <div className="flex flex-wrap gap-2 px-5 pt-4">
-              <Chip on={floorFilter === 'all'} onClick={() => setFloorFilter('all')}>All</Chip>
-              {floors.map((f) => (
-                <Chip key={f.id} on={floorFilter === f.id} onClick={() => setFloorFilter(f.id)}>{f.name}</Chip>
-              ))}
-              {hasUnassigned && (
-                <Chip on={floorFilter === 'unassigned'} onClick={() => setFloorFilter('unassigned')}>Unassigned</Chip>
+        <section className="flex flex-col min-w-0 pb-[calc(120px_+_env(safe-area-inset-bottom))] md:pb-0">
+          <div className="flex items-center gap-3 mb-3.5">
+            <h2 className="text-2xl md:text-[28px] shrink-0">{q ? `“${search.trim()}”` : cat?.name}</h2>
+            <div className="relative ml-auto hidden md:block w-full max-w-[240px]">
+              <Search size={16} aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-3)' }} />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search menu…" aria-label="Search menu" type="search"
+                className="w-full pl-9 pr-9 py-2 rounded-full border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }} />
+              {search && <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center" style={{ color: 'var(--ink-3)' }}><X size={15} aria-hidden /></button>}
+            </div>
+            <span className="pill shrink-0 hidden lg:inline-flex">{outlet.stateCode} · GST intra-state</span>
+          </div>
+
+          {live.length > 0 && <LiveOrders tickets={live} now={now} />}
+
+          <div className="grid gap-3 overflow-visible md:overflow-auto content-start pr-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px,1fr))' }}>
+            {shownItems.length === 0 ? (
+              <div className="col-span-full grid place-content-center text-center gap-2 py-12" style={{ color: 'var(--ink-3)' }}>
+                <Search size={34} className="mx-auto opacity-40" aria-hidden />
+                <p>{q ? `No items match “${search.trim()}”.` : 'No items in this category.'}</p>
+              </div>
+            ) : shownItems.map((m) => (
+              <button key={m.id} onClick={() => add(m)}
+                className="relative text-left p-3.5 rounded-[14px] border flex flex-col gap-2 transition hover:-translate-y-0.5"
+                style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', boxShadow: 'var(--sh-1)' }}>
+                {m.tags.includes('bestseller') && <span className="absolute top-0 left-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--turmeric-d)', borderRadius: '14px 0 14px 0' }}>★ Bestseller</span>}
+                {(() => {
+                  const limitTag = m.tags.find((t) => t.startsWith('limit:'));
+                  const limitVal = limitTag ? parseInt(limitTag.split(':')[1] ?? '0') : null;
+                  if (limitVal !== null) {
+                    return (
+                      <span className="absolute top-0 right-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--clay)', borderRadius: '0 14px 0 14px' }}>
+                        {limitVal} left
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+                <div className="text-3xl" aria-hidden>{EMOJI[m.catName] ?? '🍽'}</div>
+                <div className="font-bold text-sm leading-tight">{m.name}</div>
+                {q && <div className="text-[10.5px] font-bold" style={{ color: 'var(--ink-3)' }}>{m.catName}</div>}
+                <div className="flex items-center justify-between mt-auto">
+                  <span className="tnum text-sm" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(m.pricePaise)}</span>
+                  <span className="text-[10px] font-bold" style={{ color: 'var(--ink-3)' }}>GST {m.gstRate}%</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <aside className="card hidden md:flex flex-col p-[18px] min-h-0">
+          <div className="flex justify-between items-start mb-3.5">
+            <div>
+              <h3 className="text-[19px]">Current ticket</h3>
+              {orderType === 'dine_in' ? (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setFloorOpen(true)} title="Change table" className="text-[12.5px] font-bold underline-offset-2 hover:underline" style={{ color: !tableId ? 'var(--clay)' : 'var(--cardamom-d)' }}>
+                    {selectedTable ? `Table ${selectedTable.label}` : 'Pick a table'}
+                  </button>
+                  {selectedTable && occupied[selectedTable.id] && (
+                    <button
+                      onClick={() => openTableActions(selectedTable, true)}
+                      title="Transfer this table"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[7px] border text-[11px] font-bold transition hover:opacity-90"
+                      style={{ background: 'color-mix(in srgb, var(--turmeric) 22%, var(--paper))', borderColor: 'var(--turmeric)', color: 'var(--turmeric-d, #b45309)' }}
+                    >
+                      <ArrowLeftRight size={11} aria-hidden /> Transfer
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <span className="text-[12.5px] font-bold" style={{ color: 'var(--cardamom-d)' }}>Takeaway</span>
               )}
             </div>
+            <button onClick={clear} disabled={!cart.length} title="Clear ticket" aria-label="Clear ticket" className="btn btn-icon btn-sm btn-ghost"><RefreshCw size={16} aria-hidden /></button>
+          </div>
+
+          <CartBody cart={cart} bill={bill} outlet={outlet} discountPct={discountPct} discountFlatPaise={discountFlatPaise} scPct={scPct} setDiscountPct={setDiscountPct} setDiscountFlatPaise={setDiscountFlatPaise} setScPct={setScPct} bump={bump} />
+
+          {cart.length > 0 && (
+            <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
+              setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
           )}
 
-          {/* grouped (All) vs single-floor grid */}
-          {showAll && floors.length > 0 ? (
-            <div className="p-5 flex flex-col gap-5">
-              {shownGroups.map((g) => (
-                <div key={g.key}>
-                  <div className="text-[11px] font-bold uppercase tracking-wide mb-2.5" style={{ color: 'var(--ink-3)' }}>{g.name}</div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">{g.tables.map(renderTableButton)}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 p-5">
-              {(shownGroups.flatMap((g) => g.tables)).map(renderTableButton)}
-            </div>
-          )}
-        </Modal>
-        );
-      })()}
+          <div className="grid grid-cols-[1fr_1.2fr] gap-2.5 mt-3.5">
+            <button disabled={!cart.length || busy} onClick={() => submit(null)} className="btn btn-dark">Send to KOT</button>
+            <button disabled={!cart.length || busy} onClick={startCharge} className="btn btn-primary">Charge →</button>
+          </div>
+        </aside>
 
-      {/* table actions — opens when an occupied table is tapped */}
-      {tableAction && (
-        <Modal onClose={closeTableActions} title={`Table ${tableAction.label}`}>
-          {!tableOrder ? (
-            <p className="p-6 text-center" style={{ color: 'var(--ink-3)' }}>Loading order…</p>
-          ) : addMode ? (
-            /* ── inline add-items panel ── */
-            (() => {
-              const q = addSearch.trim().toLowerCase();
-              const items = menu.flatMap((c) => c.items).filter((it) => !q || it.name.toLowerCase().includes(q));
-              const cartTotal = tableCart.reduce((s, l) => s + l.pricePaise * l.qty, 0);
-              return (
-                <div className="p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <button onClick={() => { setAddMode(false); setAddSearch(''); }} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
-                    <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>Add to Table {tableAction.label}</span>
-                  </div>
+        {/* floor modal */}
+        {floorOpen && (() => {
+          // group tables under their floor; a missing/stale floorId falls under "Unassigned"
+          const floorIds = new Set(floors.map((f) => f.id));
+          const hasUnassigned = tables.some((t) => !t.floorId || !floorIds.has(t.floorId));
+          const groups: { key: string; name: string; tables: TableDto[] }[] = [
+            ...floors.map((f) => ({ key: f.id, name: f.name, tables: tables.filter((t) => t.floorId === f.id) })),
+            { key: 'unassigned', name: 'Unassigned', tables: tables.filter((t) => !t.floorId || !floorIds.has(t.floorId)) },
+          ].filter((g) => g.tables.length > 0);
 
-                  <input
-                    value={addSearch}
-                    onChange={(e) => setAddSearch(e.target.value)}
-                    placeholder="Search menu…"
-                    className="w-full p-2.5 rounded-xl border text-sm outline-none mb-3"
-                    style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
-                  />
+          const renderTableButton = (t: TableDto) => {
+            const occ = occupied[t.id];
+            const stage = tableStage(occ?.status);
+            const s = TABLE_STAGES[stage];
+            const mins = occ ? Math.floor((now - occ.sinceMs) / 60000) : 0;
+            const selected = tableId === t.id;
+            return (
+              <button key={t.id} onClick={() => { if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); } }}
+                className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition"
+                style={{
+                  borderColor: selected ? 'var(--turmeric-d)' : s.color,
+                  borderTopWidth: 4, borderTopColor: s.color,
+                  background: occ ? `color-mix(in srgb, ${s.color} 10%, var(--paper-3))` : 'var(--paper-3)',
+                  boxShadow: selected ? 'var(--sh-glow)' : undefined,
+                }}>
+                <span className="font-display font-bold text-[22px]">{t.label}</span>
+                {occ ? (
+                  <>
+                    <span className="text-[11px] font-bold tnum" style={{ color: 'var(--ink-2)' }}>#{occ.number} · {formatINR(occ.billPaise)}</span>
+                    <span className="text-[10px] font-bold uppercase" style={{ color: s.color }}>{s.label} · {mins}m</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="tracking-widest" style={{ color: 'var(--ink-3)' }}>{'•'.repeat(t.seats)}</span>
+                    <span className="text-[10px] font-bold uppercase" style={{ color: 'var(--ink-3)' }}>Free</span>
+                  </>
+                )}
+              </button>
+            );
+          };
 
-                  <div className="max-h-[230px] overflow-auto flex flex-col gap-1 mb-3">
-                    {items.length === 0 ? (
-                      <p className="text-sm text-center py-4" style={{ color: 'var(--ink-3)' }}>No items match.</p>
-                    ) : items.map((it) => (
-                      <button key={it.id} onClick={() => addToTable(it)} className="flex justify-between items-center gap-2 text-sm p-2.5 rounded-xl text-left" style={{ background: 'var(--paper-3)' }}>
-                        <span className="min-w-0"><b className="block truncate">{it.name}</b><span className="text-xs" style={{ color: 'var(--ink-3)' }}>{formatINR(it.pricePaise)}{it.station ? ` · ${it.station}` : ''}</span></span>
-                        <span className="shrink-0 w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--turmeric)', color: '#2A1607' }} aria-hidden><Plus size={16} /></span>
-                      </button>
-                    ))}
-                  </div>
+          const showAll = floorFilter === 'all';
+          const shownGroups = showAll ? groups : groups.filter((g) => g.key === floorFilter);
 
-                  {tableCart.length > 0 && (
-                    <div className="flex flex-col gap-1.5 border-t py-3 mb-3" style={{ borderColor: 'var(--line)' }}>
-                      {tableCart.map((l) => (
-                        <div key={l.key} className="flex items-center justify-between text-sm">
-                          <span className="min-w-0 truncate">{l.name}</span>
-                          <span className="flex items-center gap-2 shrink-0">
-                            <button onClick={() => bumpTable(l.key, -1)} className="w-6 h-6 rounded-[7px] border font-extrabold" style={{ borderColor: 'var(--line)' }}>−</button>
-                            <b className="w-5 text-center tnum">{l.qty}</b>
-                            <button onClick={() => bumpTable(l.key, 1)} className="w-6 h-6 rounded-[7px] border font-extrabold" style={{ borderColor: 'var(--line)' }}>+</button>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <button onClick={sendTableCart} disabled={tableCart.length === 0 || sendBusy} className="btn btn-primary w-full" style={tableCart.length === 0 ? { opacity: 0.5 } : undefined}>
-                    {sendBusy ? 'Sending…' : `Send to kitchen${cartTotal > 0 ? ` · ${formatINR(cartTotal)}` : ''}`}
-                  </button>
-                </div>
-              );
-            })()
-          ) : (
-            <div className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>
-                  {tableOrder.count} order{tableOrder.count > 1 ? 's' : ''} · #{tableOrder.orders.map((o: any) => o.number).join(', ')}
-                </span>
-                <span className="font-display font-extrabold text-2xl tnum">{formatINR(tableOrder.totals.totalPaise)}</span>
-              </div>
-
-              <div className="max-h-[240px] overflow-auto flex flex-col gap-1.5 border-t border-b py-3 mb-4" style={{ borderColor: 'var(--line)' }}>
-                {tableOrder.lines.length === 0 ? (
-                  <p className="text-sm text-center py-2" style={{ color: 'var(--ink-3)' }}>No items yet.</p>
-                ) : tableOrder.lines.map((l: any) => (
-                  <div key={l.id} className="flex justify-between items-center gap-2 text-sm">
-                    <span className="min-w-0"><b className="mr-1.5" style={{ color: 'var(--turmeric-d)' }}>{l.qty}×</b>{l.name}</span>
-                    <span className="flex items-center gap-2 shrink-0">
-                      <span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
-                      {canSettleBill && (
-                        <button onClick={() => voidLine(l)} disabled={voidBusyId === l.id} title="Remove item" aria-label={`Remove ${l.name}`} className="w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--paper-3)', color: 'var(--clay, #c0392b)', opacity: voidBusyId === l.id ? 0.5 : 1 }}><X size={15} aria-hidden /></button>
-                      )}
-                    </span>
-                  </div>
+          return (
+            <Modal onClose={() => { setFloorOpen(false); setPendingAction(null); }} title="Floor map">
+              {/* status legend — by order stage */}
+              <div className="flex flex-wrap gap-4 px-5 pt-4">
+                {TABLE_STAGE_ORDER.map((k) => (
+                  <span key={k} className="inline-flex items-center gap-1.5 text-xs font-bold" style={{ color: 'var(--ink-2)' }}>
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: TABLE_STAGES[k].color }} />{TABLE_STAGES[k].label}
+                  </span>
                 ))}
               </div>
 
-              {/* customer on the bill — optional, defaults to "Customer" */}
-              <div className="mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-[12.5px] font-bold" style={{ color: custName.trim() ? 'var(--ink-2)' : 'var(--ink-3)' }}>
-                    <User size={14} aria-hidden /> {billCustomer}{custPhone.trim() ? ` · ${custPhone.trim()}` : ''}
-                  </span>
-                  <button onClick={() => setShowCust((v) => !v)} className="ml-auto text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>
-                    {showCust ? 'Done' : custName.trim() ? 'Edit' : '＋ Add customer'}
-                  </button>
-                </div>
-                {showCust && (
-                  <CustomerField name={custName} phone={custPhone} open={showCust}
-                    setName={setCustName} setPhone={setCustPhone} setOpen={setShowCust} compact />
-                )}
-              </div>
-
-              {askSettle && canSettleBill ? (
-                <div>
-                  <p className="text-[13px] font-bold mb-2" style={{ color: 'var(--ink-2)' }}>Take payment · {billCustomer} · {formatINR(tableOrder.totals.totalPaise)}</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['cash', 'upi', 'card'] as const).map((m) => {
-                      const PI = PAY_ICON[m];
-                      return (
-                        <button key={m} disabled={settleBusy} onClick={() => settleTable(m)} className="flex flex-col items-center gap-1.5 py-3.5 rounded-[14px] border-[1.5px] font-bold text-[12.5px]" style={{ background: 'var(--paper)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
-                          <PI size={22} aria-hidden />{m.toUpperCase()}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button onClick={() => setAskSettle(false)} className="text-xs font-bold mt-3" style={{ color: 'var(--ink-3)' }}>← Back</button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button onClick={() => { setAddMode(true); setTableCart([]); setAddSearch(''); }} className="btn btn-dark"><Plus size={16} aria-hidden /> Add items</button>
-                  <button onClick={printKOT} className="btn"><Receipt size={16} aria-hidden /> Print KOT</button>
-                  {canSettleBill && <button onClick={printBill} className="btn"><Printer size={16} aria-hidden /> Print bill</button>}
-                  {canSettleBill && <button onClick={() => setAskSettle(true)} className="btn btn-primary"><Check size={16} aria-hidden /> Settle</button>}
+              {/* floor filter chips — only when floors are configured */}
+              {floors.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-5 pt-4">
+                  <Chip on={floorFilter === 'all'} onClick={() => setFloorFilter('all')}>All</Chip>
+                  {floors.map((f) => (
+                    <Chip key={f.id} on={floorFilter === f.id} onClick={() => setFloorFilter(f.id)}>{f.name}</Chip>
+                  ))}
+                  {hasUnassigned && (
+                    <Chip on={floorFilter === 'unassigned'} onClick={() => setFloorFilter('unassigned')}>Unassigned</Chip>
+                  )}
                 </div>
               )}
-              {!canSettleBill && <p className="text-[11px] mt-3 text-center" style={{ color: 'var(--ink-3)' }}>Settling, bill printing & removing items need cashier, manager or owner access.</p>}
-            </div>
-          )}
-        </Modal>
-      )}
 
-      {/* charge modal */}
-      {charging && (
-        <ChargeModal total={bill.totalPaise} busy={busy}
-          initialName={orderCustName} initialPhone={orderCustPhone}
-          onClose={() => setCharging(false)}
-          onConfirm={(method, tipPaise, opts) => submit({ method, tipPaise }, opts)} />
-      )}
+              {/* grouped (All) vs single-floor grid */}
+              {showAll && floors.length > 0 ? (
+                <div className="p-5 flex flex-col gap-5">
+                  {shownGroups.map((g) => (
+                    <div key={g.key}>
+                      <div className="text-[11px] font-bold uppercase tracking-wide mb-2.5" style={{ color: 'var(--ink-3)' }}>{g.name}</div>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">{g.tables.map(renderTableButton)}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 p-5">
+                  {(shownGroups.flatMap((g) => g.tables)).map(renderTableButton)}
+                </div>
+              )}
+            </Modal>
+          );
+        })()}
 
-      {toast && (
-        <div role="status" aria-live="polite" className="anim-slide-in fixed left-1/2 -translate-x-1/2 bottom-[calc(76px_+_env(safe-area-inset-bottom))] md:bottom-7 z-[9000] px-5 py-3 rounded-full font-bold text-sm shadow-3" style={{ background: 'var(--ink)', color: 'var(--paper-2)' }}>
-          {toast}
-        </div>
-      )}
-    </div>
+        {/* table actions — opens when an occupied table is tapped */}
+        {tableAction && (
+          <Modal
+            onClose={closeTableActions}
+            title={`Table ${tableAction.label}`}
+            headerAction={
+              !transferMode ? (
+                <button
+                  onClick={() => {
+                    setTransferMode(true);
+                    setSelectedDestTable(null);
+                    setTransferOccupiedError(null);
+                    setTransferSuccess(null);
+                  }}
+                  title="Transfer table"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] border text-xs font-bold transition hover:opacity-90 shadow-sm"
+                  style={{
+                    background: 'color-mix(in srgb, var(--turmeric) 22%, var(--paper))',
+                    borderColor: 'var(--turmeric)',
+                    color: 'var(--turmeric-d, #b45309)',
+                  }}
+                >
+                  <ArrowLeftRight size={14} aria-hidden />
+                  <span>Transfer</span>
+                </button>
+              ) : undefined
+            }
+          >
+            {!tableOrder ? (
+              <p className="p-6 text-center" style={{ color: 'var(--ink-3)' }}>Loading order…</p>
+            ) : transferMode ? (
+              /* ── Table Transfer Flow ── */
+              transferSuccess ? (
+                <div className="p-6 text-center flex flex-col items-center gap-3">
+                  <div className="w-14 h-14 rounded-full grid place-items-center text-2xl font-bold" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#16a34a' }}>
+                    ✓
+                  </div>
+                  <h3 className="text-lg font-display font-bold">Order #{transferSuccess.orderNumber} Transferred</h3>
+                  <div className="p-3.5 rounded-xl border w-full flex flex-col gap-1.5 text-xs text-left" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--ink-3)' }}>Source:</span>
+                      <b style={{ color: 'var(--cardamom-d, #16a34a)' }}>Table {transferSuccess.fromLabel} is now AVAILABLE</b>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span style={{ color: 'var(--ink-3)' }}>Destination:</span>
+                      <b style={{ color: 'var(--turmeric-d)' }}>Table {transferSuccess.toLabel} is now OCCUPIED</b>
+                    </div>
+                  </div>
+                  <button onClick={closeTableActions} className="btn btn-primary w-full mt-2">Done</button>
+                </div>
+              ) : selectedDestTable ? (
+                transferOccupiedError || occupied[selectedDestTable.id] ? (
+                  <div className="p-5 flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <button onClick={() => { setSelectedDestTable(null); setTransferOccupiedError(null); }} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
+                      <span className="font-bold text-[13px]" style={{ color: 'var(--clay, #dc2626)' }}>Destination Occupied</span>
+                    </div>
+                    <div className="p-4 rounded-xl border flex flex-col gap-2" style={{ background: 'rgba(239, 68, 68, 0.08)', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                      <div className="flex items-center gap-2 font-bold text-sm" style={{ color: 'var(--clay, #dc2626)' }}>
+                        <CircleAlert size={18} /> Table {selectedDestTable.label} is already occupied.
+                      </div>
+                      <p className="text-xs" style={{ color: 'var(--ink-2)' }}>
+                        An active order is currently running on Table {selectedDestTable.label}. Normal transfer cannot overwrite an existing order.
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 mt-2">
+                      <button
+                        onClick={() => {
+                          flash(`To merge into Table ${selectedDestTable.label}, add items directly or settle via POS.`);
+                        }}
+                        className="btn btn-dark w-full"
+                        style={{ background: 'var(--paper-3)', color: 'var(--ink-2)' }}
+                      >
+                        MERGE ORDERS
+                      </button>
+                      <button onClick={() => { setSelectedDestTable(null); setTransferOccupiedError(null); }} className="btn w-full">
+                        CANCEL
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-5 flex flex-col gap-3.5">
+                    <div className="flex items-center justify-between">
+                      <button onClick={() => setSelectedDestTable(null)} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
+                      <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>Confirm Transfer</span>
+                    </div>
+
+                    <div className="p-4 rounded-2xl border flex items-center justify-between text-center" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                      <div className="flex-1">
+                        <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>From</div>
+                        <div className="font-display font-black text-2xl" style={{ color: 'var(--clay, #dc2626)' }}>Table {tableAction.label}</div>
+                      </div>
+                      <div className="px-2" style={{ color: 'var(--turmeric-d)' }}>
+                        <ArrowRight size={22} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>To</div>
+                        <div className="font-display font-black text-2xl" style={{ color: 'var(--cardamom-d, #16a34a)' }}>Table {selectedDestTable.label}</div>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl border flex flex-col gap-1 text-xs" style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}>
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--ink-3)' }}>Order:</span>
+                        <b>#{tableOrder.orders.map((o: any) => o.number).join(', ')}</b>
+                      </div>
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--ink-3)' }}>Total:</span>
+                        <b className="tnum">{formatINR(tableOrder.totals.totalPaise)}</b>
+                      </div>
+                      <div className="flex justify-between">
+                        <span style={{ color: 'var(--ink-3)' }}>Items:</span>
+                        <span>{tableOrder.lines.reduce((s: number, l: any) => s + l.qty, 0)} items ({tableOrder.lines.length} lines)</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold mb-1" style={{ color: 'var(--ink-3)' }}>Reason (optional)</label>
+                      <input
+                        type="text"
+                        value={transferReason}
+                        onChange={(e) => setTransferReason(e.target.value)}
+                        placeholder="e.g. Guest moved outdoor, joined table..."
+                        className="w-full p-2.5 rounded-xl border text-sm outline-none"
+                        style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <button onClick={() => setSelectedDestTable(null)} disabled={transferBusy} className="btn">
+                        Cancel
+                      </button>
+                      <button onClick={executeTableTransfer} disabled={transferBusy} className="btn btn-primary">
+                        {transferBusy ? 'Transferring…' : 'Confirm Transfer'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              ) : (
+                /* Destination Table Picker */
+                (() => {
+                  const floorIds = new Set(floors.map((f) => f.id));
+                  const hasUnassigned = tables.some((t) => !t.floorId || !floorIds.has(t.floorId));
+                  const availableTables = transferFloorFilter === 'all'
+                    ? tables
+                    : transferFloorFilter === 'unassigned'
+                      ? tables.filter((t) => !t.floorId || !floorIds.has(t.floorId))
+                      : tables.filter((t) => t.floorId === transferFloorFilter);
+
+                  return (
+                    <div className="p-5 flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <button onClick={() => setTransferMode(false)} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
+                        <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>Select Destination Table</span>
+                      </div>
+
+                      {floors.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pb-1">
+                          <Chip on={transferFloorFilter === 'all'} onClick={() => setTransferFloorFilter('all')}>All</Chip>
+                          {floors.map((f) => (
+                            <Chip key={f.id} on={transferFloorFilter === f.id} onClick={() => setTransferFloorFilter(f.id)}>{f.name}</Chip>
+                          ))}
+                          {hasUnassigned && (
+                            <Chip on={transferFloorFilter === 'unassigned'} onClick={() => setTransferFloorFilter('unassigned')}>Unassigned</Chip>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="max-h-[280px] overflow-auto grid grid-cols-3 sm:grid-cols-4 gap-2.5 pt-1">
+                        {availableTables.map((t) => {
+                          const isCurrent = t.id === tableAction.id;
+                          const occ = occupied[t.id];
+                          return (
+                            <button
+                              key={t.id}
+                              disabled={isCurrent}
+                              onClick={() => {
+                                if (isCurrent) return;
+                                setSelectedDestTable(t);
+                                if (occ) {
+                                  setTransferOccupiedError(`Table ${t.label} is already occupied.`);
+                                } else {
+                                  setTransferOccupiedError(null);
+                                }
+                              }}
+                              className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition relative"
+                              style={{
+                                opacity: isCurrent ? 0.35 : 1,
+                                borderColor: occ ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.5)',
+                                background: occ ? 'color-mix(in srgb, var(--clay, #dc2626) 8%, var(--paper-3))' : 'color-mix(in srgb, var(--cardamom-d, #16a34a) 8%, var(--paper-3))',
+                              }}
+                            >
+                              {isCurrent && (
+                                <span className="absolute top-1 right-1 text-[8.5px] font-bold px-1 rounded bg-black/40 text-white">Current</span>
+                              )}
+                              <span className="font-display font-bold text-[20px]">{t.label}</span>
+                              {occ ? (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#dc2626' }}>
+                                  Occupied
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#16a34a' }}>
+                                  Free · {t.seats}s
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()
+              )
+            ) : addMode ? (
+              /* ── inline add-items panel ── */
+              (() => {
+                const q = addSearch.trim().toLowerCase();
+                const items = menu.flatMap((c) => c.items).filter((it) => !q || it.name.toLowerCase().includes(q));
+                const cartTotal = tableCart.reduce((s, l) => s + l.pricePaise * l.qty, 0);
+                return (
+                  <div className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <button onClick={() => { setAddMode(false); setAddSearch(''); }} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
+                      <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>Add to Table {tableAction.label}</span>
+                    </div>
+
+                    <input
+                      value={addSearch}
+                      onChange={(e) => setAddSearch(e.target.value)}
+                      placeholder="Search menu…"
+                      className="w-full p-2.5 rounded-xl border text-sm outline-none mb-3"
+                      style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                    />
+
+                    <div className="max-h-[230px] overflow-auto flex flex-col gap-1 mb-3">
+                      {items.length === 0 ? (
+                        <p className="text-sm text-center py-4" style={{ color: 'var(--ink-3)' }}>No items match.</p>
+                      ) : items.map((it) => (
+                        <button key={it.id} onClick={() => addToTable(it)} className="flex justify-between items-center gap-2 text-sm p-2.5 rounded-xl text-left" style={{ background: 'var(--paper-3)' }}>
+                          <span className="min-w-0"><b className="block truncate">{it.name}</b><span className="text-xs" style={{ color: 'var(--ink-3)' }}>{formatINR(it.pricePaise)}{it.station ? ` · ${it.station}` : ''}</span></span>
+                          <span className="shrink-0 w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--turmeric)', color: '#2A1607' }} aria-hidden><Plus size={16} /></span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {tableCart.length > 0 && (
+                      <div className="flex flex-col gap-1.5 border-t py-3 mb-3" style={{ borderColor: 'var(--line)' }}>
+                        {tableCart.map((l) => (
+                          <div key={l.key} className="flex items-center justify-between text-sm">
+                            <span className="min-w-0 truncate">{l.name}</span>
+                            <span className="flex items-center gap-2 shrink-0">
+                              <button onClick={() => bumpTable(l.key, -1)} className="w-6 h-6 rounded-[7px] border font-extrabold" style={{ borderColor: 'var(--line)' }}>−</button>
+                              <b className="w-5 text-center tnum">{l.qty}</b>
+                              <button onClick={() => bumpTable(l.key, 1)} className="w-6 h-6 rounded-[7px] border font-extrabold" style={{ borderColor: 'var(--line)' }}>+</button>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <button onClick={sendTableCart} disabled={tableCart.length === 0 || sendBusy} className="btn btn-primary w-full" style={tableCart.length === 0 ? { opacity: 0.5 } : undefined}>
+                      {sendBusy ? 'Sending…' : `Send to kitchen${cartTotal > 0 ? ` · ${formatINR(cartTotal)}` : ''}`}
+                    </button>
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>
+                    {tableOrder.count} order{tableOrder.count > 1 ? 's' : ''} · #{tableOrder.orders.map((o: any) => o.number).join(', ')}
+                  </span>
+                  <span className="font-display font-extrabold text-2xl tnum">{formatINR(tableOrder.totals.totalPaise)}</span>
+                </div>
+
+                <div className="max-h-[240px] overflow-auto flex flex-col gap-1.5 border-t border-b py-3 mb-4" style={{ borderColor: 'var(--line)' }}>
+                  {tableOrder.lines.length === 0 ? (
+                    <p className="text-sm text-center py-2" style={{ color: 'var(--ink-3)' }}>No items yet.</p>
+                  ) : tableOrder.lines.map((l: any) => (
+                    <div key={l.id} className="flex justify-between items-center gap-2 text-sm">
+                      <span className="min-w-0"><b className="mr-1.5" style={{ color: 'var(--turmeric-d)' }}>{l.qty}×</b>{l.name}</span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
+                        {canSettleBill && (
+                          <button onClick={() => voidLine(l)} disabled={voidBusyId === l.id} title="Remove item" aria-label={`Remove ${l.name}`} className="w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--paper-3)', color: 'var(--clay, #c0392b)', opacity: voidBusyId === l.id ? 0.5 : 1 }}><X size={15} aria-hidden /></button>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* customer on the bill — optional, defaults to "Customer" */}
+                <div className="mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[12.5px] font-bold" style={{ color: custName.trim() ? 'var(--ink-2)' : 'var(--ink-3)' }}>
+                      <User size={14} aria-hidden /> {billCustomer}{custPhone.trim() ? ` · ${custPhone.trim()}` : ''}
+                    </span>
+                    <button onClick={() => setShowCust((v) => !v)} className="ml-auto text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>
+                      {showCust ? 'Done' : custName.trim() ? 'Edit' : '＋ Add customer'}
+                    </button>
+                  </div>
+                  {showCust && (
+                    <CustomerField name={custName} phone={custPhone} open={showCust}
+                      setName={setCustName} setPhone={setCustPhone} setOpen={setShowCust} compact />
+                  )}
+                </div>
+
+                {askSettle && canSettleBill ? (
+                  <div>
+                    <p className="text-[13px] font-bold mb-2" style={{ color: 'var(--ink-2)' }}>Take payment · {billCustomer} · {formatINR(tableOrder.totals.totalPaise)}</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['cash', 'upi', 'card'] as const).map((m) => {
+                        const PI = PAY_ICON[m];
+                        return (
+                          <button key={m} disabled={settleBusy} onClick={() => settleTable(m)} className="flex flex-col items-center gap-1.5 py-3.5 rounded-[14px] border-[1.5px] font-bold text-[12.5px]" style={{ background: 'var(--paper)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
+                            <PI size={22} aria-hidden />{m.toUpperCase()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button onClick={() => setAskSettle(false)} className="text-xs font-bold mt-3" style={{ color: 'var(--ink-3)' }}>← Back</button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button onClick={() => { setAddMode(true); setTableCart([]); setAddSearch(''); }} className="btn btn-dark"><Plus size={16} aria-hidden /> Add items</button>
+                    <button onClick={printKOT} className="btn"><Receipt size={16} aria-hidden /> Print KOT</button>
+                    {canSettleBill && <button onClick={printBill} className="btn"><Printer size={16} aria-hidden /> Print bill</button>}
+                    {canSettleBill && <button onClick={() => setAskSettle(true)} className="btn btn-primary"><Check size={16} aria-hidden /> Settle</button>}
+                  </div>
+                )}
+                {!canSettleBill && <p className="text-[11px] mt-3 text-center" style={{ color: 'var(--ink-3)' }}>Settling, bill printing & removing items need cashier, manager or owner access.</p>}
+              </div>
+            )}
+          </Modal>
+        )}
+
+        {/* charge modal */}
+        {charging && (
+          <ChargeModal total={bill.totalPaise} busy={busy}
+            initialName={orderCustName} initialPhone={orderCustPhone}
+            onClose={() => setCharging(false)}
+            onConfirm={(method, tipPaise, opts) => submit({ method, tipPaise }, opts)} />
+        )}
+
+        {toast && (
+          <div role="status" aria-live="polite" className="anim-slide-in fixed left-1/2 -translate-x-1/2 bottom-[calc(76px_+_env(safe-area-inset-bottom))] md:bottom-7 z-[9000] px-5 py-3 rounded-full font-bold text-sm shadow-3" style={{ background: 'var(--ink)', color: 'var(--paper-2)' }}>
+            {toast}
+          </div>
+        )}
+      </div>
 
       {/* ── Mobile sticky cart bar — taps open the bottom-sheet (phones only) ── */}
       {!cartSheetOpen && cartCount > 0 && (
@@ -1215,10 +1498,32 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                 <Download size={18} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
               </button>
             )}
+            {(staff.role !== 'waiter' && staff.role !== 'kot') && (
+              <button onClick={() => { setMoreOpen(false); setShowTBilling(true); }} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                <Table2 size={18} aria-hidden /> T-Billing Terminal
+              </button>
+            )}
             <a href="/api/auth/logout" className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px] mt-auto" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}>
               <LogOut size={18} aria-hidden /> Log out
             </a>
           </aside>
+        </div>
+      )}
+
+      {/* T-Billing Terminal Modal */}
+      {showTBilling && (
+        <div className="fixed inset-0 z-[9500] flex flex-col bg-black">
+          <div className="flex items-center justify-between p-3 border-b border-white/10 shrink-0">
+            <h2 className="text-white font-bold text-sm flex items-center gap-2"><Table2 size={16} /> T-Billing Terminal</h2>
+            <button onClick={() => setShowTBilling(false)} className="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center font-bold">
+              <X size={16} />
+            </button>
+          </div>
+          <iframe
+            src="/t-billing"
+            className="flex-1 w-full h-full border-none bg-[var(--paper)] rounded-t-lg"
+            title="T-Billing Terminal"
+          />
         </div>
       )}
     </>
@@ -1389,13 +1694,14 @@ function Chip({ children, on, onClick }: { children: React.ReactNode; on: boolea
   );
 }
 
-function Modal({ children, title, onClose }: { children: React.ReactNode; title: string; onClose: () => void }) {
+function Modal({ children, title, onClose, headerAction }: { children: React.ReactNode; title: string; onClose: () => void; headerAction?: React.ReactNode }) {
   return (
     <div onClick={onClose} className="fixed inset-0 z-[800] grid place-items-center p-5" style={{ background: 'rgba(30,18,10,.5)', backdropFilter: 'blur(6px)' }}>
       <div onClick={(e) => e.stopPropagation()} className="w-[min(560px,100%)] max-h-[90vh] overflow-auto" style={{ background: 'var(--paper-2)', borderRadius: '30px', boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
         <div className="flex items-center gap-3 px-5 py-[18px] border-b" style={{ borderColor: 'var(--line)' }}>
           <h3 className="text-[19px]">{title}</h3>
-          <button onClick={onClose} className="ml-auto w-[34px] h-[34px] rounded-[10px] border text-xl" style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}>×</button>
+          {headerAction && <div className="ml-auto mr-2">{headerAction}</div>}
+          <button onClick={onClose} className={`${headerAction ? '' : 'ml-auto '}w-[34px] h-[34px] rounded-[10px] border text-xl shrink-0`} style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}>×</button>
         </div>
         {children}
       </div>
@@ -1429,7 +1735,7 @@ function CustomerField({ name, phone, open, setName, setPhone, setOpen, compact 
         const found = typeof d?.customer?.name === 'string' ? d.customer.name.trim() : '';
         if (found && (!name.trim() || name.trim().toLowerCase() === 'customer' || name.trim().toLowerCase() === 'guest')) setName(found);
         setMatches(Array.isArray(d?.customers) ? d.customers : []);
-      } catch {}
+      } catch { }
     }, 250);
     return () => { ac.abort(); window.clearTimeout(t); };
   }, [digits, name, open, phone, setName]);
@@ -1497,7 +1803,7 @@ function ChargeModal({ total, busy, initialName = '', initialPhone = '', onClose
         const found = typeof d?.customer?.name === 'string' ? d.customer.name.trim() : '';
         if (found && (!custName.trim() || custName.trim().toLowerCase() === 'customer' || custName.trim().toLowerCase() === 'guest')) setCustName(found);
         setCustMatches(Array.isArray(d?.customers) ? d.customers : []);
-      } catch {}
+      } catch { }
     }, 250);
     return () => { ac.abort(); window.clearTimeout(t); };
   }, [custDigits, custName, custPhone, showCust]);

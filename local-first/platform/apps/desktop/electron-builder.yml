@@ -1,0 +1,27 @@
+appId: com.chayaone.desktop
+productName: ChayaOne App
+directories:
+  output: dist-installers-v6
+  buildResources: resources
+files:
+  - dist/**/*
+  - package.json
+  - ../../apps/web/.next/**/*
+  - ../../apps/web/public/**/*
+  - ../../packages/db/prisma/**/*
+extraResources:
+  - from: ../../packages/db/scripts/
+    to: db-scripts
+win:
+  target: nsis
+  icon: resources/icon.ico
+  legalTrademarks: "Nuro7"
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: "ChayaOne"
+  uninstallDisplayName: "ChayaOne OS"
+  deleteAppDataOnUninstall: false

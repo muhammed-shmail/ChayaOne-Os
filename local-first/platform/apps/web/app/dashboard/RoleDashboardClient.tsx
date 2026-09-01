@@ -8,6 +8,7 @@ import {
   BarChart3, ChefHat, ClipboardList, LayoutDashboard, LogOut, Package,
   QrCode, ShoppingCart, Table2, Users as UsersIcon, Wifi,
 } from '@/components/ui';
+import { useState } from 'react';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
 
@@ -22,14 +23,18 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
   const isManager = staff.role === 'manager';
   const crmEnabled = features.crm !== false;
   const kpi = data.kpi;
+  const [showTBilling, setShowTBilling] = useState(false);
+
   const actions = isManager
     ? [
+        { href: '/t-billing', label: 'T-Billing', icon: Table2, tone: 'primary' },
         { href: '/pos', label: 'Open POS', icon: ShoppingCart, tone: 'primary' },
         { href: '/kds', label: 'Kitchen Display', icon: ChefHat },
         { href: '/approvals', label: 'QR Approvals', icon: QrCode },
         { href: '/dashboard?view=owner', label: 'Owner Dashboard', icon: LayoutDashboard },
       ]
     : [
+        { href: '/t-billing', label: 'T-Billing', icon: Table2, tone: 'primary' },
         { href: '/pos', label: 'Open POS', icon: ShoppingCart, tone: 'primary' },
         { href: '/kds', label: 'Kitchen Display', icon: ChefHat },
         { href: '/approvals', label: 'QR Approvals', icon: QrCode },
@@ -45,6 +50,16 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
           <p className="text-sm font-bold truncate" style={{ color: 'var(--ink-3)' }}>{outlet.name} · {staff.name}</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {['owner', 'manager', 'accountant', 'cashier'].includes(staff.role) && (
+            <button
+              type="button"
+              onClick={() => setShowTBilling(true)}
+              className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition cursor-pointer"
+              style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+            >
+              <Table2 size={15} aria-hidden /> T-Billing
+            </button>
+          )}
           {staff.id && <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />}
           <a href="/api/auth/logout" className="btn btn-sm"><LogOut size={16} aria-hidden /> Logout</a>
         </div>
@@ -67,9 +82,15 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
               </div>
               <div className="grid sm:grid-cols-2 gap-2.5">
                 {actions.map(({ href, label, icon: Icon, tone }) => (
-                  <a key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
-                    <Icon size={18} aria-hidden /> {label}
-                  </a>
+                  href === '/t-billing' ? (
+                    <button key={label} onClick={() => setShowTBilling(true)} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                      <Icon size={18} aria-hidden /> {label}
+                    </button>
+                  ) : (
+                    <a key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                      <Icon size={18} aria-hidden /> {label}
+                    </a>
+                  )
                 ))}
               </div>
               <div className="mt-4">
@@ -123,9 +144,15 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
             </div>
             <div className="grid sm:grid-cols-3 gap-3">
               {actions.map(({ href, label, icon: Icon, tone }) => (
-                <a key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
-                  <Icon size={18} aria-hidden /> {label}
-                </a>
+                href === '/t-billing' ? (
+                  <button key={label} onClick={() => setShowTBilling(true)} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                    <Icon size={18} aria-hidden /> {label}
+                  </button>
+                ) : (
+                  <a key={label} href={href} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                    <Icon size={18} aria-hidden /> {label}
+                  </a>
+                )
               ))}
             </div>
             <div className="mt-4">
@@ -143,6 +170,16 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
               <Focus icon={Package} label="Stock alerts" value={`${data.lowStock.length} item${data.lowStock.length === 1 ? '' : 's'} need attention`} />
             </div>
           </div>
+        </div>
+      )}
+
+      {showTBilling && (
+        <div className="fixed inset-0 z-[9500] flex flex-col bg-background">
+          <iframe
+            src="/t-billing"
+            className="absolute inset-0 w-full h-full border-none"
+            title="T-Billing Terminal"
+          />
         </div>
       )}
     </main>

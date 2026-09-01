@@ -173,15 +173,17 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
           chime();
           setTickets((prev) => (prev.some((t) => t.id === msg.ticket.id) ? prev : [...prev, msg.ticket as Ticket]));
           if (wf.autoAcceptOrders) setAcked((prev) => new Set(prev).add(msg.ticket.id));
-        } else if (msg.type === 'order.updated') {
-          const status = msg.ticket.status;
+        } else if (msg.type === 'order.updated' || msg.type === 'table.transferred') {
+          const ticket = msg.ticket;
+          if (!ticket) return;
+          const status = ticket.status;
           setTickets((prev) => {
-            const without = prev.filter((t) => t.id !== msg.ticket.id);
-            if (ACTIVE.includes(status)) return [...without, msg.ticket as Ticket];
+            const without = prev.filter((t) => t.id !== ticket.id);
+            if (ACTIVE.includes(status)) return [...without, ticket as Ticket];
             if (status === 'cancelled') return without; // cancelled tickets just vanish
             // served / settled — linger per the auto-clear setting (0 = immediate)
             if (wf.autoClearSec === 0) return without;
-            return [...without, { ...(msg.ticket as Ticket), doneAt: Date.now() }];
+            return [...without, { ...(ticket as Ticket), doneAt: Date.now() }];
           });
         }
       },

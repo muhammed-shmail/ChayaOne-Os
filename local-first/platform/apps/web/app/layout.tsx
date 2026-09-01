@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Cormorant_Garamond, Hanken_Grotesk, DM_Mono } from 'next/font/google';
 import '@cafeos/ui/tokens.css';
 import './globals.css';
+import { PwaRegistration } from '@/components/PwaRegistration';
 
 // Display: Cormorant Garamond — couture serif for headings (high-contrast,
 // read at weight ≥500). Body: Hanken Grotesk. Numbers/receipts: DM Mono.
@@ -34,10 +35,11 @@ const noFlashTheme = `(function(){try{var t=localStorage.getItem('cafe-theme');i
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`} suppressHydrationWarning>
-      <body>
+      <body suppressHydrationWarning>
         {/* Runs before body paints → sets data-theme on <html> with no flash.
             Kept out of a manual <head> so Next.js still injects global CSS links. */}
         <script dangerouslySetInnerHTML={{ __html: noFlashTheme }} />
+        <PwaRegistration />
         {children}
       </body>
     </html>

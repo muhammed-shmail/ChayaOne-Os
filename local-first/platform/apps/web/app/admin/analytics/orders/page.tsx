@@ -2,6 +2,7 @@ import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { redirect } from 'next/navigation';
 import { ShoppingBag } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,10 +15,7 @@ export default async function OrdersAnalyticsPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Order Analytics</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Platform-wide order volume and channels.</p>
-      </header>
+      <PageHeader title="Order Analytics" description="Platform-wide order volume and channels." />
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="lux-card card-glow p-6">

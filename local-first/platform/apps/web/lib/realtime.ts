@@ -26,10 +26,23 @@ export type NotifyPayload = {
   // Targeting (Staff PWA P2) — lets the staff bar / owner bell filter live events.
   audience: string; targetRole?: string | null; targetStaffId?: string | null;
 };
+export type TableTransferPayload = {
+  orderId: string;
+  orderNumber: number;
+  fromTableId: string;
+  toTableId: string;
+  fromTableLabel: string;
+  toTableLabel: string;
+  newTableStatus: string;
+  transferredBy: string | null;
+  timestamp: number;
+  reason?: string | null;
+};
 export type RealtimeEvent =
   | { type: 'order.new'; ticket: Ticket }
   | { type: 'order.updated'; ticket: Ticket }
   | { type: 'order.pending'; ticket: Ticket }
+  | { type: 'table.transferred'; transfer: TableTransferPayload; ticket?: Ticket }
   | { type: 'notify'; notification: NotifyPayload };
 
 type RealtimeConfig = { url: string; serviceKey: string };
@@ -77,9 +90,17 @@ export async function publish(outletId: string, event: RealtimeEvent): Promise<v
   const messages: Array<{ topic: string; event: string; payload: RealtimeEvent; private: boolean }> = [
     { topic: staffTopic(outletId), event: 'message', payload: event, private: true },
   ];
-  const tableId = 'ticket' in event ? event.ticket.tableId : null;
+  const tableId = 'ticket' in event && event.ticket ? event.ticket.tableId : null;
   if (tableId) {
     messages.push({ topic: tableTopic(outletId, tableId), event: 'message', payload: event, private: true });
+  }
+  if (event.type === 'table.transferred') {
+    if (event.transfer.fromTableId && event.transfer.fromTableId !== tableId) {
+      messages.push({ topic: tableTopic(outletId, event.transfer.fromTableId), event: 'message', payload: event, private: true });
+    }
+    if (event.transfer.toTableId && event.transfer.toTableId !== tableId) {
+      messages.push({ topic: tableTopic(outletId, event.transfer.toTableId), event: 'message', payload: event, private: true });
+    }
   }
 
   try {

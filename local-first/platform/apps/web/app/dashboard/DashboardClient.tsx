@@ -84,6 +84,7 @@ const SETTINGS_TITLE: Record<string, string> = {
   devices: 'Devices & Printers',
   audit: 'Audit Logs',
   multibranch: 'Multi Branch',
+  app_qrs: 'App QR Codes',
 };
 const SETTINGS_ICON: Record<string, LucideIcon> = {
   general: Settings,
@@ -95,6 +96,7 @@ const SETTINGS_ICON: Record<string, LucideIcon> = {
   devices: Printer,
   audit: ClipboardList,
   multibranch: Store,
+  app_qrs: Smartphone,
 };
 
 /** A focused popup window that hosts one settings panel. Closes on ✕, backdrop click or Esc. */
@@ -128,12 +130,15 @@ export default function DashboardClient({
   data,
   features,
 }: {
-  outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: ReceiptConfig };
-  staff: { name: string; role: string };
+  outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: ReceiptConfig; staffAppEnabled?: boolean };
+  staff: { name: string; role: string; permissions?: string[] };
   data: DashboardData;
   features: Record<string, boolean>;
 }) {
   const router = useRouter();
+
+  const hasPermission = (p: string) => !staff.permissions || staff.permissions.includes(p);
+
   // Feature tick model: hide modules this cafe isn't entitled to. The server
   // routes are the hard gate; this just keeps the UI honest.
   const visibleMenus = MENUS.filter((m) => {
@@ -170,11 +175,14 @@ export default function DashboardClient({
   const { kpi, trend, hourly, topItems, menuQuadrant, lowStock, loyalty, briefing } = data;
 
   const [showPos, setShowPos] = useState(false);
+  const [showTBilling, setShowTBilling] = useState(false);
+  const [posInitialFloorOpen, setPosInitialFloorOpen] = useState(false);
   const [showKds, setShowKds] = useState(false);
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
-      if (e.data && e.data.type === 'close-pos') {
+      if (e.data && (e.data.type === 'close-pos' || e.data.type === 'close-t-billing')) {
         setShowPos(false);
+        setShowTBilling(false);
       }
       if (e.data && e.data.type === 'close-kds') {
         setShowKds(false);
@@ -185,13 +193,13 @@ export default function DashboardClient({
   }, []);
 
   useEffect(() => {
-    if (!showPos && !showKds) return;
+    if (!showPos && !showKds && !showTBilling) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [showPos, showKds]);
+  }, [showPos, showKds, showTBilling]);
 
   // 1. Beginner vs Advanced Mode (stored in localStorage)
   const [isAdvanced, setIsAdvanced] = useState(false);
@@ -267,7 +275,7 @@ export default function DashboardClient({
         // any order lifecycle change (placed / bumped / settled anywhere) refreshes
         // the live queue, so a bill settled in the POS clears here without a manual
         // Refresh. Only refetch while the Orders tab is open (it reloads on open too).
-        if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending') {
+        if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending' || msg.type === 'table.transferred') {
           if (activeMenuRef.current === 'orders') loadOrders();
         }
         if (msg.type === 'order.new') {
@@ -1811,7 +1819,7 @@ export default function DashboardClient({
   function exportExcel(name: string, title: string, headers: string[], rows: (string | number)[][]) {
     const thead = `<tr>${headers.map((h) => `<th>${escCell(h)}</th>`).join('')}</tr>`;
     const tbody = rows.map((r) => `<tr>${r.map((c) => `<td>${escCell(c)}</td>`).join('')}</tr>`).join('');
-    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"/><style>td,th{border:1px solid #ccc;padding:4px 8px;text-align:left} th{background:#f2e9da;font-weight:bold}</style></head><body><h3>${escCell(title)}</h3><table>${thead}${tbody}</table></body></html>`;
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"/><style>td,th{border:1px solid #ccc;padding:4px 8px;text-align:left} th{background:#f2e9da;font-weight:bold}</style></head><body><h3>${escCell(title)}</h3><table>${thead}${tbody}</body></html>`;
     const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1989,7 +1997,7 @@ export default function DashboardClient({
         {/* Open Till (POS) Link */}
         <div className={`transition-all duration-200 overflow-hidden shrink-0 ${isExpanded ? 'opacity-100 h-auto mt-2' : 'opacity-0 h-0 pointer-events-none'}`}>
           <button
-            onClick={() => setShowPos(true)}
+            onClick={() => { setPosInitialFloorOpen(false); setShowPos(true); }}
             className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl transition font-bold cursor-pointer text-left w-full hover:bg-[var(--paper-3)]"
             style={{ color: 'var(--turmeric-d)' }}
           >
@@ -2070,6 +2078,16 @@ export default function DashboardClient({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* T-Billing Button */}
+            <button
+              type="button"
+              onClick={() => setShowTBilling(true)}
+              className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition cursor-pointer"
+              id="header-t-billing"
+              style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+            >
+              <Table2 size={15} aria-hidden /> T-Billing
+            </button>
             {/* Table occupancy status indicator in header */}
             {tablesData && (
               <button
@@ -2082,13 +2100,13 @@ export default function DashboardClient({
                 className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition cursor-pointer"
                 style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}
               >
-                <span className="w-2 h-2 rounded-full" style={{ background: (tablesData?.totals?.occupied ?? 0) > 0 ? 'var(--turmeric)' : 'var(--cardamom)' }} />
+                <span className="w-2 h-2 rounded-full" style={{ background: (tablesData?.totals?.occupied ?? 0) > 0 ? 'var(--clay, #E5484D)' : 'var(--cardamom, #34C759)' }} />
                 <span>Tables: {tablesData?.totals?.occupied ?? 0} / {tablesData?.totals?.tables ?? 0}</span>
               </button>
             )}
-            {/* Open POS — always visible in header; replaces sidebar POS link */}
+            {/* Open POS - always visible in header; replaces sidebar POS link */}
             <button
-              onClick={() => setShowPos(true)}
+              onClick={() => { setPosInitialFloorOpen(false); setShowPos(true); }}
               className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition cursor-pointer"
               id="header-open-pos"
               style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}
@@ -2130,7 +2148,7 @@ export default function DashboardClient({
                             <div className="min-w-0">
                               <div className="text-[13px] font-bold leading-snug">{n.title}</div>
                               {n.body && <div className="text-[11.5px] text-ink-3 leading-snug">{n.body}</div>}
-                              <div className="text-[10px] text-ink-3 mt-0.5">{new Date(n.at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+                              <div className="text-[10px] text-ink-3 mt-0.5" suppressHydrationWarning>{new Date(n.at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
                             </div>
                             {!n.readAt && <span className="ml-auto w-2 h-2 rounded-full mt-1" style={{ background: 'var(--clay)' }} />}
                           </button>
@@ -2311,7 +2329,7 @@ export default function DashboardClient({
                             <div className="font-bold">{a.title}</div>
                             {a.body && <div className="text-xs text-ink-3">{a.body}</div>}
                           </div>
-                          <span className="text-[10px] text-ink-3">{new Date(a.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="text-[10px] text-ink-3" suppressHydrationWarning>{new Date(a.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                       ))}
                     </div>
@@ -2518,7 +2536,7 @@ export default function DashboardClient({
           <div className="flex flex-col gap-4">
             {/* Quick launcher cards */}
             <div className="grid grid-cols-2 gap-4">
-              <button onClick={() => setShowPos(true)} className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition text-left cursor-pointer">
+              <button onClick={() => { setPosInitialFloorOpen(false); setShowPos(true); }} className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition text-left cursor-pointer">
                 <span className="text-3xl">⊞</span>
                 <div className="mt-3">
                   <h3 className="text-lg font-bold">Take Order (POS)</h3>
@@ -2663,7 +2681,7 @@ export default function DashboardClient({
                             </td>
                             <td className="py-2.5" data-label="Table">{o.table?.label ?? 'Takeaway'}</td>
                             <td className="py-2.5 font-mono" data-label="Amount">{formatINR(o.totalPaise)}</td>
-                            <td className="py-2.5 text-xs" data-label="Date">{new Date(o.settledAt || o.placedAt).toLocaleString()}</td>
+                            <td className="py-2.5 text-xs" data-label="Date" suppressHydrationWarning>{new Date(o.settledAt || o.placedAt).toLocaleString()}</td>
                             <td className="py-2.5" data-label="Status">
                               {o.status === 'settled' ? (
                                 <span className="pill text-[9px] bg-green-100 text-green-800">PAID</span>
@@ -2796,7 +2814,7 @@ export default function DashboardClient({
                         <span className="font-bold">{c.name}</span>
                         <div className="flex items-center gap-3">
                           <span className="font-mono" style={{ color: 'var(--clay)' }}>− {c.qty} {c.unit}</span>
-                          <span className="text-xs text-ink-3">{new Date(c.at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="text-xs text-ink-3" suppressHydrationWarning>{new Date(c.at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                       </div>
                     ))}
@@ -3074,7 +3092,7 @@ export default function DashboardClient({
                           <div key={inv.id} className="flex justify-between items-center text-sm p-3.5 rounded-xl border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
                             <div>
                               <span className="font-bold text-slate-800">{inv.vendorName}</span>
-                              <span className="block text-[11px] text-ink-3 mt-1">{inv.invoiceNo ? `#${inv.invoiceNo} · ` : ''}{new Date(inv.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}{inv.dueDate ? ` · due ${new Date(inv.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}` : ''}</span>
+                              <span className="block text-[11px] text-ink-3 mt-1" suppressHydrationWarning>{inv.invoiceNo ? `#${inv.invoiceNo} · ` : ''}{new Date(inv.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}{inv.dueDate ? ` · due ${new Date(inv.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}` : ''}</span>
                             </div>
                             <div className="text-right">
                               <span className="font-mono font-bold">{formatINR(inv.totalPaise)}</span>
@@ -3099,7 +3117,7 @@ export default function DashboardClient({
                           <div key={p.id} className="flex justify-between items-center text-sm p-3.5 rounded-xl border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
                             <div>
                               <span className="font-bold text-slate-800">{p.vendorName}</span>
-                              <span className="block text-[11px] text-ink-3 mt-1 capitalize">{p.method}{p.reference ? ` · ${p.reference}` : ''} · {new Date(p.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                              <span className="block text-[11px] text-ink-3 mt-1 capitalize" suppressHydrationWarning>{p.method}{p.reference ? ` · ${p.reference}` : ''} · {new Date(p.at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
                             </div>
                             <span className="font-mono font-bold text-sm" style={{ color: 'var(--cardamom-d)' }}>− {formatINR(p.amountPaise)}</span>
                           </div>
@@ -4660,6 +4678,16 @@ export default function DashboardClient({
       )}
 
       {/* Mobile navigation — slide-out drawer (full menu) + bottom nav (key actions) */}
+      {showTBilling && (
+        <div className="fixed inset-0 z-[9500] flex flex-col bg-background">
+          <iframe
+            src="/t-billing"
+            className="absolute inset-0 w-full h-full border-none"
+            title="T-Billing Terminal"
+          />
+        </div>
+      )}
+
       {showPos && (
         <div className="fixed inset-0 z-[9500] flex flex-col" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
           {/* Header bar */}

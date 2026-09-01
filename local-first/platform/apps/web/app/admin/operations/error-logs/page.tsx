@@ -1,10 +1,8 @@
+import { PageHeader } from '@/components/ui/PageHeader';
 export default function ErrorLogsPage() {
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Error Logs</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Track application exceptions and crashes.</p>
-      </header>
+      <PageHeader title="Error Logs" description="Track application exceptions and crashes." />
       <div className="lux-card card-glow p-8 bg-[var(--paper-2)] min-h-[500px] flex flex-col">
         <div className="flex-1 bg-[#1a0f0f] border border-[var(--danger)]/30 rounded-lg p-4 font-mono text-xs text-red-400 overflow-y-auto">
           <div className="mb-4">

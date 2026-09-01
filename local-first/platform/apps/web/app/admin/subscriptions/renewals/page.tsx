@@ -2,6 +2,7 @@ import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,10 +25,7 @@ export default async function RenewalsPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Upcoming Renewals</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Monitor and alert cafes with expiring subscriptions.</p>
-      </header>
+      <PageHeader title="Upcoming Renewals" description="Monitor and alert cafes with expiring subscriptions." />
       <div className="lux-card card-glow overflow-x-auto min-h-[400px]">
         <table className="w-full text-sm">
           <thead className="bg-[var(--paper-3)] text-left text-xs uppercase tracking-wider text-[var(--ink-3)]">

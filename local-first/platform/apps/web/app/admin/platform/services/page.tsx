@@ -1,10 +1,8 @@
+import { PageHeader } from '@/components/ui/PageHeader';
 export default function ServicesPage() {
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Platform Services</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Toggle global features affecting all tenants.</p>
-      </header>
+      <PageHeader title="Platform Services" description="Toggle global features affecting all tenants." />
       <div className="lux-card card-glow p-8 bg-[var(--paper-2)]">
         <div className="space-y-6 max-w-2xl">
            <div className="flex items-center justify-between">

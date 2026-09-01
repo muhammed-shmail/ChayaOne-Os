@@ -1,4 +1,3 @@
-import { prisma } from '@cafeos/db';
 
 /**
  * Per-outlet location gate ("geofence"), stored in `Outlet.settings.location`.
@@ -70,6 +69,7 @@ export function readOutletLocation(settings: unknown): OutletLocation {
 
 /** Load an outlet's location gate (one small query). Mirrors getOutletGst. */
 export async function getOutletLocation(outletId: string): Promise<OutletLocation> {
+  const { prisma } = await import('@cafeos/db');
   const o = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
   return readOutletLocation(o?.settings);
 }

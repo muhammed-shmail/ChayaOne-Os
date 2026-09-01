@@ -3,6 +3,7 @@ import { getPlatformSession } from '@/lib/platform-session';
 import { listTenants } from '@/lib/platform-tenants';
 import { NewTenant } from './NewTenant';
 import { CafeList } from './CafeList';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,16 +15,17 @@ export default async function CafesPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="font-display text-3xl font-bold flex items-center gap-3">
+      <PageHeader 
+        title={
+          <span className="flex items-center gap-3">
             Cafe Management
             <span className="text-lg font-medium text-[var(--gold-d)] bg-[var(--gold)]/10 px-3 py-1 rounded-full">{tenants.length}</span>
-          </h1>
-          <p className="text-sm mt-2 text-[var(--ink-3)]">View and manage all cafes across the platform.</p>
-        </div>
+          </span>
+        }
+        description="View and manage all cafes across the platform."
+      >
         <NewTenant />
-      </header>
+      </PageHeader>
 
       <section className="flex-1">
         <CafeList initialTenants={tenants} />

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform-session';
 import { BarChart3, TrendingUp, Users, DollarSign } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,13 +11,15 @@ export default async function AnalyticsPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold flex items-center gap-3">
-          <BarChart3 size={28} className="text-[var(--gold)]" />
-          Analytics
-        </h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Platform-wide insights and performance metrics.</p>
-      </header>
+      <PageHeader 
+        title={
+          <span className="flex items-center gap-3">
+            <BarChart3 size={28} className="text-[var(--gold)]" />
+            Analytics
+          </span>
+        } 
+        description="Platform-wide insights and performance metrics." 
+      />
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="lux-card card-glow p-5">

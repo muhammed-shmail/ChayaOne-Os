@@ -2,6 +2,7 @@ import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { redirect } from 'next/navigation';
 import { TrendingUp } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,10 +15,7 @@ export default async function GrowthAnalyticsPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Growth Analytics</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Track tenant acquisition and retention.</p>
-      </header>
+      <PageHeader title="Growth Analytics" description="Track tenant acquisition and retention." />
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="lux-card card-glow p-6">

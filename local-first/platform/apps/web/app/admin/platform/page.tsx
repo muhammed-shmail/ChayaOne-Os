@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { getPlatformSession } from '@/lib/platform-session';
 import { ShieldCheck, Settings, Key, Zap } from 'lucide-react';
 import Link from 'next/link';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,13 +19,15 @@ export default async function PlatformPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold flex items-center gap-3">
-          <ShieldCheck size={28} className="text-[var(--gold)]" />
-          Platform Settings
-        </h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Configure global platform behavior and security.</p>
-      </header>
+      <PageHeader 
+        title={
+          <span className="flex items-center gap-3">
+            <ShieldCheck size={28} className="text-[var(--gold)]" />
+            Platform Settings
+          </span>
+        } 
+        description="Configure global platform behavior and security." 
+      />
 
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {sections.map(section => (

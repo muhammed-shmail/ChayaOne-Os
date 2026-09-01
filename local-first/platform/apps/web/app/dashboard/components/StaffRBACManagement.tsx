@@ -96,6 +96,7 @@ const PERMISSION_MODULES: { category: string; permissions: PermissionItem[] }[] 
     category: '2. POS',
     permissions: [
       { key: 'pos:open', label: 'Open POS', actions: ['view'] },
+      { key: 'pos:t_billing', label: 'T-Billing', actions: ['view'] },
       { key: 'pos:create_bill', label: 'Create Bill', actions: ['create'] },
       { key: 'pos:edit_bill', label: 'Edit Bill', actions: ['edit'] },
       { key: 'pos:hold_bill', label: 'Hold Bill', actions: ['create'] },
@@ -323,7 +324,7 @@ const PRESETS: Record<string, string[]> = {
     'staff:view:view', 'staff:attendance:view', 'staff:attendance:edit', 'staff:scheduling:view', 'staff:scheduling:edit'
   ],
   cashier: [
-    'pos:open:view', 'pos:create_bill:create', 'pos:edit_bill:edit', 'pos:hold_bill:create', 'pos:recall_bill:view',
+    'pos:open:view', 'pos:t_billing:view', 'pos:create_bill:create', 'pos:edit_bill:edit', 'pos:hold_bill:create', 'pos:recall_bill:view',
     'pos:reprint_bill:print', 'pos:print_kot:print', 'pos:close_shift:edit', 'pos:view_shift_history:view',
     'orders:view:view', 'orders:create:create', 'orders:takeaway:view', 'orders:takeaway:edit',
     'kds:view:view', 'tables:view:view', 'customers:view:view', 'customers:create:create'
@@ -338,7 +339,7 @@ const PRESETS: Record<string, string[]> = {
     'dashboard:view:view', 'dashboard:kpis:view', 'dashboard:financial_summary:view', 'staff:payroll:view', 'staff:payroll:edit'
   ],
   waiter: [
-    'pos:open:view', 'pos:create_bill:create', 'pos:hold_bill:create', 'pos:recall_bill:view', 'pos:print_kot:print',
+    'pos:open:view', 'pos:t_billing:view', 'pos:create_bill:create', 'pos:hold_bill:create', 'pos:recall_bill:view', 'pos:print_kot:print',
     'orders:view:view', 'orders:create:create', 'tables:view:view', 'tables:reserve:create',
     'customers:view:view', 'customers:create:create'
   ],

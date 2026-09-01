@@ -30,6 +30,10 @@ export interface KotPrintPayload {
   orderType: string;
   stationName: string;
   isReprint?: boolean;
+  isTransfer?: boolean;
+  fromTableLabel?: string | null;
+  toTableLabel?: string | null;
+  transferredBy?: string | null;
   placedAt: string | Date;
   items: Array<{
     name: string;
@@ -91,8 +95,54 @@ export function buildKotEscposBuffer(payload: KotPrintPayload, width = 42): Buff
 
   add(COMMANDS.INIT);
   add(COMMANDS.ALIGN_CENTER);
+
+  if (payload.isTransfer) {
+    add(COMMANDS.DOUBLE_SIZE);
+    add('********************************');
+    add('***      TABLE TRANSFER      ***');
+    add('********************************');
+    add(COMMANDS.NORMAL);
+    add(COMMANDS.BOLD_ON);
+    add(`FROM: ${payload.fromTableLabel ?? '—'}`);
+    add(`TO:   ${payload.toTableLabel ?? '—'}`);
+    add(`ORDER: #${payload.orderNumber}`);
+    if (payload.transferredBy) {
+      add(`BY: ${payload.transferredBy}`);
+    }
+    add(COMMANDS.BOLD_OFF);
+    add('-'.repeat(width));
+    add(COMMANDS.ALIGN_LEFT);
+    add(formatColumnRow(`Station: ${payload.stationName.toUpperCase()}`, `TRANSFER SLIP`, width));
+    const timeStr = new Date(payload.placedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    add(formatColumnRow(`Time: ${timeStr}`, `KOT #${payload.kotNumber}`, width));
+    add('-'.repeat(width));
+
+    if (payload.items.length > 0) {
+      add(COMMANDS.BOLD_ON);
+      add('CURRENT ITEMS:');
+      for (const item of payload.items) {
+        const qtyStr = `${item.qty}x `;
+        add(formatColumnRow(`${qtyStr}${item.name}`, '', width));
+
+        if (item.modifiers && item.modifiers.length > 0) {
+          for (const mod of item.modifiers) {
+            add(`   + ${mod.name}`);
+          }
+        }
+        if (item.notes) {
+          add(`   Note: ${item.notes}`);
+        }
+      }
+      add(COMMANDS.BOLD_OFF);
+      add('-'.repeat(width));
+    }
+    add(COMMANDS.LINE_FEED);
+    add(COMMANDS.FULL_CUT);
+    return Buffer.concat(chunks);
+  }
+
   add(COMMANDS.DOUBLE_SIZE);
-  
+
   if (payload.isReprint) {
     add('********************************');
     add('***     REPRINT / RETRY      ***');

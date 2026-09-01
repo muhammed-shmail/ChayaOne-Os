@@ -37,6 +37,7 @@ export default function StaffBell({ role, staffId, triggerClassName }: { role: s
       <button
         type="button"
         onClick={toggle}
+        suppressHydrationWarning
         aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
         className={`relative ${triggerClassName ?? 'w-9 h-9 rounded-xl grid place-items-center'}`}
         style={triggerClassName ? undefined : { background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}

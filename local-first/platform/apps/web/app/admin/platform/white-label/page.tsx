@@ -1,6 +1,7 @@
 import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { redirect } from 'next/navigation';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,10 +16,7 @@ export default async function WhiteLabelPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">White-Label Domains</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Manage custom domains and branding overrides for Enterprise tenants.</p>
-      </header>
+      <PageHeader title="White-Label Domains" description="Manage custom domains and branding overrides for Enterprise tenants." />
       
       <div className="lux-card card-glow overflow-x-auto min-h-[400px]">
         <table className="w-full text-sm">

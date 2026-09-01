@@ -7,9 +7,11 @@ const nextConfig = {
   experimental: {
     // keep the native Prisma engine external; @cafeos/db itself is transpiled above
     serverComponentsExternalPackages: ['@prisma/client', '.prisma/client'],
+    optimizePackageImports: ['lucide-react', '@/components/ui'],
     cpus: 1,
     workerThreads: false,
   },
 };
 
 export default nextConfig;
+// Trigger restart

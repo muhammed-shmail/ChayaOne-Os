@@ -2,6 +2,7 @@ import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { redirect } from 'next/navigation';
 import { DollarSign } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,10 +17,7 @@ export default async function RevenueAnalyticsPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Revenue Analytics</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Platform-wide GMV and net revenue tracking.</p>
-      </header>
+      <PageHeader title="Revenue Analytics" description="Platform-wide GMV and net revenue tracking." />
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lux-card card-glow p-6 col-span-1">

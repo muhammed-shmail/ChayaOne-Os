@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import os from 'os';
 import { prisma, DeviceRole } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
-import { generatePairingCode } from '@/lib/devices';
+import { generatePairingCode } from '@/lib/device-pairing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

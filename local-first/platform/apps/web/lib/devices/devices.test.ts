@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { prisma, DeviceRole } from '@cafeos/db';
-import { generatePairingCode, claimPairingCode } from '../devices';
+import { generatePairingCode, claimPairingCode } from '../device-pairing';
 
 async function runDevicePairingConcurrencyTest() {
   console.log('--- Starting Step 8 Device Pairing Concurrency & Rate Limiting Tests ---');

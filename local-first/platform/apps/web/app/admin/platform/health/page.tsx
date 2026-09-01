@@ -1,12 +1,10 @@
 import { Activity, Database, Cloud, Server } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export default function HealthPage() {
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Platform Health</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Real-time status of critical infrastructure.</p>
-      </header>
+      <PageHeader title="Platform Health" description="Real-time status of critical infrastructure." />
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="lux-card card-glow p-6 flex flex-col">

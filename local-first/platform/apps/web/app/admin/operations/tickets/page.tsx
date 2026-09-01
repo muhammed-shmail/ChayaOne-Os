@@ -2,6 +2,7 @@ import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { redirect } from 'next/navigation';
 import { MessageSquare } from 'lucide-react';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,10 +18,7 @@ export default async function TicketsPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Support Tickets</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Manage platform support requests.</p>
-      </header>
+      <PageHeader title="Support Tickets" description="Manage platform support requests." />
       
       <div className="lux-card card-glow overflow-x-auto min-h-[400px]">
         <table className="w-full text-sm">

@@ -6,6 +6,7 @@ import { DashboardAlerts } from './DashboardAlerts';
 import { DashboardCharts } from './DashboardCharts';
 import { RecentActivityTimeline } from './RecentActivityTimeline';
 import { PlatformHealth } from './PlatformHealth';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,10 +60,7 @@ export default async function DashboardHome() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto space-y-6">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Platform Overview</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Monitor cross-tenant health, revenue, and platform operations.</p>
-      </header>
+      <PageHeader title="Platform Overview" description="Monitor cross-tenant health, revenue, and platform operations." />
 
       {/* Subscription Alerts */}
       <section>

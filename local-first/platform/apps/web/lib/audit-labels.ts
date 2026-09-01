@@ -11,6 +11,8 @@ const ACTION_LABELS: Record<string, string> = {
   'customer.set_status': 'Customer status changed',
   'device.saved': 'Device saved',
   'qr_order.placed': 'QR order placed',
+  'table.transferred': 'Table transferred',
+  'table.settled': 'Table settled',
 };
 
 export function prettyAction(action: string): string {

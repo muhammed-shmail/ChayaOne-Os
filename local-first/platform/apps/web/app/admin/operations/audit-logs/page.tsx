@@ -1,6 +1,7 @@
 import { prisma } from '@cafeos/db';
 import { getPlatformSession } from '@/lib/platform-session';
 import { redirect } from 'next/navigation';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,10 +17,7 @@ export default async function AuditLogsPage() {
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto h-full flex flex-col">
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Platform Audit Logs</h1>
-        <p className="text-sm mt-2 text-[var(--ink-3)]">Review super admin actions and platform events.</p>
-      </header>
+      <PageHeader title="Platform Audit Logs" description="Review super admin actions and platform events." />
       
       <div className="lux-card card-glow overflow-x-auto min-h-[400px]">
         <table className="w-full text-sm">

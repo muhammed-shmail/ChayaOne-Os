@@ -560,7 +560,7 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                         <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${a.present ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
                         <div>
                           <b className="text-sm block">{a.name}</b>
-                          <span className="text-xs text-ink-3">
+                          <span className="text-xs text-ink-3" suppressHydrationWarning>
                             In: {a.clockIn ? new Date(a.clockIn).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '—'}
                             {a.clockOut ? ` · Out: ${new Date(a.clockOut).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : ''}
                           </span>
@@ -592,8 +592,8 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                         </span>
                       </div>
                       <div className="text-ink-2 flex flex-col">
-                        <span>In: {dt(a.clockIn)}</span>
-                        {a.clockOut && <span>Out: {dt(a.clockOut)}</span>}
+                        <span suppressHydrationWarning>In: {dt(a.clockIn)}</span>
+                        {a.clockOut && <span suppressHydrationWarning>Out: {dt(a.clockOut)}</span>}
                       </div>
                     </div>
                   ))}
@@ -666,7 +666,7 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                         </div>
                         <div className="text-ink-3 flex justify-between">
                           <span>Method: <b className="capitalize">{pay.method}</b></span>
-                          <span>{new Date(pay.paidAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                          <span suppressHydrationWarning>{new Date(pay.paidAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
                         </div>
                       </div>
                     ))}

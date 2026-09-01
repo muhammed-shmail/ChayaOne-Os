@@ -9,10 +9,12 @@
 export { ThemeToggle, useTheme } from './ThemeToggle';
 export { AlphaTag } from './AlphaTag';
 export { WaveHand } from './WaveHand';
+export { PageHeader } from './PageHeader';
+export { PwaHeader } from './PwaHeader';
 
 export {
   // navigation / chrome
-  Menu, X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ArrowLeft, ArrowRight,
+  Menu, X, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ArrowLeft, ArrowRight, ArrowRightLeft, ArrowLeftRight,
   Search, Settings, LogOut, Bell, MoreVertical, Plus, Minus, Check, Filter, Delete,
   // theme
   Sun, Moon,
@@ -29,6 +31,7 @@ export {
   // status / feedback
   CircleCheckBig, TriangleAlert, Info, CircleX, Loader, RefreshCw, Eye, EyeOff,
   Wifi, WifiOff, Lock, Phone, MapPin, Image as ImageIcon, Upload, Download, FileSpreadsheet,
+  DollarSign, History, HelpCircle,
 } from 'lucide-react';
 
 export type { LucideIcon } from 'lucide-react';

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { claimPairingCode } from '@/lib/devices';
+import { claimPairingCode } from '@/lib/device-pairing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

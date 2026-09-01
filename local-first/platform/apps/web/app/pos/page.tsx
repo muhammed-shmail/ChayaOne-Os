@@ -10,7 +10,7 @@ import { readKitchenWorkflow } from '@/lib/kitchenWorkflow';
 import { readOutletLocation } from '@/lib/geo';
 import PosClient, { type MenuCategory, type TableDto } from './PosClient';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 /** Server component: require a session, load menu + tables for the session's outlet. */
 export default async function PosPage() {
