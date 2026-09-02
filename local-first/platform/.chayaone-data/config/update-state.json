@@ -1,0 +1,8 @@
+{
+  "state": "IDLE",
+  "currentVersion": "1.0.0",
+  "targetVersion": "1.2.0",
+  "channel": "stable",
+  "lastBackupId": "bbdca614-992e-4166-8385-7ed88141de63",
+  "error": "Recovered from an interrupted update session upon reboot."
+}

@@ -10,6 +10,8 @@
     "test:units": "tsx src/units.test.ts"
   },
   "dependencies": {
+    "@cafeos/types": "*",
+    "@cafeos/validation": "*",
     "zod": "^3.23.8"
   },
   "devDependencies": {

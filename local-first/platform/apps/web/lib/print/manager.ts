@@ -151,7 +151,7 @@ export async function processPrintQueueBatch(batchSize = 10) {
           where: { id: job.id },
           data: {
             attempts,
-            status: isMax ? PrintJobStatus.FAILED : PrintJobStatus.FAILED,
+            status: isMax ? PrintJobStatus.FAILED : PrintJobStatus.QUEUED,
             printerId: backupDevice ? backupDevice.id : job.printerId, // Fallback to backup printer if primary failed
             availableAt: isMax ? new Date('2099-01-01') : new Date(Date.now() + Math.pow(2, attempts) * 2000),
             failedAt: isMax ? new Date() : null,

@@ -5,7 +5,8 @@
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "electron-forge start",
-    "build": "tsc && electron-builder --config electron-builder.yml",
+    "build": "tsc",
+    "build:installer": "tsc && electron-builder --config electron-builder.yml",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "package": "electron-builder --config electron-builder.yml --dir",

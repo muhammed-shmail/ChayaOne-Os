@@ -10,8 +10,8 @@ import { CountUp } from '@/components/ui/motion';
 import { TeaLoader } from '@/components/ui/TeaLoader';
 import { RevenuePanel } from '@/components/dashboard/RevenuePanel';
 import type { DashboardData } from '@/lib/analytics';
+import dynamic from 'next/dynamic';
 import { SECTION_KEY, SectionView } from './Sections';
-import CustomerManagement from './CustomerManagement';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, assignableRoles, ALL_ROLES } from '@/lib/rbac';
 import { DEVICE_TYPES, DEVICE_CONNECTIONS, type Device } from '@/lib/devices';
 import type { ReceiptConfig } from '@/lib/receipt';
@@ -31,8 +31,19 @@ import {
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffDevices from '@/components/StaffDevices';
 import { MobileDrawer, BottomNav, type NavItem } from '@/components/dashboard/MobileNav';
-import FinanceManagement from './FinanceManagement';
-import SettingsCenter from './components/SettingsCenter';
+
+const CustomerManagement = dynamic(() => import('./CustomerManagement'), {
+  loading: () => <div className="p-8 text-center text-xs text-gray-500">Loading Customers...</div>,
+  ssr: false,
+});
+const FinanceManagement = dynamic(() => import('./FinanceManagement'), {
+  loading: () => <div className="p-8 text-center text-xs text-gray-500">Loading Finance...</div>,
+  ssr: false,
+});
+const SettingsCenter = dynamic(() => import('./components/SettingsCenter'), {
+  loading: () => <div className="p-8 text-center text-xs text-gray-500">Loading Settings...</div>,
+  ssr: false,
+});
 
 
 type FloorTable = { id: string; label: string; seats: number; state: string; qrToken: string; floorId: string | null; activeOrders: number };

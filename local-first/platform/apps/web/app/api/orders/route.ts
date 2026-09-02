@@ -269,6 +269,14 @@ export async function POST(req: NextRequest) {
         },
       });
 
+      // Update TableMap state to seated for dine-in orders
+      if (input.tableId) {
+        await tx.tableMap.update({
+          where: { id: input.tableId },
+          data: { state: 'seated' },
+        }).catch(() => {});
+      }
+
       // Decrement any daily limits stored in tags
       for (const line of input.lines) {
         if (!line.itemId) continue;
@@ -391,8 +399,11 @@ export async function POST(req: NextRequest) {
     // meter the committed order against the tenant's monthly quota (best effort)
     if (meterTenantId) await bumpUsage(meterTenantId, 'orders_month').catch(() => {});
 
-    // fan out to every KDS subscribed to this outlet
+    // fan out to every KDS and floor subscribed to this outlet
     await publish(outletId, { type: 'order.new', ticket: toTicket(order) });
+    if (input.tableId) {
+      await publish(outletId, { type: 'table.updated', tableId: input.tableId, state: 'seated' });
+    }
     // raise low-stock alerts for anything that dipped below reorder (best effort)
     await emitLowStockAlerts(outletId, consumedStockIds);
     // owner alert: unusually large discount on this ticket (percent OR flat ₹ —

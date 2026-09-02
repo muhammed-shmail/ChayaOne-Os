@@ -1,0 +1,24 @@
+{
+  "name": "ChayaOne Cafe Menu & Order",
+  "short_name": "ChayaOne",
+  "description": "Order at table, track food live, and earn cafe rewards",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#0ea5e9",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/logo chaya one.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo chaya one.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

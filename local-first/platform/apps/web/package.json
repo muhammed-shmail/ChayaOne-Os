@@ -3,13 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "dotenv -e ../../.env -- next dev -H 0.0.0.0 -p 3000",
+    "dev": "dotenv -e ../../.env -- next dev --turbo -H 0.0.0.0 -p 3000",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cafeos/types": "*",
+    "@cafeos/validation": "*",
+    "@cafeos/realtime": "*",
     "@cafeos/core": "*",
     "@cafeos/db": "*",
     "@cafeos/ui": "*",

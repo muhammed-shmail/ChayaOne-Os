@@ -93,12 +93,34 @@ export async function POST(req: NextRequest) {
   const billLines: BillLine[] = lines.map((l) => ({ pricePaise: l.unitPricePaise, gstRate: l.gstRate, qty: l.qty }));
   const bill = computeBill(billLines, { discountPct, ...gstBillOptions(await getOutletGst(outletId)) });
 
+  const clientUuid = (typeof body.clientUuid === 'string' && body.clientUuid) || crypto.randomUUID();
+
+  // Idempotency check: if customer retried or double-clicked with same clientUuid
+  const existing = await prisma.order.findUnique({
+    where: { clientUuid },
+    include: { items: true, table: { select: { label: true } } },
+  });
+  if (existing) {
+    return NextResponse.json({
+      ok: true,
+      idempotent: true,
+      order: {
+        id: existing.id,
+        number: existing.number,
+        status: existing.status,
+        totalPaise: existing.totalPaise,
+        discountPaise: existing.discountPaise,
+        walletPointsUsed: 0,
+      },
+    });
+  }
+
   const number = await nextNumber(outletId);
 
   const order = await prisma.$transaction(async (tx) => {
     const o = await tx.order.create({
       data: {
-        clientUuid: crypto.randomUUID(),
+        clientUuid,
         number,
         outletId,
         tableId: table.id,

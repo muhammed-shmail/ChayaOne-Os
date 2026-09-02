@@ -1,0 +1,24 @@
+{
+  "name": "ChayaOne Waiter",
+  "short_name": "Waiter",
+  "description": "ChayaOne OS Waiter & Floor Staff Terminal",
+  "start_url": "/tables",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#0ea5e9",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/logo chaya one.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo chaya one.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

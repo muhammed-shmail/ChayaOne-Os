@@ -12,6 +12,7 @@ import type { Kitchen } from '@/lib/kitchens';
 import type { Device } from '@/lib/devices';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
 import type { PwaConfig } from '@/lib/pwa';
+import SystemManagement from './SystemManagement';
 
 // Category groups & metadata
 export interface SettingItem {
@@ -78,6 +79,7 @@ const SECTIONS: SettingSection[] = [
       { key: 'audit', label: 'Audit Logs', desc: 'Security logging, changes history, deleted bills', icon: ClipboardList, sensitive: true, ownerOnly: true, keywords: ['security log', 'changes history', 'deleted bills', 'actions'] },
       { key: 'security', label: 'Security & Access', desc: '2FA, device approval restrictions, session timeouts', icon: Lock, sensitive: true, keywords: ['2fa', 'two factor', 'session timeout', 'approved devices', 'password'] },
       { key: 'integrations', label: 'Integrations', desc: 'Razorpay, PhonePe, Swiggy, Zomato, Zoho Books', icon: Blocks, sensitive: true, keywords: ['razorpay', 'phonepe', 'swiggy', 'zomato', 'zoho', 'tally', 'apis'] },
+      { key: 'system', label: 'System & Updates', desc: 'Updates, versioning, database backups & live diagnostics', icon: Cpu, sensitive: true, ownerOnly: true, keywords: ['system', 'updates', 'backup', 'diagnostics', 'recovery', 'version', 'support report', 'about'] },
       { key: 'subscription', label: 'Subscription Plan', desc: 'SaaS licensing, usage trackers & billing history', icon: Zap, sensitive: true, keywords: ['licensing', 'plan', 'billing history', 'usage trackers', 'upgrade'] },
       { key: 'backup', label: 'Backup & Restore', desc: 'Manual & automatic db exports, import configs', icon: Database, sensitive: true, ownerOnly: true, keywords: ['database export', 'import config', 'rollback', 'manual backup'] },
       { key: 'api_keys', label: 'API Keys', desc: 'Generate API keys, manage webhook endpoints & credentials', icon: Key, sensitive: true, keywords: ['webhooks', 'credentials', 'endpoints', 'access tokens', 'api access'] },
@@ -4497,6 +4499,13 @@ export default function SettingsCenter({
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* ── SYSTEM & UPDATES / BACKUP / DIAGNOSTICS ── */}
+              {activePanel === 'system' && (
+                <div className="card p-5 sm:p-6 bg-paper-2">
+                  <SystemManagement flashMessage={flashMessage} />
                 </div>
               )}
 

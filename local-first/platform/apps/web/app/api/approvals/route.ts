@@ -227,6 +227,14 @@ export async function POST(req: NextRequest) {
       include: { items: { orderBy: { id: 'asc' } }, table: { select: { label: true } } },
     });
 
+    // Update Table state to seated
+    if (o.tableId) {
+      await tx.tableMap.update({
+        where: { id: o.tableId },
+        data: { state: 'seated' },
+      }).catch(() => {});
+    }
+
     // now that it's confirmed, deduct recipe stock (deferred from placement)
     consumed = await applyRecipeConsumption(tx, {
       outletId: session.outletId,
@@ -297,6 +305,9 @@ export async function POST(req: NextRequest) {
   await emitLowStockAlerts(session.outletId, consumed);
   // now it reaches the KDS (and the POS live rail + the customer's table stream)
   await publish(session.outletId, { type: 'order.new', ticket: toTicket(updated) });
+  if (updated.tableId) {
+    await publish(session.outletId, { type: 'table.updated', tableId: updated.tableId, state: 'seated' });
+  }
 
   return NextResponse.json({ ok: true, status: 'in_kitchen', approvedBy: session.name });
 }

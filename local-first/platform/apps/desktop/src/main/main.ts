@@ -6,6 +6,7 @@ import { serverManager } from './managers/server-manager';
 import { wsManager } from './managers/websocket-manager';
 import { printerManager } from './managers/printer-manager';
 import { healthManager } from './managers/health-manager';
+import { desktopUpdateManager } from './managers/update-manager';
 
 // Enforce single instance
 const gotTheLock = app.requestSingleInstanceLock();
@@ -93,6 +94,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('get-printer-status', () => { return printerManager.getStatus(); });
   ipcMain.handle('get-server-status', () => { return serverManager.getStatus(); });
   ipcMain.handle('get-network-info', () => { return healthManager.getSystemHealth(); });
+  ipcMain.handle('get-update-status', async () => { return await desktopUpdateManager.getStatus(); });
+  ipcMain.handle('check-for-updates', async () => { return await desktopUpdateManager.checkForUpdates(); });
   ipcMain.handle('print-job', async (_, payload) => { 
     return await printerManager.print(payload);
   });

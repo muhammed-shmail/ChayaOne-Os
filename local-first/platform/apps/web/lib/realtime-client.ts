@@ -137,6 +137,19 @@ async function start(key: string, hub: Hub) {
       const wsUrl = t.url.includes('?') ? `${t.url}&token=${t.token}` : `${t.url}?token=${t.token}`;
       const socket = new WebSocket(wsUrl);
 
+const seenEventIds = new Set<string>();
+
+function recordEventId(eventId?: string | null): boolean {
+  if (!eventId) return true; // allow events without explicit id
+  if (seenEventIds.has(eventId)) return false; // duplicate!
+  seenEventIds.add(eventId);
+  if (seenEventIds.size > 1000) {
+    const first = seenEventIds.values().next().value;
+    if (first) seenEventIds.delete(first);
+  }
+  return true;
+}
+
       socket.onopen = () => {
         // Subscribe to channel
         socket.send(JSON.stringify({ type: 'subscribe', channel: topic }));
@@ -147,6 +160,11 @@ async function start(key: string, hub: Hub) {
       socket.onmessage = (evt) => {
         try {
           const msg = JSON.parse(evt.data);
+          if (msg.type === 'pong') return; // heartbeat response
+
+          const eventId = msg.envelope?.eventId || msg.eventId;
+          if (!recordEventId(eventId)) return; // suppress duplicate frame
+
           if (msg.type === 'event' || msg.event) {
             // Standard event payload extraction
             const payload: RealtimeEvent = msg.payload || (msg.envelope ? msg.envelope.payload : null);

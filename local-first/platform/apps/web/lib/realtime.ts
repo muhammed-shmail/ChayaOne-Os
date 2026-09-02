@@ -38,11 +38,45 @@ export type TableTransferPayload = {
   timestamp: number;
   reason?: string | null;
 };
+export type TableMergePayload = {
+  sourceTableId: string;
+  sourceTableLabel: string;
+  destTableId: string;
+  destTableLabel: string;
+  destOrderId: string;
+  destOrderNumber: number;
+  mergedBy: string | null;
+  timestamp: number;
+};
+export type TableSplitPayload = {
+  originalTableId: string;
+  originalTableLabel: string;
+  originalOrderId: string;
+  originalOrderNumber: number;
+  newOrderId: string;
+  newOrderNumber: number;
+  newTableId?: string | null;
+  newTableLabel?: string | null;
+  splitBy: string | null;
+  timestamp: number;
+};
+export type WaiterCallPayload = {
+  tableId: string;
+  tableLabel: string;
+  requestType: 'call_waiter' | 'assistance' | 'water' | 'bill';
+  notes?: string | null;
+  at: number;
+};
 export type RealtimeEvent =
   | { type: 'order.new'; ticket: Ticket }
   | { type: 'order.updated'; ticket: Ticket }
   | { type: 'order.pending'; ticket: Ticket }
   | { type: 'table.transferred'; transfer: TableTransferPayload; ticket?: Ticket }
+  | { type: 'table.merged'; merge: TableMergePayload; ticket?: Ticket }
+  | { type: 'table.split'; split: TableSplitPayload; ticket?: Ticket }
+  | { type: 'table.updated'; tableId: string; state: string }
+  | { type: 'waiter.called'; request: WaiterCallPayload }
+  | { type: 'bill.requested'; request: WaiterCallPayload }
   | { type: 'notify'; notification: NotifyPayload };
 
 type RealtimeConfig = { url: string; serviceKey: string };

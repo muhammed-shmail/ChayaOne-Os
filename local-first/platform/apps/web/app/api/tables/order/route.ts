@@ -125,6 +125,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Free the table in the database
+  await prisma.tableMap.update({
+    where: { id: tableId },
+    data: { state: 'free' },
+  }).catch(() => {});
+
+  // Broadcast table.updated so all floor screens clear occupancy immediately
+  await publish(session.outletId, {
+    type: 'table.updated',
+    tableId,
+    state: 'free',
+  });
+
   await prisma.auditLog.create({
     data: { outletId: session.outletId, actorId: session.staffId, action: 'table.settled', entity: 'table', entityId: tableId, after: { method: pay, totalPaise: total, orders: orders.length } as Prisma.InputJsonValue },
   }).catch(() => {});

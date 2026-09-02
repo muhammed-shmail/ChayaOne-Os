@@ -530,14 +530,34 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   // follow the same realtime channel the KDS uses, so status flips here the
   // instant the kitchen bumps a ticket. We only care about orders from this till.
   useEffect(() => {
-    return subscribeStaff((msg) => {
-      // keep the approvals badge + floor occupancy live as orders arrive / settle / transfer
-      if (msg.type === 'order.pending' || msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'table.transferred') {
+    return subscribeStaff((msg: any) => {
+      // keep the approvals badge + floor occupancy live as orders arrive / settle / transfer / merge / split
+      if (
+        msg.type === 'order.pending' ||
+        msg.type === 'order.new' ||
+        msg.type === 'order.updated' ||
+        msg.type === 'table.transferred' ||
+        msg.type === 'table.merged' ||
+        msg.type === 'table.split' ||
+        msg.type === 'table.updated'
+      ) {
         fetch('/api/approvals').then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setPendingApprovals(d.orders?.length ?? 0); }).catch(() => { });
         refreshTables();
       }
-      if (msg.type === 'table.transferred') {
+      if (msg.type === 'table.transferred' && msg.transfer) {
         flash(`Table ${msg.transfer.fromTableLabel} transferred to Table ${msg.transfer.toTableLabel} (#${msg.transfer.orderNumber})`);
+      }
+      if (msg.type === 'table.merged' && msg.merge) {
+        flash(`Table ${msg.merge.sourceTableLabel} merged into Table ${msg.merge.destTableLabel}`);
+      }
+      if (msg.type === 'table.split' && msg.split) {
+        flash(`Order #${msg.split.originalOrderNumber} split into #${msg.split.newOrderNumber}`);
+      }
+      if (msg.type === 'waiter.called' && msg.request) {
+        flash(`🔔 Table ${msg.request.tableLabel} called waiter!`);
+      }
+      if (msg.type === 'bill.requested' && msg.request) {
+        flash(`🧾 Table ${msg.request.tableLabel} requested bill!`);
       }
       if (msg.type !== 'order.updated') return;
       setLive((prev) => {

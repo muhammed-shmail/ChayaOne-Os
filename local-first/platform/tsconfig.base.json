@@ -15,9 +15,14 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "paths": {
-      "@cafeos/db": ["./packages/db/src/index.ts"],
+      "@cafeos/types": ["./packages/types/src/index.ts"],
+      "@cafeos/validation": ["./packages/validation/src/index.ts"],
+      "@cafeos/realtime": ["./packages/realtime/src/index.ts"],
       "@cafeos/core": ["./packages/core/src/index.ts"],
-      "@cafeos/ui": ["./packages/ui/src/index.ts"]
+      "@cafeos/ui": ["./packages/ui/src/index.ts"],
+      "@cafeos/ui/*": ["./packages/ui/src/*"],
+      "@cafeos/db": ["./packages/db/src/index.ts"],
+      "@/*": ["./apps/web/*"]
     }
   },
   "exclude": ["node_modules", "dist", ".next"]

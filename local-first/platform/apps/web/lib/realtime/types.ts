@@ -1,6 +1,16 @@
 import type { RealtimeEvent } from '../realtime';
 
-export type EventType = 'order.new' | 'order.updated' | 'order.pending' | 'table.transferred' | 'notify';
+export type EventType =
+  | 'order.new'
+  | 'order.updated'
+  | 'order.pending'
+  | 'table.transferred'
+  | 'table.merged'
+  | 'table.split'
+  | 'table.updated'
+  | 'waiter.called'
+  | 'bill.requested'
+  | 'notify';
 
 export interface RealtimeEnvelope {
   event: EventType;

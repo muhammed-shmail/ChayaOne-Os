@@ -1452,5 +1452,51 @@ model DevicePairingCode {
   @@map("device_pairing_codes")
 }
 
+// ===================== SYSTEM UPDATES & BACKUP LOGS =====================
+model SystemUpdateHistory {
+  id               String    @id @default(uuid()) @db.Uuid
+  version          String    @db.VarChar(50)
+  previousVersion  String    @db.VarChar(50)
+  channel          String    @default("stable") @db.VarChar(20)
+  status           String    @default("PENDING") @db.VarChar(30) // PENDING, SUCCESS, FAILED, ROLLING_BACK, ROLLED_BACK
+  releaseDate      DateTime  @default(now()) @db.Timestamptz(6)
+  releaseNotes     Json?
+  errorDetails     String?   @db.Text
+  diagnosticRefId  String?   @db.VarChar(100)
+  installedAt      DateTime  @default(now()) @db.Timestamptz(6)
+  completedAt      DateTime? @db.Timestamptz(6)
+  metadata         Json?
 
+  @@index([version, status])
+  @@index([installedAt])
+  @@map("system_update_history")
+}
 
+model DatabaseBackupLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  filename    String    @db.VarChar(255)
+  filepath    String    @db.VarChar(500)
+  sizeBytes   BigInt    @default(0)
+  backupType  String    @default("AUTOMATIC_UPDATE") @db.VarChar(50) // AUTOMATIC_UPDATE, MANUAL, SCHEDULED
+  checksum    String    @db.VarChar(128)
+  status      String    @default("VALID") @db.VarChar(30) // VALID, CORRUPTED, RESTORED, DELETED
+  dbVersion   String    @default("1.0.0") @db.VarChar(50)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([backupType, status])
+  @@index([createdAt])
+  @@map("database_backup_logs")
+}
+
+model SystemDiagnosticLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  category    String    @db.VarChar(50) // UPDATE, DATABASE, SERVICE, PRINTER, NETWORK, HEALTH
+  severity    String    @default("INFO") @db.VarChar(20) // INFO, WARN, ERROR, CRITICAL
+  message     String    @db.Text
+  details     Json?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([category, severity])
+  @@index([createdAt])
+  @@map("system_diagnostic_logs")
+}
