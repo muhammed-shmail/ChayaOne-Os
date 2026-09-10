@@ -22,6 +22,7 @@ import type { OutletLocation } from '@/lib/geo';
 import { subscribeStaff } from '@/lib/realtime-client';
 import { getGeoHeaders } from '@/lib/geo-client';
 import { prettyAction } from '@/lib/audit-labels';
+import type { ModuleSystemConfig } from '@cafeos/types';
 import {
   ThemeToggle, Bell, Table2, LogOut, LayoutDashboard, Wifi, ChefHat, Menu,
   ClipboardList, UtensilsCrossed, Package, Truck, Users, User, Settings, type LucideIcon,
@@ -140,20 +141,35 @@ export default function DashboardClient({
   staff,
   data,
   features,
+  initialModuleConfig,
 }: {
   outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: ReceiptConfig; staffAppEnabled?: boolean };
   staff: { name: string; role: string; permissions?: string[] };
   data: DashboardData;
   features: Record<string, boolean>;
+  initialModuleConfig?: ModuleSystemConfig;
 }) {
   const router = useRouter();
 
+  const [moduleConfig, setModuleConfig] = useState<ModuleSystemConfig>(
+    initialModuleConfig || {
+      businessType: 'cafe',
+      enabledModules: ['core', 'cafe'],
+      installedModules: ['core', 'cafe', 'restaurant', 'hotel', 'juice', 'meals', 'inventory', 'customer_qr', 'waiter', 'kds', 'crm', 'loyalty', 'advanced_reports'],
+      updatedAt: new Date().toISOString(),
+      version: '1.2.0',
+    }
+  );
+
   const hasPermission = (p: string) => !staff.permissions || staff.permissions.includes(p);
 
-  // Feature tick model: hide modules this cafe isn't entitled to. The server
-  // routes are the hard gate; this just keeps the UI honest.
+  // Feature & Module filtering: hide menus if corresponding module or feature is disabled
   const visibleMenus = MENUS.filter((m) => {
-    if (m.key === 'customers' && features.crm === false) return false;
+    // Module enablement checks
+    if (m.key === 'inventory' && !moduleConfig.enabledModules.includes('inventory')) return false;
+    if (m.key === 'suppliers' && !moduleConfig.enabledModules.includes('inventory')) return false;
+    if (m.key === 'customers' && (!moduleConfig.enabledModules.includes('crm') || features.crm === false)) return false;
+
     // cashier: home, orders, finance (operations)
     if (staff.role === 'cashier') {
       return ['home', 'orders', 'finance'].includes(m.key);
@@ -251,6 +267,13 @@ export default function DashboardClient({
       }
     }
   }, []);
+
+  // Reset active menu to 'home' if the current tab gets disabled via module settings
+  useEffect(() => {
+    if (!visibleMenus.some((m) => m.key === activeMenu)) {
+      setActiveMenu('home');
+    }
+  }, [visibleMenus, activeMenu]);
 
   // Sync sub tab when menu changes
   useEffect(() => {
@@ -3728,6 +3751,8 @@ export default function DashboardClient({
                 outlet={outlet}
                 staff={staff}
                 features={features}
+                moduleConfig={moduleConfig}
+                onModuleConfigUpdated={setModuleConfig}
                 profile={profile}
                 setProfile={setProfile}
                 handleSaveProfile={handleSaveProfile}

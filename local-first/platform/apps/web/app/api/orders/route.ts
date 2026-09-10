@@ -15,6 +15,7 @@ import { findOrCreateCustomerByPhone, accrueLoyaltyOnSettle } from '@/lib/custom
 import { assertSlot, bumpUsage, SlotExceeded } from '@/lib/limits';
 import { tenantBilling } from '@/lib/billing';
 import { getOutletLocation, checkGeofence, readGeoFromHeaders } from '@/lib/geo';
+import { isModuleEnabled } from '@/lib/modules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -324,12 +325,14 @@ export async function POST(req: NextRequest) {
       }
 
       // recipe-based inventory: deduct raw materials + append the stock ledger,
-      // atomically with the order. No-ops for items without a recipe.
-      consumedStockIds = await applyRecipeConsumption(tx, {
-        outletId,
-        orderId: created.id,
-        lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
-      });
+      // atomically with the order. Skipped if inventory module is disabled.
+      if (await isModuleEnabled('inventory', outletId)) {
+        consumedStockIds = await applyRecipeConsumption(tx, {
+          outletId,
+          orderId: created.id,
+          lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
+        });
+      }
 
       // Step 5: Write outbox event atomically with the business transaction
       let resolvedTenantId = session?.tenantId;

@@ -10,12 +10,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cafeos/types": "*",
-    "@cafeos/validation": "*",
-    "@cafeos/realtime": "*",
     "@cafeos/core": "*",
     "@cafeos/db": "*",
+    "@cafeos/realtime": "*",
+    "@cafeos/types": "*",
     "@cafeos/ui": "*",
+    "@cafeos/validation": "*",
+    "@opentelemetry/api": "^1.9.1",
     "@supabase/supabase-js": "^2.45.4",
     "@types/ws": "^8.18.1",
     "framer-motion": "^11.18.2",

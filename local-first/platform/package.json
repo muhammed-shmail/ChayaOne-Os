@@ -23,6 +23,8 @@
     "build:installer": "npm run -w @cafeos/desktop build:installer",
     "release:package": "node scripts/build-production-installer.mjs",
     "test:system": "tsx scripts/test-update-system.ts",
+    "test:modules": "tsx scripts/test-module-system.ts",
+    "test:audit": "tsx scripts/test-system-audit.ts",
     "lint": "turbo run lint",
     "lint:desktop": "npm run -w @cafeos/web lint",
     "lint:waiter": "npm run -w @cafeos/waiter lint",

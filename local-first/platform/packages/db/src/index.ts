@@ -1,4 +1,30 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import {
+  PrismaClient,
+  Prisma,
+  SyncStatus,
+  SyncOperation,
+  PrintJobStatus,
+  PrintJobType,
+  DeviceStatus,
+  DeviceRole,
+  Plan,
+  StaffRole,
+  OrderType,
+  OrderStatus,
+  OrderChannel,
+  KotStatus,
+  TableState,
+  PayMethod,
+  PayStatus,
+  Tier,
+  CustomerStatus,
+  CustomerSource,
+  LedgerType,
+  CouponStatus,
+  PoStatus,
+  RoomStatus,
+  Channel,
+} from '@prisma/client';
 
 /**
  * Prisma client singleton — avoids exhausting connections during dev HMR.
@@ -15,7 +41,31 @@ export const prisma =
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 export * from '@prisma/client';
-// Explicit re-export: Turbopack drops `Prisma` (a runtime value, not just a type)
-// when it comes only through `export *` above, which makes `Prisma.Decimal` etc.
-// undefined in bundled routes. An explicit named re-export survives bundling.
-export { Prisma };
+// Explicit re-exports: Turbopack drops runtime values (enums, namespaces)
+// when they come only through `export *` above. Named re-exports survive bundling.
+export {
+  Prisma,
+  SyncStatus,
+  SyncOperation,
+  PrintJobStatus,
+  PrintJobType,
+  DeviceStatus,
+  DeviceRole,
+  Plan,
+  StaffRole,
+  OrderType,
+  OrderStatus,
+  OrderChannel,
+  KotStatus,
+  TableState,
+  PayMethod,
+  PayStatus,
+  Tier,
+  CustomerStatus,
+  CustomerSource,
+  LedgerType,
+  CouponStatus,
+  PoStatus,
+  RoomStatus,
+  Channel,
+};

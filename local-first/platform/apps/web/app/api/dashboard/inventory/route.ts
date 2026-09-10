@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
+import { requireModule } from '@/lib/modules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,9 @@ export async function POST(req: NextRequest) {
   if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant') {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
+
+  const guard = await requireModule('inventory', session.outletId);
+  if (!guard.ok) return guard.response!;
 
   try {
     const body = await req.json();

@@ -8,6 +8,7 @@ import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { getOutletPwa, walletPointsToPaise, paiseToPoints } from '@/lib/pwa';
 import { tenantBilling } from '@/lib/billing';
 import { getOutletLocation, checkGeofence, readGeoFromHeaders } from '@/lib/geo';
+import { requireModule } from '@/lib/modules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
   if (!table) return NextResponse.json({ error: 'table_not_found' }, { status: 404 });
   const outletId = table.outlet.id;
   const tenantId = table.outlet.tenantId;
+
+  // Module check: Customer QR Ordering must be enabled
+  const guard = await requireModule('customer_qr', outletId);
+  if (!guard.ok) return guard.response!;
 
   // billing wall (G7): suspended/expired tenants can't accept QR orders
   const billing = await tenantBilling(tenantId);

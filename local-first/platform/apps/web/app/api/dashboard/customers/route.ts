@@ -5,6 +5,7 @@ import { hashPhone, normalizePhone, isValidPhone } from '@/lib/phone';
 import { getOutletPwa, paiseToPoints } from '@/lib/pwa';
 import { listCustomers, getCustomerAnalytics, type CustomerFilter } from '@/lib/crm';
 import { tenantHasFeature } from '@/lib/features';
+import { requireModule } from '@/lib/modules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,10 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  
+  const guard = await requireModule('crm', session.outletId);
+  if (!guard.ok) return guard.response!;
+
   if (!(await tenantHasFeature(session.tenantId, 'crm')))
     return NextResponse.json({ error: 'feature_not_in_plan', feature: 'crm' }, { status: 402 });
 
@@ -55,6 +60,10 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+
+  const guard = await requireModule('crm', session.outletId);
+  if (!guard.ok) return guard.response!;
+
   if (!(await tenantHasFeature(session.tenantId, 'crm')))
     return NextResponse.json({ error: 'feature_not_in_plan', feature: 'crm' }, { status: 402 });
 

@@ -11,4 +11,4 @@ const nextConfig = {
 };
 
 export default nextConfig;
-// Trigger restart
+// Trigger restart with @opentelemetry/api

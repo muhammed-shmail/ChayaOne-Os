@@ -8,6 +8,7 @@ import { normalizeLocationInput } from '@/lib/geo';
 import { readKitchens, kitchenSlug, KITCHEN_NAME_MAX, KITCHEN_PALETTE, type Kitchen } from '@/lib/kitchens';
 import { readKitchenWorkflow, normalizeKitchenWorkflowInput } from '@/lib/kitchenWorkflow';
 import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
+import { getModuleStatePayload, setModuleConfig, getModuleConfig } from '@/lib/modules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,8 @@ async function saveDevices(outletId: string, devices: Device[]) {
  *   { action: 'outlet', name?, gstin?, stateCode?, address? }
  *   { action: 'device_save', device: { id?, name, type, connection, target?, station?, copies?, isDefault? } }
  *   { action: 'device_delete', id }
+ *   { action: 'modules_get' }
+ *   { action: 'modules_update', businessType?, enabledModules? }
  * Owner/manager only.
  */
 export async function POST(req: NextRequest) {
@@ -37,6 +40,28 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
+
+  // ---- Module Management & Business Profile ----
+  if (body.action === 'modules_get') {
+    const payload = await getModuleStatePayload(session.outletId);
+    return NextResponse.json({ ok: true, ...payload });
+  }
+
+  if (body.action === 'modules_update') {
+    if (session.role !== 'owner' && session.role !== 'manager') {
+      return NextResponse.json({ error: 'forbidden', message: 'Only store owners or managers can modify modules.' }, { status: 403 });
+    }
+    try {
+      const updated = await setModuleConfig(session.outletId, {
+        businessType: body.businessType,
+        enabledModules: body.enabledModules,
+        moduleSettings: body.moduleSettings,
+      });
+      return NextResponse.json({ ok: true, config: updated });
+    } catch (err: any) {
+      return NextResponse.json({ error: 'failed_to_update_modules', message: err.message }, { status: 400 });
+    }
+  }
 
   // ---- Advanced GST Settings Saving & Resets ----
   if (body.action === 'gst_save') {

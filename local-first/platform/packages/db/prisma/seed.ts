@@ -110,6 +110,23 @@ async function main() {
     },
   });
 
+  const envBusinessType = (process.env.CHAYAONE_BUSINESS_TYPE || 'cafe');
+  const envModules = process.env.CHAYAONE_ENABLED_MODULES
+    ? process.env.CHAYAONE_ENABLED_MODULES.split(',').map((s) => s.trim())
+    : ['core', 'cafe'];
+
+  const moduleConfig = {
+    businessType: envBusinessType,
+    enabledModules: Array.from(new Set(['core', ...envModules])),
+    installedModules: [
+      'core', 'cafe', 'restaurant', 'hotel', 'juice', 'meals',
+      'inventory', 'customer_qr', 'waiter', 'kds', 'crm', 'loyalty', 'advanced_reports'
+    ],
+    updatedAt: new Date().toISOString(),
+    version: '1.2.0',
+    moduleSettings: {},
+  };
+
   const outlet = await prisma.outlet.create({
     data: {
       tenantId: tenant.id,
@@ -117,6 +134,9 @@ async function main() {
       stateCode: 'KA',
       gstin: '29ABCDE1234F1Z5',
       address: { line1: '5th Block, Koramangala', city: 'Bengaluru', pincode: '560095' },
+      settings: {
+        modules: moduleConfig,
+      },
     },
   });
 

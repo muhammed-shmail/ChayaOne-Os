@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { getDashboardData } from '@/lib/analytics';
 import { tenantBilling } from '@/lib/billing';
 import { tenantFeatures } from '@/lib/features';
+import { getModuleConfig } from '@/lib/modules';
 import { readReceiptConfig } from '@/lib/receipt';
 import { BillingWall } from '@/components/BillingWall';
 import DashboardClient from './DashboardClient';
@@ -32,6 +33,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
 
   const data = await getDashboardData(outlet.id);
   const features = await tenantFeatures(session.tenantId);
+  const moduleConfig = await getModuleConfig(outlet.id);
   const receipt = readReceiptConfig(outlet.settings);
 
   const dashboardOutlet = { name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt };
@@ -45,6 +47,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
         staff={{ name: session.name, role: session.role }}
         data={data}
         features={features}
+        initialModuleConfig={moduleConfig}
       />
     );
   }
@@ -58,3 +61,4 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
     />
   );
 }
+

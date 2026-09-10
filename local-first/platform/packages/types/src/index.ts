@@ -178,3 +178,6 @@ export interface StaffSessionDto {
   outletId: string;
   tenantId: string;
 }
+
+export * from './modules';
+

@@ -58,17 +58,31 @@ async function main() {
     .digest('hex');
   console.log(`🔒 SHA-256 Checksum: ${checksum}`);
 
-  // 3. Generate Central Update Manifest
+  // 3. Verify Inno Setup script includes Modular Wizard Pages
+  const issPath = path.join(installerDir, 'inno-setup.iss');
+  if (fs.existsSync(issPath)) {
+    const issContent = fs.readFileSync(issPath, 'utf8');
+    if (issContent.includes('BusinessTypePage') && issContent.includes('ModuleSelectPage')) {
+      console.log('✅ Inno Setup script verified: Modular Installation wizard pages present');
+    } else {
+      console.warn('⚠️ Inno Setup script warning: Modular wizard pages missing or incomplete');
+    }
+  }
+
+  // 4. Generate Central Update Manifest
   const manifest = {
     version,
     releaseDate,
     downloadUrl: `https://updates.chayaone.com/chayaone/packages/${packageFilename}`,
     checksum,
     minimumSupportedVersion: '1.0.0',
-    databaseMigrationVersion: '0011',
+    databaseMigrationVersion: '0012',
     mandatory: false,
     channel: 'stable',
     releaseNotes: [
+      'Modular Installation, Business Type & Feature Module System',
+      'Dynamic post-installation module enabling/disabling without reinstalling',
+      'Automatic dependency resolution & non-destructive data retention',
       'Production Client Installer & Update Manager integration',
       'Transactional database backup before updates with automatic rollback',
       'Crash recovery state persistence on Main PC reboot',

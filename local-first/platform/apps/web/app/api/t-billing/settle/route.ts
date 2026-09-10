@@ -176,6 +176,25 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Free the table if no other active orders remain on it
+    if (order.tableId) {
+      const remainingOrders = await tx.order.count({
+        where: {
+          outletId: session.outletId,
+          tableId: order.tableId,
+          id: { not: orderId },
+          status: { in: ['open', 'in_kitchen', 'ready', 'served', 'pending_approval', 'approved'] },
+          settledAt: null,
+        },
+      });
+      if (remainingOrders === 0) {
+        await tx.tableMap.update({
+          where: { id: order.tableId },
+          data: { state: 'free' },
+        });
+      }
+    }
+
     return o;
   });
 
@@ -242,6 +261,13 @@ export async function POST(req: NextRequest) {
 
   // 8. Publish Realtime Notification
   await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updatedOrder) });
+  if (order.tableId) {
+    await publish(session.outletId, {
+      type: 'table.updated',
+      tableId: order.tableId,
+      state: 'free',
+    });
+  }
 
   return NextResponse.json({
     ok: true,

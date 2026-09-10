@@ -4,6 +4,7 @@ import { resolveTable, activeOrderForTable, resolveCustomer } from '@/lib/custom
 import { readPwaConfig, gameUnlocked, tierForCustomer, walletPointsToPaise } from '@/lib/pwa';
 import { readOutletLocation } from '@/lib/geo';
 import { tenantFeatures } from '@/lib/features';
+import { requireModule } from '@/lib/modules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,10 @@ export async function GET(req: NextRequest) {
   if (!table) return NextResponse.json({ error: 'table_not_found' }, { status: 404 });
 
   const tenantId = table.outlet.tenantId;
+
+  // Module check: Customer QR Ordering module must be active
+  const guard = await requireModule('customer_qr', table.outlet.id);
+  if (!guard.ok) return guard.response!;
 
   // Feature tick model: the whole customer PWA can be switched off per cafe.
   const features = await tenantFeatures(tenantId);

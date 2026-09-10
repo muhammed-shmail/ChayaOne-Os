@@ -11,6 +11,7 @@ import { applyRecipeConsumption, emitLowStockAlerts } from '@/lib/inventory';
 import { alertOrderCancelled } from '@/lib/alerts';
 import { getOutletGst, gstBillOptions, type GstConfig } from '@/lib/tax';
 import { reverseWalletHold } from '@/lib/wallet';
+import { requireModule, isModuleEnabled } from '@/lib/modules';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -80,6 +81,9 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
+  const guard = await requireModule('waiter', session.outletId);
+  if (!guard.ok) return guard.response!;
+
   const orders = await prisma.order.findMany({
     where: { outletId: session.outletId, status: 'pending_approval' },
     orderBy: { placedAt: 'asc' },
@@ -98,6 +102,9 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (!canApprove(session.role)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+
+  const guard = await requireModule('waiter', session.outletId);
+  if (!guard.ok) return guard.response!;
 
   const body = await req.json().catch(() => ({}));
   const { orderId, action, reason } = body;
@@ -235,12 +242,14 @@ export async function POST(req: NextRequest) {
       }).catch(() => {});
     }
 
-    // now that it's confirmed, deduct recipe stock (deferred from placement)
-    consumed = await applyRecipeConsumption(tx, {
-      outletId: session.outletId,
-      orderId,
-      lines: order.items.map((i) => ({ itemId: i.itemId, qty: i.qty })),
-    });
+    // now that it's confirmed, deduct recipe stock (if inventory module is enabled)
+    if (await isModuleEnabled('inventory', session.outletId)) {
+      consumed = await applyRecipeConsumption(tx, {
+        outletId: session.outletId,
+        orderId,
+        lines: order.items.map((i) => ({ itemId: i.itemId, qty: i.qty })),
+      });
+    }
 
     await clearNotification(tx, orderId);
     await tx.auditLog.create({

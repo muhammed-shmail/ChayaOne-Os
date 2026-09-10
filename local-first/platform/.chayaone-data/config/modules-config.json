@@ -1,0 +1,28 @@
+{
+  "businessType": "custom",
+  "enabledModules": [
+    "core",
+    "cafe",
+    "juice",
+    "crm",
+    "advanced_reports"
+  ],
+  "installedModules": [
+    "core",
+    "cafe",
+    "restaurant",
+    "hotel",
+    "juice",
+    "meals",
+    "inventory",
+    "customer_qr",
+    "waiter",
+    "kds",
+    "crm",
+    "loyalty",
+    "advanced_reports"
+  ],
+  "updatedAt": "2026-09-04T11:05:55.978Z",
+  "version": "1.3.0",
+  "moduleSettings": {}
+}

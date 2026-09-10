@@ -6,13 +6,15 @@ import {
   Users, Smartphone, Truck, Bell, Shield, BarChart3, ClipboardList, Blocks, Zap,
   Lock, Database, Sparkles, Cpu, Sliders, Calendar, DollarSign, UserCheck, RefreshCw,
   AlertCircle, Trash2, Plus, Check, Search, ChevronRight, ChevronLeft, Info, X, Key,
-  Heart, AlertTriangle, Play, HelpCircle, Megaphone, Download
+  Heart, AlertTriangle, Play, HelpCircle, Megaphone, Download, Layers
 } from 'lucide-react';
 import type { Kitchen } from '@/lib/kitchens';
 import type { Device } from '@/lib/devices';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
 import type { PwaConfig } from '@/lib/pwa';
+import type { ModuleSystemConfig } from '@cafeos/types';
 import SystemManagement from './SystemManagement';
+import ModuleManagement from './ModuleManagement';
 
 // Category groups & metadata
 export interface SettingItem {
@@ -37,6 +39,7 @@ const SECTIONS: SettingSection[] = [
     title: 'Restaurant',
     items: [
       { key: 'general', label: 'Business Profile', desc: 'Store profile, branding & contact details', icon: Store, keywords: ['store', 'profile', 'address', 'city', 'pincode', 'currency', 'language', 'timezone', 'logo', 'gstin', 'website', 'email', 'phone', 'contact'] },
+      { key: 'modules', label: 'Modules & Business Profile', desc: 'Enable or configure business modules (Cafe, Restaurant, Juice, Waiter, KDS, Inventory...)', icon: Layers, sensitive: true, ownerOnly: true, keywords: ['modules', 'business type', 'cafe', 'restaurant', 'hotel', 'juice', 'meals', 'waiter', 'kds', 'customer qr', 'inventory', 'crm', 'loyalty'] },
       { key: 'business_hours', label: 'Business Hours', desc: 'Opening, closing hours, breaks & festival timings', icon: Clock, keywords: ['time', 'opening', 'closing', 'weekly', 'holiday', 'festival', 'break', 'temporary closure', 'emergency'] },
       { key: 'tax', label: 'Tax & GST', desc: 'GSTIN, CGST/SGST, service & packaging charges', icon: Percent, sensitive: true, keywords: ['gstin', 'tax', 'cgst', 'sgst', 'igst', 'exclusive', 'inclusive', 'hsn', 'sac', 'composition', 'flat rate', 'billing', 'reports', 'audit'] },
       { key: 'menu', label: 'Menu Configuration', desc: 'Categories, variants, add-ons & happy hours', icon: BookOpen, keywords: ['veg', 'non-veg', 'dietary', 'combo', 'happy hours', 'discount', 'variants', 'add-ons'] },
@@ -106,6 +109,8 @@ interface SettingsCenterProps {
   outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: any; gstConfig?: any };
   staff: { name: string; role: string };
   features: Record<string, boolean>;
+  moduleConfig?: ModuleSystemConfig;
+  onModuleConfigUpdated?: (cfg: ModuleSystemConfig) => void;
 
   profile: any;
   setProfile: React.Dispatch<React.SetStateAction<any>>;
@@ -176,6 +181,8 @@ export default function SettingsCenter({
   outlet,
   staff,
   features,
+  moduleConfig,
+  onModuleConfigUpdated,
   profile,
   setProfile,
   handleSaveProfile,
@@ -757,11 +764,21 @@ export default function SettingsCenter({
   const isManagerOrOwner = staff.role === 'owner' || staff.role === 'manager';
   const isOwner = staff.role === 'owner';
 
-  // Check role-based category visibility
+  // Check role-based and module-based category visibility
   const isCategoryVisible = (item: SettingItem) => {
     if (staff.role === 'cashier') {
-      if (item.key === 'general' || item.key === 'tax') return false;
+      if (item.key === 'general' || item.key === 'tax' || item.key === 'modules') return false;
     }
+    if (item.key === 'modules' && staff.role !== 'owner' && staff.role !== 'manager') return false;
+
+    // Module enablement gating — hide configurations for disabled modules
+    if (moduleConfig) {
+      if (item.key === 'kitchen' && !moduleConfig.enabledModules.includes('kds')) return false;
+      if (item.key === 'inventory' && !moduleConfig.enabledModules.includes('inventory')) return false;
+      if (item.key === 'pwa' && !moduleConfig.enabledModules.includes('customer_qr')) return false;
+      if (item.key === 'loyalty' && !moduleConfig.enabledModules.includes('loyalty')) return false;
+    }
+
     if (item.enterpriseOnly && outlet.plan?.toLowerCase() !== 'enterprise') return false;
     return true;
   };
@@ -1329,6 +1346,25 @@ export default function SettingsCenter({
               <div className="flex flex-col gap-6">
 
               {/* RENDER ACTIVE PANEL */}
+
+              {/* ── 0. MODULES & BUSINESS PROFILE ── */}
+              {activePanel === 'modules' && (
+                <div className="card p-5 sm:p-6 flex flex-col gap-6 bg-paper-2">
+                  <ModuleManagement
+                    moduleConfig={moduleConfig || {
+                      businessType: 'cafe',
+                      enabledModules: ['core', 'cafe'],
+                      installedModules: ['core', 'cafe', 'restaurant', 'hotel', 'juice', 'meals', 'inventory', 'customer_qr', 'waiter', 'kds', 'crm', 'loyalty', 'advanced_reports'],
+                      updatedAt: new Date().toISOString(),
+                      version: '1.2.0',
+                    }}
+                    onConfigUpdated={(cfg) => {
+                      if (onModuleConfigUpdated) onModuleConfigUpdated(cfg);
+                    }}
+                    flashMessage={flashMessage}
+                  />
+                </div>
+              )}
 
               {/* ── 1. GENERAL SETTINGS ── */}
               {activePanel === 'general' && (
