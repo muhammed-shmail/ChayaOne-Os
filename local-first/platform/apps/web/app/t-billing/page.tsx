@@ -5,6 +5,7 @@ import { canAccess, landingFor } from '@/lib/rbac';
 import { readGstConfig } from '@/lib/tax';
 import { readTableFloors } from '@/lib/floors';
 import { readReceiptConfig } from '@/lib/receipt';
+import { readUpiConfig } from '@/lib/print/upi';
 import { readKitchenWorkflow } from '@/lib/kitchenWorkflow';
 import TBillingClient, { type TableDto } from './TBillingClient';
 
@@ -53,6 +54,7 @@ export default async function TBillingPage() {
 
   const gst = readGstConfig(outlet.settings);
   const receipt = readReceiptConfig(outlet.settings);
+  const upiConfig = readUpiConfig(outlet.settings, outlet.name);
   const kitchenWorkflow = readKitchenWorkflow(outlet.settings);
 
   // Serialize all Prisma Date and Decimal objects to plain JSON types for React Server Component boundary safety
@@ -106,7 +108,10 @@ export default async function TBillingPage() {
         gstEnabled: gst.enabled,
         gstRate: gst.calculationMethod === 'flat' && gst.defaultRate != null ? Number(gst.defaultRate) : null,
         gstInclusive: gst.inclusive,
+        address: outlet.address,
+        timezone: outlet.timezone,
         receipt: JSON.parse(JSON.stringify(receipt)),
+        upiConfig: JSON.parse(JSON.stringify(upiConfig)),
         kitchenWorkflow: JSON.parse(JSON.stringify(kitchenWorkflow)),
         gstConfig: JSON.parse(JSON.stringify(gst)),
       }}

@@ -21,6 +21,9 @@ import { useStaffInstall } from '@/components/staff-install';
 import { isOffline, OFFLINE_ORDER_MSG, OFFLINE_PAY_MSG } from '@/components/online';
 import { getGeoHeaders } from '@/lib/geo-client';
 
+import { generateAuthoritativeUpiUri } from '@/lib/print/upi';
+import { generateQrDataUrl } from '@/lib/print/qr';
+
 /** Category → SVG icon (replaces structural emoji; food glyph stays decorative). */
 const CAT_ICON: Record<string, LucideIcon> = {
   Coffee, 'Chai & Tea': Soup, Coolers: CupSoda, 'All-Day': UtensilsCrossed, Bakery: Croissant, Desserts: Cake,
@@ -38,7 +41,21 @@ export type MenuItemDto = {
 };
 export type MenuCategory = { id: string; name: string; items: MenuItemDto[] };
 export type TableDto = { id: string; label: string; seats: number; state: string; floorId: string | null };
-type Outlet = { id: string; name: string; gstin: string | null; stateCode: string; gstEnabled: boolean; gstRate: number | null; gstInclusive: boolean; receipt: ReceiptConfig; kitchenWorkflow: KitchenWorkflowConfig; gstConfig?: any };
+type Outlet = {
+  id: string;
+  name: string;
+  gstin: string | null;
+  stateCode: string;
+  gstEnabled: boolean;
+  gstRate: number | null;
+  gstInclusive: boolean;
+  address?: any;
+  timezone?: string;
+  receipt: ReceiptConfig;
+  kitchenWorkflow: KitchenWorkflowConfig;
+  gstConfig?: any;
+  upiConfig?: any;
+};
 type Staff = { id: string; name: string; role: string };
 
 type Line = {
@@ -1352,6 +1369,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
         {charging && (
           <ChargeModal total={bill.totalPaise} busy={busy}
             initialName={orderCustName} initialPhone={orderCustPhone}
+            upiConfig={outlet.upiConfig}
             onClose={() => setCharging(false)}
             onConfirm={(method, tipPaise, opts) => submit({ method, tipPaise }, opts)} />
         )}
@@ -1801,10 +1819,68 @@ function CustomerField({ name, phone, open, setName, setPhone, setOpen, compact 
   );
 }
 
-function ChargeModal({ total, busy, initialName = '', initialPhone = '', onClose, onConfirm }: { total: number; busy: boolean; initialName?: string; initialPhone?: string; onClose: () => void; onConfirm: (m: 'cash' | 'upi' | 'card', tip: number, opts: { customer: { name: string; phone: string } | null; print: boolean }) => void }) {
+function ChargeModal({
+  total,
+  busy,
+  initialName = '',
+  initialPhone = '',
+  upiConfig,
+  onClose,
+  onConfirm,
+}: {
+  total: number;
+  busy: boolean;
+  initialName?: string;
+  initialPhone?: string;
+  upiConfig?: any;
+  onClose: () => void;
+  onConfirm: (m: 'cash' | 'upi' | 'card', tip: number, opts: { customer: { name: string; phone: string } | null; print: boolean }) => void;
+}) {
   const [method, setMethod] = useState<'cash' | 'upi' | 'card'>('upi');
   const [tip, setTip] = useState(0);
   const [print, setPrint] = useState(true);
+  const [upiQrUrl, setUpiQrUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (method !== 'upi' || !upiConfig?.upiId) {
+      setUpiQrUrl(null);
+      return;
+    }
+    const finalAmountPaise = total + tip;
+    if (finalAmountPaise <= 0) {
+      setUpiQrUrl(null);
+      return;
+    }
+    try {
+      const res = generateAuthoritativeUpiUri({
+        upiId: upiConfig.upiId,
+        payeeName: upiConfig.payeeName,
+        amountPaise: finalAmountPaise,
+        merchantCode: upiConfig.merchantCode,
+        transactionRef: `CHAYA-${Date.now().toString(36).toUpperCase()}`,
+        notes: 'Order payment',
+      });
+      if (res.valid && res.uri) {
+        generateQrDataUrl(res.uri, { scale: 4, margin: 2 })
+          .then((url) => {
+            if (active) setUpiQrUrl(url);
+          })
+          .catch(() => {
+            if (active) setUpiQrUrl(null);
+          });
+      } else {
+        if (active) setUpiQrUrl(null);
+      }
+    } catch {
+      if (active) setUpiQrUrl(null);
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [method, total, tip, upiConfig]);
+
   // seed from any customer attached on the ticket panel (so charge reflects it, editable here)
   const [showCust, setShowCust] = useState(!!(initialName || initialPhone));
   const [custName, setCustName] = useState(initialName);
@@ -1853,7 +1929,23 @@ function ChargeModal({ total, busy, initialName = '', initialPhone = '', onClose
         })}
       </div>
       <div className="grid place-items-center py-[22px] min-h-[120px]">
-        {method === 'upi' && <div className="text-center"><div className="w-[130px] h-[130px] mx-auto rounded-[14px] grid place-items-center" style={{ background: '#fff', boxShadow: 'var(--sh-2)' }}><QrCode size={86} color="#111" aria-hidden /></div><p className="mt-2 text-sm font-bold">Scan UPI QR · {formatINR(total + tip)}</p></div>}
+        {method === 'upi' && (
+          <div className="text-center flex flex-col items-center">
+            <div className="w-[140px] h-[140px] rounded-[14px] p-2 flex items-center justify-center bg-white" style={{ boxShadow: 'var(--sh-2)' }}>
+              {upiQrUrl ? (
+                <img src={upiQrUrl} alt="Scan to pay" className="w-full h-full object-contain" />
+              ) : (
+                <QrCode size={86} color="#111" aria-hidden />
+              )}
+            </div>
+            <p className="mt-2 text-sm font-bold">Scan &amp; Pay {formatINR(total + tip)}</p>
+            {upiConfig?.upiId ? (
+              <p className="text-[11px] font-mono mt-0.5" style={{ color: 'var(--ink-3)' }}>{upiConfig.upiId}</p>
+            ) : (
+              <p className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>Configure UPI ID in Dashboard Settings</p>
+            )}
+          </div>
+        )}
         {method === 'cash' && <p className="font-bold">Collect {formatINR(total + tip)} in cash</p>}
         {method === 'card' && <p className="font-bold">Tap / insert card on terminal…</p>}
       </div>

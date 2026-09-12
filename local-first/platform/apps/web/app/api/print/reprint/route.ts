@@ -3,6 +3,7 @@ import { prisma, PrintJobType } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
 import { readReceiptConfig } from '@/lib/receipt';
+import { readUpiConfig } from '@/lib/print/upi';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     include: {
       items: true,
       table: { select: { label: true } },
-      customer: { select: { name: true } },
+      customer: { select: { name: true, phone: true } },
     },
   });
 
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
 
   const outlet = await prisma.outlet.findUnique({
     where: { id: session.outletId },
-    select: { name: true, gstin: true, settings: true },
+    select: { name: true, gstin: true, address: true, timezone: true, settings: true },
   });
 
   let payload: any;
@@ -45,8 +46,12 @@ export async function POST(req: NextRequest) {
 
   if (type === 'RECEIPT') {
     const rConfig = readReceiptConfig(outlet?.settings);
+    const upiConfig = readUpiConfig(outlet?.settings, outlet?.name);
     payload = {
       storeName: outlet?.name ?? 'ChayaOne Cafe',
+      logoUrl: (outlet?.settings as any)?.logoUrl || null,
+      address: outlet?.address ?? null,
+      timezone: outlet?.timezone ?? 'Asia/Kolkata',
       header: rConfig.header,
       footer: rConfig.footer,
       phone: rConfig.phone,
@@ -55,12 +60,16 @@ export async function POST(req: NextRequest) {
       tableLabel: order.table?.label ?? null,
       orderType: order.type,
       customerName: order.customer?.name ?? null,
+      customerPhone: order.customer?.phone ?? null,
       placedAt: order.placedAt,
-      lines: order.items.map((i) => ({
+      settledAt: order.settledAt,
+      items: order.items.map((i) => ({
         name: i.nameSnapshot,
         qty: i.qty,
-        pricePaise: i.unitPricePaise,
+        unitPricePaise: i.unitPricePaise,
         totalPaise: i.unitPricePaise * i.qty,
+        modifiers: Array.isArray(i.modifiers) ? (i.modifiers as { name: string; pricePaise?: number }[]) : [],
+        notes: i.notes ?? null,
       })),
       subtotalPaise: order.subtotalPaise,
       discountPaise: order.discountPaise,
@@ -70,6 +79,9 @@ export async function POST(req: NextRequest) {
       roundOffPaise: order.roundOffPaise,
       totalPaise: order.totalPaise,
       isReprint: true,
+      isCancelled: order.status === 'cancelled',
+      receiptConfig: rConfig,
+      upiConfig,
     };
   } else {
     // KOT reprint

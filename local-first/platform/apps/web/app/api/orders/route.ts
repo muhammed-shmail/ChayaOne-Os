@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma, type Prisma } from '@cafeos/db';
+import { prisma, PrintJobType, type Prisma } from '@cafeos/db';
 import { CreateOrderSchema, computeBill, type BillLine } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
 import { publish, toTicket } from '@/lib/realtime';
@@ -7,6 +7,9 @@ import { createOutboxEntry } from '@/lib/outbox';
 import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
 import { routeOrderToStations } from '@/lib/print/router';
 import { readKitchenWorkflow } from '@/lib/kitchenWorkflow';
+import { readReceiptConfig } from '@/lib/receipt';
+import { readUpiConfig } from '@/lib/print/upi';
+import { readDevices } from '@/lib/devices';
 import { applyRecipeConsumption, emitLowStockAlerts } from '@/lib/inventory';
 import { alertLargeDiscount } from '@/lib/alerts';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
@@ -362,7 +365,7 @@ export async function POST(req: NextRequest) {
       // Step 6: Create PrintJob records for KOT station printers atomically
       const outletRecord = await tx.outlet.findUnique({
         where: { id: outletId },
-        select: { settings: true },
+        select: { name: true, gstin: true, address: true, settings: true },
       });
       const kw = readKitchenWorkflow(outletRecord?.settings);
       
@@ -391,6 +394,56 @@ export async function POST(req: NextRequest) {
             payload: job.payload,
           });
         }
+      }
+
+      // Step 6b: Create PrintJob for Receipt Printer when order is settled with payment
+      if (input.payment) {
+        const rc = readReceiptConfig(outletRecord?.settings);
+        const upiConfig = readUpiConfig(outletRecord?.settings, outletRecord?.name || 'Cafe');
+        const devices = readDevices(outletRecord?.settings);
+        const receiptDevice = devices.find(d => d.type === 'receipt_printer') || null;
+
+        await createPrintJob(tx, {
+          tenantId: resolvedTenantId,
+          outletId,
+          jobId: `${created.id}-receipt`,
+          orderId: created.id,
+          printerId: receiptDevice?.id ?? null,
+          stationId: 'receipt',
+          jobType: PrintJobType.RECEIPT,
+          payload: {
+            storeName: outletRecord?.name || 'Cafe',
+            logoUrl: rc.showLogo ? rc.logoUrl : null,
+            header: rc.header,
+            footer: rc.footer,
+            phone: rc.showPhone ? rc.phone : null,
+            gstin: rc.showGstin ? outletRecord?.gstin : null,
+            address: rc.showAddress ? outletRecord?.address : null,
+            orderNumber: number,
+            tableLabel: input.tableId ? 'Table' : null,
+            orderType: input.type,
+            placedAt: created.placedAt,
+            settledAt: new Date(),
+            items: created.items.map(it => ({
+              name: it.nameSnapshot,
+              qty: it.qty,
+              unitPricePaise: it.unitPricePaise,
+              totalPaise: it.unitPricePaise * it.qty,
+            })),
+            subtotalPaise: bill.subtotalPaise,
+            discountPaise: bill.discountPaise,
+            cgstPaise: bill.cgstPaise,
+            sgstPaise: bill.sgstPaise,
+            serviceChargePaise: bill.serviceChargePaise,
+            roundOffPaise: bill.roundOffPaise,
+            totalPaise: bill.totalPaise + (input.payment.tipPaise || 0),
+            paymentMethod: input.payment.method,
+            isReprint: false,
+            paperWidth: rc.paperWidth || '80mm',
+            receiptConfig: rc,
+            upiConfig,
+          } as any,
+        });
       }
 
       return created;

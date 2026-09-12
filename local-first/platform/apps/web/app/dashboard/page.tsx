@@ -6,6 +6,7 @@ import { tenantBilling } from '@/lib/billing';
 import { tenantFeatures } from '@/lib/features';
 import { getModuleConfig } from '@/lib/modules';
 import { readReceiptConfig } from '@/lib/receipt';
+import { readUpiConfig } from '@/lib/print/upi';
 import { BillingWall } from '@/components/BillingWall';
 import DashboardClient from './DashboardClient';
 import RoleDashboardClient from './RoleDashboardClient';
@@ -35,8 +36,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
   const features = await tenantFeatures(session.tenantId);
   const moduleConfig = await getModuleConfig(outlet.id);
   const receipt = readReceiptConfig(outlet.settings);
+  const upiConfig = readUpiConfig(outlet.settings, outlet.name);
 
-  const dashboardOutlet = { name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt };
+  const dashboardOutlet = { name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt, upiConfig };
 
   const showOwner = session.role === 'owner' || session.role === 'accountant' || (session.role === 'manager' && searchParams?.view === 'owner');
 

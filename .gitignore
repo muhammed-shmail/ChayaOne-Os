@@ -26,6 +26,7 @@ yarn-error.log*
 **/data/*.db
 **/data/*.sqlite
 **/data/*.sqlite-journal
+**/.chayaone-data/
 
 # IDE & OS files
 .DS_Store

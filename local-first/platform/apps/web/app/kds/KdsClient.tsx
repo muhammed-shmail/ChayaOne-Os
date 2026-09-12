@@ -100,7 +100,7 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
       const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
       const ctx = audioRef.current ?? (audioRef.current = new AC());
-      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      if (ctx.state === 'suspended') ctx.resume().catch(() => { });
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       o.type = 'sine';
@@ -202,7 +202,7 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
   }, [wf.autoAcceptOrders, wf.autoClearSec, wf.soundNotification]);
 
   async function logout() {
-    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => { });
     router.replace('/login');
     router.refresh();
   }
@@ -242,7 +242,7 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
         })
         .filter((x) => ACTIVE.includes(x.status) || x.doneAt !== undefined),
     );
-    await fetch(`/api/orders/${id}/status`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => {});
+    await fetch(`/api/orders/${id}/status`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => { });
   }
 
   // active (not-yet-completed) tickets drive stats + the batch view
@@ -331,7 +331,7 @@ export default function KdsClient({ outletName, initial, kitchens, workflow, sta
           paper <b>KOT</b> tickets at the counter — no screen needed here.
           <div style={{ marginTop: 14, fontSize: 13 }}>An owner can switch this on in <b>Settings → Kitchen</b>.</div>
         </div>
-        <style>{kdsCss}</style>
+        <style dangerouslySetInnerHTML={{ __html: kdsCss }} />
       </div>
     );
   }

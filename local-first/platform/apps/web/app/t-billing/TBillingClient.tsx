@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { formatINR, computeBill } from '@cafeos/core';
-import type { ReceiptConfig } from '@/lib/receipt';
+import type { ReceiptConfig, ReceiptPaperWidth } from '@/lib/receipt';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
+import type { UpiPaymentConfig } from '@/lib/print/upi';
+import type { ReceiptInputData } from '@/lib/print/receipt-formatter';
+import ReceiptPreviewModal from '@/components/receipt/ReceiptPreviewModal';
 import {
   Table2, Search, RefreshCw, Printer, Receipt, ArrowLeft,
   X, User, Smartphone, CreditCard,
@@ -23,7 +26,10 @@ interface TBillingProps {
     gstEnabled: boolean;
     gstRate: number | null;
     gstInclusive: boolean;
+    address?: any;
+    timezone?: string;
     receipt: ReceiptConfig;
+    upiConfig?: UpiPaymentConfig;
     kitchenWorkflow: KitchenWorkflowConfig;
     gstConfig?: any;
   };
@@ -72,6 +78,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
 
   // Receipt Modal preview state
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  const [previewOrderOverride, setPreviewOrderOverride] = useState<any | null>(null);
 
   // Keyboard shortcut help modal state
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -311,28 +318,61 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     }
   };
 
-  // Print Receipt Handler (Reuses existing desktop LocalPrinterClient or window.print fallback)
-  const handlePrintReceipt = async (receiptDataOverride?: any) => {
-    const payload = receiptDataOverride || settledResult?.receipt || {
-      invoiceNo: `INV-${new Date().getFullYear()}-${String(selectedOrder?.number ?? 1).padStart(6, '0')}`,
-      orderNumber: selectedOrder?.number ?? 0,
-      tableName: selectedOrder?.table?.label ?? 'Dine-in',
-      orderType: selectedOrder?.type ?? 'dine_in',
-      customerName: custName,
-      customerPhone: custPhone,
-      date: new Date().toLocaleDateString('en-IN'),
-      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-      cashierName: staff.name,
-      outletName: outlet.name,
-      gstin: outlet.gstin ?? undefined,
-      headerNote: outlet.receipt.header,
-      footerNote: outlet.receipt.footer,
+  // Unified Receipt Input Data for Preview Modal and Thermal Printing
+  const previewData: ReceiptInputData | null = useMemo(() => {
+    if (previewOrderOverride) return previewOrderOverride;
+    if (settledResult?.receipt) {
+      const r = settledResult.receipt;
+      return {
+        storeName: r.storeName || outlet.name,
+        logoUrl: r.logoUrl || outlet.receipt.logoUrl,
+        address: r.address || outlet.address,
+        phone: r.phone || outlet.receipt.phone,
+        gstin: r.gstin || outlet.gstin,
+        timezone: r.timezone || outlet.timezone || 'Asia/Kolkata',
+        orderNumber: r.orderNumber,
+        tableLabel: r.tableLabel || r.tableName,
+        orderType: r.orderType,
+        placedAt: r.placedAt || new Date(),
+        settledAt: r.settledAt,
+        items: (r.items || []).map((i: any) => ({
+          name: i.name,
+          qty: i.qty,
+          unitPricePaise: i.unitPricePaise,
+          totalPaise: i.totalPaise,
+          modifiers: i.modifiers,
+          notes: i.notes,
+        })),
+        subtotalPaise: r.subtotalPaise,
+        discountPaise: r.discountPaise,
+        cgstPaise: r.cgstPaise,
+        sgstPaise: r.sgstPaise,
+        roundOffPaise: r.roundOffPaise,
+        totalPaise: r.totalPaise,
+        paymentMethod: r.paymentMethod,
+        receiptConfig: outlet.receipt,
+        upiConfig: outlet.upiConfig,
+      };
+    }
+    if (!selectedOrder) return null;
+    return {
+      storeName: outlet.name,
+      logoUrl: outlet.receipt.logoUrl,
+      address: outlet.address,
       phone: outlet.receipt.phone,
-      items: (selectedOrder?.items || []).map((i: any) => ({
+      gstin: outlet.gstin,
+      timezone: outlet.timezone || 'Asia/Kolkata',
+      orderNumber: selectedOrder.number,
+      tableLabel: selectedOrder.table?.label ?? null,
+      orderType: selectedOrder.type,
+      placedAt: selectedOrder.placedAt || new Date(),
+      items: (selectedOrder.items || []).map((i: any) => ({
         name: i.nameSnapshot,
         qty: i.qty,
         unitPricePaise: i.unitPricePaise,
         totalPaise: i.unitPricePaise * i.qty,
+        modifiers: Array.isArray(i.modifiers) ? i.modifiers : [],
+        notes: i.notes ?? null,
       })),
       subtotalPaise: calculatedBill.subtotalPaise,
       discountPaise: calculatedBill.discountPaise,
@@ -341,17 +381,45 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       roundOffPaise: calculatedBill.roundOffPaise,
       totalPaise: calculatedBill.totalPaise,
       paymentMethod: payTab.toUpperCase(),
-      paidAmountPaise: cashReceivedPaise || calculatedBill.totalPaise,
-      changePaise: cashChangePaise,
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig,
     };
+  }, [previewOrderOverride, settledResult, selectedOrder, calculatedBill, outlet, payTab]);
 
-    // Try desktop ESC/POS local printer client first
-    const desktopOk = await LocalPrinterClient.requestPrint(payload).catch(() => false);
-    if (!desktopOk) {
-      // Fallback to browser print window
-      window.print();
-    } else {
+  // Print Receipt Handler (Dispatches to local desktop client and server-side print queue)
+  const handlePrintReceipt = async (receiptDataOverride?: any, widthOverride?: ReceiptPaperWidth) => {
+    const activeData = receiptDataOverride || previewData;
+    const targetOrderId = previewOrderOverride ? (previewOrderOverride as any).orderId : (selectedOrder?.id || settledResult?.order?.id);
+
+    // 1. Try local desktop thermal printer agent
+    const desktopOk = await LocalPrinterClient.requestPrint({
+      ...(activeData || {}),
+      paperWidth: widthOverride || outlet.receipt.paperWidth || '80mm',
+    }).catch(() => false);
+
+    // 2. Queue print job on server for LAN thermal printer
+    let queueOk = false;
+    if (targetOrderId) {
+      try {
+        const res = await fetch('/api/print/reprint', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            orderId: targetOrderId,
+            type: 'RECEIPT',
+          }),
+        });
+        queueOk = res.ok;
+      } catch (err) {
+        console.warn('LAN print dispatch failed:', err);
+      }
+    }
+
+    if (desktopOk || queueOk) {
       flash('Receipt sent to thermal printer 🖨️');
+    } else {
+      // Fallback to browser print window if no hardware printer reachable
+      window.print();
     }
   };
 
@@ -916,8 +984,45 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                       <td className="px-4 py-3.5 text-xs font-bold">{h.paymentMethods}</td>
                       <td className="px-4 py-3.5 text-right font-bold font-mono">{formatINR(h.totalPaise)}</td>
                       <td className="px-4 py-3.5 text-right">
-                        <button onClick={() => handlePrintReceipt(h)} className="btn btn-sm btn-ghost text-xs font-bold inline-flex items-center gap-1">
-                          <Printer size={14} /> Reprint
+                        <button
+                          onClick={() => {
+                            const histData = {
+                              orderId: h.id,
+                              storeName: outlet.name,
+                              logoUrl: outlet.receipt.logoUrl,
+                              address: outlet.address,
+                              phone: outlet.receipt.phone,
+                              gstin: outlet.gstin,
+                              timezone: outlet.timezone || 'Asia/Kolkata',
+                              orderNumber: h.number,
+                              tableLabel: h.tableName,
+                              orderType: h.orderType || 'dine_in',
+                              placedAt: h.placedAt || new Date(),
+                              settledAt: h.settledAt,
+                              items: (h.items || []).map((i: any) => ({
+                                name: i.nameSnapshot || i.name,
+                                qty: i.qty,
+                                unitPricePaise: i.unitPricePaise || 0,
+                                totalPaise: i.totalPaise || ((i.unitPricePaise || 0) * i.qty),
+                                modifiers: i.modifiers,
+                                notes: i.notes,
+                              })),
+                              subtotalPaise: h.subtotalPaise || h.totalPaise,
+                              discountPaise: h.discountPaise || 0,
+                              cgstPaise: h.cgstPaise || 0,
+                              sgstPaise: h.sgstPaise || 0,
+                              totalPaise: h.totalPaise,
+                              paymentMethod: h.paymentMethods,
+                              isReprint: true,
+                              receiptConfig: outlet.receipt,
+                              upiConfig: outlet.upiConfig,
+                            };
+                            setPreviewOrderOverride(histData as any);
+                            setReceiptModalOpen(true);
+                          }}
+                          className="btn btn-sm btn-ghost text-xs font-bold inline-flex items-center gap-1"
+                        >
+                          <Printer size={14} /> Preview / Reprint
                         </button>
                       </td>
                     </tr>
@@ -934,47 +1039,34 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         )}
       </main>
 
-      {/* ── RECEIPT PREVIEW MODAL ── */}
-      {receiptModalOpen && selectedOrder && (
-        <div className="fixed inset-0 z-50 grid place-items-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setReceiptModalOpen(false)}>
-          <div className="bg-white text-black p-6 rounded-2xl max-w-sm w-full font-mono text-xs shadow-2xl space-y-3" onClick={(e) => e.stopPropagation()}>
-            <div className="text-center space-y-1 border-b border-black/20 pb-3">
-              <h3 className="font-bold text-base uppercase">{outlet.name}</h3>
-              {outlet.gstin && <p className="text-[11px]">GSTIN: {outlet.gstin}</p>}
-              <p className="text-[11px]">{outlet.receipt.header || 'Instant Customer Receipt'}</p>
-            </div>
-
-            <div className="space-y-1 text-[11px]">
-              <div className="flex justify-between"><span>Invoice:</span><b suppressHydrationWarning>INV-{new Date().getFullYear()}-{String(selectedOrder.number).padStart(6, '0')}</b></div>
-              <div className="flex justify-between"><span>Order #:</span><b>#{selectedOrder.number}</b></div>
-              <div className="flex justify-between"><span>Table:</span><b>{selectedOrder.table?.label ?? 'Dine-in'}</b></div>
-              <div className="flex justify-between"><span>Date/Time:</span><span suppressHydrationWarning>{new Date().toLocaleDateString('en-IN')} {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span></div>
-            </div>
-
-            <div className="border-t border-b border-black/20 py-2 space-y-1">
-              {(selectedOrder.items || []).map((i: any) => (
-                <div key={i.id} className="flex justify-between">
-                  <span>{i.qty}x {i.nameSnapshot}</span>
-                  <span>{formatINR(i.unitPricePaise * i.qty)}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-1 text-right">
-              <div className="flex justify-between"><span>Subtotal:</span><span>{formatINR(calculatedBill.subtotalPaise)}</span></div>
-              {calculatedBill.discountPaise > 0 && <div className="flex justify-between font-bold"><span>Discount:</span><span>-{formatINR(calculatedBill.discountPaise)}</span></div>}
-              {outlet.gstEnabled && <div className="flex justify-between"><span>GST Tax:</span><span>{formatINR(calculatedBill.cgstPaise + calculatedBill.sgstPaise)}</span></div>}
-              <div className="flex justify-between font-bold text-sm border-t border-black/20 pt-1">
-                <span>TOTAL:</span><span>{formatINR(calculatedBill.totalPaise)}</span>
-              </div>
-            </div>
-
-            <div className="text-center pt-3 border-t border-black/20 space-y-1 text-[11px]">
-              <p>{outlet.receipt.footer || 'Thank you! Visit again.'}</p>
-              <button onClick={() => setReceiptModalOpen(false)} className="w-full mt-3 py-2 bg-black text-white rounded-xl font-bold">Close Preview</button>
-            </div>
-          </div>
-        </div>
+      {/* ── PRODUCTION THERMAL RECEIPT PREVIEW MODAL (58mm / 80mm with dynamic UPI QR) ── */}
+      {previewData && (
+        <ReceiptPreviewModal
+          isOpen={receiptModalOpen}
+          onClose={() => {
+            setReceiptModalOpen(false);
+            setPreviewOrderOverride(null);
+          }}
+          data={previewData}
+          isReprint={Boolean(previewOrderOverride?.isReprint || view === 'completed' || view === 'history')}
+          onPrint={async (width) => {
+            await handlePrintReceipt(undefined, width);
+          }}
+          onReprint={async (width) => {
+            const orderId = previewOrderOverride ? (previewOrderOverride as any).orderId : (selectedOrder?.id || settledResult?.order?.id);
+            if (orderId) {
+              const res = await fetch('/api/print/reprint', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ orderId, type: 'RECEIPT' }),
+              });
+              if (!res.ok) {
+                throw new Error('Thermal printer is offline or failed to reprint.');
+              }
+              flash('Reprint dispatched to billing receipt printer 🖨️');
+            }
+          }}
+        />
       )}
 
       {/* ── KEYBOARD SHORTCUTS HELP MODAL ── */}

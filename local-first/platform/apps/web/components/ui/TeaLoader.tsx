@@ -14,7 +14,7 @@ export function TeaLoader({ label = 'Brewing…', size = 56 }: { label?: string;
         <span className="tea-handle" />
       </div>
       {label && <span className="tea-cap">{label}</span>}
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{ __html: css }} />
     </div>
   );
 }

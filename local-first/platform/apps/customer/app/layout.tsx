@@ -1,30 +1,59 @@
 import type { Metadata, Viewport } from 'next';
+import { Cormorant_Garamond, Hanken_Grotesk, DM_Mono } from 'next/font/google';
+import '@cafeos/ui/tokens.css';
 import './globals.css';
+
+const display = Cormorant_Garamond({
+  subsets: ['latin'],
+  weight: ['500', '600', '700'],
+  style: ['normal', 'italic'],
+  display: 'swap',
+  variable: '--font-display',
+});
+const body = Hanken_Grotesk({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  display: 'swap',
+  variable: '--font-body',
+});
+const mono = DM_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  display: 'swap',
+  variable: '--font-mono',
+});
 
 export const metadata: Metadata = {
   title: 'ChayaOne Menu & Order',
-  description: 'Order food, track orders live, and pay seamlessly at your table',
+  description: 'Order, earn points, and play — right from your table.',
   manifest: '/customer.webmanifest',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
-    title: 'ChayaOne Menu',
+    statusBarStyle: 'default',
+    title: 'ChayaOne',
   },
+  icons: { icon: '/app.png?v=3', apple: '/app.png?v=3' },
 };
 
 export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#F6EFE3' },
+    { media: '(prefers-color-scheme: dark)', color: '#15110D' },
+  ],
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
   viewportFit: 'cover',
-  themeColor: '#090d16',
 };
+
+const noFlashTheme = `(function(){try{var t=localStorage.getItem('cafe-theme');if(!t){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-[#090d16] text-gray-100 antialiased selection:bg-sky-500 selection:text-white pb-24">
+    <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`} suppressHydrationWarning>
+      <body className="min-h-screen bg-[var(--paper)] text-[var(--ink)] antialiased selection:bg-[var(--gold)] selection:text-[var(--espresso)]" suppressHydrationWarning>
+        <script dangerouslySetInnerHTML={{ __html: noFlashTheme }} />
         {children}
       </body>
     </html>

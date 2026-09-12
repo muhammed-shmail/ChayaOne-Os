@@ -6,6 +6,7 @@ import { publish, toTicket } from '@/lib/realtime';
 import { createOutboxEntry } from '@/lib/outbox';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { readReceiptConfig } from '@/lib/receipt';
+import { readUpiConfig } from '@/lib/print/upi';
 import { createPrintJob } from '@/lib/print/manager';
 
 export const runtime = 'nodejs';
@@ -216,13 +217,18 @@ export async function POST(req: NextRequest) {
   }).catch(() => {});
 
   // 7. Create ESC/POS PrintJob in database for Receipt Printer
-  const outletInfo = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { name: true, gstin: true, settings: true } });
+  const outletInfo = await prisma.outlet.findUnique({
+    where: { id: session.outletId },
+    select: { name: true, gstin: true, address: true, timezone: true, settings: true },
+  });
   const receiptConfig = readReceiptConfig(outletInfo?.settings);
+  const upiConfig = readUpiConfig(outletInfo?.settings, outletInfo?.name);
 
   const receiptPayload = {
     invoiceNo,
     orderNumber: updatedOrder.number,
     tableName: updatedOrder.table?.label ?? (updatedOrder.type === 'takeaway' ? 'Takeaway' : 'Direct'),
+    tableLabel: updatedOrder.table?.label ?? null,
     orderType: updatedOrder.type,
     customerName: updatedOrder.customer?.name ?? customerName ?? 'Walk-in Customer',
     customerPhone: updatedOrder.customer?.phone ?? customerPhone ?? '',
@@ -230,16 +236,24 @@ export async function POST(req: NextRequest) {
     date: new Date().toLocaleDateString('en-IN'),
     time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
     cashierName: session.name,
+    storeName: outletInfo?.name ?? 'CHAYAONE CAFE',
     outletName: outletInfo?.name ?? 'CHAYAONE CAFE',
+    logoUrl: (outletInfo?.settings as any)?.logoUrl || null,
+    address: outletInfo?.address ?? null,
+    timezone: outletInfo?.timezone ?? 'Asia/Kolkata',
     gstin: outletInfo?.gstin ?? undefined,
     headerNote: receiptConfig.header,
     footerNote: receiptConfig.footer,
     phone: receiptConfig.phone,
+    placedAt: updatedOrder.placedAt,
+    settledAt: updatedOrder.settledAt,
     items: updatedOrder.items.map((i) => ({
       name: i.nameSnapshot,
       qty: i.qty,
       unitPricePaise: i.unitPricePaise,
       totalPaise: i.unitPricePaise * i.qty,
+      modifiers: Array.isArray(i.modifiers) ? (i.modifiers as { name: string; pricePaise?: number }[]) : [],
+      notes: i.notes ?? null,
     })),
     subtotalPaise: bill.subtotalPaise,
     discountPaise: bill.discountPaise,
@@ -247,9 +261,11 @@ export async function POST(req: NextRequest) {
     sgstPaise: bill.sgstPaise,
     roundOffPaise: bill.roundOffPaise,
     totalPaise: bill.totalPaise,
-    paymentMethod: paymentList.map(p => p.method.toUpperCase()).join(' + '),
+    paymentMethod: paymentList.map((p) => p.method.toUpperCase()).join(' + '),
     paidAmountPaise: paidTotal,
     changePaise: Math.max(0, paidTotal - bill.totalPaise),
+    receiptConfig,
+    upiConfig,
   };
 
   await createPrintJob(prisma, {

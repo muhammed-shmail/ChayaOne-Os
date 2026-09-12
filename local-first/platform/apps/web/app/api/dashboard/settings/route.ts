@@ -4,6 +4,7 @@ import { prisma, PrintJobType, type Prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { readDevices, normalizeDefaults, type Device } from '@/lib/devices';
 import { readReceiptConfig, RECEIPT_FIELD_MAX } from '@/lib/receipt';
+import { readUpiConfig } from '@/lib/print/upi';
 import { normalizeLocationInput } from '@/lib/geo';
 import { readKitchens, kitchenSlug, KITCHEN_NAME_MAX, KITCHEN_PALETTE, type Kitchen } from '@/lib/kitchens';
 import { readKitchenWorkflow, normalizeKitchenWorkflowInput } from '@/lib/kitchenWorkflow';
@@ -426,7 +427,19 @@ export async function POST(req: NextRequest) {
       footer: clean(r.footer),
       phone: clean(r.phone),
       showLogo: r.showLogo !== false,
+      showAddress: r.showAddress !== false,
+      showPhone: r.showPhone !== false,
       showGstin: r.showGstin !== false,
+      showTableNumber: r.showTableNumber !== false,
+      showOrderNumber: r.showOrderNumber !== false,
+      showDateTime: r.showDateTime !== false,
+      showItemNotes: !!r.showItemNotes,
+      showTaxDetails: r.showTaxDetails !== false,
+      showDiscount: r.showDiscount !== false,
+      showUpiQr: r.showUpiQr !== false,
+      showScanAndPay: r.showScanAndPay !== false,
+      paperWidth: r.paperWidth === '58mm' ? '58mm' : '80mm',
+      qrSize: r.qrSize === 'small' || r.qrSize === 'large' ? r.qrSize : 'medium',
     };
     const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
     const settings = (current?.settings as Record<string, unknown>) ?? {};
@@ -436,6 +449,33 @@ export async function POST(req: NextRequest) {
       data: { outletId: session.outletId, actorId: session.staffId, action: 'receipt.updated', entity: 'outlet', entityId: session.outletId, after: receipt as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
     return NextResponse.json({ ok: true, receipt: readReceiptConfig(merged) });
+  }
+
+  // ---- payment / UPI settings (stored in Outlet.settings.payment) ----
+  if (body.action === 'payment') {
+    const p = (body.payment ?? {}) as Record<string, unknown>;
+    const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { name: true, settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const existingPayment = (settings.payment as Record<string, unknown> | undefined) ?? {};
+
+    const updatedPayment = {
+      ...existingPayment,
+      upiEnabled: p.upiEnabled !== undefined ? !!p.upiEnabled : existingPayment.upiEnabled ?? true,
+      upiId: typeof p.upiId === 'string' ? p.upiId.trim() : existingPayment.upiId ?? '',
+      upiBusinessName: typeof p.upiBusinessName === 'string' ? p.upiBusinessName.trim() : (existingPayment.upiBusinessName ?? current?.name ?? 'Chaya Cafe'),
+      receiptQrEnabled: p.receiptQrEnabled !== undefined ? !!p.receiptQrEnabled : existingPayment.receiptQrEnabled ?? true,
+      receiptQrSize: p.receiptQrSize === 'small' || p.receiptQrSize === 'large' ? p.receiptQrSize : 'medium',
+      showScanAndPayText: p.showScanAndPayText !== undefined ? !!p.showScanAndPayText : existingPayment.showScanAndPayText ?? true,
+      cashEnabled: p.cashEnabled !== undefined ? !!p.cashEnabled : existingPayment.cashEnabled ?? true,
+      cardEnabled: p.cardEnabled !== undefined ? !!p.cardEnabled : existingPayment.cardEnabled ?? true,
+    };
+
+    const merged = { ...settings, payment: updatedPayment };
+    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.auditLog.create({
+      data: { outletId: session.outletId, actorId: session.staffId, action: 'payment.updated', entity: 'outlet', entityId: session.outletId, after: updatedPayment as unknown as Prisma.InputJsonValue },
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, payment: readUpiConfig(merged, current?.name) });
   }
 
   // ---- kitchen workflow (stored in Outlet.settings.kitchenWorkflow) ----

@@ -166,7 +166,7 @@ export default function ApprovalsClient({ outletName, role, initial }: { outletN
         </div>
       )}
 
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{ __html: css }} />
     </div>
   );
 }

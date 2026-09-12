@@ -94,7 +94,7 @@ export function GamesHub({ ctx, qs, onResult, reload }: {
       {view === 'spot_difference' && <SpotDifference {...common} />}
       {view === 'memory_flip' && <MemoryFlip {...common} />}
 
-      <style>{gamesCss}</style>
+      <style dangerouslySetInnerHTML={{ __html: gamesCss }} />
     </div>
   );
 }

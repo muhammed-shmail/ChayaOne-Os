@@ -85,7 +85,7 @@ export default function DownloadPage() {
 
       <a className="dl-open" href="/app">Open ChayaOne in browser →</a>
 
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{ __html: css }} />
     </main>
   );
 }

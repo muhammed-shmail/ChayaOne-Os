@@ -43,41 +43,67 @@ export interface KotPrintPayload {
   }>;
 }
 
+import {
+  formatReceiptModel,
+  alignLeftRight,
+  alignCenter,
+  type ReceiptInputData,
+  type ReceiptItemLine,
+} from './receipt-formatter';
+import { buildRasterEscposQr } from './qr';
+import type { ReceiptConfig, ReceiptPaperWidth } from '../receipt';
+import type { UpiPaymentConfig } from './upi';
+
 export interface ReceiptPrintPayload {
   storeName: string;
+  logoUrl?: string | null;
   header?: string | null;
   footer?: string | null;
   phone?: string | null;
   gstin?: string | null;
+  address?: { line1?: string; city?: string; pincode?: string } | string | null;
+  timezone?: string;
+
   orderNumber: number;
   tableLabel?: string | null;
   orderType: string;
   customerName?: string | null;
+  customerPhone?: string | null;
   paymentMethod?: string | null;
   placedAt: string | Date;
-  lines: Array<{
+  settledAt?: string | Date | null;
+
+  items?: ReceiptItemLine[];
+  lines?: Array<{
     name: string;
     qty: number;
-    pricePaise: number;
+    pricePaise?: number;
+    unitPricePaise?: number;
     totalPaise: number;
+    modifiers?: Array<{ name: string; pricePaise?: number }>;
+    notes?: string | null;
   }>;
+
   subtotalPaise: number;
-  discountPaise: number;
-  cgstPaise: number;
-  sgstPaise: number;
-  igstPaise: number;
-  roundOffPaise: number;
+  discountPaise?: number;
+  cgstPaise?: number;
+  sgstPaise?: number;
+  igstPaise?: number;
+  roundOffPaise?: number;
   totalPaise: number;
+
+  isReprint?: boolean;
+  isCancelled?: boolean;
+  paperWidth?: ReceiptPaperWidth;
+  receiptConfig?: Partial<ReceiptConfig>;
+  upiConfig?: Partial<UpiPaymentConfig>;
 }
 
 /**
  * Pads or truncates text to fit a fixed column width (default 32 chars for 58mm, 42 chars for 80mm).
  */
 export function formatColumnRow(left: string, right: string, width = 42): string {
-  const availableLeftWidth = Math.max(1, width - right.length - 1);
-  const truncatedLeft = left.length > availableLeftWidth ? left.slice(0, availableLeftWidth) : left;
-  const padding = ' '.repeat(Math.max(1, width - truncatedLeft.length - right.length));
-  return `${truncatedLeft}${padding}${right}`;
+  return alignLeftRight(left, right, width);
 }
 
 /**
@@ -187,8 +213,9 @@ export function buildKotEscposBuffer(payload: KotPrintPayload, width = 42): Buff
 
 /**
  * Build ESC/POS binary buffer for a Customer Order Receipt / Invoice.
+ * Supports both 58mm (32 chars) and 80mm (42 chars) printer profiles with dynamic UPI QR.
  */
-export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, width = 42): Buffer {
+export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOverride?: number): Buffer {
   const chunks: Buffer[] = [];
   const add = (buf: Buffer | string) => {
     if (typeof buf === 'string') {
@@ -198,63 +225,170 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, width = 4
     }
   };
 
-  const formatPaise = (p: number) => `INR ${(p / 100).toFixed(2)}`;
+  // 1. Normalize line items
+  const rawItems = payload.items || payload.lines || [];
+  const items: ReceiptItemLine[] = rawItems.map((it: any) => ({
+    name: it.name,
+    qty: it.qty,
+    unitPricePaise: it.unitPricePaise ?? it.pricePaise ?? 0,
+    totalPaise: it.totalPaise ?? ((it.unitPricePaise ?? it.pricePaise ?? 0) * it.qty),
+    modifiers: it.modifiers,
+    notes: it.notes,
+  }));
 
+  // 2. Resolve paper width profile
+  const resolvedPaperWidth: ReceiptPaperWidth =
+    widthOverride === 32 || payload.paperWidth === '58mm' ? '58mm' : '80mm';
+
+  // 3. Build unified receipt model
+  const model = formatReceiptModel(
+    {
+      storeName: payload.storeName,
+      logoUrl: payload.logoUrl,
+      address: payload.address,
+      phone: payload.phone,
+      gstin: payload.gstin,
+      timezone: payload.timezone,
+      orderNumber: payload.orderNumber,
+      tableLabel: payload.tableLabel,
+      orderType: payload.orderType,
+      placedAt: payload.placedAt,
+      settledAt: payload.settledAt,
+      items,
+      subtotalPaise: payload.subtotalPaise,
+      discountPaise: payload.discountPaise,
+      cgstPaise: payload.cgstPaise,
+      sgstPaise: payload.sgstPaise,
+      igstPaise: payload.igstPaise,
+      roundOffPaise: payload.roundOffPaise,
+      totalPaise: payload.totalPaise,
+      paymentMethod: payload.paymentMethod,
+      isReprint: payload.isReprint,
+      isCancelled: payload.isCancelled,
+      receiptConfig: payload.receiptConfig,
+      upiConfig: payload.upiConfig,
+    },
+    resolvedPaperWidth,
+  );
+
+  const width = model.charsPerLine;
+  const divider = '-'.repeat(width);
+
+  // Initialize printer
   add(COMMANDS.INIT);
+
+  // Status Watermark if Reprint / Void
+  if (model.isReprint) {
+    add(COMMANDS.ALIGN_CENTER);
+    add(COMMANDS.BOLD_ON);
+    add('*** REPRINT ***');
+    add(COMMANDS.BOLD_OFF);
+  }
+  if (model.isCancelled) {
+    add(COMMANDS.ALIGN_CENTER);
+    add(COMMANDS.DOUBLE_HEIGHT);
+    add(COMMANDS.BOLD_ON);
+    add('*** CANCELLED / VOID ***');
+    add(COMMANDS.NORMAL);
+    add(COMMANDS.BOLD_OFF);
+  }
+
+  // Header: Shop Name & Details
   add(COMMANDS.ALIGN_CENTER);
-  add(COMMANDS.BOLD_ON);
   add(COMMANDS.DOUBLE_HEIGHT);
-  add(payload.storeName);
+  add(COMMANDS.BOLD_ON);
+  add(model.storeName);
   add(COMMANDS.NORMAL);
   add(COMMANDS.BOLD_OFF);
 
-  if (payload.header) add(payload.header);
-  if (payload.phone) add(`Tel: ${payload.phone}`);
-  if (payload.gstin) add(`GSTIN: ${payload.gstin}`);
+  if (model.addressText) {
+    add(model.addressText);
+  }
+  if (model.contactLine) {
+    add(model.contactLine);
+  }
+  if (model.headerNote) {
+    add(model.headerNote);
+  }
 
+  // Meta: Table + Order Number (SAME ROW) & Date + Time (SAME ROW)
   add(COMMANDS.ALIGN_LEFT);
-  add('='.repeat(width));
-  const where = payload.tableLabel ? `Table ${payload.tableLabel}` : payload.orderType.toUpperCase();
-  add(formatColumnRow(`Order #${payload.orderNumber}`, where, width));
-  add(formatColumnRow(`Date: ${new Date(payload.placedAt).toLocaleDateString()}`, new Date(payload.placedAt).toLocaleTimeString(), width));
-  if (payload.customerName) add(`Customer: ${payload.customerName}`);
-  add('-'.repeat(width));
+  add(divider);
+  add(model.tableAndOrderRow);
+  add(model.dateTimeRow);
+  add(divider);
 
-  add(formatColumnRow('Item Qty x Price', 'Total', width));
-  add('-'.repeat(width));
+  // Column Headers
+  const colHeaderRight = resolvedPaperWidth === '58mm' ? 'QTY AMOUNT' : 'QTY    AMOUNT';
+  add(alignLeftRight('ITEM', colHeaderRight, width));
+  add(divider);
 
-  for (const line of payload.lines) {
-    const linePrice = formatPaise(line.totalPaise);
-    add(formatColumnRow(`${line.qty}x ${line.name}`, linePrice, width));
+  // Items
+  for (const line of model.itemLines) {
+    const mainRow = alignLeftRight(line.name, `${line.qtyText} ${line.amountText}`, width);
+    add(mainRow);
+    for (const extra of line.extraLines) {
+      add(extra);
+    }
   }
 
-  add('-'.repeat(width));
-  add(formatColumnRow('Subtotal:', formatPaise(payload.subtotalPaise), width));
-  if (payload.discountPaise > 0) {
-    add(formatColumnRow('Discount:', `-${formatPaise(payload.discountPaise)}`, width));
-  }
-  if (payload.cgstPaise > 0) {
-    add(formatColumnRow('CGST:', formatPaise(payload.cgstPaise), width));
-    add(formatColumnRow('SGST:', formatPaise(payload.sgstPaise), width));
-  }
-  if (payload.igstPaise > 0) {
-    add(formatColumnRow('IGST:', formatPaise(payload.igstPaise), width));
+  // Subtotal, Discounts, Taxes
+  add(divider);
+  add(alignLeftRight('Subtotal', model.subtotalText, width));
+
+  for (const tax of model.taxBreakdown) {
+    add(alignLeftRight(tax.label, tax.amountText, width));
   }
 
+  if (model.discountText) {
+    add(alignLeftRight('Discount', model.discountText, width));
+  }
+
+  if (model.roundOffText) {
+    add(alignLeftRight('Round Off', model.roundOffText, width));
+  }
+
+  // Final Total (Emphasized bold / double height)
+  add(divider);
+  add(COMMANDS.ALIGN_LEFT);
   add(COMMANDS.BOLD_ON);
-  add(formatColumnRow('TOTAL:', formatPaise(payload.totalPaise), width));
+  add(COMMANDS.DOUBLE_HEIGHT);
+  add(alignLeftRight('TOTAL', model.totalText, Math.floor(width / (resolvedPaperWidth === '58mm' ? 1 : 1))));
+  add(COMMANDS.NORMAL);
   add(COMMANDS.BOLD_OFF);
+  add(divider);
 
-  if (payload.paymentMethod) {
-    add(formatColumnRow('Payment Method:', payload.paymentMethod.toUpperCase(), width));
+  // Dynamic UPI QR Code
+  if (model.showUpiQr && model.upiResult.uri) {
+    add(COMMANDS.ALIGN_CENTER);
+    add(COMMANDS.LINE_FEED);
+
+    // Raster QR: 4 dots per module for 58mm, 5 dots for 80mm
+    const qrScale = resolvedPaperWidth === '58mm' ? 4 : 5;
+    const qrBuffer = buildRasterEscposQr(model.upiResult.uri, qrScale, 3);
+    add(qrBuffer);
+
+    if (model.scanAndPayText) {
+      add(COMMANDS.BOLD_ON);
+      add(model.scanAndPayText);
+      add(COMMANDS.BOLD_OFF);
+    }
+    add(COMMANDS.LINE_FEED);
+    add(divider);
   }
 
-  add('='.repeat(width));
+  // Footer: Branding
   add(COMMANDS.ALIGN_CENTER);
-  if (payload.footer) add(payload.footer);
+  if (model.footerNote && model.footerNote.toLowerCase() !== 'chaya.one') {
+    add(model.footerNote);
+  }
+  add(model.brandingText);
+
+  // Feed & Cut
   add(COMMANDS.LINE_FEED);
   add(COMMANDS.LINE_FEED);
-  add(COMMANDS.CASH_DRAWER); // Pulse cash drawer
+  add(COMMANDS.LINE_FEED);
+  add(COMMANDS.CASH_DRAWER);
   add(COMMANDS.FULL_CUT);
 
   return Buffer.concat(chunks);

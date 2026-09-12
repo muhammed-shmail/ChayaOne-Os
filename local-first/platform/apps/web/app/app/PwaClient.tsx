@@ -175,8 +175,8 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
           <span className="pwa-load-steam" aria-hidden="true"><i /><i /><i /></span>
         </div>
       )}
-      <style>{loadCss}</style>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{ __html: loadCss }} />
+      <style dangerouslySetInnerHTML={{ __html: css }} />
     </Shell>
   );
 
@@ -185,7 +185,7 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
     return (
       <Shell>
         <Welcome ctx={ctx} onStart={startOrdering} />
-        <style>{css}</style>
+        <style dangerouslySetInnerHTML={{ __html: css }} />
       </Shell>
     );
   }
@@ -196,7 +196,7 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
     return (
       <Shell>
         <Register cfg={ctx.pwa.registration} outlet={ctx.outlet.name} welcome={ctx.pwa.welcome} qrToken={qrToken} onDone={load} />
-        <style>{css}</style>
+        <style dangerouslySetInnerHTML={{ __html: css }} />
       </Shell>
     );
   }
@@ -233,7 +233,7 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
 
       {toast && <div className="pwa-toast" role="status" aria-live="polite">{toast.emoji && <span aria-hidden>{toast.emoji}</span>}{toast.msg}</div>}
       {confetti > 0 && <Confetti key={confetti} />}
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{ __html: css }} />
     </Shell>
   );
 }
@@ -761,7 +761,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <main className="pwa-stage">
       <div className="phone">{children}</div>
-      <style>{shellCss}</style>
+      <style dangerouslySetInnerHTML={{ __html: shellCss }} />
     </main>
   );
 }

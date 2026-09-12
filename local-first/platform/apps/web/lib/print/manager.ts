@@ -3,6 +3,8 @@ import { prisma, type Prisma, PrintJobStatus, PrintJobType } from '@cafeos/db';
 import { buildKotEscposBuffer, buildReceiptEscposBuffer, type KotPrintPayload, type ReceiptPrintPayload } from './escpos';
 import { sendNetworkPrintJob } from './network';
 import { readDevices } from '../devices';
+import { readReceiptConfig } from '../receipt';
+import { readUpiConfig } from './upi';
 
 export interface CreatePrintJobParams {
   tenantId: string;
@@ -85,25 +87,54 @@ export async function processPrintQueueBatch(batchSize = 10) {
         // Fetch outlet settings to resolve physical device parameters
         const outlet = await prisma.outlet.findUnique({
           where: { id: job.outletId },
-          select: { settings: true },
+          select: { name: true, settings: true },
         });
 
         const devices = readDevices(outlet?.settings);
         let targetDevice = devices.find((d) => d.id === job.printerId) || null;
 
+        // Determine if this is a receipt or bill job
+        const isReceiptJob =
+          job.jobType === PrintJobType.RECEIPT ||
+          job.jobType === PrintJobType.BILL_PREVIEW ||
+          (job.jobType === PrintJobType.REPRINT &&
+            Boolean(
+              (job.payload as any)?.subtotalPaise !== undefined ||
+              (job.payload as any)?.totalPaise !== undefined ||
+              (job.payload as any)?.lines ||
+              (job.payload as any)?.items
+            ));
+
         // If no explicit device assigned, pick default for jobType / station
         if (!targetDevice) {
-          if (job.jobType === PrintJobType.RECEIPT || job.jobType === PrintJobType.BILL_PREVIEW) {
-            targetDevice = devices.find((d) => d.type === 'receipt_printer' && d.isDefault) || devices.find((d) => d.type === 'receipt_printer') || null;
+          if (isReceiptJob) {
+            targetDevice =
+              devices.find((d) => d.type === 'receipt_printer' && d.isDefault) ||
+              devices.find((d) => d.type === 'receipt_printer') ||
+              null;
           } else {
-            targetDevice = devices.find((d) => d.type === 'kot_printer' && d.station === job.stationId) || devices.find((d) => d.type === 'kot_printer') || null;
+            targetDevice =
+              devices.find((d) => d.type === 'kot_printer' && d.station === job.stationId) ||
+              devices.find((d) => d.type === 'kot_printer') ||
+              null;
           }
         }
 
         // Build ESC/POS binary buffer payload
         let escposBuffer: Buffer;
-        if (job.jobType === PrintJobType.RECEIPT || job.jobType === PrintJobType.BILL_PREVIEW) {
-          escposBuffer = buildReceiptEscposBuffer(job.payload as unknown as ReceiptPrintPayload);
+        if (isReceiptJob) {
+          const receiptPayload = { ...(job.payload as unknown as ReceiptPrintPayload) };
+          if (job.jobType === PrintJobType.REPRINT || job.attempts > 0) {
+            receiptPayload.isReprint = true;
+          }
+          const receiptConfig = readReceiptConfig(outlet?.settings);
+          const upiConfig = readUpiConfig(outlet?.settings, outlet?.name || 'Chaya Cafe');
+          receiptPayload.receiptConfig = { ...receiptConfig, ...receiptPayload.receiptConfig };
+          receiptPayload.upiConfig = { ...upiConfig, ...receiptPayload.upiConfig };
+          if (!receiptPayload.storeName) {
+            receiptPayload.storeName = outlet?.name || 'CHAYA CAFE';
+          }
+          escposBuffer = buildReceiptEscposBuffer(receiptPayload);
         } else {
           const kotPayload = { ...(job.payload as unknown as KotPrintPayload) };
           if (job.attempts > 0) {
@@ -145,7 +176,15 @@ export async function processPrintQueueBatch(batchSize = 10) {
           select: { settings: true },
         });
         const devices = readDevices(outlet?.settings);
-        const backupDevice = devices.find((d) => d.type === 'kot_printer' && d.id !== job.printerId);
+        const isReceipt =
+          job.jobType === PrintJobType.RECEIPT ||
+          job.jobType === PrintJobType.BILL_PREVIEW ||
+          (job.jobType === PrintJobType.REPRINT &&
+            Boolean((job.payload as any)?.totalPaise !== undefined || (job.payload as any)?.lines || (job.payload as any)?.items));
+
+        const backupDevice = isReceipt
+          ? devices.find((d) => d.type === 'receipt_printer' && d.id !== job.printerId)
+          : devices.find((d) => d.type === 'kot_printer' && d.id !== job.printerId);
 
         await prisma.printJob.update({
           where: { id: job.id },
