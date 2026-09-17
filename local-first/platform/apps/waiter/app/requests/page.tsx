@@ -47,13 +47,14 @@ export default function WaiterRequestsPage() {
   const fetchFeed = async () => {
     try {
       const [notifRes, appRes] = await Promise.all([
-        fetch('/api/notifications?unread=0'),
+        fetch('/api/staff/notifications'),
         fetch('/api/approvals'),
       ]);
 
       if (notifRes.ok) {
         const notifData = await notifRes.json();
-        setNotifications(notifData.items || []);
+        const items = (notifData.items || []).filter((n: NotificationItem) => n.type !== 'reminder');
+        setNotifications(items);
       }
 
       if (appRes.ok) {
@@ -101,7 +102,7 @@ export default function WaiterRequestsPage() {
 
   const handleDismissNotification = async (id: string) => {
     try {
-      await fetch('/api/notifications', {
+      await fetch('/api/staff/notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'read', id }),
@@ -116,7 +117,7 @@ export default function WaiterRequestsPage() {
 
   const handleDismissAll = async () => {
     try {
-      await fetch('/api/notifications', {
+      await fetch('/api/staff/notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'read_all' }),
@@ -128,6 +129,7 @@ export default function WaiterRequestsPage() {
       console.error(e);
     }
   };
+
 
   const unreadNotifs = notifications.filter((n) => !n.readAt);
 

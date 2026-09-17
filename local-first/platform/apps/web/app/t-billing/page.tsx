@@ -15,7 +15,7 @@ export const revalidate = 0;
 export default async function TBillingPage() {
   const session = await getSession();
   if (!session) redirect('/login');
-  if (!canAccess(session.role, 'pos')) redirect(landingFor(session.role));
+  if (!canAccess(session, 'pos')) redirect(landingFor(session));
 
   const outlet = await prisma.outlet.findUnique({ where: { id: session.outletId } });
   if (!outlet) redirect('/api/auth/logout');
@@ -115,7 +115,14 @@ export default async function TBillingPage() {
         kitchenWorkflow: JSON.parse(JSON.stringify(kitchenWorkflow)),
         gstConfig: JSON.parse(JSON.stringify(gst)),
       }}
-      staff={{ id: session.staffId, name: session.name, role: session.role }}
+      staff={{
+        id: session.staffId,
+        name: session.name,
+        role: session.role,
+        roles: session.roles,
+        permissions: session.permissions,
+        effectivePermissions: session.effectivePermissions,
+      }}
       tables={tableDtos}
       initialOrders={initialOrders}
     />

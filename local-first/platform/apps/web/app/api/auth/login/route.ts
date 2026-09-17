@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const staff = await prisma.staffUser.findFirst({
     where: { pinHash, active: true, ...(tenantId ? { tenantId } : {}) },
-    select: { id: true, name: true, role: true, tenantId: true, outletId: true },
+    select: { id: true, name: true, role: true, permissions: true, tenantId: true, outletId: true },
   });
 
   if (!staff || !staff.outletId) {
@@ -43,11 +43,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 });
   }
 
-  const res = NextResponse.json({ ok: true, staff: { name: staff.name, role: staff.role } });
+  const res = NextResponse.json({ ok: true, staff: { name: staff.name, role: staff.role, permissions: staff.permissions } });
   // Start a persistent device session (short access cookie + 30d refresh cookie).
   await startStaffSession(
     res,
-    { id: staff.id, name: staff.name, role: staff.role, tenantId: staff.tenantId, outletId: staff.outletId },
+    { id: staff.id, name: staff.name, role: staff.role, permissions: staff.permissions, tenantId: staff.tenantId, outletId: staff.outletId },
     req.headers.get('user-agent'),
   );
   return res;

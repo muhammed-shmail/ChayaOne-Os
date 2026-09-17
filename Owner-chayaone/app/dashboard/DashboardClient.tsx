@@ -223,8 +223,17 @@ export default function DashboardClient({
     if (!showPos && !showKds && !showTBilling) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showTBilling) setShowTBilling(false);
+        if (showPos) setShowPos(false);
+        if (showKds) setShowKds(false);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
     return () => {
       document.body.style.overflow = prev;
+      window.removeEventListener('keydown', handleKey);
     };
   }, [showPos, showKds, showTBilling]);
 
@@ -1485,6 +1494,9 @@ export default function DashboardClient({
         setFloors(d.data?.floors ?? []);
         setKitchens(d.data?.kitchens ?? []);
         if (d.data?.kitchenWorkflow) setKwForm(d.data.kitchenWorkflow);
+        if (o?.logoUrl !== undefined) {
+          setLogoUrl(o.logoUrl);
+        }
         setProfileLoaded(true);
       }
     } catch (err) { console.error(err); }
@@ -1811,16 +1823,30 @@ export default function DashboardClient({
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'outlet', logoUrl: url }),
       });
-      if (res.ok) { setLogoUrl(url); flashMessage(url ? 'Logo updated' : 'Logo removed'); router.refresh(); }
-      else flashMessage('Could not save logo');
-    } catch (err) { console.error(err); flashMessage('Could not save logo'); }
-    finally { setLogoBusy(false); }
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const persistedUrl = d.outlet?.logoUrl !== undefined ? d.outlet.logoUrl : url;
+        setLogoUrl(persistedUrl);
+        flashMessage(persistedUrl ? 'Logo updated' : 'Logo removed');
+        router.refresh();
+      } else {
+        flashMessage(d.message || d.error || 'Could not save logo');
+      }
+    } catch (err) {
+      console.error(err);
+      flashMessage('Could not save logo');
+    } finally {
+      setLogoBusy(false);
+    }
   };
   const handleLogoFile = async (file: File) => {
     setLogoBusy(true);
-    const url = await uploadImage(file);
-    setLogoBusy(false);
-    if (url) await saveLogo(url);
+    try {
+      const url = await uploadImage(file);
+      if (url) await saveLogo(url);
+    } finally {
+      setLogoBusy(false);
+    }
   };
 
   // Settings → Devices & Printers → Receipt Layout
@@ -1959,7 +1985,7 @@ export default function DashboardClient({
             transition={{ duration: 0.2 }}
             className={`absolute inset-0 flex items-center justify-center ${!isExpanded ? 'pointer-events-auto' : 'pointer-events-none'}`}
           >
-            <img src="/app.png" alt="ChayaOne" style={{ width: 36, height: 36, margin: 0 }} className="object-contain" />
+            <img src="/app.png" alt="ChayaOne" style={{ width: 36, height: 36, margin: 0 }} className="brand-cup-icon object-contain" />
           </motion.div>
         </div>
 

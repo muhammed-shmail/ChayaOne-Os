@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
+import { hasRole, hasPermission } from '@/lib/rbac';
 import { tenantHasFeature } from '@/lib/features';
 
 export const runtime = 'nodejs';
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
   const today = ymd(todayKey);
   const isTodayOnly = from === to && to === today;
 
-  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant' && !(session.role === 'cashier' && isTodayOnly)) {
+  if (!hasRole(session, ['owner', 'manager', 'accountant']) && !(hasRole(session, ['cashier']) && isTodayOnly) && !hasPermission(session, 'dashboard:sales_summary')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 

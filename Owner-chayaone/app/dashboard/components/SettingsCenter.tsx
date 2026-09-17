@@ -6,7 +6,8 @@ import {
   Users, Smartphone, Truck, Bell, Shield, BarChart3, ClipboardList, Blocks, Zap,
   Lock, Database, Sparkles, Cpu, Sliders, Calendar, DollarSign, UserCheck, RefreshCw,
   AlertCircle, Trash2, Plus, Check, Search, ChevronRight, ChevronLeft, Info, X, Key,
-  Heart, AlertTriangle, Play, HelpCircle, Megaphone, Download, Layers, QrCode
+  Heart, AlertTriangle, Play, HelpCircle, Megaphone, Download, Layers, QrCode,
+  Wifi, Copy, ExternalLink, User, Server, CheckCircle2, Monitor
 } from 'lucide-react';
 import type { Kitchen } from '@/lib/kitchens';
 import type { Device } from '@/lib/devices';
@@ -15,6 +16,7 @@ import type { PwaConfig } from '@/lib/pwa';
 import type { ModuleSystemConfig } from '@cafeos/types';
 import SystemManagement from './SystemManagement';
 import ModuleManagement from './ModuleManagement';
+import ServerDashboardClient from '../server/ServerDashboardClient';
 
 // Category groups & metadata
 export interface SettingItem {
@@ -29,64 +31,147 @@ export interface SettingItem {
   keywords?: string[];
 }
 
+export interface SectionTheming {
+  themeKey: 'restaurant' | 'operations' | 'customers' | 'admin' | 'enterprise';
+  icon: React.ComponentType<any>;
+  tagline: string;
+  badge: string;
+  accentColor: string;
+  borderAccent: string;
+  badgeClass: string;
+  iconContainerClass: string;
+  ambientGradient: string;
+  hoverBorder: string;
+  hoverShadow: string;
+  topAccentGrad: string;
+  hoverText: string;
+  activeTabClass: string;
+}
+
 export interface SettingSection {
   title: string;
+  theme: SectionTheming;
   items: SettingItem[];
 }
 
 const SECTIONS: SettingSection[] = [
   {
     title: 'Restaurant',
+    theme: {
+      themeKey: 'restaurant',
+      icon: Store,
+      tagline: 'Brand identity, dining modes, menus, tax compliance & store profile',
+      badge: 'Brand & Dine',
+      accentColor: '#F59E0B',
+      borderAccent: 'rgba(245, 158, 11, 0.3)',
+      badgeClass: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+      iconContainerClass: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30',
+      ambientGradient: 'radial-gradient(ellipse at top left, rgba(245, 158, 11, 0.12), transparent 70%)',
+      hoverBorder: 'hover:border-amber-500/50',
+      hoverShadow: 'hover:shadow-[0_8px_24px_rgba(245,158,11,0.12)]',
+      topAccentGrad: 'from-amber-500 via-amber-400 to-transparent',
+      hoverText: 'group-hover:text-amber-600 dark:group-hover:text-amber-400',
+      activeTabClass: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/50 shadow-sm',
+    },
     items: [
-      { key: 'general', label: 'Business Profile', desc: 'Store profile, branding & contact details', icon: Store, keywords: ['store', 'profile', 'address', 'city', 'pincode', 'currency', 'language', 'timezone', 'logo', 'gstin', 'website', 'email', 'phone', 'contact'] },
-      { key: 'modules', label: 'Modules & Business Profile', desc: 'Enable or configure business modules (Cafe, Restaurant, Juice, Waiter, KDS, Inventory...)', icon: Layers, sensitive: true, ownerOnly: true, keywords: ['modules', 'business type', 'cafe', 'restaurant', 'hotel', 'juice', 'meals', 'waiter', 'kds', 'customer qr', 'inventory', 'crm', 'loyalty'] },
-      { key: 'business_hours', label: 'Business Hours', desc: 'Opening, closing hours, breaks & festival timings', icon: Clock, keywords: ['time', 'opening', 'closing', 'weekly', 'holiday', 'festival', 'break', 'temporary closure', 'emergency'] },
-      { key: 'tax', label: 'Tax & GST', desc: 'GSTIN, CGST/SGST, service & packaging charges', icon: Percent, sensitive: true, keywords: ['gstin', 'tax', 'cgst', 'sgst', 'igst', 'exclusive', 'inclusive', 'hsn', 'sac', 'composition', 'flat rate', 'billing', 'reports', 'audit'] },
-      { key: 'menu', label: 'Menu Configuration', desc: 'Categories, variants, add-ons & happy hours', icon: BookOpen, keywords: ['veg', 'non-veg', 'dietary', 'combo', 'happy hours', 'discount', 'variants', 'add-ons'] },
-      { key: 'floor', label: 'Floor & QR Codes', desc: 'Physical table layouts, QR generation & scans', icon: Sparkles, keywords: ['dining', 'table', 'section', 'layout', 'scan', 'qr code', 'branding', 'download qr'] },
-      { key: 'app_qrs', label: 'App QR Codes ', desc: 'Install Waiter and Customer PWAs via QR', icon: Smartphone, keywords: ['qr', 'pwa', 'waiter', 'customer', 'kds', 'install'] },
-      { key: 'dining_modes', label: 'Dining Modes', desc: 'Dine-in, takeaway, delivery & QR order settings', icon: ChefHat, keywords: ['dine-in', 'takeaway', 'delivery', 'qr order', 'modes', 'enable modes'] },
-      { key: 'branding', label: 'Store Branding', desc: 'Branding colors, font themes & header styles', icon: Sparkles, keywords: ['brand', 'colors', 'font', 'theme', 'header', 'styling', 'customization'] }
+      { key: 'general', label: 'Business Profile', desc: 'Store profile, branding & contact details', icon: Store, badge: 'Profile', keywords: ['store', 'profile', 'address', 'city', 'pincode', 'currency', 'language', 'timezone', 'logo', 'gstin', 'website', 'email', 'phone', 'contact'] },
+      { key: 'modules', label: 'Modules & Business Profile', desc: 'Enable or configure business modules (Cafe, Restaurant, Juice, Waiter, KDS, Inventory...)', icon: Layers, sensitive: true, ownerOnly: true, badge: 'Core Engine', keywords: ['modules', 'business type', 'cafe', 'restaurant', 'hotel', 'juice', 'meals', 'waiter', 'kds', 'customer qr', 'inventory', 'crm', 'loyalty'] },
+      { key: 'business_hours', label: 'Business Hours', desc: 'Opening, closing hours, breaks & festival timings', icon: Clock, badge: 'Schedule', keywords: ['time', 'opening', 'closing', 'weekly', 'holiday', 'festival', 'break', 'temporary closure', 'emergency'] },
+      { key: 'tax', label: 'Tax & GST', desc: 'GSTIN, CGST/SGST, service & packaging charges', icon: Percent, sensitive: true, badge: 'Compliance', keywords: ['gstin', 'tax', 'cgst', 'sgst', 'igst', 'exclusive', 'inclusive', 'hsn', 'sac', 'composition', 'flat rate', 'billing', 'reports', 'audit'] },
+      { key: 'menu', label: 'Menu Configuration', desc: 'Categories, variants, add-ons & happy hours', icon: BookOpen, badge: 'Catalog', keywords: ['veg', 'non-veg', 'dietary', 'combo', 'happy hours', 'discount', 'variants', 'add-ons'] },
+      { key: 'floor', label: 'Floor & QR Codes', desc: 'Physical table layouts, QR generation & scans', icon: Sparkles, badge: 'Tables & QR', keywords: ['dining', 'table', 'section', 'layout', 'scan', 'qr code', 'branding', 'download qr'] },
+      { key: 'app_qrs', label: 'App QR Codes ', desc: 'Install Waiter and Customer PWAs via QR', icon: Smartphone, badge: 'PWA Apps', keywords: ['qr', 'pwa', 'waiter', 'customer', 'kds', 'install'] },
+      { key: 'dining_modes', label: 'Dining Modes', desc: 'Dine-in, takeaway, delivery & QR order settings', icon: ChefHat, badge: 'Fulfillment', keywords: ['dine-in', 'takeaway', 'delivery', 'qr order', 'modes', 'enable modes'] },
+      { key: 'branding', label: 'Store Branding', desc: 'Branding colors, font themes & header styles', icon: Sparkles, badge: 'Theme Design', keywords: ['brand', 'colors', 'font', 'theme', 'header', 'styling', 'customization'] }
     ]
   },
   {
     title: 'Operations',
+    theme: {
+      themeKey: 'operations',
+      icon: ChefHat,
+      tagline: 'Kitchen KDS, printer routing, till workflows & cash management',
+      badge: 'Live Operations',
+      accentColor: '#10B981',
+      borderAccent: 'rgba(16, 185, 129, 0.3)',
+      badgeClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+      iconContainerClass: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+      ambientGradient: 'radial-gradient(ellipse at top left, rgba(16, 185, 129, 0.12), transparent 70%)',
+      hoverBorder: 'hover:border-emerald-500/50',
+      hoverShadow: 'hover:shadow-[0_8px_24px_rgba(16,185,129,0.12)]',
+      topAccentGrad: 'from-emerald-500 via-emerald-400 to-transparent',
+      hoverText: 'group-hover:text-emerald-600 dark:group-hover:text-emerald-400',
+      activeTabClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/50 shadow-sm',
+    },
     items: [
-      { key: 'kitchen', label: 'Kitchen & KDS', desc: 'KDS screens, KOT printing, routing stations', icon: ChefHat, keywords: ['kds', 'kot', 'printer', 'routing', 'preparation', 'stations', 'workflow'] },
-      { key: 'inventory', label: 'Inventory Settings', desc: 'Low stock alerts, waste logging, stock adjustment', icon: Package, keywords: ['stock', 'alerts', 'waste', 'deduction', 'adjustment', 'purchase order', 'low stock'] },
-      { key: 'billing', label: 'Billing Configuration', desc: 'Receipt layout, invoice format, auto-print, duplicate bills', icon: Receipt, keywords: ['receipt', 'invoice', 'format', 'prefix', 'duplicate', 'reprint', 'round off'] },
-      { key: 'payments', label: 'Payment Options', desc: 'Cash, card, UPI gateways, split & tips settings', icon: CreditCard, keywords: ['cash', 'card', 'upi', 'gateway', 'split', 'tips', 'percentages', 'settlement'] },
-      { key: 'devices', label: 'Devices & Printers', desc: 'Receipt, kitchen, barcode printers & cash drawers', icon: Printer, keywords: ['printer', 'connection', 'usb', 'bluetooth', 'network', 'cash drawer', 'terminal'] },
-      { key: 'order_workflow', label: 'Order Workflow', desc: 'Auto-acceptance, auto-routing & cancel timers', icon: Sliders, keywords: ['acceptance', 'routing', 'auto-cancel', 'timers', 'workflow', 'auto-accept'] },
-      { key: 'shift_management', label: 'Shift Management', desc: 'Shift timings, cash declaration, shift-end reports', icon: Clock, keywords: ['shift', 'drawer balance', 'cash declaration', 'timings', 'reports'] },
-      { key: 'cash_drawer', label: 'Cash Drawer', desc: 'Cash float, opening drawer triggers, discrepancy limits', icon: DollarSign, keywords: ['cash float', 'triggers', 'discrepancy', 'limit', 'drawer open'] }
+      { key: 'kitchen', label: 'Kitchen & KDS', desc: 'KDS screens, KOT printing, routing stations', icon: ChefHat, badge: 'KDS & Prep', keywords: ['kds', 'kot', 'printer', 'routing', 'preparation', 'stations', 'workflow'] },
+      { key: 'inventory', label: 'Inventory Settings', desc: 'Low stock alerts, waste logging, stock adjustment', icon: Package, badge: 'Stock Rules', keywords: ['stock', 'alerts', 'waste', 'deduction', 'adjustment', 'purchase order', 'low stock'] },
+      { key: 'billing', label: 'Billing Configuration', desc: 'Receipt layout, invoice format, auto-print, duplicate bills', icon: Receipt, badge: 'Invoicing', keywords: ['receipt', 'invoice', 'format', 'prefix', 'duplicate', 'reprint', 'round off'] },
+      { key: 'payments', label: 'Payment Options', desc: 'Cash, card, UPI gateways, split & tips settings', icon: CreditCard, badge: 'Gateways', keywords: ['cash', 'card', 'upi', 'gateway', 'split', 'tips', 'percentages', 'settlement'] },
+      { key: 'devices', label: 'Devices & Printers', desc: 'Receipt, kitchen, barcode printers & cash drawers', icon: Printer, badge: 'Hardware', keywords: ['printer', 'connection', 'usb', 'bluetooth', 'network', 'cash drawer', 'terminal'] },
+      { key: 'order_workflow', label: 'Order Workflow', desc: 'Auto-acceptance, auto-routing & cancel timers', icon: Sliders, badge: 'Routing', keywords: ['acceptance', 'routing', 'auto-cancel', 'timers', 'workflow', 'auto-accept'] },
+      { key: 'shift_management', label: 'Shift Management', desc: 'Shift timings, cash declaration, shift-end reports', icon: Clock, badge: 'Shift Roster', keywords: ['shift', 'drawer balance', 'cash declaration', 'timings', 'reports'] },
+      { key: 'cash_drawer', label: 'Cash Drawer', desc: 'Cash float, opening drawer triggers, discrepancy limits', icon: DollarSign, badge: 'Float & Till', keywords: ['cash float', 'triggers', 'discrepancy', 'limit', 'drawer open'] }
     ]
   },
   {
     title: 'Customers',
+    theme: {
+      themeKey: 'customers',
+      icon: Users,
+      tagline: 'Customer PWA app, loyalty rewards, delivery & online orders',
+      badge: 'Guest Experience',
+      accentColor: '#8B5CF6',
+      borderAccent: 'rgba(139, 92, 246, 0.3)',
+      badgeClass: 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30',
+      iconContainerClass: 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30',
+      ambientGradient: 'radial-gradient(ellipse at top left, rgba(139, 92, 246, 0.12), transparent 70%)',
+      hoverBorder: 'hover:border-purple-500/50',
+      hoverShadow: 'hover:shadow-[0_8px_24px_rgba(139,92,246,0.12)]',
+      topAccentGrad: 'from-purple-500 via-purple-400 to-transparent',
+      hoverText: 'group-hover:text-purple-600 dark:group-hover:text-purple-400',
+      activeTabClass: 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/50 shadow-sm',
+    },
     items: [
-      { key: 'pwa', label: 'Customer App', desc: 'Web app design, splash screens, push notifications', icon: Smartphone, keywords: ['customer web app', 'splash screen', 'branding', 'push notifications', 'games'] },
-      { key: 'loyalty', label: 'Customer & Loyalty', desc: 'Loyalty points ratio, birthday rewards, credits', icon: Users, keywords: ['loyalty points', 'rewards', 'birthday multiplier', 'credits', 'limit'] },
-      { key: 'online_order', label: 'Online Ordering', desc: 'Pickup, delivery radius, partners & order timings', icon: Truck, keywords: ['pickup', 'delivery', 'radius', 'charge', 'minimum order', 'timing'] },
-      { key: 'reservations', label: 'Reservations', desc: 'Enable bookings, dining slot intervals, table hold limits', icon: Calendar, keywords: ['booking', 'slots', 'hold limit', 'deposit', 'table hold', 'schedule'] },
-      { key: 'notifications', label: 'Notifications Hub', desc: 'WhatsApp API, SMS, emails & push notifications settings', icon: Bell, keywords: ['whatsapp', 'sms', 'email', 'gateways', 'templates', 'daily summary'] },
-      { key: 'reviews', label: 'Reviews', desc: 'Google reviews integration, auto WhatsApp review requests', icon: Heart, keywords: ['google reviews', 'reviews prompt', 'whatsapp feedback', 'ratings'] },
-      { key: 'marketing', label: 'Marketing', desc: 'Bulk SMS, automated discount rule engine', icon: Megaphone, keywords: ['bulk sms', 'discounts', 'campaigns', 'promotions', 'offers'] }
+      { key: 'pwa', label: 'Customer App', desc: 'Web app design, splash screens, push notifications', icon: Smartphone, badge: 'Customer Web', keywords: ['customer web app', 'splash screen', 'branding', 'push notifications', 'games'] },
+      { key: 'loyalty', label: 'Customer & Loyalty', desc: 'Loyalty points ratio, birthday rewards, credits', icon: Users, badge: 'Points & CRM', keywords: ['loyalty points', 'rewards', 'birthday multiplier', 'credits', 'limit'] },
+      { key: 'online_order', label: 'Online Ordering', desc: 'Pickup, delivery radius, partners & order timings', icon: Truck, badge: 'Delivery Hub', keywords: ['pickup', 'delivery', 'radius', 'charge', 'minimum order', 'timing'] },
+      { key: 'reservations', label: 'Reservations', desc: 'Enable bookings, dining slot intervals, table hold limits', icon: Calendar, badge: 'Bookings', keywords: ['booking', 'slots', 'hold limit', 'deposit', 'table hold', 'schedule'] },
+      { key: 'notifications', label: 'Notifications Hub', desc: 'WhatsApp API, SMS, emails & push notifications settings', icon: Bell, badge: 'Alerts & SMS', keywords: ['whatsapp', 'sms', 'email', 'gateways', 'templates', 'daily summary'] },
+      { key: 'reviews', label: 'Reviews', desc: 'Google reviews integration, auto WhatsApp review requests', icon: Heart, badge: 'Reputation', keywords: ['google reviews', 'reviews prompt', 'whatsapp feedback', 'ratings'] },
+      { key: 'marketing', label: 'Marketing', desc: 'Bulk SMS, automated discount rule engine', icon: Megaphone, badge: 'Campaigns', keywords: ['bulk sms', 'discounts', 'campaigns', 'promotions', 'offers'] }
     ]
   },
   {
     title: 'Administration',
+    theme: {
+      themeKey: 'admin',
+      icon: Shield,
+      tagline: 'Staff roles, audit logs, system backups & developer APIs',
+      badge: 'Governance & Security',
+      accentColor: '#3B82F6',
+      borderAccent: 'rgba(59, 130, 246, 0.3)',
+      badgeClass: 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30',
+      iconContainerClass: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30',
+      ambientGradient: 'radial-gradient(ellipse at top left, rgba(59, 130, 246, 0.12), transparent 70%)',
+      hoverBorder: 'hover:border-blue-500/50',
+      hoverShadow: 'hover:shadow-[0_8px_24px_rgba(59,130,246,0.12)]',
+      topAccentGrad: 'from-blue-500 via-blue-400 to-transparent',
+      hoverText: 'group-hover:text-blue-600 dark:group-hover:text-blue-400',
+      activeTabClass: 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/50 shadow-sm',
+    },
     items: [
-      { key: 'staff', label: 'Staff & Roles', desc: 'Role-based access control, POS PINs, custom roles', icon: Shield, sensitive: true, keywords: ['rbac', 'pin', 'roles', 'permissions', 'cashier', 'manager', 'waiter'] },
-      { key: 'reports', label: 'Report Settings', desc: 'Visibility settings, scheduled email exports', icon: BarChart3, sensitive: true, keywords: ['visibility', 'email exports', 'sales summary', 'weekly report', 'closing'] },
-      { key: 'audit', label: 'Audit Logs', desc: 'Security logging, changes history, deleted bills', icon: ClipboardList, sensitive: true, ownerOnly: true, keywords: ['security log', 'changes history', 'deleted bills', 'actions'] },
-      { key: 'security', label: 'Security & Access', desc: '2FA, device approval restrictions, session timeouts', icon: Lock, sensitive: true, keywords: ['2fa', 'two factor', 'session timeout', 'approved devices', 'password'] },
-      { key: 'integrations', label: 'Integrations', desc: 'Razorpay, PhonePe, Swiggy, Zomato, Zoho Books', icon: Blocks, sensitive: true, keywords: ['razorpay', 'phonepe', 'swiggy', 'zomato', 'zoho', 'tally', 'apis'] },
-      { key: 'system', label: 'System & Updates', desc: 'Updates, versioning, database backups & live diagnostics', icon: Cpu, sensitive: true, ownerOnly: true, keywords: ['system', 'updates', 'backup', 'diagnostics', 'recovery', 'version', 'support report', 'about'] },
-      { key: 'subscription', label: 'Subscription Plan', desc: 'SaaS licensing, usage trackers & billing history', icon: Zap, sensitive: true, keywords: ['licensing', 'plan', 'billing history', 'usage trackers', 'upgrade'] },
-      { key: 'backup', label: 'Backup & Restore', desc: 'Manual & automatic db exports, import configs', icon: Database, sensitive: true, ownerOnly: true, keywords: ['database export', 'import config', 'rollback', 'manual backup'] },
-      { key: 'api_keys', label: 'API Keys', desc: 'Generate API keys, manage webhook endpoints & credentials', icon: Key, sensitive: true, keywords: ['webhooks', 'credentials', 'endpoints', 'access tokens', 'api access'] },
-      { key: 'developer', label: 'Developer Options', desc: 'Sandbox mode toggle, debug logs, local storage cache clear', icon: Sliders, sensitive: true, keywords: ['sandbox', 'debug logs', 'clear cache', 'database seed'] }
+      { key: 'staff', label: 'Staff & Roles', desc: 'Role-based access control, POS PINs, custom roles', icon: Shield, sensitive: true, badge: 'RBAC & PINs', keywords: ['rbac', 'pin', 'roles', 'permissions', 'cashier', 'manager', 'waiter'] },
+      { key: 'reports', label: 'Report Settings', desc: 'Visibility settings, scheduled email exports', icon: BarChart3, sensitive: true, badge: 'Exports', keywords: ['visibility', 'email exports', 'sales summary', 'weekly report', 'closing'] },
+      { key: 'audit', label: 'Audit Logs', desc: 'Security logging, changes history, deleted bills', icon: ClipboardList, sensitive: true, ownerOnly: true, badge: 'Audit Trail', keywords: ['security log', 'changes history', 'deleted bills', 'actions'] },
+      { key: 'security', label: 'Security & Access', desc: '2FA, device approval restrictions, session timeouts', icon: Lock, sensitive: true, badge: 'Protection', keywords: ['2fa', 'two factor', 'session timeout', 'approved devices', 'password'] },
+      { key: 'integrations', label: 'Integrations', desc: 'Razorpay, PhonePe, Swiggy, Zomato, Zoho Books', icon: Blocks, sensitive: true, badge: '3rd Party', keywords: ['razorpay', 'phonepe', 'swiggy', 'zomato', 'zoho', 'tally', 'apis'] },
+      { key: 'system', label: 'System & Updates', desc: 'Updates, versioning, database backups & live diagnostics', icon: Cpu, sensitive: true, ownerOnly: true, badge: 'Diagnostics', keywords: ['system', 'updates', 'backup', 'diagnostics', 'recovery', 'version', 'support report', 'about'] },
+      { key: 'server_license', label: 'Server & License', desc: 'Main PC local server diagnostics, background services & commercial license', icon: Server, sensitive: true, ownerOnly: true, badge: 'Main PC', keywords: ['server', 'license', 'main pc', 'ports', 'database', 'expiry', 'activation', 'renewal', 'printers', 'realtime'] },
+      { key: 'subscription', label: 'Subscription Plan', desc: 'SaaS licensing, usage trackers & billing history', icon: Zap, sensitive: true, badge: 'Licensing', keywords: ['licensing', 'plan', 'billing history', 'usage trackers', 'upgrade'] },
+      { key: 'backup', label: 'Backup & Restore', desc: 'Manual & automatic db exports, import configs', icon: Database, sensitive: true, ownerOnly: true, badge: 'Snapshots', keywords: ['database export', 'import config', 'rollback', 'manual backup'] },
+      { key: 'api_keys', label: 'API Keys', desc: 'Generate API keys, manage webhook endpoints & credentials', icon: Key, sensitive: true, badge: 'REST Tokens', keywords: ['webhooks', 'credentials', 'endpoints', 'access tokens', 'api access'] },
+      { key: 'developer', label: 'Developer Options', desc: 'Sandbox mode toggle, debug logs, local storage cache clear', icon: Sliders, sensitive: true, badge: 'Debug Tools', keywords: ['sandbox', 'debug logs', 'clear cache', 'database seed'] }
     ]
   }
 ];
@@ -94,12 +179,28 @@ const SECTIONS: SettingSection[] = [
 const ENTERPRISE_SECTIONS: SettingSection[] = [
   {
     title: 'Enterprise Controls',
+    theme: {
+      themeKey: 'enterprise',
+      icon: Zap,
+      tagline: 'Multi-branch sync, corporate SSO, webhooks & global policies',
+      badge: 'Enterprise Core',
+      accentColor: '#F43F5E',
+      borderAccent: 'rgba(244, 63, 94, 0.3)',
+      badgeClass: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30',
+      iconContainerClass: 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30',
+      ambientGradient: 'radial-gradient(ellipse at top left, rgba(244, 63, 94, 0.12), transparent 70%)',
+      hoverBorder: 'hover:border-rose-500/50',
+      hoverShadow: 'hover:shadow-[0_8px_24px_rgba(244,63,94,0.12)]',
+      topAccentGrad: 'from-rose-500 via-rose-400 to-transparent',
+      hoverText: 'group-hover:text-rose-600 dark:group-hover:text-rose-400',
+      activeTabClass: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/50 shadow-sm',
+    },
     items: [
-      { key: 'enterprise_multibranch', label: 'Multi-branch Config', desc: 'Branch settings, centralized menu sync & chains', icon: Store, enterpriseOnly: true, keywords: ['branches', 'multi-branch', 'franchise', 'centralized', 'chain'] },
-      { key: 'enterprise_policy', label: 'Centralized Policy', desc: 'Corporate compliance rules & global constraints', icon: Shield, enterpriseOnly: true, keywords: ['policy', 'corporate rules', 'global constraints', 'enforcement'] },
-      { key: 'enterprise_sso', label: 'Single Sign-On (SSO)', desc: 'SSO provider, client credentials & access control', icon: Lock, enterpriseOnly: true, keywords: ['sso', 'single sign-on', 'saml', 'oidc', 'okta', 'azure'] },
-      { key: 'enterprise_webhooks', label: 'Webhooks', desc: 'Realtime events, endpoints & retry policies', icon: Zap, enterpriseOnly: true, keywords: ['webhooks', 'realtime events', 'endpoints', 'retry policies'] },
-      { key: 'enterprise_integrations', label: 'Custom Integrations', desc: 'SAP, custom API middleware & ERP integrations', icon: Blocks, enterpriseOnly: true, keywords: ['custom api', 'middleware', 'erp integration', 'sap'] }
+      { key: 'enterprise_multibranch', label: 'Multi-branch Config', desc: 'Branch settings, centralized menu sync & chains', icon: Store, enterpriseOnly: true, badge: 'Chains', keywords: ['branches', 'multi-branch', 'franchise', 'centralized', 'chain'] },
+      { key: 'enterprise_policy', label: 'Centralized Policy', desc: 'Corporate compliance rules & global constraints', icon: Shield, enterpriseOnly: true, badge: 'Compliance', keywords: ['policy', 'corporate rules', 'global constraints', 'enforcement'] },
+      { key: 'enterprise_sso', label: 'Single Sign-On (SSO)', desc: 'SSO provider, client credentials & access control', icon: Lock, enterpriseOnly: true, badge: 'SAML / SSO', keywords: ['sso', 'single sign-on', 'saml', 'oidc', 'okta', 'azure'] },
+      { key: 'enterprise_webhooks', label: 'Webhooks', desc: 'Realtime events, endpoints & retry policies', icon: Zap, enterpriseOnly: true, badge: 'Event Stream', keywords: ['webhooks', 'realtime events', 'endpoints', 'retry policies'] },
+      { key: 'enterprise_integrations', label: 'Custom Integrations', desc: 'SAP, custom API middleware & ERP integrations', icon: Blocks, enterpriseOnly: true, badge: 'Custom ERP', keywords: ['custom api', 'middleware', 'erp integration', 'sap'] }
     ]
   }
 ];
@@ -238,12 +339,74 @@ export default function SettingsCenter({
 }: SettingsCenterProps) {
   // Navigation & States
   const [activePanel, setActivePanel] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobileViewingForm, setIsMobileViewingForm] = useState<boolean>(false);
   const [isNavigatingByKeyboard, setIsNavigatingByKeyboard] = useState<boolean>(false);
 
   const [appUrlOrigin, setAppUrlOrigin] = useState<string>('');
-  useEffect(() => setAppUrlOrigin(window.location.origin), []);
+  const [detectedLanIp, setDetectedLanIp] = useState<string>('127.0.0.1');
+  const [customLanIp, setCustomLanIp] = useState<string>('');
+  const [isCloudHost, setIsCloudHost] = useState<boolean>(false);
+  const [waiterPort, setWaiterPort] = useState<string>('3002');
+  const [waiterUserOption, setWaiterUserOption] = useState<string>('all');
+  const [customWaiterName, setCustomWaiterName] = useState<string>('');
+  const [waiterList, setWaiterList] = useState<{ id: string; name: string; role: string; brandName?: string }[]>([]);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [customerPort, setCustomerPort] = useState<string>('3003');
+  const [customerTableToken, setCustomerTableToken] = useState<string>('demo');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setAppUrlOrigin(window.location.origin);
+      const isCloud = window.location.hostname.includes('vercel.app') || window.location.hostname.includes('chayaone.com');
+      setIsCloudHost(isCloud);
+
+      const savedShopIp = localStorage.getItem('chayaone_shop_local_ip');
+      if (savedShopIp) {
+        setCustomLanIp(savedShopIp);
+      }
+
+      fetch('/api/server/info')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.localIp) {
+            setDetectedLanIp(data.localIp);
+            if (!savedShopIp && !isCloud) {
+              setCustomLanIp(data.localIp);
+            }
+          }
+        })
+        .catch(() => {});
+
+      fetch('/api/server/waiters')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.waiters && Array.isArray(data.waiters)) {
+            setWaiterList(data.waiters);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  const effectiveLanIp = customLanIp.trim() || detectedLanIp || '127.0.0.1';
+
+  const handleSaveShopIp = (ipToSave: string) => {
+    const cleaned = ipToSave.trim();
+    setCustomLanIp(cleaned);
+    localStorage.setItem('chayaone_shop_local_ip', cleaned);
+    flashMessage(`Saved Shop Main PC IP: ${cleaned}`);
+  };
+
+  const handleCopyLink = (text: string, label: string) => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+      setCopiedLink(label);
+      flashMessage(`Copied ${label} connection URL!`);
+      setTimeout(() => setCopiedLink(null), 3000);
+    }
+  };
 
   // Device Test & Station Routing state
   const [testConnectionStatus, setTestConnectionStatus] = useState<Record<string, { loading: boolean; ok?: boolean; message?: string }>>({});
@@ -783,20 +946,24 @@ export default function SettingsCenter({
     return true;
   };
 
-  // Filtered sections and items based on search query
+  // Filtered sections and items based on search query and selected category tab
   const filteredSections = useMemo(() => {
     const isEnterprise = outlet.plan?.toLowerCase() === 'enterprise';
     const allSections = isEnterprise ? [...SECTIONS, ...ENTERPRISE_SECTIONS] : SECTIONS;
 
+    const scopedSections = selectedCategory === 'all'
+      ? allSections
+      : allSections.filter(s => s.title === selectedCategory);
+
     if (!searchQuery.trim()) {
-      return allSections.map(sec => ({
+      return scopedSections.map(sec => ({
         ...sec,
         items: sec.items.filter(isCategoryVisible)
       })).filter(sec => sec.items.length > 0);
     }
 
     const query = searchQuery.toLowerCase();
-    return allSections.map(section => {
+    return scopedSections.map(section => {
       const matchedItems = section.items.filter(item => {
         if (!isCategoryVisible(item)) return false;
         const matchesTitle = item.label.toLowerCase().includes(query);
@@ -807,7 +974,31 @@ export default function SettingsCenter({
       });
       return { ...section, items: matchedItems };
     }).filter(section => section.items.length > 0);
-  }, [searchQuery, staff.role, outlet.plan]);
+  }, [searchQuery, selectedCategory, staff.role, outlet.plan]);
+
+  // Category tabs metadata for the category rail
+  const categoryRailTabs = useMemo(() => {
+    const isEnterprise = outlet.plan?.toLowerCase() === 'enterprise';
+    const allSections = isEnterprise ? [...SECTIONS, ...ENTERPRISE_SECTIONS] : SECTIONS;
+    const totalCount = allSections.reduce((acc, s) => acc + s.items.filter(isCategoryVisible).length, 0);
+
+    return [
+      {
+        key: 'all',
+        label: 'All Settings',
+        count: totalCount,
+        icon: Sliders,
+        theme: null,
+      },
+      ...allSections.map(s => ({
+        key: s.title,
+        label: s.title,
+        count: s.items.filter(isCategoryVisible).length,
+        icon: s.theme.icon,
+        theme: s.theme,
+      }))
+    ];
+  }, [outlet.plan, staff.role]);
 
   // Flattened items for keyboard navigation on Settings Home
   const flattenedFilteredItems = useMemo(() => {
@@ -901,6 +1092,12 @@ export default function SettingsCenter({
   const activeSettingItem = useMemo((): SettingItem => {
     const allItems = [...SECTIONS.flatMap(s => s.items), ...ENTERPRISE_SECTIONS.flatMap(s => s.items)];
     return (allItems.find(i => i.key === activePanel) || SECTIONS[0]!.items[0]!) as SettingItem;
+  }, [activePanel]);
+
+  const activeSettingSection = useMemo((): SettingSection => {
+    const allSections = [...SECTIONS, ...ENTERPRISE_SECTIONS];
+    const found = allSections.find(s => s.items.some(i => i.key === activePanel));
+    return found || SECTIONS[0]!;
   }, [activePanel]);
 
   // Form states and mocks configurations
@@ -1158,55 +1355,120 @@ export default function SettingsCenter({
   return (
     <div className="flex flex-col gap-6 min-h-[75vh]" style={{ background: 'var(--paper-1)', color: 'var(--ink)' }}>
       {activePanel === null ? (
-        // ─── SETTINGS HOME (DASHBOARD GRID) ───
-        <div className="flex flex-col gap-6 max-w-7xl mx-auto w-full px-4 py-6">
-          {/* Header */}
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-3xl font-bold font-display" style={{ color: 'var(--ink)' }}>Settings</h1>
-            <p className="text-sm text-ink-3">Configure every aspect of your restaurant settings, templates, and devices.</p>
-          </div>
+        // ─── SETTINGS HOME (MODERN SAAS HUB) ───
+        <div className="flex flex-col gap-7 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6">
+          {/* Header & Meta Status */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-5 border-line">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-3">
+                <h1 className="text-3xl sm:text-4xl font-bold font-display tracking-tight text-ink">Settings Hub</h1>
+                <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-turmeric/10 text-turmeric border border-turmeric/20 uppercase">
+                  {outlet.plan || 'Standard'}
+                </span>
+              </div>
+              <p className="text-sm text-ink-3">
+                Configure your restaurant profiles, hardware printers, dine-in tables, tax compliance, and guest apps.
+              </p>
+            </div>
 
-          {/* Search Bar */}
-          <div className="relative max-w-2xl w-full">
-            <span className="absolute inset-y-0 left-4 grid place-items-center text-ink-3">
-              <Search size={18} />
-            </span>
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Search settings (Ctrl+K or Cmd+K)..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="inp pl-11 w-full bg-paper-2 rounded-2xl shadow-sm text-sm"
-              style={{ minHeight: '48px' }}
-              aria-label="Search Settings"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute inset-y-0 right-12 grid place-items-center text-ink-3 hover:text-ink"
-              >
-                <X size={18} />
-              </button>
-            )}
-            <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
-              <kbd className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold text-ink-3 bg-paper-3 border rounded-lg shadow-sm font-mono">
-                ⌘K
-              </kbd>
+            <div className="flex items-center gap-3 self-start sm:self-auto shrink-0">
+              <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-paper-2 border border-line shadow-sm text-xs">
+                <Store size={15} className="text-turmeric" />
+                <span className="font-bold text-ink">{outlet.name || 'Store'}</span>
+                <span className="text-ink-3">•</span>
+                <span className="text-ink-2 font-mono">{flattenedFilteredItems.length} Settings</span>
+              </div>
             </div>
           </div>
 
-          {/* Recently Used & Favorites */}
+          {/* Search Bar & Quick Tools */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full">
+            <div className="relative flex-1">
+              <span className="absolute inset-y-0 left-4 grid place-items-center text-ink-3">
+                <Search size={18} />
+              </span>
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search settings, tax, printers, modules, roles (Ctrl+K or Cmd+K)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="inp pl-11 w-full bg-paper-2 rounded-2xl shadow-sm text-sm border-line hover:border-turmeric/40 focus:border-turmeric transition-all"
+                style={{ minHeight: '48px' }}
+                aria-label="Search Settings"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute inset-y-0 right-12 grid place-items-center text-ink-3 hover:text-ink transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              )}
+              <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
+                <kbd className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold text-ink-3 bg-paper-3 border rounded-lg shadow-sm font-mono">
+                  ⌘K
+                </kbd>
+              </div>
+            </div>
+          </div>
+
+          {/* ── INTERACTIVE CATEGORY SEGMENTED RAIL ── */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {categoryRailTabs.map((tab) => {
+              const isActive = selectedCategory === tab.key;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setSelectedCategory(tab.key)}
+                  className={`group flex items-center gap-2 px-3.5 py-2.5 rounded-2xl border text-xs font-bold transition-all shrink-0 whitespace-nowrap shadow-sm ${
+                    isActive
+                      ? tab.theme
+                        ? tab.theme.activeTabClass
+                        : 'bg-paper-3 text-ink border-amber-500 ring-1 ring-amber-500/30 shadow-md'
+                      : 'bg-paper-2 text-ink-3 hover:text-ink hover:bg-paper-3 border-line'
+                  }`}
+                >
+                  <Icon
+                    size={15}
+                    style={{
+                      color: tab.theme ? tab.theme.accentColor : undefined
+                    }}
+                    className={!tab.theme ? (!isActive ? 'text-ink-3 group-hover:text-ink' : '') : ''}
+                  />
+                  <span>{tab.label}</span>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded-full transition-colors ${
+                      isActive
+                        ? 'bg-paper-1/80 text-ink font-bold'
+                        : 'bg-paper-3 text-ink-3 group-hover:text-ink-2'
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Quick Access: Recently Used & Pinned Favorites */}
           {(recentlyUsed.length > 0 || favorites.length > 0) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
               {recentlyUsed.length > 0 && (
-                <div className="flex flex-col gap-2.5">
-                  <h3 className="text-xs uppercase font-bold tracking-wider text-ink-3 px-1">Recently Used</h3>
-                  <div className="flex flex-wrap gap-2.5">
-                    {recentlyUsed.map(key => {
-                      const allItems = [...SECTIONS.flatMap(s => s.items), ...ENTERPRISE_SECTIONS.flatMap(s => s.items)];
-                      const item = allItems.find(i => i.key === key);
+                <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-paper-2/60 border border-line backdrop-blur-sm">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[11px] uppercase font-bold tracking-wider text-ink-3 flex items-center gap-1.5">
+                      <Clock size={12} className="text-amber-500" /> Recently Used
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {recentlyUsed.map((key) => {
+                      const allSections = [...SECTIONS, ...ENTERPRISE_SECTIONS];
+                      const allItems = allSections.flatMap((s) => s.items);
+                      const item = allItems.find((i) => i.key === key);
                       if (!item) return null;
+                      const parentSection = allSections.find((s) => s.items.some((i) => i.key === key));
                       const Icon = item.icon;
                       return (
                         <button
@@ -1215,9 +1477,15 @@ export default function SettingsCenter({
                             setActivePanel(key);
                             trackRecentlyUsed(key);
                           }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl border border-line bg-paper-2 hover:bg-turmeric/10 hover:border-turmeric hover:-translate-y-[1px] shadow-sm transition-all text-xs font-bold"
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border border-line bg-paper-2 hover:bg-paper-3 transition-all text-xs font-bold text-ink shadow-sm ${
+                            parentSection ? parentSection.theme.hoverBorder : 'hover:border-amber-500/40'
+                          }`}
                         >
-                          <Icon size={14} className="text-turmeric" />
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
+                            style={{ background: parentSection ? parentSection.theme.accentColor : '#F59E0B' }}
+                          />
+                          <Icon size={13} className="text-ink-2" />
                           <span>{item.label}</span>
                         </button>
                       );
@@ -1227,13 +1495,19 @@ export default function SettingsCenter({
               )}
 
               {favorites.length > 0 && (
-                <div className="flex flex-col gap-2.5">
-                  <h3 className="text-xs uppercase font-bold tracking-wider text-ink-3 px-1">Favorites</h3>
-                  <div className="flex flex-wrap gap-2.5">
-                    {favorites.map(key => {
-                      const allItems = [...SECTIONS.flatMap(s => s.items), ...ENTERPRISE_SECTIONS.flatMap(s => s.items)];
-                      const item = allItems.find(i => i.key === key);
+                <div className="flex flex-col gap-2 p-3.5 rounded-2xl bg-paper-2/60 border border-line backdrop-blur-sm">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[11px] uppercase font-bold tracking-wider text-ink-3 flex items-center gap-1.5">
+                      <Heart size={12} className="text-red-500 fill-red-500" /> Pinned Favorites
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {favorites.map((key) => {
+                      const allSections = [...SECTIONS, ...ENTERPRISE_SECTIONS];
+                      const allItems = allSections.flatMap((s) => s.items);
+                      const item = allItems.find((i) => i.key === key);
                       if (!item) return null;
+                      const parentSection = allSections.find((s) => s.items.some((i) => i.key === key));
                       const Icon = item.icon;
                       return (
                         <button
@@ -1242,9 +1516,15 @@ export default function SettingsCenter({
                             setActivePanel(key);
                             trackRecentlyUsed(key);
                           }}
-                          className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl border border-line bg-paper-2 hover:bg-turmeric/10 hover:border-turmeric hover:-translate-y-[1px] shadow-sm transition-all text-xs font-bold"
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border border-line bg-paper-2 hover:bg-paper-3 transition-all text-xs font-bold text-ink shadow-sm ${
+                            parentSection ? parentSection.theme.hoverBorder : 'hover:border-amber-500/40'
+                          }`}
                         >
-                          <Icon size={14} className="text-turmeric" />
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
+                            style={{ background: parentSection ? parentSection.theme.accentColor : '#F59E0B' }}
+                          />
+                          <Icon size={13} className="text-ink-2" />
                           <span>{item.label}</span>
                         </button>
                       );
@@ -1255,120 +1535,238 @@ export default function SettingsCenter({
             </div>
           )}
 
-          {/* Settings Category Groups */}
-          <div className="flex flex-col gap-8 mt-2">
-            {filteredSections.map(section => (
-              <div key={section.title} className="flex flex-col gap-3">
-                <h3 className="text-xs uppercase font-bold tracking-wider text-ink-3 px-1">{section.title}</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {section.items.map(item => {
-                    const isFav = favorites.includes(item.key);
-                    const isKeyboardSelected = flattenedFilteredItems[keyboardNavIndex]?.key === item.key;
-                    const Icon = item.icon;
+          {/* ── COLOR-CODED SECTION BLOCKS & COLUMN ARCHITECTURE ── */}
+          <div className="flex flex-col gap-8 mt-1">
+            {filteredSections.map((section) => {
+              const SectionIcon = section.theme.icon;
+              return (
+                <section
+                  key={section.title}
+                  className="rounded-[22px] border border-line bg-paper-2 p-6 md:p-7 relative overflow-hidden shadow-sm transition-all"
+                >
+                  {/* Subtle Ambient Radial Glow */}
+                  <div
+                    className="absolute -top-12 -left-12 w-52 h-52 rounded-full pointer-events-none opacity-40"
+                    style={{ background: section.theme.ambientGradient }}
+                  />
 
-                    return (
-                      <div
-                        key={item.key}
-                        onClick={() => {
-                          setActivePanel(item.key);
-                          trackRecentlyUsed(item.key);
-                        }}
-                        className={`group relative flex flex-col justify-between p-5 rounded-[22px] border bg-paper-2 hover:shadow-lg transition-all duration-200 cursor-pointer ${
-                          isKeyboardSelected
-                            ? 'border-turmeric ring-2 ring-turmeric-l shadow-md'
-                            : 'border-line hover:border-turmeric/40'
-                        }`}
-                        style={{
-                          transform: isKeyboardSelected ? 'translateY(-2px)' : 'none',
-                          minHeight: '142px'
-                        }}
+                  {/* Top Hairline Accent */}
+                  <div
+                    className="absolute top-0 left-0 right-0 h-[2px]"
+                    style={{
+                      background: `linear-gradient(90deg, ${section.theme.accentColor} 0%, transparent 80%)`
+                    }}
+                  />
+
+                  {/* Section Header Bar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10 pb-4 border-b border-line/60">
+                    <div className="flex items-center gap-3.5">
+                      <span
+                        className={`w-11 h-11 rounded-xl flex items-center justify-center border shrink-0 shadow-xs ${section.theme.iconContainerClass}`}
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <SectionIcon size={20} />
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-2.5">
+                          <h2 className="text-2xl font-bold font-display tracking-tight text-ink">
+                            {section.title}
+                          </h2>
                           <span
-                            className="grid place-items-center rounded-xl shrink-0"
-                            style={{
-                              width: 42,
-                              height: 42,
-                              background: 'var(--paper-3)',
-                              color: 'var(--turmeric)'
-                            }}
+                            className={`text-[10px] font-bold tracking-wide uppercase px-2.5 py-0.5 rounded-full border ${section.theme.badgeClass}`}
                           >
-                            <Icon size={20} />
+                            {section.theme.badge}
                           </span>
-                          
-                          {/* Icons row: Favorite heart/pin + Badge */}
-                          <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                            <button
-                              onClick={e => toggleFavorite(item.key, e)}
-                              className="p-1 rounded-lg text-ink-3 hover:text-red-500 hover:bg-paper-3 transition-colors"
-                              aria-label="Toggle favorite"
-                            >
-                              <Heart size={14} className={isFav ? 'fill-red-500 text-red-500' : ''} />
-                            </button>
-                          </div>
                         </div>
-
-                        <div className="mt-4 flex-1">
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-bold text-sm text-ink group-hover:text-turmeric transition-colors">{item.label}</h4>
-                            {item.sensitive && (
-                              <span className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 uppercase">
-                                Secure
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-ink-3 mt-1 leading-normal line-clamp-2">
-                            {item.desc}
-                          </p>
-                        </div>
-
-                        {/* Chevron right at bottom-right */}
-                        <span className="absolute bottom-4 right-4 text-ink-3 group-hover:text-turmeric group-hover:translate-x-0.5 transition-all">
-                          <ChevronRight size={16} />
-                        </span>
+                        <p className="text-xs text-ink-3 mt-0.5 max-w-xl leading-relaxed">
+                          {section.theme.tagline}
+                        </p>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                      <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-paper-3 border border-line text-ink-3">
+                        {section.items.length} {section.items.length === 1 ? 'Module' : 'Modules'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Section Cards Grid (3 Columns Architecture) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5 relative z-10">
+                    {section.items.map((item) => {
+                      const isFav = favorites.includes(item.key);
+                      const isKeyboardSelected = flattenedFilteredItems[keyboardNavIndex]?.key === item.key;
+                      const Icon = item.icon;
+
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => {
+                            setActivePanel(item.key);
+                            trackRecentlyUsed(item.key);
+                          }}
+                          className={`group relative flex flex-col justify-between p-5 rounded-[20px] border bg-paper-2 hover:bg-paper-3 ${
+                            section.theme.hoverBorder
+                          } ${section.theme.hoverShadow} hover:-translate-y-[1.5px] transition-all duration-200 cursor-pointer overflow-hidden ${
+                            isKeyboardSelected
+                              ? 'ring-2 ring-amber-500 border-amber-500 shadow-md'
+                              : 'border-line'
+                          }`}
+                          style={{
+                            minHeight: '150px'
+                          }}
+                        >
+                          {/* Hover Top Accent Line */}
+                          <div
+                            className={`absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r ${section.theme.topAccentGrad} opacity-0 group-hover:opacity-100 transition-opacity`}
+                          />
+
+                          {/* Top Row: Themed Icon & Badges */}
+                          <div className="flex items-start justify-between gap-2">
+                            <span
+                              className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-xs ${section.theme.iconContainerClass}`}
+                            >
+                              <Icon size={19} />
+                            </span>
+
+                            <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                              {item.badge && (
+                                <span className="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-md bg-paper-3 border border-line text-ink-3">
+                                  {item.badge}
+                                </span>
+                              )}
+
+                              {item.sensitive && (
+                                <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 uppercase">
+                                  Secure
+                                </span>
+                              )}
+
+                              <button
+                                onClick={(e) => toggleFavorite(item.key, e)}
+                                className="p-1 rounded-lg text-ink-3 hover:text-red-500 hover:bg-paper-3 transition-colors ml-0.5"
+                                aria-label="Toggle favorite"
+                              >
+                                <Heart size={14} className={isFav ? 'fill-red-500 text-red-500' : ''} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Middle: Content Info */}
+                          <div className="mt-3 flex-1">
+                            <h4
+                              className={`font-bold text-sm text-ink ${section.theme.hoverText} transition-colors flex items-center gap-1.5`}
+                            >
+                              {item.label}
+                            </h4>
+                            <p className="text-xs text-ink-3 mt-1 leading-relaxed line-clamp-2">
+                              {item.desc}
+                            </p>
+                          </div>
+
+                          {/* Bottom Row: Key & Action Arrow */}
+                          <div className="flex items-center justify-between pt-3 mt-3 border-t border-line/50 text-[11px] text-ink-3">
+                            <span className="font-mono text-[10px] text-ink-3/80 uppercase tracking-wider">
+                              {item.key.replace(/_/g, ' ')}
+                            </span>
+                            <span
+                              className={`flex items-center gap-1 font-semibold ${section.theme.hoverText} transition-colors`}
+                            >
+                              Configure{' '}
+                              <ChevronRight size={13} className="transition-transform group-hover:translate-x-1" />
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
 
             {filteredSections.length === 0 && (
-              <div className="text-center py-16 card bg-paper-2 border border-line">
-                <AlertCircle className="mx-auto mb-3 text-ink-3" size={32} />
-                <p className="text-base font-semibold text-ink-2">No matching settings found</p>
-                <p className="text-xs text-ink-3 mt-1">Try checking another keyword or category name</p>
-                <button onClick={() => setSearchQuery('')} className="btn btn-sm btn-ghost mt-4">Clear search</button>
+              <div className="text-center py-16 card bg-paper-2 border border-line flex flex-col items-center justify-center gap-3">
+                <AlertCircle className="text-ink-3" size={36} />
+                <h3 className="text-base font-bold text-ink">No matching settings found</h3>
+                <p className="text-xs text-ink-3 max-w-sm">
+                  No setting matched your query &quot;{searchQuery}&quot;. Try searching with different keywords like tax, printer, table, or user.
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <button onClick={() => setSearchQuery('')} className="btn btn-sm btn-ghost">
+                    Clear Search
+                  </button>
+                  {selectedCategory !== 'all' && (
+                    <button onClick={() => setSelectedCategory('all')} className="btn btn-sm btn-primary">
+                      View All Categories
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
         </div>
       ) : (
-        // ─── DEDICATED SETTINGS PAGE (SINGLE SCREEN VIEW) ───
-        <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full px-4 py-6">
-          {/* Breadcrumb Header */}
-          <div className="flex flex-col gap-2.5 border-b pb-4" style={{ borderColor: 'var(--line)' }}>
-            <button
-              onClick={() => setActivePanel(null)}
-              className="flex items-center gap-1.5 text-xs font-bold text-turmeric hover:text-turmeric-d transition-all self-start"
-            >
-              <ChevronLeft size={16} /> Back to Settings
-            </button>
-            
-            <div className="flex items-center gap-2 text-xs font-bold text-ink-3">
-              <span className="hover:text-ink cursor-pointer" onClick={() => setActivePanel(null)}>Settings</span>
-              <ChevronRight size={12} />
-              <span className="text-ink-2 capitalize">{activeSettingItem.key.replace(/_/g, ' ')}</span>
+        // ─── DEDICATED SETTINGS PAGE (HIGH-CALIBER THEMED VIEW) ───
+        <div className="flex flex-col gap-6 max-w-5xl mx-auto w-full px-4 sm:px-6 py-6">
+          {/* Enhanced Breadcrumb & Action Header */}
+          <div
+            className="rounded-2xl border border-line bg-paper-2 p-5 flex flex-col gap-3 relative overflow-hidden shadow-sm"
+            style={{
+              background: `linear-gradient(to right, var(--paper-2), var(--paper-1))`
+            }}
+          >
+            {/* Ambient subtle glow from active section */}
+            <div
+              className="absolute -top-10 -right-10 w-48 h-48 rounded-full pointer-events-none opacity-40"
+              style={{ background: activeSettingSection.theme.ambientGradient }}
+            />
+
+            <div className="flex items-center justify-between gap-3 relative z-10">
+              <button
+                onClick={() => setActivePanel(null)}
+                className="flex items-center gap-2 text-xs font-bold transition-all px-3.5 py-2 rounded-xl border border-line bg-paper-3 hover:bg-paper-1 shadow-xs"
+                style={{ color: activeSettingSection.theme.accentColor }}
+              >
+                <ChevronLeft size={16} /> Back to Settings
+              </button>
+
+              <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-ink-3">
+                <kbd className="px-2 py-0.5 rounded bg-paper-3 border border-line">Esc</kbd>
+                <span>Back</span>
+                <span className="text-ink-3/40">•</span>
+                <kbd className="px-2 py-0.5 rounded bg-paper-3 border border-line">⌘S</kbd>
+                <span>Save</span>
+              </div>
             </div>
 
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mt-1">
-              <div>
-                <h1 className="text-2xl font-bold font-display text-ink">{activeSettingItem.label}</h1>
-                <p className="text-xs text-ink-3 mt-0.5">{activeSettingItem.desc}</p>
+            <div className="flex items-center gap-2 text-xs font-bold text-ink-3 relative z-10 pt-1">
+              <span className="hover:text-ink cursor-pointer transition-colors" onClick={() => setActivePanel(null)}>
+                Settings
+              </span>
+              <ChevronRight size={12} />
+              <span
+                className={`px-2 py-0.5 rounded-md text-[10px] uppercase font-bold border ${activeSettingSection.theme.badgeClass}`}
+              >
+                {activeSettingSection.title}
+              </span>
+              <ChevronRight size={12} />
+              <span className="text-ink font-semibold">{activeSettingItem.label}</span>
+            </div>
+
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 relative z-10 mt-1">
+              <div className="flex items-center gap-3">
+                <span
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 ${activeSettingSection.theme.iconContainerClass}`}
+                >
+                  <activeSettingItem.icon size={20} />
+                </span>
+                <div>
+                  <h1 className="text-2xl font-bold font-display text-ink">{activeSettingItem.label}</h1>
+                  <p className="text-xs text-ink-3 mt-0.5">{activeSettingItem.desc}</p>
+                </div>
               </div>
-              
+
               {activeSettingItem.sensitive && (
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 uppercase w-fit">
+                <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20 uppercase w-fit">
                   Secure Access Gated
                 </span>
               )}
@@ -1452,9 +1850,9 @@ export default function SettingsCenter({
                       <div className="flex flex-col gap-1.5">
                         <label className={`btn btn-sm cursor-pointer ${logoBusy ? 'opacity-60 pointer-events-none' : ''}`} style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
                           {logoBusy ? 'Uploading...' : logoUrl ? 'Change Image' : 'Upload Image'}
-                          <input type="file" accept="image/*" className="hidden" disabled={logoBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f); e.currentTarget.value = ''; }} />
+                          <input type="file" accept="image/png,image/jpeg,image/webp,image/jpg" className="hidden" disabled={logoBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f); e.currentTarget.value = ''; }} />
                         </label>
-                        <span className="text-[10px] text-ink-3">Max size: 2MB. Format: PNG, JPG</span>
+                        <span className="text-[10px] text-ink-3">Max size: 5MB. Format: PNG, JPG, WEBP</span>
                       </div>
                     </div>
                   </div>
@@ -4266,41 +4664,344 @@ export default function SettingsCenter({
                 </div>
               )}
 
-              {/* ── App QR Codes  ── */}
-              {activePanel === 'app_qrs' && (
-                <div className="card p-5 sm:p-6 flex flex-col gap-6 bg-paper-2">
-                  <div className="border-b pb-3 border-line flex items-center gap-3">
-                    <Smartphone className="text-turmeric" size={24} />
-                    <div>
-                      <h2 className="text-xl font-bold font-display">Application QR Codes</h2>
-                      <p className="text-xs text-ink-3">Scan these QR codes to quickly install the local PWAs on your staff or customer devices.</p>
+              {/* ── App QR Codes & Local Server Pairing ── */}
+              {activePanel === 'app_qrs' && (() => {
+                const activeWaiterName = waiterUserOption === 'custom' 
+                  ? customWaiterName.trim() 
+                  : (waiterUserOption === 'all' ? '' : waiterUserOption);
+
+                const waiterPath = waiterPort === '3002' ? '/login' : '/pos';
+                const waiterFullUrl = `http://${effectiveLanIp}:${waiterPort}${waiterPath}?server=${effectiveLanIp}&port=3000${activeWaiterName ? `&user=${encodeURIComponent(activeWaiterName)}` : ''}`;
+                const kdsFullUrl = `http://${effectiveLanIp}:3000/kds`;
+                const customerFullUrl = customerPort === '3003' 
+                  ? `http://${effectiveLanIp}:3003/t/${customerTableToken || 'demo'}`
+                  : `http://${effectiveLanIp}:3000/app?t=${customerTableToken || 'demo'}`;
+
+                return (
+                  <div className="card p-5 sm:p-6 flex flex-col gap-6 bg-paper-2">
+                    {/* Header */}
+                    <div className="border-b pb-3 border-line flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-turmeric/10 flex items-center justify-center text-turmeric">
+                          <Smartphone size={22} />
+                        </div>
+                        <div>
+                          <h2 className="text-xl font-bold font-display text-ink">Application QR Codes &amp; Local Pairing</h2>
+                          <p className="text-xs text-ink-3">Connect Waiter tablets, Kitchen KDS, and Customer phones directly to your Main PC Desktop Server over local Wi-Fi.</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          Local Wi-Fi Active
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Main PC Desktop Server IP Bar */}
+                    <div className="p-4 rounded-2xl border border-line bg-paper-3 flex flex-col gap-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Server className="text-turmeric shrink-0" size={18} />
+                          <div>
+                            <span className="font-bold text-sm text-ink block">Shop Main PC Desktop Server IP</span>
+                            <span className="text-xs text-ink-3">
+                              {isCloudHost 
+                                ? 'Cloud View: Set your in-store Main PC IP address so tablets connect locally over the café Wi-Fi.'
+                                : 'Local Desktop App: This IP address allows waiter tablets and kitchen screens on your Wi-Fi to communicate directly.'}
+                            </span>
+                          </div>
+                        </div>
+                        {detectedLanIp && (
+                          <button
+                            type="button"
+                            onClick={() => handleSaveShopIp(detectedLanIp)}
+                            className="btn btn-ghost btn-xs text-xs self-start sm:self-auto border border-line hover:border-turmeric text-ink-2"
+                          >
+                            <RefreshCw size={12} className="mr-1" /> Use Detected ({detectedLanIp})
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <div className="relative flex-1">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-ink-3">
+                            <Wifi size={16} />
+                          </div>
+                          <input
+                            type="text"
+                            value={customLanIp}
+                            onChange={(e) => setCustomLanIp(e.target.value)}
+                            placeholder={`e.g. ${detectedLanIp || '10.226.223.152'}`}
+                            className="inp pl-9 w-full font-mono text-xs bg-paper-1 border-line"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveShopIp(customLanIp)}
+                          className="btn btn-primary text-xs shrink-0 px-4"
+                        >
+                          <Check size={14} className="mr-1" /> Save IP
+                        </button>
+                      </div>
+
+                      {isCloudHost && (
+                        <div className="text-[11px] text-amber-700 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20">
+                          ⚠️ <b>Note:</b> You are viewing the Owner Dashboard from the cloud. The QR codes below are configured to connect waiter tablets directly to the <b>Shop Main PC IP ({effectiveLanIp})</b> on your local Wi-Fi, never the cloud website.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* QR Code Cards Grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      {/* CARD 1: Waiter POS & Mobile Ordering (Featured) */}
+                      <div className="p-6 border-2 border-turmeric/30 rounded-2xl bg-paper-3 flex flex-col items-center gap-4 text-center shadow-md relative overflow-hidden">
+                        <div className="absolute top-0 right-0 bg-turmeric text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-bl-xl shadow-sm">
+                          Staff Mobile &amp; Tablet
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-1">
+                          <User className="text-turmeric" size={20} />
+                          <h4 className="font-bold text-lg text-ink font-display">Waiter App</h4>
+                        </div>
+
+                        {/* Mode & Port Selector */}
+                        <div className="w-full text-left flex flex-col gap-2">
+                          <label className="text-[11px] font-bold text-ink-3 uppercase tracking-wider">Application Mode</label>
+                          <div className="grid grid-cols-2 gap-1 p-1 bg-paper-1 rounded-xl border border-line">
+                            <button
+                              type="button"
+                              onClick={() => setWaiterPort('3002')}
+                              className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-all ${
+                                waiterPort === '3002' 
+                                  ? 'bg-turmeric text-white shadow-sm font-semibold' 
+                                  : 'text-ink-3 hover:text-ink'
+                              }`}
+                            >
+                              Tablet App (3002)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setWaiterPort('3000')}
+                              className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-all ${
+                                waiterPort === '3000' 
+                                  ? 'bg-turmeric text-white shadow-sm font-semibold' 
+                                  : 'text-ink-3 hover:text-ink'
+                              }`}
+                            >
+                              POS Till (3000)
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Waiter User Name Pairing Selector */}
+                        <div className="w-full text-left flex flex-col gap-1.5">
+                          <label className="text-[11px] font-bold text-ink-3 uppercase tracking-wider flex items-center justify-between">
+                            <span>Pair Waiter / Staff User</span>
+                            {activeWaiterName && (
+                              <span className="text-[10px] text-turmeric font-semibold">Active: {activeWaiterName}</span>
+                            )}
+                          </label>
+                          <select
+                            value={waiterUserOption}
+                            onChange={(e) => setWaiterUserOption(e.target.value)}
+                            className="inp text-xs bg-paper-1 border-line w-full"
+                          >
+                            <option value="all">👤 All Waiters (Enter PIN on Tablet)</option>
+                            {waiterList.map((w) => (
+                              <option key={w.id} value={w.name}>
+                                {w.name} ({w.role.toUpperCase()})
+                              </option>
+                            ))}
+                            <option value="custom">✏️ Custom Waiter Name...</option>
+                          </select>
+
+                          {waiterUserOption === 'custom' && (
+                            <input
+                              type="text"
+                              value={customWaiterName}
+                              onChange={(e) => setCustomWaiterName(e.target.value)}
+                              placeholder="Enter waiter name (e.g. Rahul)"
+                              className="inp text-xs bg-paper-1 border-line w-full mt-1"
+                            />
+                          )}
+                        </div>
+
+                        {/* QR Code Graphic */}
+                        <div className="relative group p-2 bg-white rounded-2xl border border-line shadow-sm hover:shadow-md transition-shadow">
+                          <img 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=6&data=${encodeURIComponent(waiterFullUrl)}`} 
+                            alt="Waiter App QR Code" 
+                            className="w-[180px] h-[180px] rounded-xl"
+                          />
+                        </div>
+
+                        {/* Active Pairing Badge */}
+                        <div className="w-full py-1.5 px-3 rounded-xl bg-turmeric/10 border border-turmeric/20 text-xs text-ink flex items-center justify-center gap-1.5">
+                          <CheckCircle2 size={14} className="text-turmeric shrink-0" />
+                          <span className="truncate font-medium">
+                            {activeWaiterName ? `Paired to: ${activeWaiterName}` : 'Open PIN Login on Tablet'}
+                          </span>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="w-full flex flex-col gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(waiterFullUrl, 'Waiter App')}
+                            className="btn btn-ghost btn-sm w-full text-xs border border-line flex items-center justify-center gap-1.5 text-ink-2 hover:text-ink"
+                          >
+                            {copiedLink === 'Waiter App' ? (
+                              <>
+                                <Check size={14} className="text-emerald-500" />
+                                <span className="text-emerald-600 font-semibold">Link Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={14} />
+                                <span>Copy Connection URL</span>
+                              </>
+                            )}
+                          </button>
+
+                          <a
+                            href={waiterFullUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-primary btn-sm w-full text-xs flex items-center justify-center gap-1.5"
+                          >
+                            <ExternalLink size={14} /> Open Waiter Terminal
+                          </a>
+                        </div>
+
+                        <p className="text-[11px] text-ink-3 leading-tight mt-1">
+                          📲 Scan with any tablet camera, Google Lens, or the ChayaOne Waiter App to pair instantly on café Wi-Fi.
+                        </p>
+                      </div>
+
+                      {/* CARD 2: Kitchen KDS */}
+                      <div className="p-6 border border-line rounded-2xl bg-paper-3 flex flex-col items-center gap-4 text-center shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mt-1">
+                          <ChefHat className="text-turmeric" size={20} />
+                          <h4 className="font-bold text-lg text-ink font-display">Kitchen KDS</h4>
+                        </div>
+
+                        <p className="text-xs text-ink-3">Live kitchen order display &amp; ticket bump station</p>
+
+                        <div className="p-2 bg-white rounded-2xl border border-line shadow-sm">
+                          <img 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=6&data=${encodeURIComponent(kdsFullUrl)}`} 
+                            alt="Kitchen KDS QR Code" 
+                            className="w-[180px] h-[180px] rounded-xl"
+                          />
+                        </div>
+
+                        <div className="w-full py-1.5 px-3 rounded-xl bg-paper-1 border border-line text-xs text-ink-3 truncate font-mono">
+                          {kdsFullUrl}
+                        </div>
+
+                        <div className="w-full flex flex-col gap-2 mt-auto">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(kdsFullUrl, 'Kitchen KDS')}
+                            className="btn btn-ghost btn-sm w-full text-xs border border-line flex items-center justify-center gap-1.5 text-ink-2"
+                          >
+                            {copiedLink === 'Kitchen KDS' ? (
+                              <>
+                                <Check size={14} className="text-emerald-500" />
+                                <span className="text-emerald-600 font-semibold">Link Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={14} />
+                                <span>Copy KDS URL</span>
+                              </>
+                            )}
+                          </button>
+
+                          <a 
+                            href={kdsFullUrl} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="btn btn-ghost border border-line btn-sm w-full text-xs flex items-center justify-center gap-1.5"
+                          >
+                            <ExternalLink size={14} /> Open Kitchen KDS
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* CARD 3: Customer App (Table QR) */}
+                      <div className="p-6 border border-line rounded-2xl bg-paper-3 flex flex-col items-center gap-4 text-center shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-center gap-2 mt-1">
+                          <Smartphone className="text-turmeric" size={20} />
+                          <h4 className="font-bold text-lg text-ink font-display">Customer App</h4>
+                        </div>
+
+                        <div className="w-full text-left flex flex-col gap-1.5">
+                          <label className="text-[11px] font-bold text-ink-3 uppercase tracking-wider">Customer Table Token</label>
+                          <div className="flex gap-1.5">
+                            {['demo', 'T-01', 'T-02'].map((token) => (
+                              <button
+                                key={token}
+                                type="button"
+                                onClick={() => setCustomerTableToken(token)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all ${
+                                  customerTableToken === token 
+                                    ? 'bg-turmeric text-white font-bold' 
+                                    : 'bg-paper-1 border border-line text-ink-3'
+                                }`}
+                              >
+                                {token}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="p-2 bg-white rounded-2xl border border-line shadow-sm">
+                          <img 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=6&data=${encodeURIComponent(customerFullUrl)}`} 
+                            alt="Customer App QR Code" 
+                            className="w-[180px] h-[180px] rounded-xl"
+                          />
+                        </div>
+
+                        <div className="w-full py-1.5 px-3 rounded-xl bg-paper-1 border border-line text-xs text-ink-3 truncate font-mono">
+                          {customerFullUrl}
+                        </div>
+
+                        <div className="w-full flex flex-col gap-2 mt-auto">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(customerFullUrl, 'Customer App')}
+                            className="btn btn-ghost btn-sm w-full text-xs border border-line flex items-center justify-center gap-1.5 text-ink-2"
+                          >
+                            {copiedLink === 'Customer App' ? (
+                              <>
+                                <Check size={14} className="text-emerald-500" />
+                                <span className="text-emerald-600 font-semibold">Link Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={14} />
+                                <span>Copy Customer URL</span>
+                              </>
+                            )}
+                          </button>
+
+                          <a 
+                            href={customerFullUrl} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="btn btn-ghost border border-line btn-sm w-full text-xs flex items-center justify-center gap-1.5"
+                          >
+                            <ExternalLink size={14} /> Open Customer App
+                          </a>
+                        </div>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {[
-                      { title: 'Waiter POS', path: '/pos', desc: 'For taking orders at the table' },
-                      { title: 'Kitchen KDS', path: '/kds', desc: 'For kitchen order tickets' },
-                      { title: 'Customer App', path: '/app', desc: 'Main customer ordering app' }
-                    ].map(app => (
-                      <div key={app.path} className="p-6 border border-line rounded-2xl bg-paper-3 flex flex-col items-center gap-4 text-center shadow-sm hover:shadow-md transition-shadow">
-                        <h4 className="font-bold text-lg text-ink">{app.title}</h4>
-                        {appUrlOrigin ? (
-                          <img 
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=4&data=${encodeURIComponent(appUrlOrigin + app.path)}`} 
-                            alt={`${app.title} QR Code`} 
-                            className="w-[160px] h-[160px] rounded-xl bg-white p-2 border shadow-sm"
-                          />
-                        ) : (
-                          <div className="w-[160px] h-[160px] rounded-xl bg-paper-2 border animate-pulse" />
-                        )}
-                        <p className="text-sm text-ink-3 mt-1 leading-tight">{app.desc}</p>
-                        <a href={app.path} target="_blank" rel="noreferrer" className="btn btn-primary mt-2 w-full">Open Application</a>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* ── 13. ONLINE ORDERING ── */}
               {activePanel === 'online_order' && (
@@ -4743,6 +5444,13 @@ export default function SettingsCenter({
               {activePanel === 'system' && (
                 <div className="card p-5 sm:p-6 bg-paper-2">
                   <SystemManagement flashMessage={flashMessage} />
+                </div>
+              )}
+
+              {/* ── SERVER & COMMERCIAL LICENSE ── */}
+              {activePanel === 'server_license' && (
+                <div className="card p-5 sm:p-6 bg-paper-2">
+                  <ServerDashboardClient />
                 </div>
               )}
 

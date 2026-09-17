@@ -8,37 +8,83 @@ import {
   BarChart3, ChefHat, ClipboardList, LayoutDashboard, LogOut, Package,
   QrCode, ShoppingCart, Table2, Users as UsersIcon, Wifi,
 } from '@/components/ui';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
+import { hasRole, hasPermission, canAccess } from '@/lib/rbac';
+import { subscribeStaff } from '@/lib/realtime-client';
 
 type RoleDashboardProps = {
   outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: ReceiptConfig };
-  staff: { id: string | null; name: string; role: string };
+  staff: {
+    id: string | null;
+    name: string;
+    role: string;
+    roles?: string[];
+    permissions?: any;
+    effectivePermissions?: string[];
+  };
   data: DashboardData;
   features: Record<string, boolean>;
 };
 
 export default function RoleDashboardClient({ outlet, staff, data, features }: RoleDashboardProps) {
-  const isManager = staff.role === 'manager';
+  const [currentStaff, setCurrentStaff] = useState(staff);
+  useEffect(() => {
+    setCurrentStaff(staff);
+  }, [staff]);
+
+  useEffect(() => {
+    return subscribeStaff((msg: any) => {
+      if (msg.type === 'staff.updated' && (!currentStaff.id || msg.staffId === currentStaff.id)) {
+        fetch('/api/auth/me')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d?.staff) {
+              setCurrentStaff((prev) => ({ ...prev, ...d.staff }));
+            }
+          })
+          .catch(() => {});
+      }
+    });
+  }, [currentStaff.id]);
+
+  const isManager = hasRole(currentStaff, ['manager', 'owner']);
   const crmEnabled = features.crm !== false;
   const kpi = data.kpi;
   const [showTBilling, setShowTBilling] = useState(false);
 
-  const actions = isManager
-    ? [
-        { href: '/t-billing', label: 'T-Billing', icon: Table2, tone: 'primary' },
-        { href: '/pos', label: 'Open POS', icon: ShoppingCart, tone: 'primary' },
-        { href: '/kds', label: 'Kitchen Display', icon: ChefHat },
-        { href: '/approvals', label: 'QR Approvals', icon: QrCode },
-        { href: '/dashboard?view=owner', label: 'Owner Dashboard', icon: LayoutDashboard },
-      ]
-    : [
-        { href: '/t-billing', label: 'T-Billing', icon: Table2, tone: 'primary' },
-        { href: '/pos', label: 'Open POS', icon: ShoppingCart, tone: 'primary' },
-        { href: '/kds', label: 'Kitchen Display', icon: ChefHat },
-        { href: '/approvals', label: 'QR Approvals', icon: QrCode },
-      ];
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data && (e.data.type === 'close-t-billing' || e.data.type === 'close-pos')) {
+        setShowTBilling(false);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!showTBilling) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowTBilling(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [showTBilling]);
+
+  const actions = [
+    (hasRole(currentStaff, ['owner', 'manager', 'accountant', 'cashier']) || hasPermission(currentStaff, 'pos:t_billing')) && { href: '/t-billing', label: 'T-Billing', icon: Table2, tone: 'primary' },
+    canAccess(currentStaff, 'pos') && { href: '/pos', label: 'Open POS', icon: ShoppingCart, tone: 'primary' },
+    canAccess(currentStaff, 'kds') && { href: '/kds', label: 'Kitchen Display', icon: ChefHat },
+    canAccess(currentStaff, 'approvals') && { href: '/approvals', label: 'QR Approvals', icon: QrCode },
+    (isManager || hasPermission(currentStaff, 'dashboard:view')) && { href: '/dashboard?view=owner', label: 'Owner Dashboard', icon: LayoutDashboard },
+  ].filter(Boolean) as { href: string; label: string; icon: any; tone?: string }[];
 
   return (
     <main className="min-h-screen p-4 md:p-6" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
@@ -47,10 +93,10 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
           <h1 className="text-xl md:text-2xl font-display font-extrabold">
             {isManager ? 'Manager Dashboard' : 'Cashier Dashboard'}
           </h1>
-          <p className="text-sm font-bold truncate" style={{ color: 'var(--ink-3)' }}>{outlet.name} · {staff.name}</p>
+          <p className="text-sm font-bold truncate" style={{ color: 'var(--ink-3)' }}>{outlet.name} · {currentStaff.name}</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {['owner', 'manager', 'accountant', 'cashier'].includes(staff.role) && (
+          {(hasRole(currentStaff, ['owner', 'manager', 'accountant', 'cashier']) || hasPermission(currentStaff, 'pos:t_billing')) && (
             <button
               type="button"
               onClick={() => setShowTBilling(true)}
@@ -60,7 +106,7 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
               <Table2 size={15} aria-hidden /> T-Billing
             </button>
           )}
-          {staff.id && <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />}
+          {currentStaff.id && <StaffBell role={currentStaff.role} staffId={currentStaff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />}
           <a href="/api/auth/logout" className="btn btn-sm"><LogOut size={16} aria-hidden /> Logout</a>
         </div>
       </header>

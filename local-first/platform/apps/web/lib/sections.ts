@@ -656,7 +656,7 @@ async function getTables(outletId: string): Promise<TablesData> {
 export interface StaffMember {
   id: string; name: string; role: string; phone: string | null; active: boolean;
   employeeCode: string | null; payType: string | null; payRatePaise: number | null; hasPin: boolean;
-  username: string | null; hasLogin: boolean;
+  username: string | null; hasLogin: boolean; permissions?: any;
 }
 export interface StaffActivity {
   staffId: string; name: string; role: string;
@@ -682,7 +682,7 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
     prisma.staffUser.findMany({
       where: { tenantId, OR: [{ outletId }, { outletId: null }] },
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
-      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true },
+      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true, permissions: true },
     }),
     prisma.$queryRaw<{ staffId: string | null; name: string; orders: number; gross: number }[]>`
       SELECT o."staffId"::text AS "staffId",
@@ -983,7 +983,7 @@ export interface FloorTable {
 }
 
 export interface SettingsData {
-  outlet: { name: string; address: Record<string, unknown> | null; gstin: string | null; stateCode: string | null; timezone: string; gstEnabled: boolean; gstRate: number | null; gstType: 'inclusive' | 'exclusive'; gstConfig?: any; location: OutletLocation };
+  outlet: { name: string; address: Record<string, unknown> | null; gstin: string | null; stateCode: string | null; timezone: string; gstEnabled: boolean; gstRate: number | null; gstType: 'inclusive' | 'exclusive'; gstConfig?: any; location: OutletLocation; logoUrl?: string | null };
   tenant: { name: string; plan: string; gstin: string | null };
   staffCount: number;
   tableCount: number;
@@ -1044,6 +1044,7 @@ async function getSettings(outletId: string, tenantId: string): Promise<Settings
       gstType: gst.gstType,
       gstConfig: gst,
       location: readOutletLocation(outlet?.settings),
+      logoUrl: (outlet?.settings as any)?.logoUrl ?? null,
     },
     tenant: { name: tenant?.name ?? '', plan: tenant?.plan ?? 'starter', gstin: tenant?.gstin ?? null },
     staffCount,

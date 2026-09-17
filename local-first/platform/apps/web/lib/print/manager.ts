@@ -134,6 +134,9 @@ export async function processPrintQueueBatch(batchSize = 10) {
           if (!receiptPayload.storeName) {
             receiptPayload.storeName = outlet?.name || 'CHAYA CAFE';
           }
+          if (receiptPayload.logoUrl === undefined || receiptPayload.logoUrl === null) {
+            receiptPayload.logoUrl = receiptConfig.logoUrl;
+          }
           escposBuffer = buildReceiptEscposBuffer(receiptPayload);
         } else {
           const kotPayload = { ...(job.payload as unknown as KotPrintPayload) };

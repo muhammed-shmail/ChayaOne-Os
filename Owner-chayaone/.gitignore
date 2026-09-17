@@ -39,3 +39,6 @@ Thumbs.db
 
 # Prisma generated (regenerate via npm run db:generate)
 prisma/migrations/
+
+.vercel
+.env*

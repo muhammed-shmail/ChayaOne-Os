@@ -54,7 +54,7 @@ function urlFor(n: NotificationLike): string {
 }
 
 export async function pushToStaff(n: NotificationLike): Promise<void> {
-  if (n.audience === 'owner' || !isPushConfigured()) return;
+  if (n.audience === 'owner' || n.type === 'reminder' || !isPushConfigured()) return;
 
   const staffIds = await recipientStaffIds(n);
   if (!staffIds.length) return;

@@ -7,6 +7,7 @@
  */
 
 import { publishLocalRealtimeEvent } from './realtime/publisher';
+export { publishLocalRealtimeEvent } from './realtime/publisher';
 
 export type TicketItem = { name: string; qty: number; station: string | null; modifiers: { name: string }[]; notes: string | null };
 export type Ticket = {
@@ -77,7 +78,9 @@ export type RealtimeEvent =
   | { type: 'table.updated'; tableId: string; state: string }
   | { type: 'waiter.called'; request: WaiterCallPayload }
   | { type: 'bill.requested'; request: WaiterCallPayload }
-  | { type: 'notify'; notification: NotifyPayload };
+  | { type: 'notify'; notification: NotifyPayload }
+  | { type: 'staff.updated'; staffId: string }
+  | { type: 'outlet.updated'; outletId: string; logoUrl?: string | null };
 
 type RealtimeConfig = { url: string; serviceKey: string };
 

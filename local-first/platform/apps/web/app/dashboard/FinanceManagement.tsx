@@ -212,6 +212,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   const [journalForm, setJournalForm] = useState({ description: '', debitAcc: 'Cash', debitAmt: '', creditAcc: 'Sales Revenue', creditAmt: '' });
   const [varianceRemark, setVarianceRemark] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [payingId, setPayingId] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1338,45 +1339,72 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                         <td className="py-2.5 text-right">
                           {emp.paidStatus !== 'paid' && (
                             <button
-                              onClick={() => {
-                                const next = payroll.map((p) => p.id === emp.id ? { ...p, paidStatus: 'paid' as const } : p);
-                                savePayroll(next);
+                              disabled={payingId === emp.id}
+                              onClick={async () => {
+                                if (payingId === emp.id) return;
+                                setPayingId(emp.id);
+                                try {
+                                  const res = await fetch('/api/staff', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      action: 'pay_record',
+                                      id: emp.id,
+                                      amountPaise: netPayablePaise,
+                                      method: 'bank_transfer',
+                                      periodLabel: new Date().toISOString().slice(0, 7),
+                                      note: `Paid salary to ${emp.name}`,
+                                    }),
+                                  });
+                                  const d = await res.json().catch(() => ({}));
+                                  if (!res.ok && res.status === 409) {
+                                    showToast(d.message || 'Payout already recorded for this period');
+                                    return;
+                                  }
 
-                                // Add expense record
-                                const newExpense: Expense = {
-                                  id: Date.now().toString(),
-                                  date: new Date().toLocaleDateString('en-IN'),
-                                  category: 'Salary',
-                                  vendor: emp.name,
-                                  amountPaise: netPayablePaise,
-                                  gstPaise: 0,
-                                  method: 'bank_transfer',
-                                  status: 'approved',
-                                  approvedBy: staff.name,
-                                  recurring: false,
-                                  notes: `Paid salary for July 2026 to ${emp.name}`
-                                };
-                                saveExpenses([newExpense, ...expenses]);
+                                  const next = payroll.map((p) => p.id === emp.id ? { ...p, paidStatus: 'paid' as const } : p);
+                                  savePayroll(next);
 
-                                // Add transaction
-                                const newTransaction: FinancialTransaction = {
-                                  id: Date.now().toString(),
-                                  time: new Date().toLocaleString('en-IN'),
-                                  user: staff.name,
-                                  action: `Salary Payout: ${emp.name}`,
-                                  amountPaise: netPayablePaise,
-                                  type: 'outflow',
-                                  method: 'bank_transfer',
-                                  category: 'Salary',
-                                  details: `Salary payout to employee ${emp.name}`
-                                };
-                                saveTransactions([newTransaction, ...transactions]);
+                                  // Add expense record
+                                  const newExpense: Expense = {
+                                    id: Date.now().toString(),
+                                    date: new Date().toLocaleDateString('en-IN'),
+                                    category: 'Salary',
+                                    vendor: emp.name,
+                                    amountPaise: netPayablePaise,
+                                    gstPaise: 0,
+                                    method: 'bank_transfer',
+                                    status: 'approved',
+                                    approvedBy: staff.name,
+                                    recurring: false,
+                                    notes: `Paid salary for ${new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} to ${emp.name}`
+                                  };
+                                  saveExpenses([newExpense, ...expenses]);
 
-                                showToast(`Salary of ${formatINR(netPayablePaise)} paid to ${emp.name}`);
+                                  // Add transaction
+                                  const newTransaction: FinancialTransaction = {
+                                    id: Date.now().toString(),
+                                    time: new Date().toLocaleString('en-IN'),
+                                    user: staff.name,
+                                    action: `Salary Payout: ${emp.name}`,
+                                    amountPaise: netPayablePaise,
+                                    type: 'outflow',
+                                    method: 'bank_transfer',
+                                    category: 'Salary',
+                                    details: `Salary payout to employee ${emp.name}`
+                                  };
+                                  saveTransactions([newTransaction, ...transactions]);
+
+                                  showToast(`Salary of ${formatINR(netPayablePaise)} recorded for ${emp.name}`);
+                                } catch (e: any) {
+                                  showToast(`Payout failed: ${e.message || 'Network error'}`);
+                                } finally {
+                                  setPayingId(null);
+                                }
                               }}
-                              className="btn btn-xs py-0.5 px-2 text-[10px] bg-green-600 text-white font-bold"
+                              className="btn btn-xs py-0.5 px-2 text-[10px] bg-green-600 text-white font-bold disabled:opacity-50"
                             >
-                              💸 Pay Out
+                              {payingId === emp.id ? 'Processing...' : '💸 Pay Out'}
                             </button>
                           )}
                           {emp.paidStatus === 'paid' && <span className="text-[10px] text-slate-400 font-bold">Settled</span>}

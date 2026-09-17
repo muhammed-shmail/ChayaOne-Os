@@ -33,18 +33,26 @@ function safeNext(raw: string | null): string {
   return raw;
 }
 
+function getSafeOrigin(req: NextRequest): string {
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '127.0.0.1:3000';
+  const effectiveHost = host.startsWith('0.0.0.0') ? host.replace('0.0.0.0', '127.0.0.1') : host;
+  const proto = req.headers.get('x-forwarded-proto') || 'http';
+  return `${proto}://${effectiveHost}`;
+}
+
 export async function GET(req: NextRequest) {
+  const origin = getSafeOrigin(req);
   const next = safeNext(req.nextUrl.searchParams.get('next'));
   const r = await rollFromRefresh(req);
   if (!r) {
-    const url = req.nextUrl.clone();
-    url.pathname = '/login';
+    const url = new URL('/login', origin);
     url.search = `?next=${encodeURIComponent(next)}`;
     const res = NextResponse.redirect(url);
     clearAuthCookies(res);
     return res;
   }
-  const res = NextResponse.redirect(new URL(next, req.url));
+  const res = NextResponse.redirect(new URL(next, origin));
   setAuthCookies(res, r.access, r.refresh);
   return res;
 }
+

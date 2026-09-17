@@ -32,7 +32,20 @@
   }
 }
 
-[data-theme="dark"] img.brand-logo { content: url("/chaya oneWhite.png"); }
+[data-theme="dark"] img.brand-logo,
+.dark img.brand-logo,
+[data-theme="dark"] .brand-logo,
+.dark .brand-logo {
+  content: url("/white-logo.png");
+}
+
+/* Collapsed brand cup mark — dark mode */
+[data-theme="dark"] img.brand-cup-icon,
+.dark img.brand-cup-icon,
+[data-theme="dark"] .brand-cup-icon,
+.dark .brand-cup-icon {
+  content: url("/cup-white-icon.png");
+}
 
 * {
   box-sizing: border-box;

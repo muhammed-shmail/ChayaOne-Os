@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { prisma, type Prisma, type StaffRole } from '@cafeos/db';
-import { getSession } from '@/lib/auth';
-import { canManageStaff, assignableRoles, canManageTarget, ALL_ROLES } from '@/lib/rbac';
-import { hashPassword } from '@/lib/platform-crypto';
+import { getSession, invalidateStaffCache } from '@/lib/auth';
+import { canManageStaff, assignableRoles, canManageTarget, ALL_ROLES, resolvePrimaryRole, hasRole, hasPermission } from '@/lib/rbac';
+import { hashPassword } from '@/lib/crypto';
 import { assertSlot, bumpUsage, SlotExceeded } from '@/lib/limits';
+import { publish } from '@/lib/realtime';
+import { parseRupeesToPaise } from '@cafeos/core';
+
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,7 +21,7 @@ const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/i;
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!canManageStaff(session.role)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!canManageStaff(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const rows = await prisma.staffUser.findMany({
     where: { tenantId: session.tenantId },
@@ -26,28 +29,36 @@ export async function GET() {
     select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true, permissions: true },
   });
   const members = rows.map(({ pinHash, passwordHash, ...m }) => ({ ...m, hasPin: !!pinHash, hasLogin: !!passwordHash }));
-  return NextResponse.json({ members, assignable: assignableRoles(session.role) });
+  return NextResponse.json({ members, assignable: assignableRoles(session) });
 }
 
 /**
  * POST /api/staff — manage staff users.
- *  { action: 'create', name, role, phone?, pin }
- *  { action: 'update', id, role?, active? }
+ *  { action: 'create', name, role, phone?, pin, permissions? }
+ *  { action: 'update', id, role?, permissions?, active? }
  *  { action: 'setpin', id, pin }
  *  { action: 'remove', id }   // soft-delete (active=false) to preserve order history
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!canManageStaff(session.role)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!canManageStaff(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const { action } = body;
 
   if (action === 'create') {
     const { name, role, phone, pin, employeeCode } = body;
-    if (!name?.trim() || !isRole(role)) return NextResponse.json({ error: 'missing_fields' }, { status: 400 });
-    if (!assignableRoles(session.role).includes(role)) return NextResponse.json({ error: 'role_not_allowed' }, { status: 403 });
+    if (!name?.trim()) return NextResponse.json({ error: 'missing_fields' }, { status: 400 });
+
+    const rawAssignedRoles: string[] = Array.isArray(body.permissions?.assignedRoles) && body.permissions.assignedRoles.length > 0
+      ? body.permissions.assignedRoles
+      : [role || 'waiter'];
+    const resolvedRole = resolvePrimaryRole(rawAssignedRoles, role);
+
+    if (!isRole(resolvedRole) || !assignableRoles(session).includes(resolvedRole)) {
+      return NextResponse.json({ error: 'role_not_allowed' }, { status: 403 });
+    }
     if (!/^\d{4,6}$/.test(String(pin ?? ''))) return NextResponse.json({ error: 'pin_must_be_4_to_6_digits' }, { status: 400 });
 
     const pinHash = hashPin(String(pin));
@@ -76,6 +87,10 @@ export async function POST(req: NextRequest) {
       throw e;
     }
 
+    const permissionsData = body.permissions
+      ? body.permissions
+      : { assignedRoles: rawAssignedRoles, branchAccess: ['main-branch'], overrides: {}, dataRestrictions: [] };
+
     const created = await prisma.staffUser.create({
       data: {
         tenantId: session.tenantId,
@@ -83,15 +98,21 @@ export async function POST(req: NextRequest) {
         name: String(name).trim(),
         phone: phone ? String(phone).trim() : null,
         employeeCode: employeeCode ? String(employeeCode).trim() : null,
-        role,
+        role: resolvedRole,
         pinHash,
         username,
         passwordHash,
         active: true,
-        permissions: body.permissions ? (body.permissions as Prisma.InputJsonValue) : []
+        permissions: permissionsData as Prisma.InputJsonValue,
       },
       select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, permissions: true },
     });
+
+    invalidateStaffCache(created.id);
+    if (session.outletId) {
+      await publish(session.outletId, { type: 'staff.updated', staffId: created.id }).catch(() => {});
+    }
+
     await bumpUsage(session.tenantId, 'staff').catch(() => {});
     await audit(session, 'staff.created', created.id, { name: created.name, role: created.role });
     return NextResponse.json({ ok: true, member: { ...created, hasPin: true } });
@@ -122,25 +143,34 @@ export async function POST(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
   const target = await prisma.staffUser.findFirst({ where: { id, tenantId: session.tenantId } });
   if (!target) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  if (!canManageTarget(session.role, target.role)) return NextResponse.json({ error: 'cannot_manage_this_user' }, { status: 403 });
+  if (!canManageTarget(session, target.role)) return NextResponse.json({ error: 'cannot_manage_this_user' }, { status: 403 });
 
   if (action === 'update') {
     const data: Prisma.StaffUserUpdateInput = {};
     if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim();
     if (body.phone !== undefined) data.phone = body.phone ? String(body.phone).trim() : null;
     if (body.employeeCode !== undefined) data.employeeCode = body.employeeCode ? String(body.employeeCode).trim() : null;
-    if (body.role !== undefined) {
+
+    if (body.permissions !== undefined) {
+      data.permissions = body.permissions as Prisma.InputJsonValue;
+      if (Array.isArray(body.permissions?.assignedRoles) && body.permissions.assignedRoles.length > 0) {
+        const primary = resolvePrimaryRole(body.permissions.assignedRoles, body.role || target.role);
+        if (assignableRoles(session).includes(primary)) {
+          data.role = primary;
+        }
+      }
+    }
+
+    if (body.role !== undefined && !data.role) {
       let dbRole = body.role;
       if (dbRole === 'delivery') dbRole = 'waiter';
       if (dbRole === 'inventory') dbRole = 'cashier';
-      if (!isRole(dbRole) || !assignableRoles(session.role).includes(dbRole)) {
+      if (!isRole(dbRole) || !assignableRoles(session).includes(dbRole)) {
         return NextResponse.json({ error: 'role_not_allowed' }, { status: 403 });
       }
       data.role = dbRole;
     }
-    if (body.permissions !== undefined) {
-      data.permissions = body.permissions as Prisma.InputJsonValue;
-    }
+
     if (body.active !== undefined) {
       // never let an admin lock themselves out
       if (id === session.staffId && body.active === false) {
@@ -148,7 +178,18 @@ export async function POST(req: NextRequest) {
       }
       data.active = !!body.active;
     }
-    const updated = await prisma.staffUser.update({ where: { id }, data, select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, permissions: true } });
+
+    const updated = await prisma.staffUser.update({
+      where: { id },
+      data,
+      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, permissions: true },
+    });
+
+    invalidateStaffCache(id);
+    if (session.outletId) {
+      await publish(session.outletId, { type: 'staff.updated', staffId: id }).catch(() => {});
+    }
+
     await audit(session, 'staff.updated', id, { role: updated.role, active: updated.active });
     return NextResponse.json({ ok: true, member: { ...updated, hasPin: !!target.pinHash } });
   }
@@ -161,16 +202,65 @@ export async function POST(req: NextRequest) {
     const data: Prisma.StaffUserUpdateInput = { payType, payRatePaise: rate };
     if (body.employeeCode !== undefined) data.employeeCode = body.employeeCode ? String(body.employeeCode).trim() : null;
     const updated = await prisma.staffUser.update({ where: { id }, data, select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true } });
+    invalidateStaffCache(id);
     await audit(session, 'staff.pay_set', id, { payType, payRatePaise: rate });
     return NextResponse.json({ ok: true, member: { ...updated, hasPin: !!target.pinHash } });
   }
 
   // ---- record a salary / wage payment ----
   if (action === 'pay_record') {
-    const amountPaise = Math.round(Number(body.amountPaise));
+    if (!hasRole(session, ['owner', 'manager']) && !hasPermission(session, 'staff:payroll:approve') && !hasPermission(session, 'staff:payroll:edit')) {
+      return NextResponse.json({ error: 'forbidden', message: 'Unauthorized to record salary payments' }, { status: 403 });
+    }
+
+    let amountPaise = 0;
+    if (body.amountPaise !== undefined) {
+      amountPaise = typeof body.amountPaise === 'number' ? Math.round(body.amountPaise) : parseRupeesToPaise(body.amountPaise);
+    } else if (body.amountRupees !== undefined || body.amount !== undefined) {
+      amountPaise = parseRupeesToPaise(body.amountRupees ?? body.amount);
+    }
     if (!Number.isFinite(amountPaise) || amountPaise <= 0) return NextResponse.json({ error: 'invalid_amount' }, { status: 400 });
+
     const method = ['cash', 'upi', 'bank'].includes(body.method) ? body.method : 'cash';
     const periodLabel = String(body.periodLabel ?? '').trim() || new Date().toISOString().slice(0, 7);
+
+    // Duplicate submission prevention: reject identical payout within 60s
+    const recentDup = await prisma.salaryPayment.findFirst({
+      where: {
+        outletId: session.outletId,
+        staffId: id,
+        periodLabel,
+        amountPaise,
+        paidAt: { gte: new Date(Date.now() - 60 * 1000) },
+      },
+      select: { id: true, paidAt: true },
+    });
+    if (recentDup) {
+      return NextResponse.json(
+        { error: 'duplicate_payout_detected', message: 'A payout with this exact amount was just recorded. Duplicate submission prevented.' },
+        { status: 409 }
+      );
+    }
+
+    // Overpayment / duplicate full salary period check
+    if (body.allowOverpay !== true && target.payType === 'monthly' && target.payRatePaise) {
+      const existingPeriodPayments = await prisma.salaryPayment.findMany({
+        where: { outletId: session.outletId, staffId: id, periodLabel },
+        select: { amountPaise: true },
+      });
+      const totalAlreadyPaid = existingPeriodPayments.reduce((sum, p) => sum + p.amountPaise, 0);
+      if (totalAlreadyPaid >= target.payRatePaise) {
+        return NextResponse.json(
+          {
+            error: 'salary_already_paid',
+            message: `Monthly salary has already been fully paid for ${periodLabel}. Confirm if this is an additional bonus or advance payment.`,
+            totalPaidPaise: totalAlreadyPaid,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const pay = await prisma.salaryPayment.create({
       data: { outletId: session.outletId, staffId: id, periodLabel, amountPaise, method, note: body.note ? String(body.note).trim() : null, createdById: session.staffId },
       select: { id: true, periodLabel: true, amountPaise: true, method: true, paidAt: true },
@@ -185,6 +275,10 @@ export async function POST(req: NextRequest) {
     const clash = await prisma.staffUser.findFirst({ where: { pinHash, active: true, NOT: { id } }, select: { id: true } });
     if (clash) return NextResponse.json({ error: 'pin_in_use' }, { status: 409 });
     await prisma.staffUser.update({ where: { id }, data: { pinHash } });
+    invalidateStaffCache(id);
+    if (session.outletId) {
+      await publish(session.outletId, { type: 'staff.updated', staffId: id }).catch(() => {});
+    }
     await audit(session, 'staff.pin_reset', id, {});
     return NextResponse.json({ ok: true });
   }
@@ -196,6 +290,7 @@ export async function POST(req: NextRequest) {
     // empty username clears password login entirely
     if (!u) {
       await prisma.staffUser.update({ where: { id }, data: { username: null, passwordHash: null } });
+      invalidateStaffCache(id);
       await audit(session, 'staff.login_cleared', id, {});
       return NextResponse.json({ ok: true });
     }
@@ -211,12 +306,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'password_required' }, { status: 400 });
     }
     await prisma.staffUser.update({ where: { id }, data });
+    invalidateStaffCache(id);
+    if (session.outletId) {
+      await publish(session.outletId, { type: 'staff.updated', staffId: id }).catch(() => {});
+    }
     await audit(session, 'staff.login_set', id, { username: u });
     return NextResponse.json({ ok: true });
   }
 
   if (action === 'remove') {
     if (id === session.staffId) return NextResponse.json({ error: 'cannot_remove_self' }, { status: 400 });
+    invalidateStaffCache(id);
+    if (session.outletId) {
+      await publish(session.outletId, { type: 'staff.updated', staffId: id }).catch(() => {});
+    }
     try {
       await prisma.staffUser.delete({ where: { id } });
       await audit(session, 'staff.deleted', id, { name: target.name });

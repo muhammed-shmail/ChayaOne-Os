@@ -32,10 +32,12 @@ const store = g.__cafeStaffFeed ?? (g.__cafeStaffFeed = {
 function emit() { for (const l of store.listeners) l(); }
 function setState(next: State) { store.state = next; emit(); }
 
-function relevant(n: { audience?: string; targetRole?: string | null; targetStaffId?: string | null }): boolean {
+function relevant(n: { audience?: string; targetRole?: string | null; targetStaffId?: string | null; type?: string }): boolean {
   const p = store.principal;
   if (!p) return false;
-  if (n.audience === 'floor') return true;
+  // Reminders must never leak to floor staff (waiter, kitchen, cashier unless manager)
+  if (n.type === 'reminder' && !['owner', 'manager'].includes(p.role)) return false;
+  if (n.audience === 'floor') return n.type !== 'reminder';
   if (n.audience === 'role') return n.targetRole === p.role;
   if (n.audience === 'user') return n.targetStaffId === p.staffId;
   return false; // 'owner' / undefined → not for the staff bar

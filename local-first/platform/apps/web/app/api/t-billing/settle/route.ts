@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, type OrderStatus, type Prisma } from '@cafeos/db';
 import { computeBill } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
+import { canSettle, canDiscount } from '@/lib/rbac';
 import { publish, toTicket } from '@/lib/realtime';
 import { createOutboxEntry } from '@/lib/outbox';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { readReceiptConfig } from '@/lib/receipt';
 import { readUpiConfig } from '@/lib/print/upi';
 import { createPrintJob } from '@/lib/print/manager';
+import { hashPhone } from '@/lib/phone';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,6 +29,7 @@ interface PaymentItem {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!canSettle(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const { orderId, discountPct, discountFlatPaise, payments, customerName, customerPhone, customerGstin } = body;
@@ -58,8 +61,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'order_cancelled' }, { status: 400 });
   }
 
-  // RBAC validation for custom discounts: only owner or manager can apply custom discounts
-  if ((discountPct > 0 || discountFlatPaise > 0) && !['owner', 'manager'].includes(session.role)) {
+  // RBAC validation for custom discounts: only owner, manager, or discount permission holders can apply
+  if ((discountPct > 0 || discountFlatPaise > 0) && !canDiscount(session)) {
     return NextResponse.json({ error: 'discount_permission_denied' }, { status: 403 });
   }
 
@@ -99,25 +102,53 @@ export async function POST(req: NextRequest) {
   // Use order number as persistent invoice sequence if not already assigned
   const invoiceNo = `${invoicePrefix}${String(order.number).padStart(6, '0')}`;
 
-  // 4. Update Customer if provided
+  // 4. Update or link Customer if provided
   let customerId = order.customerId;
   if (customerName && customerName.trim() && customerName !== 'Walk-in Customer') {
+    const rawPhone = customerPhone?.trim() || null;
+    const normPhone = rawPhone ? rawPhone.replace(/\D/g, '').slice(-10) : null;
+    const pHash = normPhone && normPhone.length === 10 ? hashPhone(normPhone) : null;
+
     if (order.customerId) {
-      await prisma.customer.update({
-        where: { id: order.customerId },
-        data: { name: customerName.trim(), phone: customerPhone?.trim() || undefined },
+      await prisma.customer.updateMany({
+        where: { id: order.customerId, tenantId: session.tenantId },
+        data: { name: customerName.trim(), ...(normPhone ? { phone: normPhone, phoneHash: pHash } : {}) },
       }).catch(() => {});
+    } else if (normPhone && pHash) {
+      const existing = await prisma.customer.findFirst({
+        where: { tenantId: session.tenantId, phoneHash: pHash },
+        select: { id: true },
+      });
+      if (existing) {
+        customerId = existing.id;
+        await prisma.customer.update({
+          where: { id: existing.id },
+          data: { name: customerName.trim() },
+        }).catch(() => {});
+      } else {
+        const newCust = await prisma.customer.create({
+          data: {
+            tenantId: session.tenantId,
+            name: customerName.trim(),
+            phone: normPhone,
+            phoneHash: pHash,
+            source: 'manual',
+          },
+        }).catch(() => null);
+        if (newCust) customerId = newCust.id;
+      }
     } else {
       const newCust = await prisma.customer.create({
         data: {
           tenantId: session.tenantId,
           name: customerName.trim(),
-          phone: customerPhone?.trim() || null,
-        }
+          source: 'manual',
+        },
       }).catch(() => null);
       if (newCust) customerId = newCust.id;
     }
   }
+
 
   // 5. Atomic DB Settlement Transaction
   const updatedOrder = await prisma.$transaction(async (tx) => {

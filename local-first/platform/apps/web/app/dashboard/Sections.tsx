@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { formatINR } from '@cafeos/core';
+import { formatINR, parseRupeesToPaise } from '@cafeos/core';
 import type {
   SalesData,
   InventoryData,
@@ -743,8 +743,8 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                 if (u && !password && !modal.member.hasLogin) return setError('Set a password to create this login');
                 handlePost({ action: 'setlogin', id: modal.member.id, username: u, password: password || undefined });
               } else if (modal.type === 'pay') {
-                const parsedRate = payType === 'none' ? null : Math.round(Number(payRate) * 100);
-                if (payType !== 'none' && (isNaN(parsedRate || 0) || (parsedRate || 0) < 0)) {
+                const parsedRate = payType === 'none' ? null : parseRupeesToPaise(payRate);
+                if (payType !== 'none' && (parsedRate === null || parsedRate < 0)) {
                   return setError('Pay rate must be a valid positive number');
                 }
                 handlePost({
@@ -755,8 +755,8 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                   employeeCode: employeeCode || null
                 });
               } else if (modal.type === 'payout') {
-                const parsedAmount = Math.round(Number(payAmount) * 100);
-                if (isNaN(parsedAmount) || parsedAmount <= 0) {
+                const parsedAmount = parseRupeesToPaise(payAmount);
+                if (!parsedAmount || parsedAmount <= 0) {
                   return setError('Payout amount must be a positive number');
                 }
                 handlePost({

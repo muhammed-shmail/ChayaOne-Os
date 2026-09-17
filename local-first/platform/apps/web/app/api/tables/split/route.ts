@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, type Prisma } from '@cafeos/db';
 import { computeBill, type BillLine } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
+import { canSplit } from '@/lib/rbac';
 import { publish, toTicket } from '@/lib/realtime';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { randomUUID } from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const canSplit = (role: string) => ['owner', 'manager', 'cashier', 'waiter'].includes(role);
 
 async function nextOrderNumber(outletId: string): Promise<number> {
   const latest = await prisma.order.findFirst({
@@ -27,7 +26,7 @@ async function nextOrderNumber(outletId: string): Promise<number> {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!canSplit(session.role)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!canSplit(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   if (!body || !body.orderId || !Array.isArray(body.itemSplits) || body.itemSplits.length === 0) {

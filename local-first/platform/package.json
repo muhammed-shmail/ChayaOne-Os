@@ -8,16 +8,16 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev",
-    "dev:all": "turbo run dev",
-    "dev:desktop": "npm run -w @cafeos/web dev",
+    "dev": "turbo run dev --filter=!@cafeos/desktop",
+    "dev:all": "turbo run dev --filter=!@cafeos/desktop",
+    "dev:desktop": "npm run build -w @cafeos/desktop && npx -w @cafeos/desktop electron .",
     "dev:waiter": "npm run -w @cafeos/waiter dev",
     "dev:customer": "npm run -w @cafeos/customer dev",
     "dev:server": "npm run -w @cafeos/web dev",
     "start:local": "node scripts/launch-local-server.mjs",
     "build": "turbo run build",
     "build:all": "turbo run build",
-    "build:desktop": "npm run -w @cafeos/web build",
+    "build:desktop": "npm run build -w @cafeos/desktop",
     "build:waiter": "npm run -w @cafeos/waiter build",
     "build:customer": "npm run -w @cafeos/customer build",
     "build:installer": "npm run -w @cafeos/desktop build:installer",
@@ -25,6 +25,7 @@
     "test:system": "tsx scripts/test-update-system.ts",
     "test:modules": "tsx scripts/test-module-system.ts",
     "test:audit": "tsx scripts/test-system-audit.ts",
+    "test:license": "tsx scripts/test-license-installer-system.ts",
     "lint": "turbo run lint",
     "lint:desktop": "npm run -w @cafeos/web lint",
     "lint:waiter": "npm run -w @cafeos/waiter lint",
@@ -42,12 +43,17 @@
   },
   "devDependencies": {
     "dotenv-cli": "^7.4.2",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
+    "prettier": "^3.3.0",
     "turbo": "^2.1.0",
-    "typescript": "^5.6.0",
-    "prettier": "^3.3.0"
+    "typescript": "^5.6.0"
   },
   "packageManager": "npm@10.8.0",
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1"
   }
 }

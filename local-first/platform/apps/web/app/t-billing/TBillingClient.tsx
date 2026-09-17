@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { LocalPrinterClient } from '@/lib/printer-client';
 import { subscribeStaff } from '@/lib/realtime-client';
+import { hasRole, hasPermission, canDiscount, canSettle } from '@/lib/rbac';
 
 export type TableDto = { id: string; label: string; seats: number; state: string; floorId: string | null };
 
@@ -33,7 +34,14 @@ interface TBillingProps {
     kitchenWorkflow: KitchenWorkflowConfig;
     gstConfig?: any;
   };
-  staff: { id: string; name: string; role: string };
+  staff: {
+    id: string;
+    name: string;
+    role: string;
+    roles?: string[];
+    permissions?: any;
+    effectivePermissions?: string[];
+  };
   tables: TableDto[];
   initialOrders?: any[];
 }
@@ -90,8 +98,31 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [selectedOrderIndex, setSelectedOrderIndex] = useState<number>(0);
+  const orderCardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const isManagerOrOwner = ['owner', 'manager'].includes(staff.role);
+  const [currentStaff, setCurrentStaff] = useState(staff);
+  useEffect(() => {
+    setCurrentStaff(staff);
+  }, [staff]);
+
+  const isManagerOrOwner = hasRole(currentStaff, ['owner', 'manager']);
+  const canApplyDiscount = canDiscount(currentStaff);
+
+  // Exit T-Billing (notifies parent if in iframe or modal, or navigates back)
+  const handleExit = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'close-t-billing' }, '*');
+      } else if (window.opener) {
+        window.close();
+      } else if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.href = '/dashboard';
+      }
+    }
+  }, []);
 
   // Toast Helper
   const flash = (msg: string) => {
@@ -138,46 +169,22 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending' || msg.type === 'table.transferred') {
         loadOrders();
       }
+      if (msg.type === 'staff.updated' && (!currentStaff.id || msg.staffId === currentStaff.id)) {
+        fetch('/api/auth/me')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d?.staff) {
+              setCurrentStaff((prev) => ({ ...prev, ...d.staff }));
+            }
+          })
+          .catch(() => {});
+      }
     });
-  }, [loadOrders]);
+  }, [loadOrders, currentStaff.id]);
 
   useEffect(() => {
     if (view === 'history') loadHistory();
   }, [view, loadHistory]);
-
-  // Keyboard Shortcuts (F2: Search, F4: Payment, F6: Print, F8: Settle, Esc: Back)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F2') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      } else if (e.key === 'F4') {
-        e.preventDefault();
-        if (view === 'workspace') {
-          const cashEl = document.getElementById('cash-received-input');
-          if (cashEl) cashEl.focus();
-        }
-      } else if (e.key === 'F6') {
-        e.preventDefault();
-        if (view === 'workspace' || view === 'completed') {
-          handlePrintReceipt();
-        }
-      } else if (e.key === 'F8') {
-        e.preventDefault();
-        if (view === 'workspace' && selectedOrder && !settleBusy) {
-          handleSettleOrder();
-        }
-      } else if (e.key === 'Escape') {
-        if (receiptModalOpen) setReceiptModalOpen(false);
-        else if (shortcutsOpen) setShortcutsOpen(false);
-        else if (view === 'workspace') setView('queue');
-        else if (view === 'completed') setView('queue');
-        else if (view === 'history') setView('queue');
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [view, receiptModalOpen, shortcutsOpen, selectedOrder, settleBusy]);
 
   // Filtered Orders Queue
   const filteredOrders = useMemo(() => {
@@ -224,6 +231,144 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     setSplitCard('0');
     setView('workspace');
   };
+
+  // Keep selected index valid when filtered orders list changes
+  useEffect(() => {
+    if (filteredOrders.length === 0) {
+      setSelectedOrderIndex(-1);
+    } else if (selectedOrderIndex < 0 || selectedOrderIndex >= filteredOrders.length) {
+      setSelectedOrderIndex(0);
+    }
+  }, [filteredOrders.length, selectedOrderIndex]);
+
+  // Smoothly scroll active card into view during keyboard navigation
+  useEffect(() => {
+    if (view === 'queue' && selectedOrderIndex >= 0 && orderCardRefs.current[selectedOrderIndex]) {
+      orderCardRefs.current[selectedOrderIndex]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest',
+      });
+    }
+  }, [selectedOrderIndex, view]);
+
+  // Keyboard Shortcuts (F2: Search, F4: Payment, F6: Print, F8: Settle, Esc: Back/Exit, Arrows & Enter: Bill Navigation)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      
+      if (e.key === 'F4') {
+        e.preventDefault();
+        if (view === 'workspace') {
+          const cashEl = document.getElementById('cash-received-input');
+          if (cashEl) cashEl.focus();
+        }
+        return;
+      }
+      
+      if (e.key === 'F6') {
+        e.preventDefault();
+        if (view === 'workspace' || view === 'completed') {
+          handlePrintReceipt();
+        }
+        return;
+      }
+      
+      if (e.key === 'F8') {
+        e.preventDefault();
+        if (view === 'workspace' && selectedOrder && !settleBusy) {
+          handleSettleOrder();
+        }
+        return;
+      }
+      
+      if (e.key === 'Escape') {
+        if (receiptModalOpen) setReceiptModalOpen(false);
+        else if (shortcutsOpen) setShortcutsOpen(false);
+        else if (view === 'workspace') setView('queue');
+        else if (view === 'completed') setView('queue');
+        else if (view === 'history') setView('queue');
+        else if (view === 'queue') handleExit();
+        return;
+      }
+
+      // If a modal is open, don't intercept queue navigation
+      if (receiptModalOpen || shortcutsOpen) return;
+
+      // When in Ready-to-Bill queue view:
+      if (view === 'queue') {
+        const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+        const isSearchFocused = activeEl === searchInputRef.current;
+        const isOtherInputFocused = activeEl && activeEl !== searchInputRef.current && (
+          activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT'
+        );
+
+        if (isOtherInputFocused) return;
+
+        // In search bar:
+        if (isSearchFocused) {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            searchInputRef.current?.blur();
+            if (filteredOrders.length > 0) {
+              setSelectedOrderIndex(0);
+              orderCardRefs.current[0]?.focus();
+            }
+            return;
+          }
+          if (e.key === 'Enter') {
+            if (filteredOrders.length > 0 && selectedOrderIndex >= 0 && selectedOrderIndex < filteredOrders.length) {
+              e.preventDefault();
+              startBilling(filteredOrders[selectedOrderIndex]);
+            }
+            return;
+          }
+          // Note: Tab and standard keys operate as normal inside search input
+          return;
+        }
+
+        // In queue cards list (Tab key is intentionally NOT intercepted so desktop Tab flows normally):
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+          if (filteredOrders.length > 0) {
+            e.preventDefault();
+            setSelectedOrderIndex((prev) => {
+              const next = prev < 0 ? 0 : Math.min(prev + 1, filteredOrders.length - 1);
+              orderCardRefs.current[next]?.focus();
+              return next;
+            });
+          }
+          return;
+        }
+
+        if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+          if (filteredOrders.length > 0) {
+            e.preventDefault();
+            setSelectedOrderIndex((prev) => {
+              const next = Math.max((prev < 0 ? 0 : prev) - 1, 0);
+              orderCardRefs.current[next]?.focus();
+              return next;
+            });
+          }
+          return;
+        }
+
+        if (e.key === 'Enter') {
+          if (filteredOrders.length > 0 && selectedOrderIndex >= 0 && selectedOrderIndex < filteredOrders.length) {
+            e.preventDefault();
+            startBilling(filteredOrders[selectedOrderIndex]);
+          }
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [view, receiptModalOpen, shortcutsOpen, selectedOrder, settleBusy, filteredOrders, selectedOrderIndex, handleExit]);
 
   // Compute Bill Summary Dynamically
   const calculatedBill = useMemo(() => {
@@ -435,7 +580,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
             <h1 className="font-display font-bold text-xl leading-none flex items-center gap-2">
               T-Billing Terminal
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-full uppercase" style={{ background: 'var(--gold)/10', color: 'var(--gold-d)' }}>
-                {staff.role}
+                {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
               </span>
             </h1>
             <p className="text-xs font-semibold mt-0.5" style={{ color: 'var(--ink-3)' }}>
@@ -463,9 +608,14 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
           <button onClick={() => setShortcutsOpen(true)} className="btn btn-icon btn-sm btn-ghost" title="Keyboard shortcuts (F2, F4, F6, F8)">
             <HelpCircle size={16} />
           </button>
-          <a href="/dashboard" className="btn btn-sm btn-ghost inline-flex items-center gap-1">
+          <button
+            type="button"
+            onClick={handleExit}
+            className="btn btn-sm btn-ghost inline-flex items-center gap-1 cursor-pointer hover:opacity-80"
+            title="Exit T-Billing (Esc)"
+          >
             <X size={16} /> Exit
-          </a>
+          </button>
         </div>
       </header>
 
@@ -515,8 +665,8 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                 <h2 className="font-bold text-sm uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>
                   Ready to Bill Orders ({filteredOrders.length})
                 </h2>
-                <span className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>
-                  Tip: Click "Bill Now" to open cashier billing & print receipt
+                <span className="text-xs font-bold flex items-center gap-2" style={{ color: 'var(--ink-3)' }}>
+                  <span className="hidden sm:inline">Use <kbd className="px-1.5 py-0.5 rounded bg-[var(--paper-3)] border border-[var(--line)] font-mono text-[10px]">↑</kbd> <kbd className="px-1.5 py-0.5 rounded bg-[var(--paper-3)] border border-[var(--line)] font-mono text-[10px]">↓</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-[var(--paper-3)] border border-[var(--line)] font-mono text-[10px]">Tab</kbd> to navigate, <kbd className="px-1.5 py-0.5 rounded bg-[var(--gold)] text-[#2A1607] font-mono text-[10px] font-bold">Enter</kbd> to bill</span>
                 </span>
               </div>
 
@@ -530,7 +680,8 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {filteredOrders.map((o) => {
+                  {filteredOrders.map((o, index) => {
+                    const isSelected = selectedOrderIndex === index;
                     const isCancelled = o.status === 'cancelled';
                     const isSettled = o.status === 'settled';
                     const itemCount = (o.items || []).reduce((sum: number, i: any) => sum + i.qty, 0);
@@ -538,14 +689,38 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                     return (
                       <div
                         key={o.id}
-                        className={`lux-card card-glow p-5 flex flex-col justify-between transition-all ${
-                          isCancelled ? 'opacity-50' : 'hover:-translate-y-1'
+                        ref={(el) => { orderCardRefs.current[index] = el; }}
+                        tabIndex={0}
+                        role="button"
+                        aria-selected={isSelected}
+                        onClick={() => setSelectedOrderIndex(index)}
+                        onDoubleClick={() => startBilling(o)}
+                        onFocus={() => setSelectedOrderIndex(index)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            startBilling(o);
+                          }
+                        }}
+                        className={`lux-card card-glow p-5 flex flex-col justify-between transition-all cursor-pointer outline-none relative ${
+                          isSelected
+                            ? 'ring-2 ring-[var(--gold)] border-[var(--gold)] shadow-xl shadow-[var(--gold)]/15 -translate-y-1 bg-[var(--paper-2)]'
+                            : isCancelled
+                            ? 'opacity-50'
+                            : 'hover:-translate-y-0.5'
                         }`}
                       >
                         <div>
                           <div className="flex items-start justify-between gap-2 mb-3">
                             <div>
-                              <span className="font-display font-extrabold text-xl">#{o.number}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-display font-extrabold text-xl">#{o.number}</span>
+                                {isSelected && (
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--gold)] text-[#2A1607] flex items-center gap-1 shadow-sm">
+                                    ↵ Enter
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-xs font-bold" style={{ color: 'var(--gold-d)' }}>
                                 {o.table?.label ? `Table ${o.table.label}` : o.type === 'takeaway' ? '🥡 Takeaway' : '📍 Direct'}
                               </p>
@@ -575,11 +750,16 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         <div className="pt-3 border-t border-[var(--line)] flex items-center justify-between gap-2">
                           <span className="font-display font-extrabold text-lg">{formatINR(o.totalPaise)}</span>
                           <button
-                            onClick={() => startBilling(o)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startBilling(o);
+                            }}
                             disabled={isCancelled}
-                            className="btn btn-lux text-xs px-3.5 py-2 rounded-xl"
+                            className={`btn text-xs px-3.5 py-2 rounded-xl transition ${
+                              isSelected ? 'btn-lux ring-2 ring-[var(--gold)]/50' : 'btn-lux'
+                            }`}
                           >
-                            {isSettled ? 'View Bill' : 'Bill Now →'}
+                            {isSettled ? 'View Bill' : 'Bill Now ↵'}
                           </button>
                         </div>
                       </div>
@@ -652,16 +832,16 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                     <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--ink-2)' }}>
                       <DollarSign size={14} /> Add Authorized Discount
                     </span>
-                    {!isManagerOrOwner && (
+                    {!canApplyDiscount && (
                       <span className="text-[11px] font-bold text-[var(--warn-ink)] flex items-center gap-1">
-                        <Lock size={12} /> Requires Manager / Owner Permission
+                        <Lock size={12} /> Requires Discount Permission
                       </span>
                     )}
                   </div>
                   <div className="flex gap-2 items-center">
                     <div className="flex rounded-xl border border-[var(--line)] bg-[var(--paper-3)] p-1">
                       <button
-                        disabled={!isManagerOrOwner}
+                        disabled={!canApplyDiscount}
                         onClick={() => setDiscountType('pct')}
                         className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
                           discountType === 'pct' ? 'bg-[var(--gold)] text-[#2A1607]' : 'text-[var(--ink-3)]'
@@ -670,7 +850,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         % Off
                       </button>
                       <button
-                        disabled={!isManagerOrOwner}
+                        disabled={!canApplyDiscount}
                         onClick={() => setDiscountType('flat')}
                         className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
                           discountType === 'flat' ? 'bg-[var(--gold)] text-[#2A1607]' : 'text-[var(--ink-3)]'
@@ -681,7 +861,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                     </div>
                     <input
                       type="number"
-                      disabled={!isManagerOrOwner}
+                      disabled={!canApplyDiscount}
                       value={discountVal}
                       onChange={(e) => setDiscountVal(e.target.value)}
                       placeholder={discountType === 'pct' ? '10' : '50'}
@@ -1079,10 +1259,13 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
             <div className="space-y-2 text-xs">
               {[
                 ['F2', 'Focus Order Search Bar'],
-                ['F4', 'Focus Received Cash Input'],
+                ['↑ / ↓ / ← / →', 'Navigate Ready Bills'],
+                ['Enter', 'Open Selected Bill for Cashier Billing'],
+                ['Tab', 'Normal Desktop Navigation Between Controls'],
+                ['F4', 'Focus Received Cash Input (in Workspace)'],
                 ['F6', 'Print Receipt'],
                 ['F8', 'Complete Payment & Settle Bill'],
-                ['Esc', 'Back to Ready to Bill Queue / Close Modal'],
+                ['Esc', 'Back to Queue / Exit T-Billing'],
               ].map(([key, desc]) => (
                 <div key={key} className="flex justify-between items-center p-2 rounded-xl bg-[var(--paper-3)] border border-[var(--line)]">
                   <kbd className="px-2 py-1 rounded bg-[var(--paper-2)] border border-[var(--line)] font-mono font-bold text-xs">{key}</kbd>

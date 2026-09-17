@@ -4,12 +4,14 @@
   "private": true,
   "main": "dist/main/main.js",
   "scripts": {
-    "dev": "electron-forge start",
+    "dev": "tsc",
     "build": "tsc",
-    "build:installer": "tsc && electron-builder --config electron-builder.yml",
-    "lint": "eslint src --ext .ts",
+    "start": "electron .",
+    "prepare-bundle": "node scripts/prepare-bundle.js",
+    "build:installer": "npm run build -w @cafeos/web && node scripts/prepare-bundle.js && tsc && electron-builder --config electron-builder.yml",
+    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "package": "electron-builder --config electron-builder.yml --dir",
+    "package": "npm run build -w @cafeos/web && node scripts/prepare-bundle.js && tsc && electron-builder --config electron-builder.yml --dir",
     "make": "electron-builder --config electron-builder.yml"
   },
   "dependencies": {

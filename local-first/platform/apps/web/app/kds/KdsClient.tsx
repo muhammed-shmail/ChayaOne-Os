@@ -49,7 +49,7 @@ function tblKey(t: Ticket): string {
   return t.type === 'takeaway' || !t.table || t.table === '—' ? '~~~' : t.table;
 }
 
-export default function KdsClient({ outletName, initial, kitchens, workflow, staff, staffAppEnabled = false }: { outletName: string; initial: Ticket[]; kitchens: Kitchen[]; workflow: KitchenWorkflowConfig; staff: { id: string; role: string }; staffAppEnabled?: boolean }) {
+export default function KdsClient({ outletName, initial, kitchens, workflow, staff, staffAppEnabled = false }: { outletName: string; initial: Ticket[]; kitchens: Kitchen[]; workflow: KitchenWorkflowConfig; staff: { id: string; role: string; roles?: string[]; permissions?: any; effectivePermissions?: string[] }; staffAppEnabled?: boolean }) {
   const router = useRouter();
   const staffInstall = useStaffInstall();
   const showInstallApp = staffAppEnabled && staffInstall.available;

@@ -110,12 +110,15 @@ begin
     'Choose Your Business', 'What type of business is this?',
     'Select your business profile to configure the initial recommended module suite.',
     True, False);
-  BusinessTypePage.Add('Cafe / Tea Shop');
-  BusinessTypePage.Add('Restaurant / Hotel');
-  BusinessTypePage.Add('Juice Shop');
-  BusinessTypePage.Add('Meals / Rice Shop');
-  BusinessTypePage.Add('Multi-category');
-  BusinessTypePage.Add('Custom');
+  BusinessTypePage.Add('Cafe');
+  BusinessTypePage.Add('Juice');
+  BusinessTypePage.Add('Bakery');
+  BusinessTypePage.Add('Restaurant');
+  BusinessTypePage.Add('Hotel');
+  BusinessTypePage.Add('Tea Shop');
+  BusinessTypePage.Add('Fast Food');
+  BusinessTypePage.Add('Retail');
+  BusinessTypePage.Add('Other / Multi-category');
   BusinessTypePage.SelectedValueIndex := 0; { Default: Cafe }
 
   { Page 3: Module Selection }
@@ -124,17 +127,19 @@ begin
     'Choose which modules to activate for this venue. Core POS is required. Modules can be enabled or disabled later in Settings without reinstalling.',
     False, False);
   ModuleSelectPage.Add('Core POS & Billing (Required)'); { Index 0: core }
-  ModuleSelectPage.Add('Cafe / Tea');                   { Index 1: cafe }
-  ModuleSelectPage.Add('Restaurant');                   { Index 2: restaurant }
-  ModuleSelectPage.Add('Hotel Management');             { Index 3: hotel }
-  ModuleSelectPage.Add('Juice & Beverages');            { Index 4: juice }
-  ModuleSelectPage.Add('Meals / Rice');                 { Index 5: meals }
-  ModuleSelectPage.Add('Inventory');                    { Index 6: inventory }
-  ModuleSelectPage.Add('Customer QR');                  { Index 7: customer_qr }
-  ModuleSelectPage.Add('Waiter');                       { Index 8: waiter }
-  ModuleSelectPage.Add('KDS');                          { Index 9: kds }
-  ModuleSelectPage.Add('Loyalty & CRM');                { Index 10: crm + loyalty }
-  ModuleSelectPage.Add('Advanced Reports');             { Index 11: advanced_reports }
+  ModuleSelectPage.Add('Cafe');                          { Index 1: cafe }
+  ModuleSelectPage.Add('Restaurant');                    { Index 2: restaurant }
+  ModuleSelectPage.Add('Hotel Management');              { Index 3: hotel }
+  ModuleSelectPage.Add('Juice & Beverages');             { Index 4: juice }
+  ModuleSelectPage.Add('Meals / Rice');                  { Index 5: meals }
+  ModuleSelectPage.Add('Bakery & Pastry');               { Index 6: bakery }
+  ModuleSelectPage.Add('Retail & Barcode POS');          { Index 7: retail }
+  ModuleSelectPage.Add('Inventory');                     { Index 8: inventory }
+  ModuleSelectPage.Add('Customer QR');                   { Index 9: customer_qr }
+  ModuleSelectPage.Add('Waiter App');                    { Index 10: waiter }
+  ModuleSelectPage.Add('KDS Kitchen Display');           { Index 11: kds }
+  ModuleSelectPage.Add('Loyalty & CRM');                 { Index 12: crm + loyalty }
+  ModuleSelectPage.Add('Advanced Reports');              { Index 13: advanced_reports }
 
   { Initial preset defaults for Cafe }
   ModuleSelectPage.Values[0] := True;
@@ -161,51 +166,69 @@ begin
   { If leaving BusinessTypePage, automatically configure ModuleSelectPage based on the chosen preset }
   if CurPageID = BusinessTypePage.ID then
   begin
-    { Clear all non-core modules }
-    for i := 1 to 11 do
+    for i := 1 to 13 do
       ModuleSelectPage.Values[i] := False;
 
     { Core POS is always mandatory }
     ModuleSelectPage.Values[0] := True;
 
     case BusinessTypePage.SelectedValueIndex of
-      0: { Cafe / Tea Shop }
+      0: { Cafe }
       begin
         ModuleSelectPage.Values[1] := True; { Cafe }
       end;
 
-      1: { Restaurant / Hotel }
-      begin
-        ModuleSelectPage.Values[2] := True; { Restaurant }
-        ModuleSelectPage.Values[8] := True; { Waiter }
-        ModuleSelectPage.Values[9] := True; { KDS }
-      end;
-
-      2: { Juice Shop }
+      1: { Juice }
       begin
         ModuleSelectPage.Values[4] := True; { Juice }
       end;
 
-      3: { Meals / Rice Shop }
+      2: { Bakery }
       begin
-        ModuleSelectPage.Values[5] := True; { Meals }
-        ModuleSelectPage.Values[9] := True; { KDS }
+        ModuleSelectPage.Values[6] := True; { Bakery }
+        ModuleSelectPage.Values[8] := True; { Inventory }
       end;
 
-      4: { Multi-category }
+      3: { Restaurant }
+      begin
+        ModuleSelectPage.Values[2] := True; { Restaurant }
+        ModuleSelectPage.Values[10] := True; { Waiter }
+        ModuleSelectPage.Values[11] := True; { KDS }
+      end;
+
+      4: { Hotel }
+      begin
+        ModuleSelectPage.Values[2] := True; { Restaurant }
+        ModuleSelectPage.Values[3] := True; { Hotel }
+        ModuleSelectPage.Values[10] := True; { Waiter }
+      end;
+
+      5: { Tea Shop }
+      begin
+        ModuleSelectPage.Values[1] := True; { Cafe / Tea }
+      end;
+
+      6: { Fast Food }
+      begin
+        ModuleSelectPage.Values[2] := True; { Restaurant }
+        ModuleSelectPage.Values[11] := True; { KDS }
+      end;
+
+      7: { Retail }
+      begin
+        ModuleSelectPage.Values[7] := True; { Retail }
+        ModuleSelectPage.Values[8] := True; { Inventory }
+      end;
+
+      8: { Other / Multi-category }
       begin
         ModuleSelectPage.Values[1] := True; { Cafe }
         ModuleSelectPage.Values[2] := True; { Restaurant }
         ModuleSelectPage.Values[4] := True; { Juice }
-        ModuleSelectPage.Values[7] := True; { Customer QR }
-        ModuleSelectPage.Values[8] := True; { Waiter }
-        ModuleSelectPage.Values[9] := True; { KDS }
-      end;
-
-      5: { Custom }
-      begin
-        { Keep existing selection, ensure core }
-        ModuleSelectPage.Values[0] := True;
+        ModuleSelectPage.Values[8] := True; { Inventory }
+        ModuleSelectPage.Values[9] := True; { Customer QR }
+        ModuleSelectPage.Values[10] := True; { Waiter }
+        ModuleSelectPage.Values[11] := True; { KDS }
       end;
     end;
   end;
@@ -227,6 +250,10 @@ var
   EnvFilePath: string;
   ConfigJsonPath: string;
   ConfigJsonContent: string;
+  InstallJsonPath: string;
+  InstallJsonContent: string;
+  InstallId: string;
+  RandomHex: string;
   BusinessTypeStr: string;
   EnabledModulesStr: string;
   JsonModulesArray: string;
@@ -236,11 +263,14 @@ begin
     { Map selected business type to identifier }
     case BusinessTypePage.SelectedValueIndex of
       0: BusinessTypeStr := 'cafe';
-      1: BusinessTypeStr := 'restaurant';
-      2: BusinessTypeStr := 'juice_shop';
-      3: BusinessTypeStr := 'meals_shop';
-      4: BusinessTypeStr := 'multi_category';
-      else BusinessTypeStr := 'custom';
+      1: BusinessTypeStr := 'juice';
+      2: BusinessTypeStr := 'bakery';
+      3: BusinessTypeStr := 'restaurant';
+      4: BusinessTypeStr := 'hotel';
+      5: BusinessTypeStr := 'tea_shop';
+      6: BusinessTypeStr := 'fast_food';
+      7: BusinessTypeStr := 'retail';
+      else BusinessTypeStr := 'other';
     end;
 
     { Build list of enabled module IDs }
@@ -274,30 +304,40 @@ begin
     end;
     if ModuleSelectPage.Values[6] then
     begin
+      EnabledModulesStr := EnabledModulesStr + ',bakery';
+      JsonModulesArray := JsonModulesArray + ',"bakery"';
+    end;
+    if ModuleSelectPage.Values[7] then
+    begin
+      EnabledModulesStr := EnabledModulesStr + ',retail';
+      JsonModulesArray := JsonModulesArray + ',"retail"';
+    end;
+    if ModuleSelectPage.Values[8] then
+    begin
       EnabledModulesStr := EnabledModulesStr + ',inventory';
       JsonModulesArray := JsonModulesArray + ',"inventory"';
     end;
-    if ModuleSelectPage.Values[7] then
+    if ModuleSelectPage.Values[9] then
     begin
       EnabledModulesStr := EnabledModulesStr + ',customer_qr';
       JsonModulesArray := JsonModulesArray + ',"customer_qr"';
     end;
-    if ModuleSelectPage.Values[8] then
+    if ModuleSelectPage.Values[10] then
     begin
       EnabledModulesStr := EnabledModulesStr + ',waiter';
       JsonModulesArray := JsonModulesArray + ',"waiter"';
     end;
-    if ModuleSelectPage.Values[9] then
+    if ModuleSelectPage.Values[11] then
     begin
       EnabledModulesStr := EnabledModulesStr + ',kds';
       JsonModulesArray := JsonModulesArray + ',"kds"';
     end;
-    if ModuleSelectPage.Values[10] then
+    if ModuleSelectPage.Values[12] then
     begin
       EnabledModulesStr := EnabledModulesStr + ',crm,loyalty';
       JsonModulesArray := JsonModulesArray + ',"crm","loyalty"';
     end;
-    if ModuleSelectPage.Values[11] then
+    if ModuleSelectPage.Values[13] then
     begin
       EnabledModulesStr := EnabledModulesStr + ',advanced_reports';
       JsonModulesArray := JsonModulesArray + ',"advanced_reports"';
@@ -329,12 +369,29 @@ begin
         '{' + #13#10 +
         '  "businessType": "' + BusinessTypeStr + '",' + #13#10 +
         '  "enabledModules": [' + JsonModulesArray + '],' + #13#10 +
-        '  "installedModules": ["core","cafe","restaurant","hotel","juice","meals","inventory","customer_qr","waiter","kds","crm","loyalty","advanced_reports"],' + #13#10 +
+        '  "installedModules": ["core","cafe","restaurant","hotel","juice","meals","bakery","retail","inventory","customer_qr","waiter","kds","crm","loyalty","advanced_reports"],' + #13#10 +
         '  "updatedAt": "' + GetDateTimeString('yyyy-mm-dd"T"hh:nn:ss"Z"', '-', ':') + '",' + #13#10 +
         '  "version": "1.2.0",' + #13#10 +
         '  "moduleSettings": {}' + #13#10 +
         '}' + #13#10;
       SaveStringToFile(ConfigJsonPath, ConfigJsonContent, False);
     end;
+
+    { 3. Generate persistent installation.json with unique Installation ID if not already present }
+    InstallJsonPath := ExpandConstant('{commonappdata}\ChayaOne\config\installation.json');
+    if not FileExists(InstallJsonPath) then
+    begin
+      RandomHex := Format('%.4x%.4x', [Random(65536), Random(65536)]);
+      InstallId := 'CHAYAONE-INSTALL-' + UpperCase(RandomHex);
+      InstallJsonContent :=
+        '{' + #13#10 +
+        '  "installationId": "' + InstallId + '",' + #13#10 +
+        '  "installedAt": "' + GetDateTimeString('yyyy-mm-dd"T"hh:nn:ss"Z"', '-', ':') + '",' + #13#10 +
+        '  "appVersion": "' + ExpandConstant('{#AppVersion}') + '",' + #13#10 +
+        '  "platform": "win32"' + #13#10 +
+        '}' + #13#10;
+      SaveStringToFile(InstallJsonPath, InstallJsonContent, False);
+    end;
   end;
 end;
+

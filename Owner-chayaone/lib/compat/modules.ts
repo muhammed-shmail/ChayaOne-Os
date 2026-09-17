@@ -11,7 +11,7 @@ import type {
   ModuleMetadata,
   BusinessPresetDef,
   ModuleSystemConfig,
-} from '@cafeos/types';
+} from '../../types/modules';
 
 export const MODULE_REGISTRY: Record<ModuleId, ModuleMetadata> = {
   core: {
@@ -55,6 +55,24 @@ export const MODULE_REGISTRY: Record<ModuleId, ModuleMetadata> = {
     id: 'juice',
     name: 'Juice & Beverages',
     description: 'High-speed counter order builder for juices, fruit shakes, smoothies, mojitos, sweetness & topping customizations.',
+    version: '1.2.0',
+    dependencies: ['core'],
+    optional: true,
+    category: 'business',
+  },
+  bakery: {
+    id: 'bakery',
+    name: 'Bakery & Confectionery',
+    description: 'Bakery products, batch tracking, daily bake quantities, expiry monitoring & counter retail billing.',
+    version: '1.2.0',
+    dependencies: ['core'],
+    optional: true,
+    category: 'business',
+  },
+  retail: {
+    id: 'retail',
+    name: 'Retail Shop & Barcode POS',
+    description: 'Barcode scanning, SKU inventory, packaged goods, quick cash counter billing & retail price levels.',
     version: '1.2.0',
     dependencies: ['core'],
     optional: true,
@@ -137,45 +155,88 @@ export const MODULE_REGISTRY: Record<ModuleId, ModuleMetadata> = {
 export const BUSINESS_PRESETS: Record<BusinessTypeId, BusinessPresetDef> = {
   cafe: {
     id: 'cafe',
-    name: 'Cafe / Tea Shop',
-    description: 'Optimized for coffee shops, chai points, and quick-service cafes.',
-    defaultModules: ['core', 'cafe'],
+    name: 'Cafe',
+    description: 'Specialized cafe workflows: coffee, chai, espresso, quick snacks, tables, and waiter/KDS operations.',
+    defaultModules: ['core', 'cafe', 'waiter', 'kds', 'customer_qr'],
     suggestedCategories: ['Chai & Tea', 'Coffee', 'Coolers', 'All-Day Snacks', 'Bakery', 'Desserts'],
+  },
+  juice: {
+    id: 'juice',
+    name: 'Juice',
+    description: 'High-speed counter ordering for fresh juices, fruit shakes, smoothies, and sweetness customizations.',
+    defaultModules: ['core', 'juice'],
+    suggestedCategories: ['Fresh Fruit Juices', 'Milkshakes', 'Thick Shakes', 'Mojitos & Mocktails', 'Fruit Bowls'],
+  },
+  bakery: {
+    id: 'bakery',
+    name: 'Bakery',
+    description: 'Fresh baked goods, breads, pastries, inventory tracking, batch counts, and counter retail billing.',
+    defaultModules: ['core', 'bakery', 'inventory'],
+    suggestedCategories: ['Artisanal Breads', 'Pastries & Croissants', 'Cakes', 'Cookies & Biscuits', 'Savory Bakes'],
   },
   restaurant: {
     id: 'restaurant',
-    name: 'Restaurant / Hotel',
-    description: 'Full-service dining with waiter devices, table management, and kitchen display.',
-    defaultModules: ['core', 'restaurant', 'waiter', 'kds'],
+    name: 'Restaurant',
+    description: 'Full-service multi-course dining, table management, KOT printing, waiter handhelds, and kitchen display.',
+    defaultModules: ['core', 'restaurant', 'waiter', 'kds', 'customer_qr'],
     suggestedCategories: ['Starters', 'Main Course', 'Breads & Roti', 'Rice & Biriyani', 'Beverages', 'Desserts'],
   },
   hotel: {
     id: 'hotel',
-    name: 'Hotel Management',
-    description: 'Hotel property dining, room service, waiter tablets, customer QR and inventory control.',
+    name: 'Hotel',
+    description: 'Hotel property dining, room service, resident guest reservations, hospitality billing, and inventory.',
     defaultModules: ['core', 'restaurant', 'hotel', 'waiter', 'kds', 'customer_qr', 'inventory'],
     suggestedCategories: ['Room Dining', 'Restaurant Starters', 'Mains & Curries', 'Breakfast Specials', 'Beverages'],
   },
+  tea_shop: {
+    id: 'tea_shop',
+    name: 'Tea Shop',
+    description: 'Fast-paced chai counter, specialty tea brews, bun maska, samosas, and rapid token billing.',
+    defaultModules: ['core', 'cafe'],
+    suggestedCategories: ['Chai & Tea', 'Specialty Brews', 'Hot Snacks', 'Bakery Items', 'Cold Beverages'],
+  },
+  fast_food: {
+    id: 'fast_food',
+    name: 'Fast Food',
+    description: 'Quick-service counter, burger combos, fried chicken, meal parcels, and kitchen bump screens.',
+    defaultModules: ['core', 'meals', 'kds'],
+    suggestedCategories: ['Burgers & Wraps', 'Combos & Fries', 'Fried Chicken', 'Beverages', 'Sauces & Dips'],
+  },
+  retail: {
+    id: 'retail',
+    name: 'Retail Shop',
+    description: 'Barcode scanning, packaged products, SKU stock control, multi-item till billing, and inventory.',
+    defaultModules: ['core', 'retail', 'inventory'],
+    suggestedCategories: ['Packaged Foods', 'Beverages', 'Snacks', 'Confectionery', 'General Goods'],
+  },
+  other: {
+    id: 'other',
+    name: 'Other / Custom',
+    description: 'Modular setup for specialized venues with custom business requirements.',
+    defaultModules: ['core'],
+    suggestedCategories: ['General Items'],
+  },
+  // Backward compatibility aliases
   juice_shop: {
     id: 'juice_shop',
     name: 'Juice Shop',
     description: 'Rapid point-of-sale for fresh juices, smoothies, shakes, and quick counter takeaways.',
     defaultModules: ['core', 'juice'],
-    suggestedCategories: ['Fresh Fruit Juices', 'Milkshakes', 'Thick Shakes', 'Mojitos & Mocktails', 'Fruit Bowls', 'Ice Creams'],
+    suggestedCategories: ['Fresh Fruit Juices', 'Milkshakes', 'Thick Shakes', 'Mojitos & Mocktails', 'Fruit Bowls'],
   },
   meals_shop: {
     id: 'meals_shop',
     name: 'Meals / Rice Shop',
     description: 'High-speed billing for thali, biriyani, and batch-prepared meal counters.',
     defaultModules: ['core', 'meals', 'kds'],
-    suggestedCategories: ['Thali & Meals', 'Special Biriyani', 'Rice Items', 'Curries & Gravies', 'Side Dishes', 'Coolers'],
+    suggestedCategories: ['Thali & Meals', 'Special Biriyani', 'Rice Items', 'Curries & Gravies', 'Side Dishes'],
   },
   multi_category: {
     id: 'multi_category',
     name: 'Multi-category (Hybrid)',
     description: 'For venues serving a combination of cafe, restaurant, fresh beverages, and customer QR ordering.',
     defaultModules: ['core', 'cafe', 'restaurant', 'juice', 'waiter', 'kds', 'customer_qr'],
-    suggestedCategories: ['Chai & Coffee', 'Fresh Juices & Shakes', 'Quick Bites & Starters', 'Meals & Biriyani', 'Desserts'],
+    suggestedCategories: ['Chai & Coffee', 'Fresh Juices & Shakes', 'Quick Bites & Starters', 'Meals & Biriyani'],
   },
   custom: {
     id: 'custom',
@@ -219,6 +280,23 @@ export function resolveModuleDependencies(selectedModules: ModuleId[]): ModuleId
   // Preserve stable registry ordering
   const registryOrder = Object.keys(MODULE_REGISTRY) as ModuleId[];
   return registryOrder.filter((id) => result.has(id));
+}
+
+/**
+ * Automatically resolve and include all modules required by multiple selected business types.
+ * Example: Cafe + Bakery -> union of modules + auto dependency resolution.
+ */
+export function resolveModulesForBusinessTypes(selectedTypes: BusinessTypeId[]): ModuleId[] {
+  const combined = new Set<ModuleId>(['core']);
+  for (const t of selectedTypes) {
+    const preset = BUSINESS_PRESETS[t];
+    if (preset?.defaultModules) {
+      for (const m of preset.defaultModules) {
+        combined.add(m);
+      }
+    }
+  }
+  return resolveModuleDependencies(Array.from(combined));
 }
 
 /**
@@ -287,17 +365,21 @@ export function canDisableModule(
 }
 
 /**
- * Build default ModuleSystemConfig for a given business type.
+ * Build default ModuleSystemConfig for a given business type or list of business types.
  */
-export function createDefaultModuleConfig(businessType: BusinessTypeId = 'cafe'): ModuleSystemConfig {
-  const preset = BUSINESS_PRESETS[businessType] || BUSINESS_PRESETS.cafe;
-  const enabled = resolveModuleDependencies(preset.defaultModules);
+export function createDefaultModuleConfig(
+  businessTypeOrTypes: BusinessTypeId | BusinessTypeId[] = 'cafe'
+): ModuleSystemConfig {
+  const types = Array.isArray(businessTypeOrTypes) ? businessTypeOrTypes : [businessTypeOrTypes];
+  const primaryType = types[0] || 'cafe';
+  const enabled = resolveModulesForBusinessTypes(types);
   const allModules = Object.keys(MODULE_REGISTRY) as ModuleId[];
 
   return {
-    businessType,
+    businessType: primaryType,
+    businessTypes: types,
     enabledModules: enabled,
-    installedModules: allModules, // All modules are shipped in ChayaOne unified package
+    installedModules: allModules,
     updatedAt: new Date().toISOString(),
     version: '1.2.0',
     moduleSettings: {},

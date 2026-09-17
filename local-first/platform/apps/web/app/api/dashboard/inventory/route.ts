@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { requireModule } from '@/lib/modules';
+import { hasRole, hasPermission } from '@/lib/rbac';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant') {
+  if (!hasRole(session, ['owner', 'manager', 'accountant']) && !hasPermission(session, 'inventory:edit')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 

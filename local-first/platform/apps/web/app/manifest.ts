@@ -22,7 +22,7 @@ export default function manifest(): MetadataRoute.Manifest {
     // the adaptive mask. Single `any` icon at real size; `?v=3` busts the
     // home-screen icon cache on redeploy.
     icons: [
-      { src: '/app.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/app.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'any' },
     ],
     shortcuts: [
       { name: 'Order now', short_name: 'Order', url: '/app' },

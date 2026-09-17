@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, type Prisma } from '@cafeos/db';
 import { computeBill, type BillLine } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
+import { canSettle, canVoid } from '@/lib/rbac';
 import { publish, toTicket } from '@/lib/realtime';
 import { reverseRecipeConsumption } from '@/lib/inventory';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
@@ -10,9 +11,6 @@ import { findOrCreateCustomerByPhone, accrueLoyaltyOnSettle } from '@/lib/custom
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-/** roles allowed to take payment / settle a table / void a sent item */
-const canSettle = (role: string) => ['owner', 'manager', 'cashier'].includes(role);
 
 /** order statuses that count as "running" (occupying the table) */
 const ACTIVE_STATUS = ['open', 'in_kitchen', 'ready', 'served'] as const;
@@ -35,26 +33,38 @@ export async function GET(req: NextRequest) {
   const orders = await prisma.order.findMany({
     where: { tableId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
     orderBy: { placedAt: 'asc' },
-    include: { items: { where: { kotStatus: { not: 'void' } } } },
+    include: { items: { where: { kotStatus: { not: 'void' } }, orderBy: { id: 'asc' } } },
   });
 
-  const lines = orders.flatMap((o) =>
-    o.items.map((i) => ({ id: i.id, orderId: o.id, name: i.nameSnapshot, qty: i.qty, station: i.station, linePaise: i.unitPricePaise * i.qty, kotStatus: i.kotStatus })),
-  );
-  const totals = orders.reduce(
-    (t, o) => ({
-      subtotalPaise: t.subtotalPaise + o.subtotalPaise,
-      taxPaise: t.taxPaise + o.cgstPaise + o.sgstPaise + o.igstPaise,
-      totalPaise: t.totalPaise + o.totalPaise,
-    }),
-    { subtotalPaise: 0, taxPaise: 0, totalPaise: 0 },
+  const allLines = orders.flatMap((o) =>
+    o.items.map((i) => ({
+      id: i.id,
+      orderId: o.id,
+      name: i.nameSnapshot,
+      qty: i.qty,
+      unitPricePaise: i.unitPricePaise,
+      linePaise: i.qty * i.unitPricePaise,
+      station: i.station,
+      kotStatus: i.kotStatus,
+    })),
   );
 
+  const totals = {
+    subtotalPaise: orders.reduce((s, o) => s + o.subtotalPaise, 0),
+    discountPaise: orders.reduce((s, o) => s + o.discountPaise, 0),
+    cgstPaise: orders.reduce((s, o) => s + o.cgstPaise, 0),
+    sgstPaise: orders.reduce((s, o) => s + o.sgstPaise, 0),
+    igstPaise: orders.reduce((s, o) => s + o.igstPaise, 0),
+    serviceChargePaise: orders.reduce((s, o) => s + o.serviceChargePaise, 0),
+    roundOffPaise: orders.reduce((s, o) => s + o.roundOffPaise, 0),
+    totalPaise: orders.reduce((s, o) => s + o.totalPaise, 0),
+  };
+
   return NextResponse.json({
-    table: table.label,
+    table: { id: table.id, label: table.label },
     count: orders.length,
-    orders: orders.map((o) => ({ id: o.id, number: o.number, status: o.status })),
-    lines,
+    orders: orders.map((o) => ({ id: o.id, number: o.number, totalPaise: o.totalPaise, placedAt: o.placedAt })),
+    lines: allLines,
     totals,
   });
 }
@@ -65,19 +75,21 @@ export async function GET(req: NextRequest) {
  *   { action: 'void_item', orderId, itemId } — void a single sent line: recompute
  *       the order bill, restore stock, audit, and refresh the KDS. If the order
  *       has no active items left it is cancelled (freeing the table).
- * Cashier/manager/owner only.
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!canSettle(session.role)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const { action } = body;
 
-  if (action === 'void_item') return voidItem(session, body);
+  if (action === 'void_item') {
+    if (!canVoid(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    return voidItem(session, body);
+  }
 
   // ---- settle ----
+  if (!canSettle(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const { tableId, method } = body;
   if (action !== 'settle' || !tableId) return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
   const pay = (['cash', 'upi', 'card'] as const).includes(method) ? method : 'cash';

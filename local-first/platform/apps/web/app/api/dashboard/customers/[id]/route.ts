@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { getCustomerProfile, getCustomerTimeline } from '@/lib/crm';
+import { hasRole, hasPermission } from '@/lib/rbac';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,8 +10,9 @@ export const dynamic = 'force-dynamic';
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
+  if (!hasRole(session, ['owner', 'manager', 'accountant']) && !hasPermission(session, 'customers:view'))
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+
 
   const [profile, timeline] = await Promise.all([
     getCustomerProfile(session.tenantId, session.outletId, params.id),

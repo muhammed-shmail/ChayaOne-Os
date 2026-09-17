@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
+import LicenseStatusBadge from '@/components/license/LicenseStatusBadge';
 import { subscribeStaff } from '@/lib/realtime-client';
 import { useStaffInstall } from '@/components/staff-install';
 import { isOffline, OFFLINE_ORDER_MSG, OFFLINE_PAY_MSG } from '@/components/online';
@@ -23,6 +24,7 @@ import { getGeoHeaders } from '@/lib/geo-client';
 
 import { generateAuthoritativeUpiUri } from '@/lib/print/upi';
 import { generateQrDataUrl } from '@/lib/print/qr';
+import { hasRole, hasPermission, canAccess, canSettle } from '@/lib/rbac';
 
 /** Category → SVG icon (replaces structural emoji; food glyph stays decorative). */
 const CAT_ICON: Record<string, LucideIcon> = {
@@ -56,7 +58,14 @@ type Outlet = {
   gstConfig?: any;
   upiConfig?: any;
 };
-type Staff = { id: string; name: string; role: string };
+type Staff = {
+  id: string;
+  name: string;
+  role: string;
+  roles?: string[];
+  permissions?: any;
+  effectivePermissions?: string[];
+};
 
 type Line = {
   key: string;
@@ -95,6 +104,11 @@ function tableStage(status?: string): TableStage {
 }
 
 export default function PosClient({ outlet, staff, menu, tables, floors, staffAppEnabled = false, locationGate = false }: { outlet: Outlet; staff: Staff; menu: MenuCategory[]; tables: TableDto[]; floors: Floor[]; staffAppEnabled?: boolean; locationGate?: boolean }) {
+  const [currentStaff, setCurrentStaff] = useState<Staff>(staff);
+  useEffect(() => {
+    setCurrentStaff(staff);
+  }, [staff]);
+
   const [activeCat, setActiveCat] = useState(menu[0]?.id ?? '');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<Line[]>([]);
@@ -152,7 +166,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   const [tableOrder, setTableOrder] = useState<any>(null);
   const [settleBusy, setSettleBusy] = useState(false);
   const [askSettle, setAskSettle] = useState(false);
-  const canSettleBill = ['owner', 'manager', 'cashier'].includes(staff.role);
+  const canSettleBill = canSettle(currentStaff);
   // "Install the Staff App" entry — only when the cafe has the Staff App (PWA) offer
   // and the device can actually install (Android prompt ready, or iOS manual hint).
   const staffInstall = useStaffInstall();
@@ -162,6 +176,26 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   const [showTBilling, setShowTBilling] = useState(false);
   // Order-level customer field visibility (desktop right rail + mobile cart sheet)
   const [showOrderCust, setShowOrderCust] = useState(false);
+
+  // Listen for close-t-billing message from embedded T-Billing iframe
+  useEffect(() => {
+    const handleMsg = (e: MessageEvent) => {
+      if (e.data && e.data.type === 'close-t-billing') {
+        setShowTBilling(false);
+      }
+    };
+    window.addEventListener('message', handleMsg);
+    return () => window.removeEventListener('message', handleMsg);
+  }, []);
+
+  useEffect(() => {
+    if (!showTBilling) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowTBilling(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showTBilling]);
 
   // Mount state for hydration-safe rendering of PWA install buttons
   const [mounted, setMounted] = useState(false);
@@ -576,6 +610,16 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       if (msg.type === 'bill.requested' && msg.request) {
         flash(`🧾 Table ${msg.request.tableLabel} requested bill!`);
       }
+      if (msg.type === 'staff.updated' && msg.staffId === currentStaff.id) {
+        fetch('/api/auth/me')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d?.staff) {
+              setCurrentStaff((prev) => ({ ...prev, ...d.staff }));
+            }
+          })
+          .catch(() => {});
+      }
       if (msg.type !== 'order.updated') return;
       setLive((prev) => {
         if (!prev.some((t) => t.id === msg.ticket.id)) return prev;
@@ -731,7 +775,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     <>
       <div className="md:hidden sticky top-0 z-30" style={{ paddingTop: 'env(safe-area-inset-top)', background: 'color-mix(in srgb, var(--paper) 90%, transparent)', backdropFilter: 'blur(10px)', borderBottom: '1px solid var(--line)' }}>
         <div className="flex items-center gap-2 px-3 py-2">
-          <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost shrink-0" />
+          <StaffBell role={currentStaff.role} staffId={currentStaff.id} triggerClassName="btn btn-icon btn-sm btn-ghost shrink-0" />
           <div className="flex rounded-full p-[3px] border flex-1 min-w-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
             {(['dine_in', 'takeaway'] as const).map((t) => (
               <button key={t} onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
@@ -783,7 +827,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               />
             </div>
             <div className="flex items-center gap-1">
-              {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
+              {canAccess(currentStaff, 'dashboard') && (
                 <a
                   href="/dashboard"
                   onClick={handleDashboardClick}
@@ -794,17 +838,20 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                   <LayoutDashboard size={18} aria-hidden />
                 </a>
               )}
-              <StaffBell role={staff.role} staffId={staff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
+              <StaffBell role={currentStaff.role} staffId={currentStaff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
               <ThemeToggle />
             </div>
           </div>
           <div className="flex items-center gap-2 px-1 -mt-1">
-            <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{staff.name[0]}</span>
-            <span className="text-[12.5px] font-bold">{staff.name}</span>
-            <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>{staff.role}</span>
+            <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{currentStaff.name[0]}</span>
+            <span className="text-[12.5px] font-bold">{currentStaff.name}</span>
+            <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>
+              {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
+            </span>
           </div>
-          <div className="px-1">
+          <div className="px-1 flex flex-col gap-1.5">
             <ShiftStatus />
+            <LicenseStatusBadge />
           </div>
           <div className="flex rounded-full p-[3px] border" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
             {(['dine_in', 'takeaway'] as const).map((t) => (
@@ -838,7 +885,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               <span className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
             )}
           </a>
-          {(staff.role !== 'waiter' && staff.role !== 'kot') && (
+          {(hasRole(currentStaff, ['owner', 'manager', 'cashier']) || hasPermission(currentStaff, 'pos:t_billing')) && (
             <button onClick={() => setShowTBilling(true)} className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
               <Table2 size={17} aria-hidden /> T-Billing Terminal
             </button>
@@ -1513,12 +1560,17 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               <ThemeToggle />
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-7 h-7 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{staff.name[0]}</span>
-              <span className="text-[13px] font-bold">{staff.name}</span>
-              <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>{staff.role}</span>
+              <span className="w-7 h-7 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{currentStaff.name[0]}</span>
+              <span className="text-[13px] font-bold">{currentStaff.name}</span>
+              <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>
+                {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
+              </span>
             </div>
             <ShiftStatus />
-            {(staff.role === 'owner' || staff.role === 'manager' || staff.role === 'cashier') && (
+            <div className="px-1">
+              <LicenseStatusBadge />
+            </div>
+            {canAccess(currentStaff, 'dashboard') && (
               <a href="/dashboard" onClick={handleDashboardClick} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
                 <LayoutDashboard size={18} aria-hidden /> Dashboard
               </a>
@@ -1537,7 +1589,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                 <Download size={18} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
               </button>
             )}
-            {(staff.role !== 'waiter' && staff.role !== 'kot') && (
+            {(hasRole(currentStaff, ['owner', 'manager', 'cashier']) || hasPermission(currentStaff, 'pos:t_billing')) && (
               <button onClick={() => { setMoreOpen(false); setShowTBilling(true); }} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
                 <Table2 size={18} aria-hidden /> T-Billing Terminal
               </button>

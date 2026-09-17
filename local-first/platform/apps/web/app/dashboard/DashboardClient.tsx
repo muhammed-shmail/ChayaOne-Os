@@ -12,7 +12,7 @@ import { RevenuePanel } from '@/components/dashboard/RevenuePanel';
 import type { DashboardData } from '@/lib/analytics';
 import dynamic from 'next/dynamic';
 import { SECTION_KEY, SectionView } from './Sections';
-import { ROLE_LABELS, ROLE_DESCRIPTIONS, assignableRoles, ALL_ROLES } from '@/lib/rbac';
+import { ROLE_LABELS, ROLE_DESCRIPTIONS, assignableRoles, ALL_ROLES, hasRole as rbacHasRole, hasPermission as rbacHasPermission } from '@/lib/rbac';
 import { DEVICE_TYPES, DEVICE_CONNECTIONS, type Device } from '@/lib/devices';
 import type { ReceiptConfig } from '@/lib/receipt';
 import { type KitchenWorkflowConfig, KITCHEN_WORKFLOW_DEFAULTS, AUTO_CLEAR_OPTIONS, DELAY_THRESHOLD_OPTIONS, SORT_OPTIONS, THEME_OPTIONS, FONT_SIZE_OPTIONS } from '@/lib/kitchenWorkflow';
@@ -144,12 +144,17 @@ export default function DashboardClient({
   initialModuleConfig,
 }: {
   outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: ReceiptConfig; staffAppEnabled?: boolean; upiConfig?: any };
-  staff: { name: string; role: string; permissions?: string[] };
+  staff: { id?: string | null; name: string; role: string; roles?: string[]; permissions?: any; effectivePermissions?: string[] };
   data: DashboardData;
   features: Record<string, boolean>;
   initialModuleConfig?: ModuleSystemConfig;
 }) {
   const router = useRouter();
+
+  const [currentStaff, setCurrentStaff] = useState(staff);
+  useEffect(() => {
+    setCurrentStaff(staff);
+  }, [staff]);
 
   const [moduleConfig, setModuleConfig] = useState<ModuleSystemConfig>(
     initialModuleConfig || {
@@ -161,7 +166,7 @@ export default function DashboardClient({
     }
   );
 
-  const hasPermission = (p: string) => !staff.permissions || staff.permissions.includes(p);
+  const hasPermission = (p: string) => rbacHasPermission(currentStaff, p);
 
   // Feature & Module filtering: hide menus if corresponding module or feature is disabled
   const visibleMenus = MENUS.filter((m) => {
@@ -170,32 +175,31 @@ export default function DashboardClient({
     if (m.key === 'suppliers' && !moduleConfig.enabledModules.includes('inventory')) return false;
     if (m.key === 'customers' && (!moduleConfig.enabledModules.includes('crm') || features.crm === false)) return false;
 
-    // cashier: home, orders, finance (operations)
-    if (staff.role === 'cashier') {
-      return ['home', 'orders', 'finance'].includes(m.key);
-    }
-    // accountant: home, orders, inventory, suppliers, customers, finance, reports
-    if (staff.role === 'accountant') {
-      return ['home', 'orders', 'inventory', 'suppliers', 'customers', 'finance', 'reports'].includes(m.key);
-    }
-    // kitchen staff: home, orders, kitchen only
-    if (staff.role === 'kitchen') {
-      return ['home', 'orders', 'kitchen'].includes(m.key);
-    }
-    // waiter: home, orders, kitchen
-    if (staff.role === 'waiter') {
-      return ['home', 'orders', 'kitchen'].includes(m.key);
-    }
+    // Owners have full access to all menus
+    if (rbacHasRole(currentStaff, 'owner')) return true;
+
+    if (m.key === 'home') return true;
+    if (m.key === 'orders') return rbacHasRole(currentStaff, ['manager', 'cashier', 'accountant', 'waiter', 'kitchen']) || rbacHasPermission(currentStaff, 'orders:view');
+    if (m.key === 'menu') return rbacHasRole(currentStaff, ['manager']) || rbacHasPermission(currentStaff, 'menu:view');
+    if (m.key === 'inventory') return rbacHasRole(currentStaff, ['manager', 'accountant']) || rbacHasPermission(currentStaff, 'inventory:view');
+    if (m.key === 'suppliers') return rbacHasRole(currentStaff, ['manager', 'accountant']) || rbacHasPermission(currentStaff, 'purchases:suppliers');
+    if (m.key === 'customers') return rbacHasRole(currentStaff, ['manager', 'cashier', 'accountant']) || rbacHasPermission(currentStaff, 'customers:view');
+    if (m.key === 'finance') return rbacHasRole(currentStaff, ['manager', 'cashier', 'accountant']) || rbacHasPermission(currentStaff, 'finance:daily_summary');
+    if (m.key === 'reports') return rbacHasRole(currentStaff, ['manager', 'accountant']) || rbacHasPermission(currentStaff, 'reports:sales');
+    if (m.key === 'kitchen') return rbacHasRole(currentStaff, ['manager', 'cashier', 'kitchen', 'waiter']) || rbacHasPermission(currentStaff, 'kds:view');
+    if (m.key === 'staff') return rbacHasRole(currentStaff, ['manager']) || rbacHasPermission(currentStaff, 'staff:view');
+    if (m.key === 'settings') return rbacHasRole(currentStaff, ['manager']) || rbacHasPermission(currentStaff, 'settings:general');
+
     return true;
   });
+
   const visibleBottomNav = BOTTOM_NAV.filter((m) => {
     if (m.key === 'customers' && features.crm === false) return false;
-    if (staff.role === 'cashier' || staff.role === 'accountant') {
-      return ['home', 'orders', 'finance'].includes(m.key);
-    }
-    if (staff.role === 'kitchen' || staff.role === 'waiter') {
-      return ['home', 'orders'].includes(m.key);
-    }
+    if (rbacHasRole(currentStaff, 'owner')) return true;
+    if (m.key === 'home') return true;
+    if (m.key === 'orders') return rbacHasRole(currentStaff, ['manager', 'cashier', 'accountant', 'waiter', 'kitchen']) || rbacHasPermission(currentStaff, 'orders:view');
+    if (m.key === 'finance') return rbacHasRole(currentStaff, ['manager', 'cashier', 'accountant']) || rbacHasPermission(currentStaff, 'finance:daily_summary');
+    if (m.key === 'customers') return rbacHasRole(currentStaff, ['manager', 'cashier', 'accountant']) || rbacHasPermission(currentStaff, 'customers:view');
     return true;
   });
   const [isPending, startTransition] = useTransition();
@@ -214,6 +218,14 @@ export default function DashboardClient({
       if (e.data && e.data.type === 'close-kds') {
         setShowKds(false);
       }
+      if (e.data && e.data.type === 'navigate-dashboard') {
+        setShowKds(false);
+        setShowPos(false);
+        setShowTBilling(false);
+        if (e.data.tab) {
+          setActiveMenu(e.data.tab);
+        }
+      }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
@@ -223,8 +235,17 @@ export default function DashboardClient({
     if (!showPos && !showKds && !showTBilling) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showTBilling) setShowTBilling(false);
+        if (showPos) setShowPos(false);
+        if (showKds) setShowKds(false);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
     return () => {
       document.body.style.overflow = prev;
+      window.removeEventListener('keydown', handleKey);
     };
   }, [showPos, showKds, showTBilling]);
 
@@ -319,6 +340,19 @@ export default function DashboardClient({
             liveDot.current.style.animation = 'none';
             void liveDot.current.offsetWidth;
             liveDot.current.style.animation = '';
+          }
+        } else if (msg.type === 'staff.updated' && (!currentStaff.id || msg.staffId === currentStaff.id)) {
+          fetch('/api/auth/me')
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+              if (d?.staff) {
+                setCurrentStaff((prev) => ({ ...prev, ...d.staff }));
+              }
+            })
+            .catch(() => {});
+        } else if (msg.type === 'outlet.updated') {
+          if (msg.logoUrl !== undefined) {
+            setLogoUrl(msg.logoUrl);
           }
         } else if (msg.type === 'notify' && (msg.notification.audience ?? 'owner') === 'owner') {
           // live owner alert → bump the bell + prepend to the feed (staff-targeted
@@ -1485,6 +1519,9 @@ export default function DashboardClient({
         setFloors(d.data?.floors ?? []);
         setKitchens(d.data?.kitchens ?? []);
         if (d.data?.kitchenWorkflow) setKwForm(d.data.kitchenWorkflow);
+        if (o?.logoUrl !== undefined) {
+          setLogoUrl(o.logoUrl);
+        }
         setProfileLoaded(true);
       }
     } catch (err) { console.error(err); }
@@ -1811,16 +1848,30 @@ export default function DashboardClient({
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'outlet', logoUrl: url }),
       });
-      if (res.ok) { setLogoUrl(url); flashMessage(url ? 'Logo updated' : 'Logo removed'); router.refresh(); }
-      else flashMessage('Could not save logo');
-    } catch (err) { console.error(err); flashMessage('Could not save logo'); }
-    finally { setLogoBusy(false); }
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const persistedUrl = d.outlet?.logoUrl !== undefined ? d.outlet.logoUrl : url;
+        setLogoUrl(persistedUrl);
+        flashMessage(persistedUrl ? 'Logo updated' : 'Logo removed');
+        router.refresh();
+      } else {
+        flashMessage(d.message || d.error || 'Could not save logo');
+      }
+    } catch (err) {
+      console.error(err);
+      flashMessage('Could not save logo');
+    } finally {
+      setLogoBusy(false);
+    }
   };
   const handleLogoFile = async (file: File) => {
     setLogoBusy(true);
-    const url = await uploadImage(file);
-    setLogoBusy(false);
-    if (url) await saveLogo(url);
+    try {
+      const url = await uploadImage(file);
+      if (url) await saveLogo(url);
+    } finally {
+      setLogoBusy(false);
+    }
   };
 
   // Settings → Devices & Printers → Receipt Layout
@@ -1959,7 +2010,7 @@ export default function DashboardClient({
             transition={{ duration: 0.2 }}
             className={`absolute inset-0 flex items-center justify-center ${!isExpanded ? 'pointer-events-auto' : 'pointer-events-none'}`}
           >
-            <img src="/app.png" alt="ChayaOne" style={{ width: 36, height: 36, margin: 0 }} className="object-contain" />
+            <img src="/app.png" alt="ChayaOne" style={{ width: 36, height: 36, margin: 0 }} className="brand-cup-icon object-contain" />
           </motion.div>
         </div>
 

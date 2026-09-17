@@ -24,6 +24,7 @@ import {
   PoStatus,
   RoomStatus,
   Channel,
+  LicenseStatus,
 } from '@prisma/client';
 
 /**
@@ -68,4 +69,5 @@ export {
   PoStatus,
   RoomStatus,
   Channel,
+  LicenseStatus,
 };

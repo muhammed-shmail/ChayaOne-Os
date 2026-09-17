@@ -6,6 +6,7 @@ import { getOutletPwa, paiseToPoints } from '@/lib/pwa';
 import { listCustomers, getCustomerAnalytics, type CustomerFilter } from '@/lib/crm';
 import { tenantHasFeature } from '@/lib/features';
 import { requireModule } from '@/lib/modules';
+import { hasRole, hasPermission } from '@/lib/rbac';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,7 +35,7 @@ function cleanStr(v: unknown, max = 200): string | null {
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
+  if (!hasRole(session, ['owner', 'manager', 'accountant']) && !hasPermission(session, 'customers:view'))
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   
   const guard = await requireModule('crm', session.outletId);
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
+  if (!hasRole(session, ['owner', 'manager', 'accountant']) && !hasPermission(session, 'customers:edit') && !hasPermission(session, 'customers:create'))
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const guard = await requireModule('crm', session.outletId);

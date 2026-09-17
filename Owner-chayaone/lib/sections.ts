@@ -983,7 +983,7 @@ export interface FloorTable {
 }
 
 export interface SettingsData {
-  outlet: { name: string; address: Record<string, unknown> | null; gstin: string | null; stateCode: string | null; timezone: string; gstEnabled: boolean; gstRate: number | null; gstType: 'inclusive' | 'exclusive'; gstConfig?: any; location: OutletLocation };
+  outlet: { name: string; address: Record<string, unknown> | null; gstin: string | null; stateCode: string | null; timezone: string; gstEnabled: boolean; gstRate: number | null; gstType: 'inclusive' | 'exclusive'; gstConfig?: any; location: OutletLocation; logoUrl?: string | null };
   tenant: { name: string; plan: string; gstin: string | null };
   staffCount: number;
   tableCount: number;
@@ -1044,6 +1044,7 @@ async function getSettings(outletId: string, tenantId: string): Promise<Settings
       gstType: gst.gstType,
       gstConfig: gst,
       location: readOutletLocation(outlet?.settings),
+      logoUrl: (outlet?.settings as any)?.logoUrl ?? null,
     },
     tenant: { name: tenant?.name ?? '', plan: tenant?.plan ?? 'starter', gstin: tenant?.gstin ?? null },
     staffCount,

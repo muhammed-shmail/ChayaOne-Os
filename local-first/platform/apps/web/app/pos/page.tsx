@@ -18,7 +18,7 @@ export default async function PosPage() {
   const session = await getSession();
   if (!session) redirect('/login');
   // role-based access: kitchen staff belong on the KDS, not the till
-  if (!canAccess(session.role, 'pos')) redirect(landingFor(session.role));
+  if (!canAccess(session, 'pos')) redirect(landingFor(session));
 
   const outlet = await prisma.outlet.findUnique({ where: { id: session.outletId } });
   if (!outlet) redirect('/api/auth/logout');
@@ -75,7 +75,14 @@ export default async function PosPage() {
         kitchenWorkflow,
         gstConfig: gst,
       }}
-      staff={{ id: session.staffId, name: session.name, role: session.role }}
+      staff={{
+        id: session.staffId,
+        name: session.name,
+        role: session.role,
+        roles: session.roles,
+        permissions: session.permissions,
+        effectivePermissions: session.effectivePermissions,
+      }}
       menu={menu}
       tables={tableDtos}
       floors={floors}

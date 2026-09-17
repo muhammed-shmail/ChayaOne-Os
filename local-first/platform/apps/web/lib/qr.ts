@@ -12,9 +12,45 @@
  * single seam the rest of the app depends on.
  */
 
+let cachedPublicOrigin: string | null = null;
+
+export function setPublicOrigin(url: string | null): void {
+  cachedPublicOrigin = url ? url.replace(/\/$/, '') : null;
+  if (typeof window !== 'undefined') {
+    try {
+      if (cachedPublicOrigin) {
+        localStorage.setItem('chayaone_public_origin', cachedPublicOrigin);
+      } else {
+        localStorage.removeItem('chayaone_public_origin');
+      }
+    } catch {}
+  }
+}
+
+export function getPublicOrigin(): string | null {
+  if (cachedPublicOrigin) return cachedPublicOrigin;
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('chayaone_public_origin');
+      if (stored) {
+        cachedPublicOrigin = stored;
+        return stored;
+      }
+    } catch {}
+    if ((window as any).__CHAYAONE_PUBLIC_URL__) {
+      return (window as any).__CHAYAONE_PUBLIC_URL__;
+    }
+  }
+  if (typeof process !== 'undefined' && process.env?.PUBLIC_URL) {
+    return process.env.PUBLIC_URL.replace(/\/$/, '');
+  }
+  return null;
+}
+
 /** Absolute customer-ordering URL for a table token, e.g. https://host/app?t=abc */
 export function tableOrderUrl(qrToken: string, origin?: string): string {
-  const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
+  const publicBase = getPublicOrigin();
+  const base = origin || publicBase || (typeof window !== 'undefined' ? window.location.origin : '');
   return `${base}/app?t=${encodeURIComponent(qrToken)}`;
 }
 

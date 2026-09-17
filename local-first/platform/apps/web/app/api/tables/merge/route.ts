@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
+import { canMerge } from '@/lib/rbac';
 import { publish, toTicket } from '@/lib/realtime';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const canMerge = (role: string) => ['owner', 'manager', 'cashier', 'waiter'].includes(role);
 
 /**
  * POST /api/tables/merge
@@ -15,7 +14,7 @@ const canMerge = (role: string) => ['owner', 'manager', 'cashier', 'waiter'].inc
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (!canMerge(session.role)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!canMerge(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   if (!body || !body.sourceTableId || !body.destTableId) {

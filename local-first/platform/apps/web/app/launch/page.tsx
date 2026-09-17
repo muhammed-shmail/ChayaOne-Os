@@ -104,6 +104,32 @@ export default function LaunchHub() {
             );
           })}
         </div>
+
+        {/* Mobile & Tablet App APK Distribution for Staff */}
+        <div className="mt-8 lux-card p-6 border border-[var(--gold-hair)] bg-gradient-to-r from-amber-500/10 via-transparent to-transparent">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="pill pill-ok text-xs">📱 Android APK</span>
+                <span className="text-xs text-ink-3">v1.0 (11.9 MB)</span>
+              </div>
+              <h3 className="font-display text-xl font-medium">ChayaOne Waiter &amp; Staff Mobile App</h3>
+              <p className="text-ink-2 text-sm max-w-md">
+                Native Android APK for waiter tablets &amp; staff phones. Connects directly to Main PC over café Wi-Fi.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <a
+                href="/api/download/waiter-apk"
+                download="ChayaOne-Waiter.apk"
+                className="btn btn-primary px-5 py-2.5 text-sm font-semibold rounded-xl inline-flex items-center gap-2 shadow-md hover:brightness-110"
+              >
+                <span>Download APK</span>
+                <ArrowRight size={16} />
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* The dark-theme logo swap (dark ink → white asset) is handled globally

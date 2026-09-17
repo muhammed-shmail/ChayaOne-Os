@@ -4,6 +4,7 @@ import {
   signSession, signRefresh, verifyRefresh,
   SESSION_COOKIE, REFRESH_COOKIE, ACCESS_TTL_SECONDS, REFRESH_TTL_SECONDS,
 } from '@/lib/auth';
+import { getEffectiveRoles, getEffectivePermissions } from '@/lib/rbac';
 
 /**
  * Persistent staff login plumbing (the PWA "stay logged in" model).
@@ -15,6 +16,8 @@ export type StaffPrincipal = {
   id: string;
   name: string;
   role: string;
+  roles?: string[];
+  permissions?: any;
   tenantId: string;
   outletId: string;
 };
@@ -42,7 +45,7 @@ function cookieOpts(maxAge: number) {
   return {
     httpOnly: true,
     sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // Must be false for local desktop app and local LAN HTTP access
     path: '/',
     maxAge,
   };
@@ -56,9 +59,14 @@ export function setAuthCookies(res: NextResponse, accessToken: string, refreshTo
 
 /** Clear both auth cookies (logout / failed refresh). */
 export function clearAuthCookies(res: NextResponse) {
+  try {
+    res.cookies.delete(SESSION_COOKIE);
+    res.cookies.delete(REFRESH_COOKIE);
+  } catch {}
   res.cookies.set(SESSION_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
   res.cookies.set(REFRESH_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
 }
+
 
 /**
  * Create a new device session for `staff`, then set both cookies on `res`.
@@ -81,10 +89,13 @@ export async function startStaffSession(
     select: { id: true },
   });
 
+  const roles = staff.roles || getEffectiveRoles({ role: staff.role, permissions: staff.permissions });
+
   const accessToken = await signSession({
     staffId: staff.id,
     name: staff.name,
     role: staff.role,
+    roles,
     tenantId: staff.tenantId,
     outletId: staff.outletId,
     sid: row.id,
@@ -105,44 +116,71 @@ export type RolledSession = {
  * revocation/expiry against the StaffSession row (the one stateful check) and
  * sliding the 30-day window forward. Returns null when there's no usable refresh
  * cookie (genuinely signed out / revoked / expired device).
- *
- * Shared by:
- *  - /api/auth/refresh — the client keep-alive + middleware silent-refresh.
- *  - /api/realtime/token — so a client re-fetching its Supabase Realtime token
- *    after a lapsed 30-min access token gets re-authorized (and a fresh access
- *    cookie) instead of being stranded Offline.
  */
 export async function rollFromRefresh(req: NextRequest): Promise<RolledSession | null> {
-  const token = req.cookies.get(REFRESH_COOKIE)?.value;
-  const parsed = token ? await verifyRefresh(token) : null;
-  if (!parsed) return null;
+  try {
+    const token = req.cookies.get(REFRESH_COOKIE)?.value;
+    const parsed = token ? await verifyRefresh(token) : null;
+    if (!parsed) return null;
 
-  const row = await prisma.staffSession.findUnique({
-    where: { id: parsed.sid },
-    select: {
-      revokedAt: true, expiresAt: true,
-      staff: { select: { id: true, name: true, role: true, tenantId: true, outletId: true, active: true } },
-    },
-  });
+    const row = await prisma.staffSession.findUnique({
+      where: { id: parsed.sid },
+      select: {
+        revokedAt: true, expiresAt: true,
+        staff: {
+          select: {
+            id: true,
+            name: true,
+            role: true,
+            permissions: true,
+            tenantId: true,
+            outletId: true,
+            active: true,
+          },
+        },
+      },
+    });
 
-  const now = new Date();
-  if (!row || row.revokedAt || row.expiresAt <= now) return null;
-  const s = row.staff;
-  if (!s.active || !s.outletId) return null;
+    const now = new Date();
+    if (!row || row.revokedAt || row.expiresAt <= now) return null;
+    const s = row.staff;
+    if (!s.active || !s.outletId) return null;
 
-  // slide the window forward + record presence (powers the live online dot)
-  await prisma.staffSession.update({
-    where: { id: parsed.sid },
-    data: { lastSeenAt: now, expiresAt: new Date(now.getTime() + REFRESH_TTL_SECONDS * 1000) },
-  });
+    // slide the window forward + record presence (powers the live online dot)
+    await prisma.staffSession.update({
+      where: { id: parsed.sid },
+      data: { lastSeenAt: now, expiresAt: new Date(now.getTime() + REFRESH_TTL_SECONDS * 1000) },
+    });
 
-  const access = await signSession({
-    staffId: s.id, name: s.name, role: s.role, tenantId: s.tenantId, outletId: s.outletId, sid: parsed.sid,
-  });
-  const refresh = await signRefresh(parsed.sid);
-  return {
-    access,
-    refresh,
-    principal: { id: s.id, name: s.name, role: s.role, tenantId: s.tenantId, outletId: s.outletId, sid: parsed.sid },
-  };
+    const roles = getEffectiveRoles({ role: s.role, permissions: s.permissions });
+
+    const access = await signSession({
+      staffId: s.id,
+      name: s.name,
+      role: s.role,
+      roles,
+      tenantId: s.tenantId,
+      outletId: s.outletId,
+      sid: parsed.sid,
+    });
+    const refresh = await signRefresh(parsed.sid);
+    return {
+      access,
+      refresh,
+      principal: {
+        id: s.id,
+        name: s.name,
+        role: s.role,
+        roles,
+        permissions: s.permissions,
+        tenantId: s.tenantId,
+        outletId: s.outletId,
+        sid: parsed.sid,
+      },
+    };
+  } catch (err) {
+    console.error('rollFromRefresh database error (returning null):', err);
+    return null;
+  }
 }
+

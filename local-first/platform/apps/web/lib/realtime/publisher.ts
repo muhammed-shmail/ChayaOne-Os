@@ -8,7 +8,7 @@ export async function publishLocalRealtimeEvent(outletId: string, event: Realtim
   const eventId = crypto.randomUUID();
   const timestamp = new Date().toISOString();
 
-  let entityType: 'Order' | 'Notification' = 'Order';
+  let entityType: 'Order' | 'Notification' | 'Staff' = 'Order';
   let entityId = '';
 
   if ('ticket' in event && event.ticket) {
@@ -20,6 +20,9 @@ export async function publishLocalRealtimeEvent(outletId: string, event: Realtim
   } else if ('notification' in event) {
     entityType = 'Notification';
     entityId = event.notification.id;
+  } else if ('staffId' in event) {
+    entityType = 'Staff';
+    entityId = (event as any).staffId;
   }
 
   const envelope: RealtimeEnvelope = {

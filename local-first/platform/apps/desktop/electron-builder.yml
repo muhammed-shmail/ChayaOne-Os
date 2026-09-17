@@ -5,13 +5,35 @@ directories:
   buildResources: resources
 files:
   - dist/**/*
+  - resources/**/*
   - package.json
-  - ../../apps/web/.next/**/*
-  - ../../apps/web/public/**/*
-  - ../../packages/db/prisma/**/*
 extraResources:
-  - from: ../../packages/db/scripts/
-    to: db-scripts
+  - from: bundle/web-server
+    to: web-server
+    filter:
+      - "**/*"
+  - from: bundle/web-server/node_modules
+    to: web-server/node_modules
+    filter:
+      - "**/*"
+  - from: bundle/postgres
+    to: postgres
+    filter:
+      - "**/*"
+  - from: bundle/default-db
+    to: default-db
+    filter:
+      - "**/*"
+  - from: resources/icon.png
+    to: icon.png
+  - from: resources/icon.ico
+    to: icon.ico
+  - from: resources/splash.html
+    to: splash.html
+  - from: resources/bin
+    to: bin
+    filter:
+      - "**/*"
 win:
   target: nsis
   icon: resources/icon.ico
@@ -25,3 +47,4 @@ nsis:
   shortcutName: "ChayaOne"
   uninstallDisplayName: "ChayaOne OS"
   deleteAppDataOnUninstall: false
+  runAfterFinish: true

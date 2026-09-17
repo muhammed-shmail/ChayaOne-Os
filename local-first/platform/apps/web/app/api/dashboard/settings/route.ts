@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import net from 'net';
 import { prisma, PrintJobType, type Prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
+import { hasRole, hasPermission } from '@/lib/rbac';
 import { readDevices, normalizeDefaults, type Device } from '@/lib/devices';
 import { readReceiptConfig, RECEIPT_FIELD_MAX } from '@/lib/receipt';
 import { readUpiConfig } from '@/lib/print/upi';
@@ -10,6 +11,7 @@ import { readKitchens, kitchenSlug, KITCHEN_NAME_MAX, KITCHEN_PALETTE, type Kitc
 import { readKitchenWorkflow, normalizeKitchenWorkflowInput } from '@/lib/kitchenWorkflow';
 import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
 import { getModuleStatePayload, setModuleConfig, getModuleConfig } from '@/lib/modules';
+import { publishLocalRealtimeEvent } from '@/lib/realtime';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,15 +30,17 @@ async function saveDevices(outletId: string, devices: Device[]) {
  * POST /api/dashboard/settings — update the outlet's store profile or device registry.
  *   { action: 'outlet', name?, gstin?, stateCode?, address? }
  *   { action: 'device_save', device: { id?, name, type, connection, target?, station?, copies?, isDefault? } }
- *   { action: 'device_delete', id }
- *   { action: 'modules_get' }
- *   { action: 'modules_update', businessType?, enabledModules? }
- * Owner/manager only.
+ *   { action: 'device_remove', id }
+ *   { action: 'printer_test', ip, port? }  (cashier allowed — they test their own receipt slip)
+ *   { action: 'pos_print_now', printJobId }
+ *   { action: 'receipt', receipt: ReceiptConfig }
+ *   { action: 'location', enabled, lat, lng, radiusMeters, gateAttendance, gatePosOrders }
+ * Owner/manager/accountant only (printer_test also allows cashier).
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant') {
+  if (!hasRole(session, ['owner', 'manager', 'accountant']) && !hasPermission(session, 'settings:general')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
@@ -49,7 +53,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === 'modules_update') {
-    if (session.role !== 'owner' && session.role !== 'manager') {
+    if (!hasRole(session, ['owner', 'manager']) && !hasPermission(session, 'settings:general')) {
       return NextResponse.json({ error: 'forbidden', message: 'Only store owners or managers can modify modules.' }, { status: 403 });
     }
     try {
@@ -512,6 +516,10 @@ export async function POST(req: NextRequest) {
 
   if (body.action !== 'outlet') return NextResponse.json({ error: 'invalid_action' }, { status: 400 });
 
+  if (typeof body.logoUrl === 'string' && body.logoUrl.startsWith('blob:')) {
+    return NextResponse.json({ error: 'invalid_logo_url', message: 'Temporary blob URLs cannot be persisted.' }, { status: 400 });
+  }
+
   const data: Prisma.OutletUpdateInput = {};
   if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim();
   if (body.gstin !== undefined) data.gstin = body.gstin ? String(body.gstin).trim() : null;
@@ -540,7 +548,15 @@ export async function POST(req: NextRequest) {
       settings.gst = gst;
     }
     if (body.logoUrl !== undefined) {
-      settings.logoUrl = body.logoUrl ? String(body.logoUrl).slice(0, 1000) : null;
+      const cleanLogoUrl = body.logoUrl ? String(body.logoUrl).trim().slice(0, 1000) : null;
+      settings.logoUrl = cleanLogoUrl;
+
+      // Sync to TenantBranding so tenant-level brand fallback receives the logo
+      await prisma.tenantBranding.upsert({
+        where: { tenantId: session.tenantId },
+        create: { tenantId: session.tenantId, logoUrl: cleanLogoUrl },
+        update: { logoUrl: cleanLogoUrl },
+      }).catch((err) => console.warn('[settings] TenantBranding sync error:', err));
     }
     data.settings = settings as Prisma.InputJsonValue;
   }
@@ -550,12 +566,28 @@ export async function POST(req: NextRequest) {
   const outlet = await prisma.outlet.update({
     where: { id: session.outletId },
     data,
-    select: { name: true, gstin: true, stateCode: true, address: true, timezone: true },
+    select: { name: true, gstin: true, stateCode: true, address: true, timezone: true, settings: true },
   });
+
+  const updatedLogoUrl = (outlet.settings as any)?.logoUrl || null;
+
+  if (body.logoUrl !== undefined) {
+    publishLocalRealtimeEvent(session.outletId, {
+      type: 'outlet.updated',
+      outletId: session.outletId,
+      logoUrl: updatedLogoUrl,
+    });
+  }
 
   await prisma.auditLog.create({
     data: { outletId: session.outletId, actorId: session.staffId, action: 'outlet.updated', entity: 'outlet', entityId: session.outletId, after: data as Prisma.InputJsonValue },
   }).catch(() => {});
 
-  return NextResponse.json({ ok: true, outlet });
+  return NextResponse.json({
+    ok: true,
+    outlet: {
+      ...outlet,
+      logoUrl: updatedLogoUrl,
+    },
+  });
 }

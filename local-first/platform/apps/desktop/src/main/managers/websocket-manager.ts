@@ -1,6 +1,7 @@
 import { Server } from 'ws';
 import { logger } from '../logger';
 import * as http from 'http';
+import * as net from 'net';
 import * as express from 'express';
 import { printerManager } from './printer-manager';
 
@@ -11,6 +12,21 @@ export class WebsocketManager {
 
   public async start(): Promise<void> {
     if (this.status === 'RUNNING') return;
+
+    // Check if WebSocket server is already running on port 3001
+    const isWsUp = await new Promise<boolean>((resolve) => {
+      const sock = net.connect({ host: '127.0.0.1', port: 3001 });
+      sock.on('connect', () => { sock.destroy(); resolve(true); });
+      sock.on('error', () => resolve(false));
+      sock.setTimeout(1000, () => { sock.destroy(); resolve(false); });
+    });
+
+    if (isWsUp) {
+      this.status = 'RUNNING';
+      logger.info('Local WebSocket Server is ALREADY RUNNING on port 3001');
+      return;
+    }
+
     this.status = 'STARTING';
     logger.info('Starting Local WebSocket Server...');
 
@@ -49,16 +65,30 @@ export class WebsocketManager {
         });
 
         this.httpServer.on('error', (err: any) => {
-          logger.error(`WebSocket server listen error: ${err.message}`);
-          this.status = 'ERROR';
+          if (err.code === 'EADDRINUSE') {
+            logger.info('Port 3001 is already in use by local server — setting status to RUNNING');
+            this.status = 'RUNNING';
+          } else {
+            logger.error(`WebSocket server listen error: ${err.message}`);
+            this.status = 'ERROR';
+          }
           resolve(); // Resolve so we don't block startup
         });
 
-        this.httpServer.listen(3001, () => {
-          this.status = 'RUNNING';
-          logger.info('Local WebSocket Server is RUNNING on port 3001');
+        try {
+          this.httpServer.listen(3001, () => {
+            this.status = 'RUNNING';
+            logger.info('Local WebSocket Server is RUNNING on port 3001');
+            resolve();
+          });
+        } catch (err: any) {
+          if (err.code === 'EADDRINUSE') {
+            this.status = 'RUNNING';
+          } else {
+            this.status = 'ERROR';
+          }
           resolve();
-        });
+        }
       } catch (err: any) {
         this.status = 'ERROR';
         logger.error(`Failed to start WebSocket Server: ${err.message}`);

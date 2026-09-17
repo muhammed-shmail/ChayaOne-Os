@@ -17,14 +17,14 @@ export type PendingOrder = {
 
 const canAct = (role: string) => ['owner', 'manager', 'cashier', 'waiter'].includes(role);
 
-export default function ApprovalsClient({ outletName, role, initial }: { outletName: string; role: string; initial: PendingOrder[] }) {
+export default function ApprovalsClient({ outletName, role, canApprove, initial }: { outletName: string; role: string; canApprove?: boolean; initial: PendingOrder[] }) {
   const [orders, setOrders] = useState<PendingOrder[]>(initial);
   // null until mounted → SSR and first client render agree (no hydration mismatch)
   const [now, setNow] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const liveRef = useRef<HTMLSpanElement>(null);
-  const acts = canAct(role);
+  const acts = canApprove !== undefined ? canApprove : canAct(role);
 
   useEffect(() => {
     setNow(Date.now());

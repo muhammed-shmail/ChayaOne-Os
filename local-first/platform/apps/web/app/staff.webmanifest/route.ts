@@ -24,7 +24,7 @@ export function GET() {
     // app.png has a transparent background, so it is not declared `maskable`
     // (Android would clip it against no fill). Single `any` icon at real size.
     icons: [
-      { src: '/app.png?v=3', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/app.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'any' },
     ],
     shortcuts: [
       { name: 'Floor / POS', short_name: 'POS', url: '/pos' },

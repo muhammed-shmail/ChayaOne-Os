@@ -53,21 +53,9 @@ export class LocalWSServer {
 
         wss.on('error', (err: Error & { code?: string }) => {
           if (err.code === 'EADDRINUSE') {
-            const nextPort = this.port + 1;
-            console.log(`[REALTIME WS] Port ${this.port} in use, retrying on port ${nextPort}`);
-            this.port = nextPort;
-            // Retry on next port
-            const nextWss = new WebSocketServer({ port: this.port });
-            nextWss.on('listening', () => {
-              console.log(`[REALTIME WS] Local WebSocket server listening on port ${this.port}`);
-              this.wss = nextWss;
-              this.startHeartbeat();
-              resolve(this.port);
-            });
-            nextWss.on('error', (nextErr) => reject(nextErr));
-            nextWss.on('connection', (socket: WebSocket, req) => {
-              this.handleConnection(socket, req.url);
-            });
+            console.log(`[REALTIME WS] Port ${this.port} in use (desktop WebSocket hub active). Reusing port ${this.port}.`);
+            resolve(this.port);
+            return;
           } else {
             console.error('[REALTIME WS ERROR] WebSocket server error:', err);
             reject(err);

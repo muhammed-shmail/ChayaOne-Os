@@ -8,7 +8,7 @@ import {
   BarChart3, ChefHat, ClipboardList, LayoutDashboard, LogOut, Package,
   QrCode, ShoppingCart, Table2, Users as UsersIcon, Wifi,
 } from '@/components/ui';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
 
@@ -24,6 +24,30 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
   const crmEnabled = features.crm !== false;
   const kpi = data.kpi;
   const [showTBilling, setShowTBilling] = useState(false);
+
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data && (e.data.type === 'close-t-billing' || e.data.type === 'close-pos')) {
+        setShowTBilling(false);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!showTBilling) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowTBilling(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [showTBilling]);
 
   const actions = isManager
     ? [

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma, DeviceStatus, DeviceRole, type Prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
+import { DeviceService } from '@/lib/services';
+import type { DeviceStatus, DeviceRole } from '@cafeos/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,22 +13,7 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const devices = await prisma.device.findMany({
-    where: { outletId: session.outletId },
-    orderBy: { updatedAt: 'desc' },
-    select: {
-      id: true,
-      deviceId: true,
-      name: true,
-      role: true,
-      status: true,
-      ipAddress: true,
-      userAgent: true,
-      lastSeenAt: true,
-      createdAt: true,
-    },
-  });
-
+  const devices = await DeviceService.getDevices(session.outletId);
   return NextResponse.json({ devices });
 }
 
@@ -46,40 +32,25 @@ export async function PATCH(req: NextRequest) {
 
   if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
 
-  const device = await prisma.device.findUnique({ where: { id } });
-  if (!device || device.outletId !== session.outletId) {
-    return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  }
+  try {
+    const updated = await DeviceService.updateDevice(
+      id,
+      session.outletId,
+      {
+        name,
+        status: status as DeviceStatus,
+        role: role as DeviceRole,
+      },
+      session.staffId
+    );
 
-  const data: Prisma.DeviceUpdateInput = {};
-  if (name && typeof name === 'string') data.name = name.trim();
-  if (status && ['ONLINE', 'OFFLINE', 'DISABLED', 'PENDING_PAIRING'].includes(status)) {
-    data.status = status as DeviceStatus;
-    if (status === 'DISABLED') {
-      data.deviceToken = null; // Revoke token immediately
+    return NextResponse.json({ ok: true, device: updated });
+  } catch (err: any) {
+    if (err?.message === 'DEVICE_NOT_FOUND') {
+      return NextResponse.json({ error: 'not_found' }, { status: 404 });
     }
+    return NextResponse.json({ error: 'update_failed' }, { status: 500 });
   }
-  if (role && ['POS', 'KDS', 'WAITER', 'STAFF', 'DISPLAY'].includes(role)) {
-    data.role = role as DeviceRole;
-  }
-
-  const updated = await prisma.device.update({
-    where: { id },
-    data,
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      outletId: session.outletId,
-      actorId: session.staffId,
-      action: status === 'DISABLED' ? 'device.disabled' : 'device.updated',
-      entity: 'device',
-      entityId: id,
-      after: { name: updated.name, status: updated.status, role: updated.role } as Prisma.InputJsonValue,
-    },
-  }).catch(() => {});
-
-  return NextResponse.json({ ok: true, device: updated });
 }
 
 /**
@@ -97,23 +68,13 @@ export async function DELETE(req: NextRequest) {
 
   if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
 
-  const device = await prisma.device.findUnique({ where: { id } });
-  if (!device || device.outletId !== session.outletId) {
-    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  try {
+    await DeviceService.removeDevice(id, session.outletId, session.staffId);
+    return NextResponse.json({ ok: true, id });
+  } catch (err: any) {
+    if (err?.message === 'DEVICE_NOT_FOUND') {
+      return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    }
+    return NextResponse.json({ error: 'delete_failed' }, { status: 500 });
   }
-
-  await prisma.device.delete({ where: { id } });
-
-  await prisma.auditLog.create({
-    data: {
-      outletId: session.outletId,
-      actorId: session.staffId,
-      action: 'device.revoked',
-      entity: 'device',
-      entityId: id,
-      after: { name: device.name, deviceId: device.deviceId } as Prisma.InputJsonValue,
-    },
-  }).catch(() => {});
-
-  return NextResponse.json({ ok: true, id });
 }

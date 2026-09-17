@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, Prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
+import { hasRole, hasPermission } from '@/lib/rbac';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,7 @@ function cleanStation(v: unknown): string | null {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager') {
+  if (!hasRole(session, ['owner', 'manager']) && !hasPermission(session, 'menu:view') && !hasPermission(session, 'menu:edit')) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 

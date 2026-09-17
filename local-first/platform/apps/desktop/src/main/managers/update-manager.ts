@@ -13,7 +13,7 @@ export class DesktopUpdateManager {
 
   public async getStatus(): Promise<DesktopUpdateStatus> {
     return new Promise((resolve) => {
-      const req = http.get('http://localhost:3000/api/system/updates', (res) => {
+      const req = http.get('http://127.0.0.1:3000/api/system/updates', (res) => {
         let data = '';
         res.on('data', (chunk) => (data += chunk));
         res.on('end', () => {
@@ -45,7 +45,7 @@ export class DesktopUpdateManager {
     return new Promise((resolve) => {
       const postData = JSON.stringify({ action: 'check' });
       const req = http.request(
-        'http://localhost:3000/api/system/updates',
+        'http://127.0.0.1:3000/api/system/updates',
         {
           method: 'POST',
           headers: {

@@ -5,15 +5,21 @@ import { printerManager } from './printer-manager';
 
 export class HealthManager {
   public getSystemHealth() {
+    const dbStatus = dbManager.getStatus();
+    const serverStatus = serverManager.getStatus();
+    const wsStatus = wsManager.getStatus();
+    const printerStatus = printerManager.getStatus();
+
     return {
-      database: dbManager.getStatus(),
-      server: serverManager.getStatus(),
-      websocket: wsManager.getStatus(),
-      printer: printerManager.getStatus(),
-      isHealthy: 
-        dbManager.getStatus() === 'RUNNING' &&
-        serverManager.getStatus() === 'RUNNING' &&
-        wsManager.getStatus() === 'RUNNING'
+      database: dbStatus,
+      server: serverStatus,
+      websocket: wsStatus,
+      printer: printerStatus,
+      isHealthy:
+        dbStatus === 'RUNNING' &&
+        serverStatus === 'RUNNING' &&
+        wsStatus === 'RUNNING',
+      timestamp: new Date().toISOString(),
     };
   }
 }

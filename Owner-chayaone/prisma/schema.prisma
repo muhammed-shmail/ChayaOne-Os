@@ -223,6 +223,7 @@ model Tenant {
   branding     TenantBranding?
   usage        UsageCounter[]
   tickets      SupportTicket[]
+  licenses     License[]
 
   @@map("tenants")
 }
@@ -1499,4 +1500,40 @@ model SystemDiagnosticLog {
   @@index([category, severity])
   @@index([createdAt])
   @@map("system_diagnostic_logs")
+}
+
+// ===================== COMMERCIAL LICENSING & ACTIVATION =====================
+enum LicenseStatus {
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  SUSPENDED
+  REVOKED
+}
+
+model License {
+  id                 String        @id @default(uuid()) @db.Uuid
+  licenseId          String        @unique // e.g. "LIC-XXXX-XXXX-XXXX"
+  businessId         String        @db.Uuid // maps to Tenant.id
+  installationId     String        // e.g. "CHAYAONE-INSTALL-XXXXXXXX"
+  deviceId           String?       // Main PC hardware identity
+  licenseType        String        @default("standard") // "1_month" | "2_months" | "3_months" | "custom"
+  startDate          DateTime      @db.Timestamptz(6)
+  expiryDate         DateTime      @db.Timestamptz(6)
+  status             LicenseStatus @default(ACTIVE)
+  signature          String        @db.Text // Cryptographic HMAC-SHA256 signature
+  lastValidatedAt    DateTime      @default(now()) @db.Timestamptz(6)
+  lastServerTime     DateTime?     @db.Timestamptz(6)
+  monotonicWatermark BigInt        @default(0) // System clock rollback tamper detection
+  activatedAt        DateTime      @default(now()) @db.Timestamptz(6)
+  activatedBy        String?       // Admin identifier / activation channel
+  meta               Json?         // Module entitlements, custom grace periods
+  createdAt          DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime      @updatedAt @db.Timestamptz(6)
+
+  tenant             Tenant        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, status])
+  @@index([installationId])
+  @@map("licenses")
 }

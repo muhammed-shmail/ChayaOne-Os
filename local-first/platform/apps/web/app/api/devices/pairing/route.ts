@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import os from 'os';
-import { prisma, DeviceRole } from '@cafeos/db';
+import { DeviceRole } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
-import { generatePairingCode } from '@/lib/device-pairing';
+import { PairingService } from '@/lib/services';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,14 +27,7 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const activeCode = await prisma.devicePairingCode.findFirst({
-    where: {
-      outletId: session.outletId,
-      usedAt: null,
-      expiresAt: { gt: new Date() },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const activeCode = await PairingService.getActiveCode(session.outletId);
 
   const localIp = getLocalIpAddress();
   const port = process.env.PORT || '3000';
@@ -67,7 +60,7 @@ export async function POST(req: NextRequest) {
     ? body.targetRole
     : 'POS') as DeviceRole;
 
-  const pairingCode = await generatePairingCode({
+  const pairingCode = await PairingService.generatePairingCode({
     tenantId: session.tenantId,
     outletId: session.outletId,
     targetRole,

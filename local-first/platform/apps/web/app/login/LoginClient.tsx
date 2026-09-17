@@ -22,8 +22,8 @@ export default function LoginClient() {
   const [geoRequired, setGeoRequired] = useState(false); // outlet location gate applies to this clock-in
   const [attError, setAttError] = useState<string | null>(null); // clock-in blocked (off-site / no GPS)
 
-  // login mode: fast PIN pad (floor staff) or username+password (secure, dashboard roles)
-  const [mode, setMode] = useState<'pin' | 'password'>('pin');
+  // login mode: defaults to username + password (secure credentials required)
+  const [mode, setMode] = useState<'pin' | 'password'>('password');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false); // reveal/hide the password field

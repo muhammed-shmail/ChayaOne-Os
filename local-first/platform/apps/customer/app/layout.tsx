@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'ChayaOne',
   },
-  icons: { icon: '/app.png?v=3', apple: '/app.png?v=3' },
+  icons: { icon: '/app.png?v=4', shortcut: '/favicon.ico', apple: '/app.png?v=4' },
 };
 
 export const viewport: Viewport = {

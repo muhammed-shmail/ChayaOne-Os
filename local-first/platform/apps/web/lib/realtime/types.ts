@@ -10,7 +10,9 @@ export type EventType =
   | 'table.updated'
   | 'waiter.called'
   | 'bill.requested'
-  | 'notify';
+  | 'notify'
+  | 'staff.updated'
+  | 'outlet.updated';
 
 export interface RealtimeEnvelope {
   event: EventType;
@@ -18,7 +20,7 @@ export interface RealtimeEnvelope {
   tenantId: string;
   outletId: string;
   timestamp: string; // ISO-8601
-  entityType: 'Order' | 'Notification';
+  entityType: 'Order' | 'Notification' | 'Staff';
   entityId: string;
   payload: RealtimeEvent;
 }

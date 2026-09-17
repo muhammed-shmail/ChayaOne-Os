@@ -40,6 +40,8 @@ const MODULE_ICONS: Record<ModuleId, React.ComponentType<any>> = {
   crm: Users,
   loyalty: Sparkles,
   advanced_reports: BarChart3,
+  bakery: ChefHat,
+  retail: Package,
 };
 
 export default function ModuleManagement({

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
+import { canAccess, landingFor, hasRole } from '@/lib/rbac';
 import { getDashboardData } from '@/lib/analytics';
 import { tenantBilling } from '@/lib/billing';
 import { tenantFeatures } from '@/lib/features';
@@ -20,7 +21,7 @@ export const dynamic = 'force-dynamic';
 export default async function DashboardPage({ searchParams }: { searchParams: { [key: string]: string | undefined } }) {
   const session = await getSession();
   if (!session) redirect('/login');
-  if (!['owner', 'manager', 'cashier', 'accountant'].includes(session.role)) redirect('/pos');
+  if (!canAccess(session, 'dashboard')) redirect(landingFor(session));
 
   const outlet = await prisma.outlet.findUnique({
     where: { id: session.outletId },
@@ -40,13 +41,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
 
   const dashboardOutlet = { name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt, upiConfig };
 
-  const showOwner = session.role === 'owner' || session.role === 'accountant' || (session.role === 'manager' && searchParams?.view === 'owner');
+  const showOwner = hasRole(session, ['owner', 'accountant']) || (hasRole(session, 'manager') && searchParams?.view === 'owner');
+
+  const staffContext = {
+    id: session.staffId,
+    name: session.name,
+    role: session.role,
+    roles: session.roles,
+    permissions: session.permissions,
+    effectivePermissions: session.effectivePermissions,
+  };
 
   if (showOwner) {
     return (
       <DashboardClient
         outlet={dashboardOutlet}
-        staff={{ name: session.name, role: session.role }}
+        staff={staffContext}
         data={data}
         features={features}
         initialModuleConfig={moduleConfig}
@@ -57,7 +67,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
   return (
     <RoleDashboardClient
       outlet={dashboardOutlet}
-      staff={{ id: session.staffId, name: session.name, role: session.role }}
+      staff={staffContext}
       data={data}
       features={features}
     />

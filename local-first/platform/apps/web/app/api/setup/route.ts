@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma, type Prisma } from '@cafeos/db';
 import { readDevices } from '@/lib/devices';
+import { ModuleService } from '@/lib/services/module.service';
+import { BUSINESS_PRESETS, MODULE_REGISTRY, resolveModulesForBusinessTypes } from '@cafeos/core';
+import type { BusinessTypeId, ModuleId, LicensePeriod } from '@cafeos/types';
+import { LicenseService } from '@/lib/license/license-service';
+import { getInstallationId } from '@/lib/license/installation';
+import { hashPassword } from '@/lib/crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,36 +18,64 @@ function hashPin(pin: string): string {
 }
 
 /**
- * GET /api/setup — Check if ChayaOne local cafe setup has been completed.
+ * GET /api/setup — Check if ChayaOne local cafe setup has been completed, provide presets and license status.
  */
 export async function GET() {
-  const staffCount = await prisma.staffUser.count();
+  const staffCount = await prisma.staffUser.count().catch(() => 0);
   const tenant = await prisma.tenant.findFirst({
     select: { id: true, name: true, subdomain: true },
-  });
+  }).catch(() => null);
+
+  const licenseStatus = await LicenseService.getStatus().catch(() => null);
+  const installationId = getInstallationId();
 
   return NextResponse.json({
-    isConfigured: staffCount > 0 && !!tenant,
+    isConfigured: staffCount > 0 && !!tenant && !!licenseStatus && !licenseStatus.isExpired,
     tenant,
+    installationId,
+    licenseStatus,
+    businessPresets: BUSINESS_PRESETS,
+    moduleRegistry: MODULE_REGISTRY,
   });
 }
 
 /**
- * POST /api/setup — Complete first-time cafe setup wizard.
+ * POST /api/setup — Complete first-time cafe setup wizard with business type, module activation, and commercial license.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const { cafeName, subdomain, ownerName = 'Owner', ownerPin, managerPin = '4444', defaultPrinterIp } = body;
+  const {
+    cafeName,
+    subdomain,
+    businessType = 'cafe',
+    businessTypes,
+    enabledModules,
+    ownerName = 'Owner',
+    ownerUsername = 'owner',
+    ownerPassword,
+    ownerPin,
+    teamUsername = 'manager',
+    teamPassword,
+    managerPin = '4444',
+    defaultPrinterIp,
+    licensePeriod = '3_months',
+    adminPassphrase,
+    offlineToken,
+    customStartDate,
+    customEndDate,
+  } = body;
 
-  if (!cafeName || !ownerPin) {
-    return NextResponse.json({ error: 'missing_fields', message: 'Cafe name and Owner PIN are required.' }, { status: 400 });
+  if (!cafeName) {
+    return NextResponse.json({ error: 'missing_fields', message: 'Business name is required.' }, { status: 400 });
   }
 
-  if (!/^\d{4}$/.test(String(ownerPin))) {
-    return NextResponse.json({ error: 'invalid_pin', message: 'Owner PIN must be exactly 4 digits.' }, { status: 400 });
-  }
+  const effectiveOwnerPin = ownerPin && /^\d{4}$/.test(String(ownerPin)) ? String(ownerPin) : '1111';
+  const effectiveManagerPin = managerPin && /^\d{4}$/.test(String(managerPin)) ? String(managerPin) : '4444';
 
-  const slug = (subdomain || cafeName).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const slug = (subdomain || cafeName).toLowerCase().replace(/[^a-z0-9]/g, '') || 'chayaone';
+
+  let createdTenantId = '';
+  let createdOutletId = '';
 
   await prisma.$transaction(async (tx) => {
     // 1. Find or create Tenant
@@ -60,6 +94,8 @@ export async function POST(req: NextRequest) {
         data: { name: cafeName },
       });
     }
+
+    createdTenantId = tenant.id;
 
     // 2. Find or create Outlet
     let outlet = await tx.outlet.findFirst({ where: { tenantId: tenant.id } });
@@ -107,7 +143,7 @@ export async function POST(req: NextRequest) {
       outlet = await tx.outlet.create({
         data: {
           tenantId: tenant.id,
-          name: `${cafeName} Main Branch`,
+          name: `${cafeName} Main Outlet`,
           settings: updatedSettings as unknown as Prisma.InputJsonValue,
         },
       });
@@ -118,9 +154,16 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    createdOutletId = outlet.id;
+
     // 3. Upsert Owner & Manager Staff Users
-    const ownerPinHash = hashPin(String(ownerPin));
-    const managerPinHash = hashPin(String(managerPin));
+    const ownerPinHash = hashPin(effectiveOwnerPin);
+    const managerPinHash = hashPin(effectiveManagerPin);
+    const ownerPwHash = ownerPassword ? hashPassword(ownerPassword) : hashPassword('cafe1234');
+    const teamPwHash = teamPassword ? hashPassword(teamPassword) : hashPassword('manager1234');
+
+    const cleanOwnerUsername = (ownerUsername || 'owner').toLowerCase().trim();
+    const cleanTeamUsername = (teamUsername || 'manager').toLowerCase().trim();
 
     const existingOwner = await tx.staffUser.findFirst({
       where: { tenantId: tenant.id, role: 'owner' },
@@ -129,7 +172,14 @@ export async function POST(req: NextRequest) {
     if (existingOwner) {
       await tx.staffUser.update({
         where: { id: existingOwner.id },
-        data: { name: ownerName, pinHash: ownerPinHash, outletId: outlet.id },
+        data: {
+          name: ownerName,
+          username: cleanOwnerUsername,
+          passwordHash: ownerPwHash,
+          pinHash: ownerPinHash,
+          outletId: outlet.id,
+          active: true,
+        },
       });
     } else {
       await tx.staffUser.create({
@@ -137,8 +187,11 @@ export async function POST(req: NextRequest) {
           tenantId: tenant.id,
           outletId: outlet.id,
           name: ownerName,
+          username: cleanOwnerUsername,
+          passwordHash: ownerPwHash,
           role: 'owner',
           pinHash: ownerPinHash,
+          active: true,
         },
       });
     }
@@ -147,22 +200,71 @@ export async function POST(req: NextRequest) {
       where: { tenantId: tenant.id, role: 'manager' },
     });
 
-    if (!existingManager) {
+    if (existingManager) {
+      await tx.staffUser.update({
+        where: { id: existingManager.id },
+        data: {
+          username: cleanTeamUsername,
+          passwordHash: teamPwHash,
+          pinHash: managerPinHash,
+          outletId: outlet.id,
+          active: true,
+        },
+      });
+    } else {
       await tx.staffUser.create({
         data: {
           tenantId: tenant.id,
           outletId: outlet.id,
           name: 'Manager',
+          username: cleanTeamUsername,
+          passwordHash: teamPwHash,
           role: 'manager',
           pinHash: managerPinHash,
+          active: true,
         },
       });
     }
   });
 
+  // 4. Apply Multi-Business Preset & Modules via ModuleService
+  const activeBusinessTypes: BusinessTypeId[] =
+    Array.isArray(businessTypes) && businessTypes.length > 0
+      ? businessTypes
+      : [businessType as BusinessTypeId];
+
+  const resolvedModules =
+    Array.isArray(enabledModules) && enabledModules.length > 0
+      ? (enabledModules as ModuleId[])
+      : resolveModulesForBusinessTypes(activeBusinessTypes);
+
+  if (createdOutletId) {
+    await ModuleService.updateConfig(createdOutletId, {
+      businessType: activeBusinessTypes[0] || 'cafe',
+      enabledModules: resolvedModules,
+    }).catch((err) => console.warn('[SETUP] Error applying modules:', err));
+  }
+
+  // 5. Activate License if credentials provided
+  let licenseResult = null;
+  if (adminPassphrase || offlineToken) {
+    licenseResult = await LicenseService.activateLicense({
+      businessId: createdTenantId,
+      adminPassphrase,
+      offlineToken,
+      period: (licensePeriod || '3_months') as LicensePeriod,
+      customStartDate,
+      customEndDate,
+      activatedBy: 'setup_wizard',
+    });
+  }
+
   return NextResponse.json({
     ok: true,
     isConfigured: true,
+    tenantId: createdTenantId,
+    outletId: createdOutletId,
+    license: licenseResult?.license || null,
     redirectUrl: '/pos',
   });
 }
