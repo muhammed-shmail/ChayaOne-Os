@@ -28,7 +28,16 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (session.role !== 'owner' && session.role !== 'manager') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
-  const outletId = session.outletId;
+  let outletId = session.outletId;
+  if (!outletId) {
+    const firstOutlet = await prisma.outlet.findFirst({
+      where: { tenantId: session.tenantId },
+      select: { id: true },
+    });
+    outletId = firstOutlet?.id ?? null;
+  }
+  if (!outletId) return NextResponse.json({ error: 'no_outlet' }, { status: 400 });
+
   const body = await req.json().catch(() => ({}));
   const action = String(body.action ?? '');
 
@@ -123,7 +132,6 @@ export async function POST(req: NextRequest) {
             .filter((t: Record<string, unknown>) => ['bronze', 'silver', 'gold', 'vip'].includes(t.tier as string))
             .map((t: Record<string, unknown>) => ({ tier: t.tier, displayName: String(t.displayName ?? t.tier).slice(0, 24), minSpendPaise: Math.max(0, Math.round(num(t.minSpendPaise, 0))), minVisits: Math.max(0, Math.round(num(t.minVisits, 0))) }))
         : cfg.loyalty.tiers;
-      // optional bonus-point rules (CRM Loyalty Settings); fall back to current values
       const r = (body.rewards ?? {}) as Record<string, unknown>;
       const rewards = body.rewards
         ? {
@@ -136,7 +144,6 @@ export async function POST(req: NextRequest) {
       break;
     }
 
-    // ---- featured dishes (array) ----
     case 'featured_save': {
       const d = body.dish ?? {};
       if (typeof d.itemId !== 'string' || !d.itemId) return NextResponse.json({ error: 'missing_item' }, { status: 400 });
@@ -153,7 +160,6 @@ export async function POST(req: NextRequest) {
       patch = { featured: cfg.featured.filter((f) => f.itemId !== body.itemId) };
       break;
 
-    // ---- promotional banners (array) ----
     case 'banner_save': {
       const b = body.banner ?? {};
       if (!isUrl(b.imageUrl)) return NextResponse.json({ error: 'missing_image' }, { status: 400 });
@@ -186,6 +192,5 @@ export async function POST(req: NextRequest) {
     data: { outletId, actorId: session.staffId, action: `pwa.${action}`, entity: 'pwa', entityId: null, after: (patch ?? {}) as Prisma.InputJsonValue },
   }).catch(() => {});
 
-  // return the freshly normalized config so the client stays in sync
   return NextResponse.json({ ok: true, config: readPwaConfig({ ...settings, pwa: nextPwa }) });
 }

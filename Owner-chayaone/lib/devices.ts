@@ -8,6 +8,7 @@
 export const DEVICE_TYPES = [
   { value: 'receipt_printer', label: 'Receipt / Bill printer', icon: '🧾', station: false },
   { value: 'kot_printer', label: 'Kitchen (KOT) printer', icon: '🍳', station: true },
+  { value: 'both_printer', label: 'Both (Billing & KOT)', icon: '⚡', station: true },
   { value: 'label_printer', label: 'Label printer', icon: '🏷️', station: false },
   { value: 'cash_drawer', label: 'Cash drawer', icon: '💵', station: false },
   { value: 'display', label: 'KDS Display', icon: '📺', station: true },

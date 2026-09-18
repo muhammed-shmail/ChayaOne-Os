@@ -12,9 +12,10 @@ import {
   Plus, Minus, X, Check, Printer, Receipt, Smartphone, Banknote, CreditCard,
   CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
   ShoppingCart, ChevronUp, Menu, Search, Download, LogOut, type LucideIcon,
-  ArrowLeftRight, ArrowRight, CircleAlert,
+  ArrowLeftRight, ArrowRight, CircleAlert, FileText, Edit3,
 } from 'lucide-react';
 import { ShiftStatus } from '@/components/ShiftStatus';
+import { BusinessDayPrompt, BusinessDayHeaderBadge } from '@/components/BusinessDayPrompt';
 import StaffBell from '@/components/StaffBell';
 import LicenseStatusBadge from '@/components/license/LicenseStatusBadge';
 import { subscribeStaff } from '@/lib/realtime-client';
@@ -75,6 +76,7 @@ type Line = {
   gstRate: number;
   station: MenuItemDto['station'];
   qty: number;
+  notes?: string;
 };
 
 /** an order this POS has fired, tracked live as the kitchen works it */
@@ -132,6 +134,28 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   const [now, setNow] = useState(() => Date.now());
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [occupied, setOccupied] = useState<Record<string, { number: number; sinceMs: number; billPaise: number; orders: number; status: string }>>({});
+
+  // Item custom notes per product (e.g. without sugar, less spicy, extra hot)
+  const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const QUICK_ITEM_NOTES = ['Without sugar', 'Less sugar', 'Extra hot', 'Less ice', 'No ice', 'Strong tea', 'Parcel'];
+
+  function openNoteEdit(line: Line) {
+    setEditingNoteKey(line.key);
+    setNoteDraft(line.notes || '');
+  }
+  function saveNote(key: string) {
+    setCart((c) => c.map((l) => (l.key === key ? { ...l, notes: noteDraft.trim() || undefined } : l)));
+    setEditingNoteKey(null);
+    setNoteDraft('');
+  }
+  function removeNote(key: string) {
+    setCart((c) => c.map((l) => (l.key === key ? { ...l, notes: undefined } : l)));
+    if (editingNoteKey === key) {
+      setEditingNoteKey(null);
+      setNoteDraft('');
+    }
+  }
 
   const handleDashboardClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (typeof window !== 'undefined' && window.parent !== window) {
@@ -483,7 +507,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     const rows = tableOrder.lines.map((l: any) => {
       const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId || it.name === l.name);
       const hsnText = showHsn && dbItem?.hsnCode ? `<br/><span style="font-size:9px;color:#555;">HSN: ${dbItem.hsnCode}</span>` : '';
-      return `<tr><td>${l.qty}× ${escRcpt(l.name)}${hsnText}</td><td class="r">${formatINR(l.linePaise)}</td></tr>`;
+      const noteText = l.notes ? `<br/><span style="font-size:10px;font-style:italic;color:#444;">↳ Note: ${escRcpt(l.notes)}</span>` : '';
+      return `<tr><td>${l.qty}× ${escRcpt(l.name)}${noteText}${hsnText}</td><td class="r">${formatINR(l.linePaise)}</td></tr>`;
     }).join('');
     const custLine = `${billCustomer}${custPhone.trim() ? ` · ${custPhone.trim()}` : ''}`;
     printDoc(`Bill · ${tableAction?.label ?? ''}`, `
@@ -507,7 +532,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
 
   function printKOT() {
     if (!tableOrder) return;
-    const rows = tableOrder.lines.map((l: any) => `<tr><td>${l.qty}×</td><td>${l.name}</td><td class="r">${l.station ?? ''}</td></tr>`).join('');
+    const rows = tableOrder.lines.map((l: any) => `<tr><td>${l.qty}×</td><td>${escRcpt(l.name)}${l.notes ? `<div style="font-size:11px;font-weight:bold;color:#111;margin-top:2px;">↳ Note: ${escRcpt(l.notes)}</div>` : ''}</td><td class="r">${escRcpt(l.station ?? '')}</td></tr>`).join('');
     printDoc(`KOT · ${tableAction?.label ?? ''}`, `
       <h2>KOT · Table ${tableAction?.label}</h2>
       <div class="muted">Kitchen Order Ticket</div>
@@ -521,7 +546,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   function printKotFromCart(number: number, whereLabel: string) {
     const copies = Math.max(1, Math.min(4, outlet.kitchenWorkflow.kotCopies || 1));
     const when = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-    const rows = cart.map((l) => `<tr><td>${l.qty}×</td><td>${escRcpt(l.name)}</td><td class="r">${escRcpt(l.station ?? '')}</td></tr>`).join('');
+    const rows = cart.map((l) => `<tr><td>${l.qty}×</td><td>${escRcpt(l.name)}${l.notes ? `<div style="font-size:11px;font-weight:bold;color:#111;margin-top:2px;">↳ Note: ${escRcpt(l.notes)}</div>` : ''}</td><td class="r">${escRcpt(l.station ?? '')}</td></tr>`).join('');
     const one = `
       <h2>KOT · #${number}</h2>
       <div class="muted">${escRcpt(whereLabel)} · ${when}</div>
@@ -540,7 +565,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     const rows = cart.map((l) => {
       const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId);
       const hsnText = showHsn && dbItem?.hsnCode ? `<br/><span style="font-size:9px;color:#555;">HSN: ${dbItem.hsnCode}</span>` : '';
-      return `<tr><td>${l.qty}× ${esc(l.name)}${hsnText}</td><td class="r">${formatINR(l.pricePaise * l.qty)}</td></tr>`;
+      const noteText = l.notes ? `<br/><span style="font-size:10px;font-style:italic;color:#444;">↳ Note: ${esc(l.notes)}</span>` : '';
+      return `<tr><td>${l.qty}× ${esc(l.name)}${noteText}${hsnText}</td><td class="r">${formatINR(l.pricePaise * l.qty)}</td></tr>`;
     }).join('');
     const when = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
     const cust = customer && (customer.name || customer.phone)
@@ -728,6 +754,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
           gstRate: l.gstRate,
           station: l.station,
           modifiers: [],
+          notes: l.notes || undefined,
         })),
         discountPct,
         discountFlatPaise,
@@ -851,6 +878,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
           </div>
           <div className="px-1 flex flex-col gap-1.5">
             <ShiftStatus />
+            <BusinessDayHeaderBadge />
             <LicenseStatusBadge />
           </div>
           <div className="flex rounded-full p-[3px] border" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
@@ -976,7 +1004,25 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             <button onClick={clear} disabled={!cart.length} title="Clear ticket" aria-label="Clear ticket" className="btn btn-icon btn-sm btn-ghost"><RefreshCw size={16} aria-hidden /></button>
           </div>
 
-          <CartBody cart={cart} bill={bill} outlet={outlet} discountPct={discountPct} discountFlatPaise={discountFlatPaise} scPct={scPct} setDiscountPct={setDiscountPct} setDiscountFlatPaise={setDiscountFlatPaise} setScPct={setScPct} bump={bump} />
+          <CartBody
+            cart={cart}
+            bill={bill}
+            outlet={outlet}
+            discountPct={discountPct}
+            discountFlatPaise={discountFlatPaise}
+            scPct={scPct}
+            setDiscountPct={setDiscountPct}
+            setDiscountFlatPaise={setDiscountFlatPaise}
+            setScPct={setScPct}
+            bump={bump}
+            editingNoteKey={editingNoteKey}
+            noteDraft={noteDraft}
+            setNoteDraft={setNoteDraft}
+            openNoteEdit={openNoteEdit}
+            saveNote={saveNote}
+            removeNote={removeNote}
+            quickNotes={QUICK_ITEM_NOTES}
+          />
 
           {cart.length > 0 && (
             <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
@@ -1465,7 +1511,25 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               </div>
             </div>
             <div className="flex flex-col flex-1 min-h-0 px-5 pb-[max(1.1rem,env(safe-area-inset-bottom))]">
-              <CartBody cart={cart} bill={bill} outlet={outlet} discountPct={discountPct} discountFlatPaise={discountFlatPaise} scPct={scPct} setDiscountPct={setDiscountPct} setDiscountFlatPaise={setDiscountFlatPaise} setScPct={setScPct} bump={bump} />
+              <CartBody
+                cart={cart}
+                bill={bill}
+                outlet={outlet}
+                discountPct={discountPct}
+                discountFlatPaise={discountFlatPaise}
+                scPct={scPct}
+                setDiscountPct={setDiscountPct}
+                setDiscountFlatPaise={setDiscountFlatPaise}
+                setScPct={setScPct}
+                bump={bump}
+                editingNoteKey={editingNoteKey}
+                noteDraft={noteDraft}
+                setNoteDraft={setNoteDraft}
+                openNoteEdit={openNoteEdit}
+                saveNote={saveNote}
+                removeNote={removeNote}
+                quickNotes={QUICK_ITEM_NOTES}
+              />
               {cart.length > 0 && (
                 <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
                   setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
@@ -1567,7 +1631,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               </span>
             </div>
             <ShiftStatus />
-            <div className="px-1">
+            <div className="px-1 flex flex-col gap-1.5">
+              <BusinessDayHeaderBadge />
               <LicenseStatusBadge />
             </div>
             {canAccess(currentStaff, 'dashboard') && (
@@ -1617,6 +1682,9 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
           />
         </div>
       )}
+
+      {/* Midnight / Business Day Extension Prompt */}
+      <BusinessDayPrompt currentStaff={currentStaff} />
     </>
   );
 }
@@ -1627,7 +1695,11 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
  * The action buttons (Send to KOT / Charge) stay with each caller so desktop and
  * mobile can emphasise them differently. Qty steppers are 44px on phones, 32px at md+.
  */
-function CartBody({ cart, bill, outlet, discountPct, discountFlatPaise, scPct, setDiscountPct, setDiscountFlatPaise, setScPct, bump }: {
+function CartBody({
+  cart, bill, outlet, discountPct, discountFlatPaise, scPct,
+  setDiscountPct, setDiscountFlatPaise, setScPct, bump,
+  editingNoteKey, noteDraft, setNoteDraft, openNoteEdit, saveNote, removeNote, quickNotes,
+}: {
   cart: Line[];
   bill: ReturnType<typeof computeBill>;
   outlet: Outlet;
@@ -1638,6 +1710,13 @@ function CartBody({ cart, bill, outlet, discountPct, discountFlatPaise, scPct, s
   setDiscountFlatPaise: (n: number) => void;
   setScPct: (n: number) => void;
   bump: (key: string, d: number) => void;
+  editingNoteKey: string | null;
+  noteDraft: string;
+  setNoteDraft: (s: string) => void;
+  openNoteEdit: (line: Line) => void;
+  saveNote: (key: string) => void;
+  removeNote: (key: string) => void;
+  quickNotes: string[];
 }) {
   const DISC_PRESETS = [0, 10];
   // discount-entry unit: percentage vs a flat ₹ amount (selector sits by the field)
@@ -1659,14 +1738,88 @@ function CartBody({ cart, bill, outlet, discountPct, discountFlatPaise, scPct, s
             <Coffee size={40} className="mx-auto opacity-40" aria-hidden /><p>Tap items to build the ticket.</p>
           </div>
         ) : cart.map((l) => (
-          <div key={l.key} className="grid grid-cols-[1fr_auto_auto] gap-2.5 items-center p-2.5 rounded-[14px] border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-            <div className="font-bold text-[13.5px]">{l.name}</div>
-            <div className="flex items-center gap-1.5">
-              <button onClick={() => bump(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
-              <span className="font-bold w-6 text-center tnum">{l.qty}</span>
-              <button onClick={() => bump(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
+          <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+            <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+              <div className="min-w-0 pr-1">
+                <div className="font-bold text-[13.5px] leading-tight truncate">{l.name}</div>
+                {l.notes && editingNoteKey !== l.key && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
+                      ↳ {l.notes}
+                    </span>
+                    <button type="button" onClick={() => openNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
+                    <button type="button" onClick={() => removeNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
+                  </div>
+                )}
+                {!l.notes && editingNoteKey !== l.key && (
+                  <button type="button" onClick={() => openNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
+                    <Plus size={11} /> <span>Add note (e.g. without sugar)</span>
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => bump(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
+                <span className="font-bold w-6 text-center tnum">{l.qty}</span>
+                <button onClick={() => bump(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
+              </div>
+              <span className="text-[13.5px] tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
             </div>
-            <span className="text-[13.5px] tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
+
+            {editingNoteKey === l.key && (
+              <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
+                <div className="flex flex-wrap gap-1">
+                  {quickNotes.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setNoteDraft(preset)}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
+                      style={{
+                        background: noteDraft === preset ? 'var(--turmeric)' : 'var(--paper)',
+                        color: noteDraft === preset ? '#2A1607' : 'var(--ink-2)',
+                        borderColor: 'var(--line-2)',
+                      }}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={noteDraft}
+                    onChange={(e) => setNoteDraft(e.target.value)}
+                    placeholder="e.g. without sugar, extra hot..."
+                    className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
+                    style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveNote(l.key);
+                      if (e.key === 'Escape') removeNote(l.key);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => saveNote(l.key)}
+                    className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0"
+                    style={{ background: 'var(--turmeric-d)' }}
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!l.notes) removeNote(l.key);
+                      else openNoteEdit({ ...l, notes: l.notes });
+                    }}
+                    className="px-2 py-1 text-xs font-medium rounded-lg shrink-0"
+                    style={{ color: 'var(--ink-3)' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

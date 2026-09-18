@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { readBusinessDay } from '@/lib/businessDay';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,18 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const todayKey = new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
+  const requestedOutlet = req.nextUrl.searchParams.get('outletId');
+  const outletId = requestedOutlet || session.outletId;
+
+  const outlet = await prisma.outlet.findUnique({
+    where: { id: outletId },
+    select: { settings: true },
+  });
+  const bDay = readBusinessDay(outlet?.settings);
+  const cutoffHours = bDay.cutoffHour;
+  const shiftInterval = `${cutoffHours} hours`;
+
+  const todayKey = new Date(`${bDay.currentBusinessDate}T00:00:00`);
   const qpFrom = req.nextUrl.searchParams.get('from');
   const qpTo = req.nextUrl.searchParams.get('to');
   const toD = isDate(qpTo) ? new Date(`${qpTo}T00:00:00`) : todayKey;
@@ -26,19 +38,16 @@ export async function GET(req: NextRequest) {
   const from = ymd(fromD);
   const to = ymd(toD);
 
-  const requestedOutlet = req.nextUrl.searchParams.get('outletId');
-  const outletId = requestedOutlet || session.outletId;
-
   try {
     const rows = await prisma.$queryRaw<{ day: Date; orders: number; gross: number }[]>`
-      SELECT ("placedAt" AT TIME ZONE ${TZ})::date AS day,
+      SELECT (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date AS day,
              COUNT(*)::int AS orders,
              COALESCE(SUM("totalPaise"), 0)::int AS gross
       FROM orders
       WHERE "outletId" = ${outletId}::uuid
         AND "status" <> 'cancelled'
-        AND ("placedAt" AT TIME ZONE ${TZ})::date >= ${from}::date
-        AND ("placedAt" AT TIME ZONE ${TZ})::date <= ${to}::date
+        AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date >= ${from}::date
+        AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date <= ${to}::date
       GROUP BY 1
       ORDER BY 1
     `;

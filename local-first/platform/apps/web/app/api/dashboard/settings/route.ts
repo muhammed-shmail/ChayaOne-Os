@@ -16,7 +16,7 @@ import { publishLocalRealtimeEvent } from '@/lib/realtime';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const TYPE_VALUES = ['receipt_printer', 'kot_printer', 'label_printer', 'cash_drawer', 'display', 'other'];
+const TYPE_VALUES = ['receipt_printer', 'kot_printer', 'both_printer', 'label_printer', 'cash_drawer', 'display', 'other'];
 const CONN_VALUES = ['network', 'usb', 'bluetooth'];
 
 /** persist the device list back into Outlet.settings.devices (merged). */

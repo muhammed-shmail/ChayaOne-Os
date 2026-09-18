@@ -109,13 +109,13 @@ export async function processPrintQueueBatch(batchSize = 10) {
         if (!targetDevice) {
           if (isReceiptJob) {
             targetDevice =
-              devices.find((d) => d.type === 'receipt_printer' && d.isDefault) ||
-              devices.find((d) => d.type === 'receipt_printer') ||
+              devices.find((d) => (d.type === 'receipt_printer' || d.type === 'both_printer') && d.isDefault) ||
+              devices.find((d) => d.type === 'receipt_printer' || d.type === 'both_printer') ||
               null;
           } else {
             targetDevice =
-              devices.find((d) => d.type === 'kot_printer' && d.station === job.stationId) ||
-              devices.find((d) => d.type === 'kot_printer') ||
+              devices.find((d) => (d.type === 'kot_printer' || d.type === 'both_printer') && d.station === job.stationId) ||
+              devices.find((d) => d.type === 'kot_printer' || d.type === 'both_printer') ||
               null;
           }
         }

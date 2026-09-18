@@ -17,7 +17,7 @@ import { DEVICE_TYPES, DEVICE_CONNECTIONS, type Device } from '@/lib/devices';
 import type { ReceiptConfig } from '@/lib/receipt';
 import { type KitchenWorkflowConfig, KITCHEN_WORKFLOW_DEFAULTS, AUTO_CLEAR_OPTIONS, DELAY_THRESHOLD_OPTIONS, SORT_OPTIONS, THEME_OPTIONS, FONT_SIZE_OPTIONS } from '@/lib/kitchenWorkflow';
 import { tableOrderUrl, tableQrImageUrl } from '@/lib/qr';
-import { FEATURED_LABELS, DEFAULT_GAME_KEYS, type PwaConfig } from '@/lib/pwa';
+import { FEATURED_LABELS, DEFAULT_GAME_KEYS, DEFAULT_PWA, type PwaConfig } from '@/lib/pwa';
 import type { OutletLocation } from '@/lib/geo';
 import { subscribeStaff } from '@/lib/realtime-client';
 import { getGeoHeaders } from '@/lib/geo-client';
@@ -30,6 +30,7 @@ import {
   ChevronLeft, ChevronRight,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
+import { BusinessDayPrompt, BusinessDayHeaderBadge } from '@/components/BusinessDayPrompt';
 import StaffDevices from '@/components/StaffDevices';
 import { MobileDrawer, BottomNav, type NavItem } from '@/components/dashboard/MobileNav';
 
@@ -1422,11 +1423,24 @@ export default function DashboardClient({
   const loadPwa = async () => {
     try {
       const res = await fetch('/api/dashboard/section?s=pwa');
-      if (res.ok) { const d = await res.json(); setPwaCfg(d.data?.config ?? null); setPwaItems(d.data?.menuItems ?? []); }
-    } catch (err) { console.error(err); }
+      if (res.ok) {
+        const d = await res.json();
+        setPwaCfg(d.data?.config ?? DEFAULT_PWA);
+        setPwaItems(d.data?.menuItems ?? []);
+      } else {
+        setPwaCfg((prev) => prev ?? DEFAULT_PWA);
+      }
+    } catch (err) {
+      console.error(err);
+      setPwaCfg((prev) => prev ?? DEFAULT_PWA);
+    }
   };
   const setCfg = (fn: (c: PwaConfig) => PwaConfig) => setPwaCfg((prev) => (prev ? fn(prev) : prev));
-  useEffect(() => { if (activeMenu === 'settings' && settingsPanel === 'pwa' && !pwaCfg) loadPwa(); }, [activeMenu, settingsPanel, pwaCfg]);
+  useEffect(() => {
+    if (activeMenu === 'settings' && !pwaCfg) {
+      loadPwa();
+    }
+  }, [activeMenu, pwaCfg]);
 
   // ── Audit Logs (Settings → Audit Logs, owner-only) ──
   type AuditEntry = { id: string; at: string; actorName: string; action: string; entity: string; entityId: string | null; before: Record<string, unknown> | null; after: Record<string, unknown> | null };
@@ -1490,9 +1504,17 @@ export default function DashboardClient({
   };
 
   const handleSavePwa = async (cfg: PwaConfig) => {
-    await pwaSave({ action: 'theme_save', theme: cfg.theme }, 'Theme branding saved');
-    await pwaSave({ action: 'table_save', table: cfg.table }, 'Table QR routing saved');
-    await pwaSave({ action: 'registration_save', registration: cfg.registration }, 'Customer access settings saved');
+    const ok = await pwaSave({
+      action: 'pwa_settings_save',
+      theme: cfg.theme,
+      table: cfg.table,
+      registration: cfg.registration,
+    }, 'Customer App settings saved');
+    if (!ok) {
+      await pwaSave({ action: 'theme_save', ...cfg.theme, theme: cfg.theme }, 'Theme branding saved');
+      await pwaSave({ action: 'table_save', ...cfg.table, table: cfg.table }, 'Table QR routing saved');
+      await pwaSave({ action: 'registration_save', ...cfg.registration, registration: cfg.registration }, 'Customer access settings saved');
+    }
   };
 
 
@@ -2175,6 +2197,8 @@ export default function DashboardClient({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            <ShiftStatus />
+            <BusinessDayHeaderBadge />
             {/* T-Billing Button */}
             <button
               type="button"
@@ -3858,6 +3882,7 @@ export default function DashboardClient({
                 handleSavePwa={handleSavePwa}
                 pwaSaving={pwaBusy}
                 uploadImage={uploadImage}
+                loadPwa={loadPwa}
                 auditList={auditEntries}
                 auditTotal={auditHasMore ? (auditPage * 20 + 1) : auditEntries.length}
                 auditPage={auditPage}
@@ -4889,6 +4914,9 @@ export default function DashboardClient({
           {hoveredItem.label}
         </div>
       )}
+
+      {/* Midnight / Business Day Extension Prompt */}
+      <BusinessDayPrompt currentStaff={staff} />
     </div>
   );
 }

@@ -7,12 +7,12 @@ import {
   Lock, Database, Sparkles, Cpu, Sliders, Calendar, DollarSign, UserCheck, RefreshCw,
   AlertCircle, Trash2, Plus, Check, Search, ChevronRight, ChevronLeft, Info, X, Key,
   Heart, AlertTriangle, Play, HelpCircle, Megaphone, Download, Layers, QrCode,
-  Wifi, Copy, ExternalLink, User, Server, CheckCircle2, Monitor
+  Wifi, Copy, ExternalLink, User, Server, CheckCircle2, Monitor, Moon
 } from 'lucide-react';
 import type { Kitchen } from '@/lib/kitchens';
 import type { Device } from '@/lib/devices';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
-import type { PwaConfig } from '@/lib/pwa';
+import { DEFAULT_PWA, type PwaConfig } from '@/lib/pwa';
 import type { ModuleSystemConfig } from '@cafeos/types';
 import SystemManagement from './SystemManagement';
 import ModuleManagement from './ModuleManagement';
@@ -263,6 +263,7 @@ interface SettingsCenterProps {
   handleSavePwa: (cfg: PwaConfig) => Promise<void>;
   pwaSaving: boolean;
   uploadImage: (file: File) => Promise<string | null>;
+  loadPwa?: () => Promise<void>;
 
   auditList: any[];
   auditTotal: number;
@@ -326,6 +327,7 @@ export default function SettingsCenter({
   handleSavePwa,
   pwaSaving,
   uploadImage,
+  loadPwa,
   auditList,
   auditTotal,
   auditPage,
@@ -870,12 +872,32 @@ export default function SettingsCenter({
     }
   }, [outlet]);
 
-  // Load audit history when Tax tab is opened
+  // Load audit history when Tax or Audit tab is opened
   useEffect(() => {
-    if (activePanel === 'tax') {
+    if (activePanel === 'tax' || activePanel === 'audit') {
       loadAudit(1);
     }
   }, [activePanel]);
+
+  // Automatically load PWA configuration when Customer App (pwa) panel is opened
+  useEffect(() => {
+    if (activePanel === 'pwa' && !pwaCfg) {
+      if (loadPwa) {
+        loadPwa().catch(() => {
+          setPwaCfg((prev) => prev ?? DEFAULT_PWA);
+        });
+      } else {
+        fetch('/api/dashboard/section?s=pwa')
+          .then((r) => r.json())
+          .then((d) => {
+            setPwaCfg(d.data?.config ?? DEFAULT_PWA);
+          })
+          .catch(() => {
+            setPwaCfg(DEFAULT_PWA);
+          });
+      }
+    }
+  }, [activePanel, pwaCfg, loadPwa, setPwaCfg]);
 
   const handleSaveGstLocal = async (e?: React.FormEvent, reason?: string) => {
     if (e) e.preventDefault();
@@ -1227,6 +1249,12 @@ export default function SettingsCenter({
     festivalHours: ''
   });
 
+  const [businessDayCfg, setBusinessDayCfg] = useState({
+    autoPromptAtMidnight: true,
+    closingTime: '00:00',
+    cutoffHour: 4,
+  });
+
   const [taxCharges, setTaxCharges] = useState({
     serviceChargePct: '5',
     deliveryChargeFlat: '40',
@@ -1431,11 +1459,29 @@ export default function SettingsCenter({
     localStorage.setItem(`cafeos_custom_settings_${outlet.name}`, dataString);
     setOriginalFormData(dataString);
     setHasUnsavedChanges(false);
+    fetch('/api/dashboard/business-day', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'configure', ...businessDayCfg }),
+    }).catch(() => {});
     flashMessage('Operational settings saved successfully');
   };
 
   // Load custom settings if any exist
   useEffect(() => {
+    fetch('/api/dashboard/business-day')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.state) {
+          setBusinessDayCfg({
+            autoPromptAtMidnight: !!d.state.autoPromptAtMidnight,
+            closingTime: d.state.closingTime || '00:00',
+            cutoffHour: typeof d.state.cutoffHour === 'number' ? d.state.cutoffHour : 4,
+          });
+        }
+      })
+      .catch(() => {});
+
     const saved = localStorage.getItem(`cafeos_custom_settings_${outlet.name}`);
     if (saved) {
       try {
@@ -2151,14 +2197,61 @@ export default function SettingsCenter({
                     </div>
                   </div>
 
-                  <div>
-                    <label className="lbl">Festival & Upcoming Holidays Notes</label>
-                    <textarea
-                      value={businessHours.festivalHours}
-                      onChange={(e) => setBusinessHours(b => ({ ...b, festivalHours: e.target.value }))}
-                      placeholder="e.g. Diwali Holiday: Nov 12 - Open 9 AM to 4 PM only."
-                      className="inp min-h-[70px] bg-paper-3"
-                    />
+                  {/* ── Night Shift & Midnight Day Extension (Roles above Cashier: Manager & Owner) ── */}
+                  <div className="flex flex-col gap-3 p-4 rounded-xl border bg-paper-3 border-line mt-1">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <Moon size={18} className="text-turmeric" />
+                        <div>
+                          <h4 className="font-bold text-sm">Midnight Service & Business Day Extension</h4>
+                          <p className="text-xs text-ink-3">Keep late-night sales and orders on the same day when running past 12:00 AM.</p>
+                        </div>
+                      </div>
+                      <span className="pill text-[10px] font-bold text-amber-700 bg-amber-500/10 border border-amber-500/20">
+                        Manager & Owner Only
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                      <div>
+                        <label className="lbl">Midnight / Closing Auto-Prompt</label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <input
+                            type="checkbox"
+                            checked={businessDayCfg.autoPromptAtMidnight}
+                            onChange={(e) => setBusinessDayCfg(b => ({ ...b, autoPromptAtMidnight: e.target.checked }))}
+                            className="rounded text-turmeric accent-turmeric"
+                          />
+                          <span className="text-xs">Prompt at 12:00 AM if shop is still open</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="lbl">Scheduled Closing Time</label>
+                        <input
+                          type="time"
+                          value={businessDayCfg.closingTime || '00:00'}
+                          onChange={(e) => setBusinessDayCfg(b => ({ ...b, closingTime: e.target.value }))}
+                          className="inp text-xs bg-paper-2 font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="lbl">Night Cutoff Buffer</label>
+                        <select
+                          value={businessDayCfg.cutoffHour || 4}
+                          onChange={(e) => setBusinessDayCfg(b => ({ ...b, cutoffHour: parseInt(e.target.value, 10) }))}
+                          className="inp text-xs bg-paper-2 font-semibold"
+                        >
+                          <option value={2}>2:00 AM (2 hrs past midnight)</option>
+                          <option value={3}>3:00 AM (3 hrs past midnight)</option>
+                          <option value={4}>4:00 AM (Recommended · 4 hrs buffer)</option>
+                          <option value={5}>5:00 AM (5 hrs buffer)</option>
+                          <option value={6}>6:00 AM (6 hrs buffer)</option>
+                        </select>
+                        <span className="text-[10px] text-ink-3 mt-0.5 block">Orders before this hour stay on the same day shift.</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -4028,11 +4121,11 @@ export default function SettingsCenter({
                                     {d.isDefault && <span className="pill text-[9px] font-bold text-green-700 bg-green-500/10">Default</span>}
                                   </td>
                                   <td className="p-3 capitalize font-medium">
-                                    {d.type === 'kot_printer' ? '🍳 KOT Printer' : d.type === 'receipt_printer' ? '🧾 Receipt Printer' : d.type === 'display' ? '📺 KDS Display' : '⚙️ Other Device'}
+                                    {d.type === 'both_printer' ? '⚡ Both (Billing & KOT)' : d.type === 'kot_printer' ? '🍳 KOT Printer' : d.type === 'receipt_printer' ? '🧾 Receipt Printer' : d.type === 'display' ? '📺 KDS Display' : '⚙️ Other Device'}
                                   </td>
                                   <td className="p-3 font-mono font-semibold">{targetStr}</td>
                                   <td className="p-3 capitalize font-semibold text-turmeric-d">
-                                    {d.station ? d.station : d.type === 'receipt_printer' ? 'Billing Counter' : '—'}
+                                    {d.station ? d.station : d.type === 'both_printer' ? 'Billing & Kitchen' : d.type === 'receipt_printer' ? 'Billing Counter' : '—'}
                                   </td>
                                   <td className="p-3">
                                     {d.priority === 'backup' ? (
@@ -4161,6 +4254,7 @@ export default function SettingsCenter({
                                 onChange={(e) => setDeviceForm((prev: any) => ({ ...prev, type: e.target.value }))}
                                 className="inp bg-paper-2 font-semibold"
                               >
+                                <option value="both_printer">Both (Billing & KOT)</option>
                                 <option value="kot_printer">KOT Printer</option>
                                 <option value="receipt_printer">Receipt Printer</option>
                                 <option value="display">KDS Display</option>
@@ -4218,7 +4312,7 @@ export default function SettingsCenter({
                         </div>
 
                         {/* 2. CONDITIONAL: KOT PRINTER SPECIFIC SECTIONS */}
-                        {deviceForm.type === 'kot_printer' && (
+                        {(deviceForm.type === 'kot_printer' || deviceForm.type === 'both_printer') && (
                           <>
                             {/* KOT STATION */}
                             <div className="flex flex-col gap-3 border-t pt-4 border-line">
@@ -4431,13 +4525,19 @@ export default function SettingsCenter({
                           </>
                         )}
 
-                        {/* CONDITIONAL: RECEIPT PRINTER */}
-                        {deviceForm.type === 'receipt_printer' && (
+                        {/* CONDITIONAL: RECEIPT & BOTH PRINTER */}
+                        {(deviceForm.type === 'receipt_printer' || deviceForm.type === 'both_printer') && (
                           <div className="flex flex-col gap-3 border-t pt-4 border-line">
-                            <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">Receipt Output Configuration</h4>
+                            <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">
+                              {deviceForm.type === 'both_printer' ? 'Combined Billing & KOT Output' : 'Receipt Output Configuration'}
+                            </h4>
                             <div className="p-3.5 rounded-xl bg-paper-2 border border-line text-xs flex flex-col gap-2">
-                              <b>Billing Counter Output Node</b>
-                              <span className="text-ink-3">Prints customer tax invoices and settlement duplicate receipts upon payment.</span>
+                              <b>{deviceForm.type === 'both_printer' ? 'Single Unified Printer (Bills + Kitchen Tickets)' : 'Billing Counter Output Node'}</b>
+                              <span className="text-ink-3">
+                                {deviceForm.type === 'both_printer'
+                                  ? 'Acts as the single unified printer for both customer receipts and kitchen KOT tickets.'
+                                  : 'Prints customer tax invoices and settlement duplicate receipts upon payment.'}
+                              </span>
                             </div>
                           </div>
                         )}
@@ -4651,13 +4751,60 @@ export default function SettingsCenter({
               {/* ── 12. PWA SETTINGS ── */}
               {activePanel === 'pwa' && (
                 <div className="card p-5 sm:p-6 flex flex-col gap-6 bg-paper-2">
-                  <div className="border-b pb-3 border-line flex items-center gap-3">
-                    <Smartphone className="text-turmeric" size={24} />
-                    <div>
-                      <h2 className="text-xl font-bold font-display">PWA Settings</h2>
-                      <p className="text-xs text-ink-3">Configure mobile web applications layouts, themes and offline notifications.</p>
+                  <div className="border-b pb-3 border-line flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-turmeric/10 flex items-center justify-center text-turmeric shrink-0">
+                        <Smartphone size={22} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold font-display text-ink">PWA Settings</h2>
+                        <p className="text-xs text-ink-3">Configure mobile web applications layouts, themes, branding and access settings.</p>
+                      </div>
                     </div>
+                    {pwaCfg && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 self-start sm:self-auto">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Active Config
+                      </span>
+                    )}
                   </div>
+
+                  {/* Live Customer Web App URL & Preview Bar */}
+                  {(() => {
+                    const customerWebUrl = customerPort === '3003' 
+                      ? `http://${effectiveLanIp}:${customerPort}/t/${customerTableToken || 'demo'}`
+                      : `http://${effectiveLanIp}:3000/app?t=${customerTableToken || 'demo'}`;
+                    return (
+                      <div className="p-4 rounded-xl border border-line bg-paper-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-turmeric/10 flex items-center justify-center text-turmeric shrink-0">
+                            <QrCode size={18} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-ink">Customer App Order URL</p>
+                            <p className="text-[11px] font-mono text-ink-3 truncate max-w-sm sm:max-w-md">{customerWebUrl}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(customerWebUrl, 'Customer App URL')}
+                            className="btn btn-sm border bg-paper-2 text-xs"
+                          >
+                            <Copy size={13} /> {copiedLink === 'Customer App URL' ? 'Copied!' : 'Copy'}
+                          </button>
+                          <a
+                            href={customerWebUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-sm btn-primary flex items-center gap-1 text-xs"
+                          >
+                            <ExternalLink size={13} /> Open App
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {pwaCfg ? (
                     <form
@@ -4671,8 +4818,8 @@ export default function SettingsCenter({
                         <div>
                           <label className="lbl">Hero Section Tagline</label>
                           <input
-                            value={pwaCfg.theme.heroTagline}
-                            onChange={(e) => setPwaCfg((c: any) => ({ ...c, theme: { ...c.theme, heroTagline: e.target.value } }))}
+                            value={pwaCfg.theme?.heroTagline ?? ''}
+                            onChange={(e) => setPwaCfg((c: any) => ({ ...c, theme: { ...(c?.theme || {}), heroTagline: e.target.value } }))}
                             className="inp animate-glow"
                             placeholder="e.g. Freshly brewed daily"
                           />
@@ -4683,13 +4830,13 @@ export default function SettingsCenter({
                           <div className="flex items-center gap-2">
                             <input
                               type="color"
-                              value={pwaCfg.theme.accent || '#D4A373'}
-                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, theme: { ...c.theme, accent: e.target.value } }))}
+                              value={pwaCfg.theme?.accent || '#D4A373'}
+                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, theme: { ...(c?.theme || {}), accent: e.target.value } }))}
                               className="h-10 w-12 rounded-xl border p-1 bg-paper-3 cursor-pointer"
                             />
                             <input
-                              value={pwaCfg.theme.accent || ''}
-                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, theme: { ...c.theme, accent: e.target.value } }))}
+                              value={pwaCfg.theme?.accent || ''}
+                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, theme: { ...(c?.theme || {}), accent: e.target.value } }))}
                               placeholder="e.g. #D4A373"
                               className="inp font-mono text-xs"
                             />
@@ -4701,8 +4848,8 @@ export default function SettingsCenter({
                         <div>
                           <label className="lbl">QR Table Welcome Prefix</label>
                           <input
-                            value={pwaCfg.table.welcomePrefix}
-                            onChange={(e) => setPwaCfg((c: any) => ({ ...c, table: { ...c.table, welcomePrefix: e.target.value } }))}
+                            value={pwaCfg.table?.welcomePrefix ?? ''}
+                            onChange={(e) => setPwaCfg((c: any) => ({ ...c, table: { ...(c?.table || {}), welcomePrefix: e.target.value } }))}
                             className="inp"
                             placeholder="e.g. Welcome to Table"
                           />
@@ -4712,8 +4859,8 @@ export default function SettingsCenter({
                           <label className="flex items-center gap-2 text-xs text-ink-2 select-none h-11">
                             <input
                               type="checkbox"
-                              checked={pwaCfg.table.allowManualPick}
-                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, table: { ...c.table, allowManualPick: e.target.checked } }))}
+                              checked={pwaCfg.table?.allowManualPick ?? true}
+                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, table: { ...(c?.table || {}), allowManualPick: e.target.checked } }))}
                               className="rounded border-line-2 text-turmeric accent-turmeric w-4 h-4"
                             />
                             Allow Customers to Manual Pick Table
@@ -4726,8 +4873,8 @@ export default function SettingsCenter({
                           <label className="flex items-center gap-2 text-xs text-ink-2 select-none">
                             <input
                               type="checkbox"
-                              checked={pwaCfg.registration.enabled}
-                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, registration: { ...c.registration, enabled: e.target.checked } }))}
+                              checked={pwaCfg.registration?.enabled ?? false}
+                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, registration: { ...(c?.registration || {}), enabled: e.target.checked } }))}
                               className="rounded border-line-2 text-turmeric accent-turmeric w-4 h-4"
                             />
                             Enable Customer Registration / Login
@@ -4738,8 +4885,8 @@ export default function SettingsCenter({
                           <label className="flex items-center gap-2 text-xs text-ink-2 select-none">
                             <input
                               type="checkbox"
-                              checked={pwaCfg.registration.collectName}
-                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, registration: { ...c.registration, collectName: e.target.checked } }))}
+                              checked={pwaCfg.registration?.collectName ?? true}
+                              onChange={(e) => setPwaCfg((c: any) => ({ ...c, registration: { ...(c?.registration || {}), collectName: e.target.checked } }))}
                               className="rounded border-line-2 text-turmeric accent-turmeric w-4 h-4"
                             />
                             Collect Customer Name on Login
@@ -4751,18 +4898,18 @@ export default function SettingsCenter({
                         <label className="lbl">Customer App Logo</label>
                         <p className="text-xs text-ink-3">Branded image overlay for order checkout. Square PNG/JPG recommended. Defaults to store logo.</p>
                         <div className="flex items-center gap-3">
-                          {pwaCfg.theme.logoUrl && <img src={pwaCfg.theme.logoUrl} alt="" className="rounded-lg object-contain" style={{ width: 44, height: 44, background: 'var(--paper-3)' }} />}
+                          {pwaCfg.theme?.logoUrl && <img src={pwaCfg.theme.logoUrl} alt="" className="rounded-lg object-contain" style={{ width: 44, height: 44, background: 'var(--paper-3)' }} />}
                           <label className="btn btn-sm cursor-pointer border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-                            {pwaCfg.theme.logoUrl ? 'Replace logo' : 'Upload logo'}
+                            {pwaCfg.theme?.logoUrl ? 'Replace logo' : 'Upload logo'}
                             <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                               const f = e.target.files?.[0];
                               if (f) {
                                 const url = await uploadImage(f);
-                                if (url) setPwaCfg((c: any) => ({ ...c, theme: { ...c.theme, logoUrl: url } }));
+                                if (url) setPwaCfg((c: any) => ({ ...c, theme: { ...(c?.theme || {}), logoUrl: url } }));
                               }
                             }} />
                           </label>
-                          {pwaCfg.theme.logoUrl && <button type="button" onClick={() => setPwaCfg((c: any) => ({ ...c, theme: { ...c.theme, logoUrl: null } }))} className="btn btn-danger btn-sm">Remove</button>}
+                          {pwaCfg.theme?.logoUrl && <button type="button" onClick={() => setPwaCfg((c: any) => ({ ...c, theme: { ...(c?.theme || {}), logoUrl: null } }))} className="btn btn-danger btn-sm">Remove</button>}
                         </div>
                       </div>
 
@@ -4771,8 +4918,19 @@ export default function SettingsCenter({
                       </button>
                     </form>
                   ) : (
-                    <div className="text-center p-8 text-ink-3">
-                      Loading Customer Web App properties...
+                    <div className="flex flex-col items-center justify-center p-12 text-center gap-3">
+                      <div className="w-8 h-8 rounded-full border-2 border-turmeric border-t-transparent animate-spin" />
+                      <p className="text-sm font-medium text-ink-2">Loading Customer Web App properties...</p>
+                      <p className="text-xs text-ink-3 max-w-sm">
+                        Retrieving mobile app branding, table ordering, and customer access configurations.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setPwaCfg(DEFAULT_PWA)}
+                        className="mt-2 text-xs text-turmeric hover:underline font-semibold cursor-pointer"
+                      >
+                        Load default settings now
+                      </button>
                     </div>
                   )}
                 </div>

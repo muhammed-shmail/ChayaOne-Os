@@ -1,4 +1,5 @@
 import { prisma } from '@cafeos/db';
+import { readBusinessDay } from './businessDay';
 
 /**
  * Cafe OS — Owner Dashboard analytics.
@@ -74,11 +75,18 @@ export interface DashboardData {
 const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 export async function getDashboardData(outletId: string): Promise<DashboardData> {
+  const outlet = await prisma.outlet.findUnique({
+    where: { id: outletId },
+    select: { settings: true },
+  });
+  const bDay = readBusinessDay(outlet?.settings);
+  const cutoffHour = bDay.cutoffHour;
+
   const [today, yesterday, trendRows, hourRows, itemRows, stock, loyalty, qr] =
     await Promise.all([
-      todayKpis(outletId, 0),
-      todayKpis(outletId, 1),
-      trend(outletId),
+      todayKpis(outletId, 0, cutoffHour),
+      todayKpis(outletId, 1, cutoffHour),
+      trend(outletId, cutoffHour),
       hourly(outletId),
       itemAgg(outletId),
       lowStock(outletId),
@@ -117,7 +125,8 @@ export async function getDashboardData(outletId: string): Promise<DashboardData>
 }
 
 // --------------------------- KPIs ---------------------------
-async function todayKpis(outletId: string, daysAgo: number) {
+async function todayKpis(outletId: string, daysAgo: number, cutoffHour = 4) {
+  const shiftInterval = `${cutoffHour} hours`;
   const rows = await prisma.$queryRaw<
     { orders: number; gross: number; footfall: number }[]
   >`
@@ -129,36 +138,36 @@ async function todayKpis(outletId: string, daysAgo: number) {
     FROM orders
     WHERE "outletId" = ${outletId}::uuid
       AND "status" <> 'cancelled'
-      AND ("placedAt" AT TIME ZONE ${TZ})::date
-          = (now() AT TIME ZONE ${TZ})::date - ${daysAgo}::int
+      AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
+          = (("now"() AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date - ${daysAgo}::int
   `;
   return rows[0] ?? { orders: 0, gross: 0, footfall: 0 };
 }
 
 // --------------------------- 7-day trend ---------------------------
-async function trend(outletId: string): Promise<TrendPoint[]> {
+async function trend(outletId: string, cutoffHour = 4): Promise<TrendPoint[]> {
+  const shiftInterval = `${cutoffHour} hours`;
   const rows = await prisma.$queryRaw<
     { day: Date; orders: number; gross: number }[]
   >`
     SELECT
-      ("placedAt" AT TIME ZONE ${TZ})::date AS day,
+      ((o."placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date AS day,
       COUNT(*)::int AS orders,
-      COALESCE(SUM("totalPaise"), 0)::int AS gross
-    FROM orders
-    WHERE "outletId" = ${outletId}::uuid
-      AND "status" <> 'cancelled'
-      AND ("placedAt" AT TIME ZONE ${TZ})::date
-          > (now() AT TIME ZONE ${TZ})::date - 7
+      COALESCE(SUM(o."totalPaise"), 0)::int AS gross
+    FROM orders o
+    WHERE o."outletId" = ${outletId}::uuid
+      AND o."status" <> 'cancelled'
+      AND ((o."placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
+          > (("now"() AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date - 7
     GROUP BY 1
   `;
   const byDay = new Map(rows.map((r) => [iso(r.day), r]));
 
   // fill the last 7 days (oldest → newest) so the chart never has gaps
   const out: TrendPoint[] = [];
-  const base = new Date();
+  const base = new Date(Date.now() - cutoffHour * 3600 * 1000);
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(base);
-    d.setDate(d.getDate() - i);
+    const d = new Date(base.getTime() - i * 864e5);
     const key = iso(d);
     const hit = byDay.get(key);
     out.push({

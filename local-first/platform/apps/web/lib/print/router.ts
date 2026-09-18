@@ -30,7 +30,7 @@ export function routeOrderToStations(
   settings: unknown,
 ): StationRoutedJob[] {
   const devices = readDevices(settings);
-  const kotPrinters = devices.filter((d) => d.type === 'kot_printer');
+  const kotPrinters = devices.filter((d) => d.type === 'kot_printer' || d.type === 'both_printer');
 
   // Group line items by station slug (default to 'kitchen' if null)
   const stationGroups = new Map<string, typeof order.items>();
@@ -101,7 +101,7 @@ export function routeTransferToStations(
   settings: unknown,
 ): StationRoutedJob[] {
   const devices = readDevices(settings);
-  const kotPrinters = devices.filter((d) => d.type === 'kot_printer');
+  const kotPrinters = devices.filter((d) => d.type === 'kot_printer' || d.type === 'both_printer');
 
   // Group line items by station slug (default to 'kitchen' if null)
   const stationGroups = new Map<string, typeof order.items>();
@@ -161,6 +161,6 @@ export function routeTransferToStations(
  */
 export function resolveReceiptPrinter(settings: unknown): Device | null {
   const devices = readDevices(settings);
-  const receiptPrinters = devices.filter((d) => d.type === 'receipt_printer');
+  const receiptPrinters = devices.filter((d) => d.type === 'receipt_printer' || d.type === 'both_printer');
   return receiptPrinters.find((d) => d.isDefault) || receiptPrinters[0] || null;
 }

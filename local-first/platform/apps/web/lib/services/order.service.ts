@@ -383,7 +383,8 @@ export class OrderService {
         const rc = readReceiptConfig(outletRecord?.settings);
         const upiConfig = readUpiConfig(outletRecord?.settings, outletRecord?.name || 'Cafe');
         const devices = readDevices(outletRecord?.settings);
-        const receiptDevice = devices.find((d) => d.type === 'receipt_printer') || null;
+        const receiptDevice = devices.find((d) => (d.type === 'receipt_printer' || d.type === 'both_printer') && d.isDefault) ||
+          devices.find((d) => d.type === 'receipt_printer' || d.type === 'both_printer') || null;
 
         await createPrintJob(tx, {
           tenantId: resolvedTenantId,

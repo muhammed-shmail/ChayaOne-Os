@@ -3,6 +3,7 @@ import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { hasRole, hasPermission } from '@/lib/rbac';
 import { tenantHasFeature } from '@/lib/features';
+import { readBusinessDay } from '@/lib/businessDay';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,8 +29,17 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (!(await tenantHasFeature(session.tenantId, 'revenue_analytics')))
     return NextResponse.json({ error: 'feature_not_in_plan', feature: 'revenue_analytics' }, { status: 402 });
-  // Default range: last 7 days (today inclusive) in the outlet's wall-clock zone.
-  const todayKey = new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
+
+  const outlet = await prisma.outlet.findUnique({
+    where: { id: session.outletId },
+    select: { settings: true },
+  });
+  const bDay = readBusinessDay(outlet?.settings);
+  const cutoffHours = bDay.cutoffHour;
+  const shiftInterval = `${cutoffHours} hours`;
+
+  // Default range: last 7 days (business today inclusive) in the outlet's wall-clock zone.
+  const todayKey = new Date(`${bDay.currentBusinessDate}T00:00:00`);
   const qpFrom = req.nextUrl.searchParams.get('from');
   const qpTo = req.nextUrl.searchParams.get('to');
   const toD = isDate(qpTo) ? new Date(`${qpTo}T00:00:00`) : todayKey;
@@ -41,7 +51,7 @@ export async function GET(req: NextRequest) {
   const from = ymd(fromD);
   const to = ymd(toD);
 
-  const today = ymd(todayKey);
+  const today = bDay.currentBusinessDate;
   const isTodayOnly = from === to && to === today;
 
   if (!hasRole(session, ['owner', 'manager', 'accountant']) && !(hasRole(session, ['cashier']) && isTodayOnly) && !hasPermission(session, 'dashboard:sales_summary')) {
@@ -49,14 +59,14 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = await prisma.$queryRaw<{ day: Date; orders: number; gross: number }[]>`
-    SELECT ("placedAt" AT TIME ZONE ${TZ})::date AS day,
+    SELECT (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date AS day,
            COUNT(*)::int AS orders,
            COALESCE(SUM("totalPaise"), 0)::int AS gross
     FROM orders
     WHERE "outletId" = ${session.outletId}::uuid
       AND "status" <> 'cancelled'
-      AND ("placedAt" AT TIME ZONE ${TZ})::date >= ${from}::date
-      AND ("placedAt" AT TIME ZONE ${TZ})::date <= ${to}::date
+      AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date >= ${from}::date
+      AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date <= ${to}::date
     GROUP BY 1
     ORDER BY 1
   `;
