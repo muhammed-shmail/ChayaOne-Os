@@ -1848,7 +1848,7 @@ export default function SettingsCenter({
                 <AlertCircle className="text-ink-3" size={36} />
                 <h3 className="text-base font-bold text-ink">No matching settings found</h3>
                 <p className="text-xs text-ink-3 max-w-sm">
-                  No setting matched your query "{searchQuery}". Try searching with different keywords like tax, printer, table, or user.
+                  No setting matched your query &quot;{searchQuery}&quot;. Try searching with different keywords like tax, printer, table, or user.
                 </p>
                 <div className="flex items-center gap-2 mt-2">
                   <button onClick={() => setSearchQuery('')} className="btn btn-sm btn-ghost">

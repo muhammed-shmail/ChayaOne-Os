@@ -433,7 +433,7 @@ export default function WaiterOrderBuilderPage() {
                       </p>
                     )}
                     {line.notes && (
-                      <p className="text-[10px] text-amber-400/80 italic mt-0.5">"{line.notes}"</p>
+                      <p className="text-[10px] text-amber-400/80 italic mt-0.5">&quot;{line.notes}&quot;</p>
                     )}
                     <span className="text-xs font-semibold text-gray-300 tnum mt-1 block">
                       ₹{((line.pricePaise * line.qty) / 100).toFixed(0)}

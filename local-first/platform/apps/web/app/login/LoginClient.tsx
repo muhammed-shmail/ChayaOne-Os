@@ -145,7 +145,7 @@ export default function LoginClient() {
           <div className="lux-card mt-6 p-5 text-left">
             {openSince ? (
               <>
-                <p className="font-bold text-[15px]">✅ You're already clocked in</p>
+                <p className="font-bold text-[15px]">✅ You&apos;re already clocked in</p>
                 <p className="text-sm mt-1" style={{ color: 'var(--ink-2)' }}>Since {clockedTime} today. No need to punch again.</p>
               </>
             ) : (

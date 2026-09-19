@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { WaiterBottomNav } from '@/components/WaiterBottomNav';
 import {
@@ -43,7 +43,7 @@ export default function WaiterTablesPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const fetchTables = async () => {
+  const fetchTables = useCallback(async () => {
     try {
       const res = await fetch('/api/tables');
       if (res.status === 401) {
@@ -61,19 +61,20 @@ export default function WaiterTablesPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [router]);
 
-  const fetchAlertsCount = async () => {
+  const fetchAlertsCount = useCallback(async () => {
     try {
-      const res = await fetch('/api/notifications?unread=1');
+      const res = await fetch('/api/staff/notifications');
       if (res.ok) {
         const d = await res.json();
-        setUnreadCount(d.unread || 0);
+        const unread = Array.isArray(d.items) ? d.items.filter((n: { readAt?: string | null }) => !n.readAt).length : 0;
+        setUnreadCount(unread);
       }
     } catch (e) {
       // ignore
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchTables();
@@ -86,7 +87,7 @@ export default function WaiterTablesPage() {
     }, 4000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchTables, fetchAlertsCount]);
 
   const handleRefresh = () => {
     setRefreshing(true);

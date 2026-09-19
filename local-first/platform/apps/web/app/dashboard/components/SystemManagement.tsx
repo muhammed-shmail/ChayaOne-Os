@@ -467,7 +467,7 @@ export default function SystemManagement({
 
                       {updateState.manifest.releaseNotes?.length > 0 && (
                         <div className="mt-3">
-                          <div className="text-xs font-bold uppercase tracking-wider mb-1">What's New:</div>
+                          <div className="text-xs font-bold uppercase tracking-wider mb-1">What&apos;s New:</div>
                           <ul className="list-disc list-inside text-xs space-y-1">
                             {updateState.manifest.releaseNotes.map((note: string, idx: number) => (
                               <li key={idx}>{note}</li>
@@ -502,7 +502,7 @@ export default function SystemManagement({
                   ) : (
                     <div className="mt-2 text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
                       <CheckCircle2 size={14} className="text-emerald-500" />
-                      You're running the latest release. Last checked:{' '}
+                      You&apos;re running the latest release. Last checked:{' '}
                       {updateState?.lastCheckedAt
                         ? new Date(updateState.lastCheckedAt).toLocaleTimeString()
                         : 'Just now'}
@@ -627,7 +627,7 @@ export default function SystemManagement({
                 <div className="py-10 text-center text-xs text-gray-400">Loading backup list...</div>
               ) : backupsList.length === 0 ? (
                 <div className="py-10 text-center text-xs text-gray-400">
-                  No database snapshots found. Click "Backup Now" to create your first snapshot.
+                  No database snapshots found. Click &quot;Backup Now&quot; to create your first snapshot.
                 </div>
               ) : (
                 <div className="overflow-x-auto">

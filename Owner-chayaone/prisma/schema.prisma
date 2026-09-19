@@ -300,6 +300,7 @@ model StaffUser {
 
   @@unique([tenantId, username])
   @@index([tenantId, outletId])
+  @@index([tenantId, pinHash, active])
   @@map("staff_users")
 }
 
@@ -548,6 +549,8 @@ model Order {
 
   @@index([outletId, placedAt])
   @@index([status])
+  @@index([outletId, status, placedAt])
+  @@index([outletId, staffId])
   @@index([outletId, number])
   @@index([outletId, tableId, settledAt])
   @@map("orders")
@@ -569,6 +572,7 @@ model OrderItem {
   item  MenuItem? @relation(fields: [itemId], references: [id])
 
   @@index([orderId])
+  @@index([orderId, station])
   @@map("order_items")
 }
 
@@ -585,6 +589,7 @@ model Kot {
   outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
 
   @@index([outletId, status])
+  @@index([outletId, station, status])
   @@map("kots")
 }
 
@@ -1148,6 +1153,8 @@ model Notification {
   @@index([outletId, createdAt])
   @@index([outletId, type, entityId, readAt])
   @@index([outletId, audience, createdAt])
+  @@index([outletId, targetRole, readAt])
+  @@index([outletId, targetStaffId, readAt])
   @@map("notifications")
 }
 
