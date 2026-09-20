@@ -2172,7 +2172,6 @@ export default function DashboardClient({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <ShiftStatus />
             <BusinessDayHeaderBadge />
             {/* T-Billing Button */}
             <button
