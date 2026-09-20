@@ -18,6 +18,7 @@ export function WordChallenge({ qs, reload, onExit, onResult, lang }: GameProps)
   const t = (en: string, ml: string) => (lang === 'ml' ? ml : en);
 
   const [round, setRound] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const deck = useMemo(() => shuffle(WORDS), [round]);
   const [i, setI] = useState(0);
   const [score, setScore] = useState(0);

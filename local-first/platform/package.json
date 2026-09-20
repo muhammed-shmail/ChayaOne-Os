@@ -52,8 +52,5 @@
   "packageManager": "npm@10.8.0",
   "engines": {
     "node": ">=20"
-  },
-  "dependencies": {
-    "@opentelemetry/api": "^1.9.1"
   }
 }

@@ -24,6 +24,7 @@ export function MemoryFlip({ qs, reload, onExit, onResult, lang }: GameProps) {
   const t = (en: string, ml: string) => (lang === 'ml' ? ml : en);
 
   const [round, setRound] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const deck = useMemo(() => makeDeck(pairs), [round, pairs]);
   const [flipped, setFlipped] = useState<number[]>([]); // indices currently face-up (unmatched)
   const [matched, setMatched] = useState<Set<string>>(new Set()); // matched emojis

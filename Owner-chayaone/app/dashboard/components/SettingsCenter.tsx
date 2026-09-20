@@ -350,7 +350,7 @@ export default function SettingsCenter({
   const [detectedLanIp, setDetectedLanIp] = useState<string>('127.0.0.1');
   const [customLanIp, setCustomLanIp] = useState<string>('');
   const [isCloudHost, setIsCloudHost] = useState<boolean>(false);
-  const [waiterPort, setWaiterPort] = useState<string>('3002');
+  const [waiterPort, setWaiterPort] = useState<string>('3000');
   const [waiterUserOption, setWaiterUserOption] = useState<string>('all');
   const [customWaiterName, setCustomWaiterName] = useState<string>('');
   const [waiterList, setWaiterList] = useState<{ id: string; name: string; role: string; brandName?: string }[]>([]);
@@ -4942,8 +4942,8 @@ export default function SettingsCenter({
                   ? customWaiterName.trim() 
                   : (waiterUserOption === 'all' ? '' : waiterUserOption);
 
-                const waiterPath = waiterPort === '3002' ? '/login' : '/pos';
-                const waiterFullUrl = `http://${effectiveLanIp}:${waiterPort}${waiterPath}?server=${effectiveLanIp}&port=3000${activeWaiterName ? `&user=${encodeURIComponent(activeWaiterName)}` : ''}`;
+                const waiterPath = waiterPort === '3000' ? '/pos' : '/login';
+                const waiterFullUrl = `http://${effectiveLanIp}:${waiterPort}${waiterPath}?server=${effectiveLanIp}&port=${waiterPort}${activeWaiterName ? `&user=${encodeURIComponent(activeWaiterName)}` : ''}`;
                 const kdsFullUrl = `http://${effectiveLanIp}:3000/kds`;
                 const customerFullUrl = customerPort === '3003' 
                   ? `http://${effectiveLanIp}:3003/t/${customerTableToken || 'demo'}`
@@ -5043,17 +5043,6 @@ export default function SettingsCenter({
                           <div className="grid grid-cols-2 gap-1 p-1 bg-paper-1 rounded-xl border border-line">
                             <button
                               type="button"
-                              onClick={() => setWaiterPort('3002')}
-                              className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-all ${
-                                waiterPort === '3002' 
-                                  ? 'bg-turmeric text-white shadow-sm font-semibold' 
-                                  : 'text-ink-3 hover:text-ink'
-                              }`}
-                            >
-                              Tablet App (3002)
-                            </button>
-                            <button
-                              type="button"
                               onClick={() => setWaiterPort('3000')}
                               className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-all ${
                                 waiterPort === '3000' 
@@ -5061,7 +5050,18 @@ export default function SettingsCenter({
                                   : 'text-ink-3 hover:text-ink'
                               }`}
                             >
-                              POS Till (3000)
+                              POS Till (3000) ★
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setWaiterPort('3002')}
+                              className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-all ${
+                                waiterPort === '3002' 
+                                  ? 'bg-turmeric text-white shadow-sm font-semibold' 
+                                  : 'text-ink-3 hover:text-ink'
+                              }`}
+                            >
+                              Legacy (3002)
                             </button>
                           </div>
                         </div>

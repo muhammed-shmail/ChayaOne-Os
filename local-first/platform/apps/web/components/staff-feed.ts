@@ -95,6 +95,7 @@ function getServerSnapshot() { return EMPTY; }
 
 /** Subscribe to the shared staff feed. Pass the current staff principal once. */
 export function useStaffFeed(principal: Principal) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { start(principal); }, [principal.role, principal.staffId]);
   const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const unread = state.items.reduce((c, i) => c + (i.at > state.lastSeen ? 1 : 0), 0);

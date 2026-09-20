@@ -2,45 +2,93 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut } from '@/components/ui';
+import { LogOut, CheckCircle2 } from 'lucide-react';
+import { getGeoHeaders } from '@/lib/geo-client';
 
 /**
- * Compact on-shift status badge for the post-login screens (POS + dashboard).
+ * Enhanced interactive on-shift status & attendance punch badge.
  *
- * Self-fetches the caller's open attendance punch (`GET /api/attendance`) so the
- * parent passes nothing. The "Out" button clocks the staff out (if on shift) and
- * then ends the session — closing the dangling-punch gap the old logout-only
- * controls left behind. Green styling uses `--cardamom`, which is theme-aware.
+ * Self-fetches the caller's open attendance punch (`GET /api/attendance`).
+ * Supports direct clock-in ("Mark In") and clock-out ("Out") right from the badge.
  */
 export function ShiftStatus({ className = '' }: { className?: string }) {
   const router = useRouter();
   const [clockIn, setClockIn] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
+  const fetchAttendance = () => {
     fetch('/api/attendance')
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive) setClockIn(d?.open?.clockIn ?? null); })
+      .then((d) => {
+        setClockIn(d?.open?.clockIn ?? null);
+      })
       .catch(() => {});
-    return () => { alive = false; };
+  };
+
+  useEffect(() => {
+    fetchAttendance();
+
+    const onRefresh = () => fetchAttendance();
+    window.addEventListener('attendance-refresh', onRefresh);
+    return () => window.removeEventListener('attendance-refresh', onRefresh);
   }, []);
 
-  async function out() {
+  // Clock in action
+  async function markIn() {
     if (busy) return;
     setBusy(true);
+    setFeedback('Clocking in...');
     try {
-      if (clockIn) {
-        await fetch('/api/attendance', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ action: 'out' }),
-        }).catch(() => {});
+      const geo = await getGeoHeaders();
+      const res = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...geo },
+        body: JSON.stringify({ action: 'in' }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setClockIn(data.open?.clockIn || new Date().toISOString());
+        setFeedback('Clocked in!');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('pos-entry-sync'));
+        }
+      } else {
+        alert(data.message || 'Could not mark attendance — check location/Wi-Fi');
       }
-      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    } catch {
+      alert('Network error marking attendance');
     } finally {
-      router.replace('/login');
-      router.refresh();
+      setBusy(false);
+      setTimeout(() => setFeedback(null), 2500);
+    }
+  }
+
+  // Clock out action
+  async function markOut() {
+    if (busy) return;
+    if (!window.confirm('Clock out from shift?')) return;
+    setBusy(true);
+    setFeedback('Clocking out...');
+    try {
+      const geo = await getGeoHeaders();
+      const res = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...geo },
+        body: JSON.stringify({ action: 'out' }),
+      });
+      if (res.ok) {
+        setClockIn(null);
+        setFeedback('Clocked out');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('pos-entry-sync'));
+        }
+      }
+    } catch {
+      alert('Network error clocking out');
+    } finally {
+      setBusy(false);
+      setTimeout(() => setFeedback(null), 2500);
     }
   }
 
@@ -51,42 +99,62 @@ export function ShiftStatus({ className = '' }: { className?: string }) {
 
   return (
     <div
-      className={`inline-flex items-center rounded-full overflow-hidden shrink-0 ${className}`}
+      className={`inline-flex items-center rounded-full overflow-hidden shrink-0 transition ${className}`}
       style={{
-        border: `1px solid ${onShift ? 'color-mix(in srgb, var(--cardamom) 38%, var(--line))' : 'var(--line)'}`,
-        background: onShift ? 'color-mix(in srgb, var(--cardamom) 12%, var(--paper-2))' : 'var(--paper-2)',
+        border: `1px solid ${onShift ? 'color-mix(in srgb, var(--cardamom, #10b981) 38%, var(--line, #334155))' : 'var(--line, #334155)'}`,
+        background: onShift ? 'color-mix(in srgb, var(--cardamom, #10b981) 12%, var(--paper-2, #1e293b))' : 'var(--paper-2, #1e293b)',
       }}
     >
       <span
         className="inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1 text-[11px] font-bold whitespace-nowrap"
-        style={{ color: onShift ? 'var(--cardamom-d)' : 'var(--ink-3)' }}
+        style={{ color: onShift ? 'var(--cardamom-d, #34d399)' : 'var(--ink-3, #94a3b8)' }}
       >
         <span
           className="w-1.5 h-1.5 rounded-full shrink-0"
           style={
             onShift
-              ? { background: 'var(--cardamom)', boxShadow: '0 0 0 3px color-mix(in srgb, var(--cardamom) 25%, transparent)', animation: 'pulse 2s infinite' }
-              : { background: 'var(--ink-3)' }
+              ? { background: 'var(--cardamom, #10b981)', boxShadow: '0 0 0 3px color-mix(in srgb, var(--cardamom, #10b981) 25%, transparent)', animation: 'pulse 2s infinite' }
+              : { background: 'var(--ink-3, #94a3b8)' }
           }
         />
-        {onShift ? 'On time' : 'Off shift'}
-        {time && <span className="tnum hidden min-[380px]:inline" style={{ color: 'var(--ink-2)' }}>· {time}</span>}
+        {feedback || (onShift ? 'On time' : 'Off shift')}
+        {time && !feedback && <span className="tnum hidden min-[380px]:inline" style={{ color: 'var(--ink-2, #cbd5e1)' }}>· {time}</span>}
       </span>
-      <button
-        type="button"
-        onClick={out}
-        disabled={busy}
-        aria-label="Clock out and log out"
-        title="Clock out & log out"
-        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold transition active:scale-95 disabled:opacity-50"
-        style={{
-          minHeight: 30,
-          borderLeft: `1px solid ${onShift ? 'color-mix(in srgb, var(--cardamom) 30%, var(--line))' : 'var(--line)'}`,
-          color: 'var(--ink-2)',
-        }}
-      >
-        <LogOut size={13} aria-hidden /> Out
-      </button>
+
+      {onShift ? (
+        <button
+          type="button"
+          onClick={markOut}
+          disabled={busy}
+          aria-label="Clock out from shift"
+          title="Clock out"
+          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold transition active:scale-95 disabled:opacity-50"
+          style={{
+            minHeight: 30,
+            borderLeft: '1px solid color-mix(in srgb, var(--cardamom, #10b981) 30%, var(--line, #334155))',
+            color: 'var(--ink-2, #cbd5e1)',
+          }}
+        >
+          <LogOut size={13} aria-hidden /> Out
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={markIn}
+          disabled={busy}
+          aria-label="Mark Attendance (Clock in)"
+          title="Mark your attendance"
+          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold transition active:scale-95 disabled:opacity-50"
+          style={{
+            minHeight: 30,
+            borderLeft: '1px solid var(--line, #334155)',
+            color: 'var(--cardamom-d, #34d399)',
+            background: 'color-mix(in srgb, var(--cardamom, #10b981) 15%, transparent)',
+          }}
+        >
+          <CheckCircle2 size={13} aria-hidden /> Mark In
+        </button>
+      )}
     </div>
   );
 }

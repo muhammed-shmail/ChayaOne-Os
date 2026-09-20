@@ -33,6 +33,7 @@ export function SpotDifference({ qs, reload, onExit, onResult, lang }: GameProps
   const [done, setDone] = useState(false);
   const [reward, setReward] = useState<{ coins: number; points: number; awarded: boolean } | null>(null);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const board = useMemo(() => makeBoard(level), [level, round]);
 
   function restart() { setRound((r) => r + 1); setLevel(0); setScore(0); setWrong(null); setReward(null); setDone(false); }

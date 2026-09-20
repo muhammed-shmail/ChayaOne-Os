@@ -17,8 +17,13 @@ prisma/*.db
 .localdb/
 **/.localdb/
 
-# logs / os
+# logs / os / temporary
 *.log
+*.csv
+cookies_*.txt
+test_cookie.txt
+launch_*.txt
+run_*.txt
 .DS_Store
 Thumbs.db
 .vscode/

@@ -23,6 +23,8 @@
     "build:owner": "npm run build --prefix Owner-chayaone",
     "build:installer": "npm run build:installer --prefix local-first/platform",
     "lint": "npm run lint --prefix local-first/platform",
+    "lint:all": "npm run lint --prefix local-first/platform && npm run lint --prefix Owner-chayaone",
+    "test": "npm test --prefix local-first/platform/packages/core",
     "typecheck": "npm run typecheck --prefix local-first/platform",
     "typecheck:all": "npm run typecheck --prefix local-first/platform && npm run typecheck --prefix Owner-chayaone",
     "db:local": "npm run db:local --prefix local-first/platform",

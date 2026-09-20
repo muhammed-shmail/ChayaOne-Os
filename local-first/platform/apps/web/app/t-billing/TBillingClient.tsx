@@ -692,7 +692,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         ref={(el) => { orderCardRefs.current[index] = el; }}
                         tabIndex={0}
                         role="button"
-                        aria-selected={isSelected}
+                        aria-pressed={isSelected}
                         onClick={() => setSelectedOrderIndex(index)}
                         onDoubleClick={() => startBilling(o)}
                         onFocus={() => setSelectedOrderIndex(index)}

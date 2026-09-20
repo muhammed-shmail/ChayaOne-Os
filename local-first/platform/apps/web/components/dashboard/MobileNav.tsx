@@ -10,6 +10,7 @@
 import { useEffect, useRef } from 'react';
 import { LogOut, Table2, Menu, LayoutDashboard, type LucideIcon } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
+import { ServerSyncCard } from '@/components/ServerSyncCard';
 
 export type NavItem = { key: string; label: string; icon: LucideIcon };
 
@@ -115,8 +116,11 @@ export function MobileDrawer({
           />
         </div>
 
-        <div className="px-2 mb-4 shrink-0 flex justify-center">
-          <ShiftStatus />
+        <div className="px-2 mb-3 shrink-0 flex flex-col gap-2">
+          <div className="flex justify-center">
+            <ShiftStatus />
+          </div>
+          <ServerSyncCard />
         </div>
 
         <nav className="flex flex-col gap-0.5">

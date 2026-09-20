@@ -15,6 +15,7 @@ import {
   ArrowLeftRight, ArrowRight, CircleAlert, FileText, Edit3,
 } from 'lucide-react';
 import { ShiftStatus } from '@/components/ShiftStatus';
+import { ServerSyncCard } from '@/components/ServerSyncCard';
 import { BusinessDayPrompt, BusinessDayHeaderBadge } from '@/components/BusinessDayPrompt';
 import StaffBell from '@/components/StaffBell';
 import LicenseStatusBadge from '@/components/license/LicenseStatusBadge';
@@ -103,6 +104,19 @@ function tableStage(status?: string): TableStage {
   if (status === 'ready') return 'ready';
   if (status === 'served') return 'served';
   return 'order'; // open / pending_approval / approved
+}
+
+function generateClientUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 export default function PosClient({ outlet, staff, menu, tables, floors, staffAppEnabled = false, locationGate = false }: { outlet: Outlet; staff: Staff; menu: MenuCategory[]; tables: TableDto[]; floors: Floor[]; staffAppEnabled?: boolean; locationGate?: boolean }) {
@@ -323,6 +337,16 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     return d;
   }
 
+  // Sync listener: refresh tables & running order on sync events
+  useEffect(() => {
+    const handleSync = () => {
+      refreshTables();
+      if (tableAction) refreshTableOrder();
+    };
+    window.addEventListener('pos-sync-now', handleSync);
+    return () => window.removeEventListener('pos-sync-now', handleSync);
+  }, [tableAction]);
+
   // mini-cart helpers (kept separate from the main till `cart`)
   function addToTable(item: MenuItemDto) {
     setTableCart((c) => {
@@ -341,7 +365,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     setSendBusy(true);
     try {
       const body = {
-        clientUuid: crypto.randomUUID(),
+        clientUuid: generateClientUuid(),
         outletId: outlet.id,
         staffId: staff.id,
         type: 'dine_in' as const,
@@ -356,13 +380,14 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       const r = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json', ...geo }, body: JSON.stringify(body) });
       const d = await r.json();
       if (!r.ok) {
-        flash(d?.error === 'out_of_range' ? 'Too far from the cafe to send this order' : 'Could not send — check connection');
+        flash(d?.message || (d?.error === 'out_of_range' ? 'Too far from the cafe to send this order' : 'Cannot reach Main PC — check Wi-Fi (disable 5G)'));
         return;
       }
       flash(`KOT #${d.order.number} sent to kitchen`);
       setTableCart([]); setAddMode(false); setAddSearch('');
       await refreshTableOrder(); refreshTables();
-    } catch { flash('Could not send — check connection'); }
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('pos-entry-sync'));
+    } catch { flash('Cannot reach Main PC — check Wi-Fi (disable 5G)'); }
     finally { setSendBusy(false); }
   }
 
@@ -400,7 +425,12 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
         }),
       });
       const d = await r.json();
-      if (r.ok) { flash(`Settled ${formatINR(d.totalPaise)} · ${billCustomer} · ${method.toUpperCase()}`); closeTableActions(); refreshTables(); }
+      if (r.ok) {
+        flash(`Settled ${formatINR(d.totalPaise)} · ${billCustomer} · ${method.toUpperCase()}`);
+        closeTableActions();
+        refreshTables();
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('pos-entry-sync'));
+      }
       else flash('Could not settle table');
     } catch { flash('Network error'); } finally { setSettleBusy(false); }
   }
@@ -739,7 +769,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     setBusy(true);
     try {
       const body = {
-        clientUuid: crypto.randomUUID(),
+        clientUuid: generateClientUuid(),
         outletId: outlet.id,
         staffId: staff.id,
         type: orderType,
@@ -767,9 +797,13 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       const data = await res.json();
       if (!res.ok) {
         if (data?.error === 'out_of_range') { flash('Too far from the cafe to place this order'); return; }
-        throw new Error(data?.error ?? 'failed');
+        if (data?.error === 'slot_exceeded') { flash('Monthly order limit reached'); return; }
+        if (data?.issues) { console.error('Order validation issues:', data.issues); flash('Invalid order data'); return; }
+        flash(data?.message || (data?.error ? `Error: ${data.error}` : 'Cannot reach Main PC — verify Wi-Fi is connected (disable 5G)'));
+        return;
       }
       flash(withPayment ? `Paid ${formatINR(bill.totalPaise + withPayment.tipPaise)} · #${data.order.number}` : `KOT #${data.order.number} sent to kitchen`);
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('pos-entry-sync'));
       // print the receipt before clearing the cart (cart/bill are read inside printReceipt)
       if (withPayment && opts?.print) printReceipt(data.order.number, withPayment.method, withPayment.tipPaise, customer);
       // start tracking it on the live rail (idempotent replays return the same order)
@@ -780,8 +814,9 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       clear(); setCharging(false);
       // reset the table so the next order must pick one (don't silently reuse the last table)
       if (orderType === 'dine_in') setTableId(null);
-    } catch (e) {
-      flash('Could not save order — check connection');
+    } catch (e: any) {
+      console.error('Order submission error:', e);
+      flash(e?.message ? `Order failed: ${e.message}` : 'Cannot reach Main PC — check Wi-Fi connection (disable 5G)');
     } finally {
       setBusy(false);
     }
@@ -801,7 +836,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   return (
     <>
       <div className="md:hidden sticky top-0 z-30" style={{ paddingTop: 'env(safe-area-inset-top)', background: 'color-mix(in srgb, var(--paper) 90%, transparent)', backdropFilter: 'blur(10px)', borderBottom: '1px solid var(--line)' }}>
-        <div className="flex items-center gap-2 px-3 py-2">
+        <div className="flex items-center gap-2 px-3 py-2 pr-14">
           <StaffBell role={currentStaff.role} staffId={currentStaff.id} triggerClassName="btn btn-icon btn-sm btn-ghost shrink-0" />
           <div className="flex rounded-full p-[3px] border flex-1 min-w-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
             {(['dine_in', 'takeaway'] as const).map((t) => (
@@ -880,6 +915,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             <ShiftStatus />
             <BusinessDayHeaderBadge />
             <LicenseStatusBadge />
+            <ServerSyncCard onManualSync={refreshTables} />
           </div>
           <div className="flex rounded-full p-[3px] border" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
             {(['dine_in', 'takeaway'] as const).map((t) => (
@@ -1634,6 +1670,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
             <div className="px-1 flex flex-col gap-1.5">
               <BusinessDayHeaderBadge />
               <LicenseStatusBadge />
+              <ServerSyncCard onManualSync={refreshTables} />
             </div>
             {canAccess(currentStaff, 'dashboard') && (
               <a href="/dashboard" onClick={handleDashboardClick} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>

@@ -13,6 +13,7 @@ export function EmojiGuess({ qs, reload, onExit, onResult, lang }: GameProps) {
   const { complete } = useGameComplete(qs, reload);
 
   const [round, setRound] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const deck = useMemo(() => shuffle(EMOJI_WORDS), [round]);
   const [i, setI] = useState(0);
   const [score, setScore] = useState(0);

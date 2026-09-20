@@ -95,34 +95,24 @@ async function main() {
   console.log('=================================================================');
   console.log(`🐘 Local Database:     localhost:5433 (PostgreSQL)`);
   console.log(`💻 Main PC (POS/Server): http://localhost:3000/pos`);
-  console.log(`📲 Waiter Tablet App:    http://${lanIp}:3002`);
-  console.log(`📱 Customer QR App:      http://${lanIp}:3003/t/demo`);
-  console.log(`📊 Owner Management:     http://localhost:3004`);
-  console.log('=================================================================\n');
+    console.log(`📲 Waiter Tablet App:    http://${lanIp}:3000/pos`);
+    console.log(`📱 Customer QR App:      http://${lanIp}:3003/t/demo`);
+    console.log(`📊 Owner Management:     http://localhost:3004`);
+    console.log('=================================================================\n');
 
-  try {
-    // 1. Database
-    console.log('🐘 Step 1: Starting embedded PostgreSQL...');
-    await runCommand('node', ['scripts/ensure-db.mjs'], dbDir);
+    try {
+      // 1. Database
+      console.log('🐘 Step 1: Starting embedded PostgreSQL...');
+      await runCommand('node', ['scripts/ensure-db.mjs'], dbDir);
 
-    // 2. Main PC Web Server & POS
-    console.log('💻 Step 2: Starting Main PC Web Server & POS Till (port 3000)...');
-    const webProc = spawn('npm', ['run', 'dev'], {
-      cwd: webDir,
-      shell: true,
-      windowsHide: true,
-      stdio: process.stdout?.isTTY ? 'inherit' : 'ignore',
-    });
-
-    // 3. Waiter App
-    console.log('📲 Step 3: Starting Waiter Tablet App (port 3002)...');
-    const waiterProc = spawn('npm', ['run', 'dev'], {
-      cwd: waiterDir,
-      shell: true,
-      windowsHide: true,
-      stdio: process.stdout?.isTTY ? 'inherit' : 'ignore',
-      env: { ...process.env, PORT: '3002', NEXT_PUBLIC_SERVER_URL: `http://${lanIp}:3000` },
-    });
+      // 2. Main PC Web Server, Waiter POS & APIs
+      console.log('💻 Step 2: Starting Main PC Web Server & Waiter POS (port 3000)...');
+      const webProc = spawn('npm', ['run', 'dev'], {
+        cwd: webDir,
+        shell: true,
+        windowsHide: true,
+        stdio: process.stdout?.isTTY ? 'inherit' : 'ignore',
+      });
 
     // 4. Customer App
     console.log('📱 Step 4: Starting Customer QR App (port 3003)...');
@@ -157,7 +147,7 @@ async function main() {
       console.log('🎉 ALL CHAYAONE APPS & SUB-APPS ARE LIVE!');
       console.log(`👉 Main PC Till:     http://localhost:3000/pos`);
       console.log(`👉 Kitchen (KDS):     http://localhost:3000/kds`);
-      console.log(`👉 Waiter App:       http://${lanIp}:3002`);
+      console.log(`👉 Waiter App:       http://${lanIp}:3000/pos`);
       console.log(`👉 Customer App:     http://${lanIp}:3003/t/demo`);
       console.log(`👉 Owner Portal:     http://localhost:3004`);
       console.log('=================================================================\n');
@@ -166,7 +156,6 @@ async function main() {
 
     const cleanup = () => {
       try { webProc.kill(); } catch {}
-      try { waiterProc.kill(); } catch {}
       try { customerProc.kill(); } catch {}
       try { ownerProc.kill(); } catch {}
       process.exit(0);

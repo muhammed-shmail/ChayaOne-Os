@@ -173,9 +173,9 @@ Designed specifically for waitstaff on tablets or smartphones taking orders at t
   npm run start:waiter
   ```
 * **Access URLs**:
-  * **Local Waiter Screen**: [`http://localhost:3002`](http://localhost:3002)
-  * **LAN Tablet URL**: `http://<MAIN_PC_IP>:3002` (Auto-detected and displayed in console)
-  * **Main PC Route**: [`http://localhost:3000/waiter`](http://localhost:3000/waiter)
+  * **Local Waiter POS**: [`http://localhost:3000/pos`](http://localhost:3000/pos)
+  * **LAN Tablet URL**: `http://<MAIN_PC_IP>:3000/pos` (Auto-detected and displayed in console)
+  * **Main PC Waiter Route**: [`http://localhost:3000/waiter`](http://localhost:3000/waiter)
 
 ---
 
@@ -319,7 +319,7 @@ New-NetFirewallRule -DisplayName "ChayaOne Owner Portal" -Direction Inbound -Loc
 
 ### 3. Open on Guest Phones & Waiter Tablets
 Ensure the smartphone or tablet is connected to the same Wi-Fi network:
-* **Waiter Tablets**: `http://192.168.1.50:3002`
+* **Waiter Tablets / Mobile POS**: `http://192.168.1.50:3000/pos`
 * **Customer Table Menu**: `http://192.168.1.50:3003/t/<tableToken>`
 * **Kitchen Screen (KDS)**: `http://192.168.1.50:3000/kds`
 * **Owner Dashboard**: `http://192.168.1.50:3004`
@@ -367,4 +367,12 @@ To build a production standalone Windows installer:
 npm run build:installer
 ```
 Installer outputs are generated in `local-first/installer/output/`.
+
+### 6. Phone / Tablet Shows "Could not save order — check connection"
+If the Waiter App on Android shows a connection error when clicking "Add to Bill" or "Send to Kitchen":
+1. **Check Phone Wi-Fi**: Look at the top status bar on the phone. Ensure the **Wi-Fi icon is connected** to the same shop router as the Main PC.
+2. **Turn Off 5G / Mobile Data**: If 5G or 4G cellular data is turned on, the phone may attempt to route requests through public internet where private LAN IPs (like `10.25.128.152` or `192.168.1.x`) cannot be reached. Turning off Mobile Data ensures all requests go over the local Wi-Fi router.
+3. **Verify Main PC IP & Port**: Make sure the IP in the Waiter app matches your Main PC's local Wi-Fi IP address (check using `ipconfig` in PowerShell) on port `3000`.
+4. **Firewall Rule**: Ensure Windows Defender Firewall allows incoming TCP on port 3000 (see Section 2 above).
+
 
