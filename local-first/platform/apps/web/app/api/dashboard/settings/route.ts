@@ -111,9 +111,11 @@ export async function POST(req: NextRequest) {
     const nextGst = {
       ...prevGst,
       enabled,
-      gstin: enabled ? gstin : '',
-      legalName: enabled ? legalName : '',
-      stateCode: enabled ? stateCode : '',
+      // Preserve gstin/legalName/stateCode when disabling so they can be restored
+      // on re-enable without the user needing to re-enter them. Only gst_reset clears.
+      gstin: enabled ? gstin : (String((prevGst as any).gstin ?? '')),
+      legalName: enabled ? legalName : (String((prevGst as any).legalName ?? '')),
+      stateCode: enabled ? stateCode : (String((prevGst as any).stateCode ?? '')),
       registrationType,
       gstType,
       calculationMethod,
@@ -172,8 +174,11 @@ export async function POST(req: NextRequest) {
       prisma.outlet.update({
         where: { id: session.outletId },
         data: {
-          gstin: enabled ? gstin : null,
-          stateCode: enabled ? stateCode : null,
+          // Keep outlet-level gstin/stateCode columns even when GST is disabled:
+          // POS receipt, T-billing, and state-routing logic read these columns
+          // independently of the GST enabled flag. Only clear on gst_reset.
+          gstin: enabled ? gstin : (currentOutlet?.gstin ?? null),
+          stateCode: enabled ? stateCode : (currentOutlet?.stateCode ?? null),
           settings: settings as Prisma.InputJsonValue,
         }
       }),

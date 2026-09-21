@@ -1025,6 +1025,8 @@ export interface MenuData {
   categoryList: { id: string; name: string }[];
   /** the outlet's kitchens/stations — powers the item "Station" picker */
   kitchens: Kitchen[];
+  /** whether GST is enabled for this outlet — controls visibility of GST fields in the product form */
+  gstEnabled: boolean;
 }
 
 async function getMenu(outletId: string): Promise<MenuData> {
@@ -1067,7 +1069,8 @@ async function getMenu(outletId: string): Promise<MenuData> {
   // flat category list (id + name) for product-management dropdowns
   const categoryList = categories.map((c) => ({ id: c.id, name: c.name }));
 
-  return { counts: { items, available, unavailable: items - available }, categories: out, categoryList, kitchens: readKitchens(outlet?.settings) };
+  const gst = readGstConfig(outlet?.settings);
+  return { counts: { items, available, unavailable: items - available }, categories: out, categoryList, kitchens: readKitchens(outlet?.settings), gstEnabled: gst.enabled };
 }
 
 // ===================== Settings =====================

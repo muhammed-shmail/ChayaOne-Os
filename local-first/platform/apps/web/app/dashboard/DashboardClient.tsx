@@ -519,6 +519,7 @@ export default function DashboardClient({
   const [recipes, setRecipes] = useState<any[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [menuGstEnabled, setMenuGstEnabled] = useState(true); // assume true until menu section loads
 
   const loadInventoryData = async () => {
     setInventoryLoading(true);
@@ -541,6 +542,8 @@ export default function DashboardClient({
         setMenuItems(flatItems);
         setMenuCategories(d.data?.categoryList || []);
         setKitchens(d.data?.kitchens || []);
+        // Track GST state for conditional field display in product forms
+        if (d.data?.gstEnabled !== undefined) setMenuGstEnabled(!!d.data.gstEnabled);
       }
     } catch (err) {
       console.error(err);
@@ -4088,10 +4091,13 @@ export default function DashboardClient({
                               {menuCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
                           </div>
+                          {menuGstEnabled && (
                           <div>
                             <label className="lbl">HSN/SAC Code</label>
                             <input value={newProduct.hsnCode} onChange={(e) => setNewProduct((p) => ({ ...p, hsnCode: e.target.value }))} placeholder="e.g. 996331" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
                           </div>
+                          )}
+                          {menuGstEnabled && (
                           <div>
                             <label className="lbl">GST rate (%)</label>
                             <input
@@ -4106,6 +4112,7 @@ export default function DashboardClient({
                               style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}
                             />
                           </div>
+                          )}
                           <div>
                             <label className="lbl">Station</label>
                             <select value={newProduct.station} onChange={(e) => setNewProduct((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
@@ -4120,6 +4127,7 @@ export default function DashboardClient({
                             </select>
                           </div>
                         </div>
+                        {menuGstEnabled && (
                         <div className="flex flex-wrap gap-4 items-center p-2 rounded-xl bg-paper-2 border" style={{ borderColor: 'var(--line-2)' }}>
                           <span className="text-xs font-bold text-ink-3">Exemptions:</span>
                           <label className="flex items-center gap-1.5 text-xs text-ink-2 select-none cursor-pointer">
@@ -4165,6 +4173,12 @@ export default function DashboardClient({
                             Nil Rated (0% GST)
                           </label>
                         </div>
+                        )}
+                        {!menuGstEnabled && (
+                          <div className="px-3 py-2 rounded-xl text-xs text-ink-3 bg-paper-2 border border-dashed" style={{ borderColor: 'var(--line-2)' }}>
+                            💡 GST is <b>off</b> — tax fields hidden. Enable GST in Settings → Tax & GST to set per-item rates.
+                          </div>
+                        )}
                         <div>
                           <label className="lbl">Description (optional)</label>
                           <input value={newProduct.description} onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))} placeholder="Short description shown to customers" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
@@ -4256,10 +4270,13 @@ export default function DashboardClient({
                                       {menuCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                                     </select>
                                   </div>
+                                  {menuGstEnabled && (
                                   <div>
                                     <label className="lbl">HSN/SAC Code</label>
                                     <input value={editDraft.hsnCode} onChange={(e) => setEditDraft((p) => ({ ...p, hsnCode: e.target.value }))} placeholder="e.g. 996331" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
                                   </div>
+                                  )}
+                                  {menuGstEnabled && (
                                   <div>
                                     <label className="lbl">GST rate (%)</label>
                                     <input
@@ -4274,6 +4291,7 @@ export default function DashboardClient({
                                       style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}
                                     />
                                   </div>
+                                  )}
                                   <div>
                                     <label className="lbl">Station</label>
                                     <select value={editDraft.station} onChange={(e) => setEditDraft((p) => ({ ...p, station: e.target.value }))} className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}>
@@ -4288,6 +4306,7 @@ export default function DashboardClient({
                                     </select>
                                   </div>
                                 </div>
+                                {menuGstEnabled && (
                                 <div className="flex flex-wrap gap-4 items-center p-2 rounded-xl bg-paper-2 border" style={{ borderColor: 'var(--line-2)' }}>
                                   <span className="text-xs font-bold text-ink-3">Exemptions:</span>
                                   <label className="flex items-center gap-1.5 text-xs text-ink-2 select-none cursor-pointer">
@@ -4333,6 +4352,12 @@ export default function DashboardClient({
                                     Nil Rated (0% GST)
                                   </label>
                                 </div>
+                                )}
+                                {!menuGstEnabled && (
+                                  <div className="px-3 py-2 rounded-xl text-xs text-ink-3 bg-paper-2 border border-dashed" style={{ borderColor: 'var(--line-2)' }}>
+                                    💡 GST is <b>off</b> — tax fields hidden. Enable in Settings → Tax & GST.
+                                  </div>
+                                )}
                                 <div>
                                   <label className="lbl">Description</label>
                                   <input value={editDraft.description} onChange={(e) => setEditDraft((p) => ({ ...p, description: e.target.value }))} placeholder="Short description" className="w-full p-2.5 rounded-xl border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} />
