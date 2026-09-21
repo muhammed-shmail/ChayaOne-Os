@@ -249,7 +249,7 @@ export default function SetupClient() {
   };
 
   const selectedPeriodLabel = PERIODS.find(p => p.key === period)?.label || period;
-  const expiryDate = period === 'custom' ? customEnd
+  const expiryDate: string = period === 'custom' ? (customEnd ?? '')
     : period === '1_year' ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN')
     : period === '6_months' ? new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN')
     : period === '3_months' ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN')

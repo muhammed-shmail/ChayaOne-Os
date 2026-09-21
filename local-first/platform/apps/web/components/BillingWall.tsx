@@ -307,7 +307,7 @@ function LicenseExpiredWall({ brand }: { brand?: string }) {
 
   const handleRenew = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (period === 'custom' && new Date(customEnd) <= new Date(customStart)) {
+    if (period === 'custom' && new Date(customEnd ?? '') <= new Date(customStart ?? '')) {
       setError('End date must be after start date.'); return;
     }
     setLoading(true); setError('');
