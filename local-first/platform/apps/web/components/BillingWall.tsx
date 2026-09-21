@@ -1,28 +1,43 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 /**
  * BillingWall — shown when workspace access is blocked.
  *
- * reason === 'license_not_activated'  → First-install activation wizard
- * reason === 'license_expired'        → License renewal prompt
- * reason === 'clock_tampered'         → Clock tampering detected
+ * reason === 'license_not_activated'  → Redirect to /setup wizard
+ * reason === 'license_expired'        → License renewal form
+ * reason === 'clock_tampered'         → Clock tampering error
  * anything else                       → Subscription billing hold
  */
 export function BillingWall({ brand, reason }: { brand?: string; reason: string | null }) {
-  const isFirstInstall = reason === 'license_not_activated';
-  const isLicenseIssue = reason === 'license_expired' || reason === 'clock_tampered' || isFirstInstall;
+  const router = useRouter();
 
-  if (isFirstInstall) {
-    return <ActivationWizard brand={brand} />;
+  // Fresh install → immediately redirect to the setup wizard
+  useEffect(() => {
+    if (reason === 'license_not_activated') {
+      router.replace('/setup');
+    }
+  }, [reason, router]);
+
+  if (reason === 'license_not_activated') {
+    // Show a brief loading state while redirect happens
+    return (
+      <main className="min-h-screen grid place-items-center p-6" style={{ background: 'var(--paper)' }}>
+        <div className="text-center">
+          <div className="text-4xl mb-3">🏪</div>
+          <p className="text-sm font-bold" style={{ color: 'var(--ink-2)' }}>Starting setup wizard…</p>
+        </div>
+      </main>
+    );
   }
 
   if (reason === 'license_expired') {
     return <LicenseExpiredWall brand={brand} />;
   }
 
-  // Subscription-level block (suspended / past_due / cancelled)
+  // Subscription-level block
   const heading =
     reason === 'expired'
       ? 'Your subscription has expired'
