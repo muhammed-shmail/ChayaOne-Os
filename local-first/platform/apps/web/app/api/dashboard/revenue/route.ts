@@ -59,14 +59,15 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = await prisma.$queryRaw<{ day: Date; orders: number; gross: number }[]>`
-    SELECT (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date AS day,
+    SELECT (("settledAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date AS day,
            COUNT(*)::int AS orders,
            COALESCE(SUM("totalPaise"), 0)::int AS gross
     FROM orders
     WHERE "outletId" = ${session.outletId}::uuid
-      AND "status" <> 'cancelled'
-      AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date >= ${from}::date
-      AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date <= ${to}::date
+      AND "status" = 'settled'
+      AND "settledAt" IS NOT NULL
+      AND (("settledAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date >= ${from}::date
+      AND (("settledAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date <= ${to}::date
     GROUP BY 1
     ORDER BY 1
   `;

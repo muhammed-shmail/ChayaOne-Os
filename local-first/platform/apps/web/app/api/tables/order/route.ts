@@ -88,6 +88,25 @@ export async function POST(req: NextRequest) {
     return voidItem(session, body);
   }
 
+  if (action === 'request_bill' || action === 'cancel_bill_request') {
+    const { tableId } = body;
+    if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
+    const targetState = action === 'request_bill' ? 'billed' : 'seated';
+
+    await prisma.tableMap.update({
+      where: { id: tableId },
+      data: { state: targetState },
+    }).catch(() => {});
+
+    await publish(session.outletId, {
+      type: 'table.updated',
+      tableId,
+      state: targetState,
+    });
+
+    return NextResponse.json({ ok: true, state: targetState });
+  }
+
   // ---- settle ----
   if (!canSettle(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const { tableId, method } = body;

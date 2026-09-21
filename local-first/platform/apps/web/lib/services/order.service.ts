@@ -389,7 +389,7 @@ export class OrderService {
         await createPrintJob(tx, {
           tenantId: resolvedTenantId,
           outletId,
-          jobId: `${createdOrder.id}-receipt`,
+          jobId: crypto.randomUUID(),
           orderId: createdOrder.id,
           printerId: receiptDevice?.id ?? null,
           stationId: 'receipt',
@@ -589,7 +589,7 @@ export class OrderService {
           await createPrintJob(tx, {
             tenantId: resolvedTenantId,
             outletId,
-            jobId: `approve-${updated.id}-${job.stationId}`,
+            jobId: crypto.randomUUID(),
             orderId: updated.id,
             printerId: job.targetDevice?.id ?? null,
             stationId: job.stationId,

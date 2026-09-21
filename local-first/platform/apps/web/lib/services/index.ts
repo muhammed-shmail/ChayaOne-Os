@@ -33,3 +33,4 @@ export * from './auth.service';
 export * from './inventory.service';
 export * from './customer.service';
 export * from './loyalty.service';
+export * from './day-closing.service';

@@ -265,6 +265,11 @@ model Outlet {
   notifications Notification[]
   registeredDevices Device[]
   tableTransfers TableTransfer[]
+  dayClosings  DayClosing[]
+  cashShifts   CashShift[]
+  openingCashBalances OpeningCashBalance[]
+  cashMovements CashMovement[]
+  expenses     Expense[]
 
   @@index([tenantId])
   @@map("outlets")
@@ -297,6 +302,8 @@ model StaffUser {
   sessions StaffSession[]
   pushSubs PushSubscription[]
   transfers TableTransfer[] @relation("StaffTransfers")
+  closedDayClosings DayClosing[] @relation("ClosedByStaff")
+  cashShifts CashShift[]
 
   @@unique([tenantId, username])
   @@index([tenantId, outletId])
@@ -823,6 +830,183 @@ model AuditLog {
 
   @@index([outletId, createdAt])
   @@map("audit_log")
+}
+
+// ===================== 5b. Finance & Day Closing =====================
+model DayClosing {
+  id                       String    @id @default(uuid()) @db.Uuid
+  outletId                 String    @db.Uuid
+  businessDate             String    // YYYY-MM-DD
+  closingNumber            String    // DC-YYYY-MM-DD-001
+  status                   String    @default("closed") // open | in_progress | closed | reopened
+  openedAt                 DateTime  @default(now()) @db.Timestamptz(6)
+  closedAt                 DateTime? @db.Timestamptz(6)
+  closedById               String?   @db.Uuid
+  closedByName             String?
+  closedByRole             String?
+
+  // Financial & Sales Aggregates (all in paise)
+  grossSalesPaise          Int       @default(0)
+  netSalesPaise            Int       @default(0)
+  discountsPaise           Int       @default(0)
+  refundsPaise             Int       @default(0)
+  taxPaise                 Int       @default(0)
+  cgstPaise                Int       @default(0)
+  sgstPaise                Int       @default(0)
+  igstPaise                Int       @default(0)
+  roundOffPaise            Int       @default(0)
+  serviceChargePaise       Int       @default(0)
+
+  // Order Counts
+  ordersCount              Int       @default(0)
+  completedOrdersCount     Int       @default(0)
+  cancelledOrdersCount     Int       @default(0)
+  refundedOrdersCount      Int       @default(0)
+
+  // Payment Breakdown
+  cashSalesPaise           Int       @default(0)
+  upiSalesPaise            Int       @default(0)
+  cardSalesPaise           Int       @default(0)
+  otherSalesPaise          Int       @default(0)
+
+  // Cash Reconciliation
+  openingCashPaise         Int       @default(0)
+  cashInPaise              Int       @default(0)
+  cashOutPaise             Int       @default(0)
+  cashExpensesPaise        Int       @default(0)
+  cashRefundsPaise         Int       @default(0)
+  expectedCashPaise        Int       @default(0)
+  actualCashPaise          Int       @default(0)
+  cashVariancePaise        Int       @default(0)
+  varianceReason           String?
+  varianceNote             String?
+  denominations            Json?
+
+  // Reconciled Snapshots
+  paymentsReconciliation   Json?
+  shiftsSummary            Json?
+  expensesSummary          Json?
+  refundsSummary           Json?
+  settlementsSummary       Json?
+
+  // Tomorrow Opening Cash Configuration
+  tomorrowOpeningCashPaise Int       @default(0)
+  cashRemovedPaise         Int       @default(0)
+  cashDepositDestination   String?   // bank | vault | owner_withdrawal | petty_cash | other
+  cashDepositAccountId     String?
+  cashDepositAccountName   String?
+
+  notes                    String?
+  reopenReason             String?
+  reopenedAt               DateTime? @db.Timestamptz(6)
+  reopenedById             String?   @db.Uuid
+  reopenedByName           String?
+  adjustments              Json?     // [{ timestamp, actorId, actorName, reason, before, after }]
+
+  createdAt                DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime  @updatedAt @db.Timestamptz(6)
+
+  outlet                   Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  closedBy                 StaffUser? @relation("ClosedByStaff", fields: [closedById], references: [id])
+  openingBalances          OpeningCashBalance[] @relation("ClosingOpeningBalances")
+
+  @@unique([outletId, businessDate])
+  @@index([outletId, businessDate])
+  @@index([outletId, status])
+  @@index([outletId, closedAt])
+  @@map("day_closings")
+}
+
+model CashShift {
+  id                String    @id @default(uuid()) @db.Uuid
+  outletId          String    @db.Uuid
+  staffId           String    @db.Uuid
+  cashierName       String
+  businessDate      String    // YYYY-MM-DD
+  status            String    @default("open") // open | closed
+  openedAt          DateTime  @default(now()) @db.Timestamptz(6)
+  closedAt          DateTime? @db.Timestamptz(6)
+  openingCashPaise  Int       @default(0)
+  cashSalesPaise    Int       @default(0)
+  expectedCashPaise Int       @default(0)
+  actualCashPaise   Int       @default(0)
+  cashVariancePaise Int       @default(0)
+  varianceReason    String?
+  notes             String?
+  denominations     Json?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @db.Timestamptz(6)
+
+  outlet            Outlet    @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  staff             StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([outletId, businessDate])
+  @@index([outletId, status])
+  @@map("cash_shifts")
+}
+
+model OpeningCashBalance {
+  id              String      @id @default(uuid()) @db.Uuid
+  outletId        String      @db.Uuid
+  businessDate    String      // YYYY-MM-DD
+  amountPaise     Int
+  source          String      // previous_day_closing | manual_entry | initial_float
+  sourceClosingId String?     @db.Uuid
+  notes           String?
+  createdAt       DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime    @updatedAt @db.Timestamptz(6)
+
+  outlet          Outlet      @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  sourceClosing   DayClosing? @relation("ClosingOpeningBalances", fields: [sourceClosingId], references: [id])
+
+  @@unique([outletId, businessDate])
+  @@map("opening_cash_balances")
+}
+
+model CashMovement {
+  id           String   @id @default(uuid()) @db.Uuid
+  outletId     String   @db.Uuid
+  staffId      String?  @db.Uuid
+  staffName    String?
+  businessDate String   // YYYY-MM-DD
+  type         String   // inflow | outflow
+  category     String   // cash_in | cash_out | day_close_deposit | petty_cash | safe_drop
+  amountPaise  Int
+  reason       String?
+  destination  String?  // bank | vault | owner_withdrawal | petty_cash | other
+  destAccount  String?
+  reference    String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  outlet       Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@index([outletId, businessDate])
+  @@index([outletId, createdAt])
+  @@map("cash_movements")
+}
+
+model Expense {
+  id           String   @id @default(uuid()) @db.Uuid
+  outletId     String   @db.Uuid
+  businessDate String   // YYYY-MM-DD
+  category     String   // e.g. Kitchen Supplies, Utilities, Rent, Transport
+  vendor       String?
+  amountPaise  Int
+  gstPaise     Int      @default(0)
+  method       String   @default("cash") // cash | upi | card | bank_transfer
+  status       String   @default("approved") // pending | approved | rejected
+  approvedBy   String?
+  paidAt       DateTime @default(now()) @db.Timestamptz(6)
+  notes        String?
+  reference    String?
+  createdById  String?  @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  outlet       Outlet   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@index([outletId, businessDate])
+  @@index([outletId, paidAt])
+  @@map("expenses")
 }
 
 // ===================== 6. Customers & Loyalty =====================

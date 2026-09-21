@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Store, Clock, Percent, BookOpen, ChefHat, Package, Receipt, CreditCard, Printer,
   Users, Smartphone, Truck, Bell, Shield, BarChart3, ClipboardList, Blocks, Zap,
@@ -279,6 +279,7 @@ interface SettingsCenterProps {
   menuItems?: any[];
   menuCategories?: any[];
   setMenuItems?: React.Dispatch<React.SetStateAction<any[]>>;
+  staffMembers?: any[];
 }
 
 export default function SettingsCenter({
@@ -340,7 +341,8 @@ export default function SettingsCenter({
   handleToggleAdvanced,
   menuItems = [],
   menuCategories = [],
-  setMenuItems
+  setMenuItems,
+  staffMembers = [],
 }: SettingsCenterProps) {
   // Navigation & States
   const [activePanel, setActivePanel] = useState<string | null>(null);
@@ -356,7 +358,7 @@ export default function SettingsCenter({
   const [waiterPort, setWaiterPort] = useState<string>('3000');
   const [waiterUserOption, setWaiterUserOption] = useState<string>('all');
   const [customWaiterName, setCustomWaiterName] = useState<string>('');
-  const [waiterList, setWaiterList] = useState<{ id: string; name: string; role: string; brandName?: string }[]>([]);
+  const [waiterList, setWaiterList] = useState<{ id: string; name: string; role: string; assignedRoles?: string[]; displayRole?: string; brandName?: string }[]>([]);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [customerPort, setCustomerPort] = useState<string>('3003');
   const [customerTableToken, setCustomerTableToken] = useState<string>('demo');
@@ -427,6 +429,73 @@ export default function SettingsCenter({
         .catch(() => {});
     }
   }, []);
+
+  const loadWaiters = useCallback(() => {
+    fetch(`/api/server/waiters?t=${Date.now()}`, { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.waiters && Array.isArray(data.waiters)) {
+          setWaiterList(data.waiters);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Sync waiter list directly when staffMembers updates from Staff management
+  useEffect(() => {
+    if (staffMembers && Array.isArray(staffMembers) && staffMembers.length > 0) {
+      const activeMembers = staffMembers
+        .filter((m: any) => m.active !== false)
+        .map((m: any) => {
+          let assignedRoles: string[] = [m.role];
+          if (m.permissions) {
+            try {
+              const p = typeof m.permissions === 'string' ? JSON.parse(m.permissions) : m.permissions;
+              if (Array.isArray(p?.assignedRoles) && p.assignedRoles.length > 0) {
+                assignedRoles = p.assignedRoles;
+              }
+            } catch {}
+          }
+          const displayRole = assignedRoles.map((r: string) => r.toUpperCase()).join(', ');
+          return {
+            id: m.id,
+            name: m.name,
+            role: m.role,
+            assignedRoles,
+            displayRole,
+          };
+        });
+      setWaiterList(activeMembers);
+    } else {
+      loadWaiters();
+    }
+  }, [staffMembers, loadWaiters]);
+
+  // Re-fetch waiter list every time the user opens the "app_qrs" panel
+  useEffect(() => {
+    if (activePanel === 'app_qrs') {
+      loadWaiters();
+    }
+  }, [activePanel, loadWaiters]);
+
+  // Listen to global staff change events
+  useEffect(() => {
+    const handleStaffChange = () => {
+      loadWaiters();
+    };
+    window.addEventListener('staff:changed', handleStaffChange);
+    return () => window.removeEventListener('staff:changed', handleStaffChange);
+  }, [loadWaiters]);
+
+  // If the selected waiter was deleted or suspended, automatically reset to 'all'
+  useEffect(() => {
+    if (waiterUserOption !== 'all' && waiterUserOption !== 'custom') {
+      const exists = waiterList.some((w) => w.name === waiterUserOption);
+      if (!exists && waiterList.length > 0) {
+        setWaiterUserOption('all');
+      }
+    }
+  }, [waiterList, waiterUserOption]);
 
   useEffect(() => {
     if (activePanel === 'developer') {
@@ -5085,11 +5154,14 @@ export default function SettingsCenter({
                             className="inp text-xs bg-paper-1 border-line w-full"
                           >
                             <option value="all">👤 All Waiters (Enter PIN on Tablet)</option>
-                            {waiterList.map((w) => (
-                              <option key={w.id} value={w.name}>
-                                {w.name} ({w.role.toUpperCase()})
-                              </option>
-                            ))}
+                            {waiterList.map((w) => {
+                              const roleLabel = w.displayRole || (Array.isArray(w.assignedRoles) && w.assignedRoles.length > 0 ? w.assignedRoles.join(', ').toUpperCase() : (w.role || 'staff').toUpperCase());
+                              return (
+                                <option key={w.id} value={w.name}>
+                                  {w.name} ({roleLabel})
+                                </option>
+                              );
+                            })}
                             <option value="custom">✏️ Custom Waiter Name...</option>
                           </select>
 

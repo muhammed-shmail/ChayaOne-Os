@@ -67,15 +67,16 @@ async function getSales(outletId: string): Promise<SalesData> {
       { day: Date; orders: number; gross: number; discount: number; tax: number }[]
     >`
       SELECT
-        ("placedAt" AT TIME ZONE ${TZ})::date AS day,
+        ("settledAt" AT TIME ZONE ${TZ})::date AS day,
         COUNT(*)::int AS orders,
         COALESCE(SUM("totalPaise"), 0)::int AS gross,
         COALESCE(SUM("discountPaise"), 0)::int AS discount,
         COALESCE(SUM("cgstPaise" + "sgstPaise" + "igstPaise"), 0)::int AS tax
       FROM orders
       WHERE "outletId" = ${outletId}::uuid
-        AND "status" <> 'cancelled'
-        AND ("placedAt" AT TIME ZONE ${TZ})::date > (now() AT TIME ZONE ${TZ})::date - 14
+        AND "status" = 'settled'
+        AND "settledAt" IS NOT NULL
+        AND ("settledAt" AT TIME ZONE ${TZ})::date > (now() AT TIME ZONE ${TZ})::date - 14
       GROUP BY 1
     `,
     prisma.$queryRaw<{ orders: number; gross: number; discount: number; tax: number }[]>`
@@ -86,8 +87,9 @@ async function getSales(outletId: string): Promise<SalesData> {
         COALESCE(SUM("cgstPaise" + "sgstPaise" + "igstPaise"), 0)::int AS tax
       FROM orders
       WHERE "outletId" = ${outletId}::uuid
-        AND "status" <> 'cancelled'
-        AND "placedAt" >= now() - interval '30 days'
+        AND "status" = 'settled'
+        AND "settledAt" IS NOT NULL
+        AND "settledAt" >= now() - interval '30 days'
     `,
     prisma.$queryRaw<{ method: string; amount: number; count: number }[]>`
       SELECT p."method"::text AS method,
@@ -106,8 +108,9 @@ async function getSales(outletId: string): Promise<SalesData> {
              COALESCE(SUM("totalPaise"), 0)::int AS gross
       FROM orders
       WHERE "outletId" = ${outletId}::uuid
-        AND "status" <> 'cancelled'
-        AND "placedAt" >= now() - interval '30 days'
+        AND "status" = 'settled'
+        AND "settledAt" IS NOT NULL
+        AND "settledAt" >= now() - interval '30 days'
       GROUP BY 1
       ORDER BY 2 DESC
     `,
@@ -118,8 +121,9 @@ async function getSales(outletId: string): Promise<SalesData> {
       FROM order_items oi
       JOIN orders o ON o.id = oi."orderId"
       WHERE o."outletId" = ${outletId}::uuid
-        AND o."status" <> 'cancelled'
-        AND o."placedAt" >= now() - interval '30 days'
+        AND o."status" = 'settled'
+        AND o."settledAt" IS NOT NULL
+        AND o."settledAt" >= now() - interval '30 days'
       GROUP BY 1
       ORDER BY revenue DESC
       LIMIT 10
@@ -132,8 +136,9 @@ async function getSales(outletId: string): Promise<SalesData> {
         COALESCE(SUM("cgstPaise" + "sgstPaise" + "igstPaise"), 0)::int AS tax
       FROM orders
       WHERE "outletId" = ${outletId}::uuid
-        AND "status" <> 'cancelled'
-        AND "placedAt" >= now() - interval '30 days'
+        AND "status" = 'settled'
+        AND "settledAt" IS NOT NULL
+        AND "settledAt" >= now() - interval '30 days'
     `,
     // GST by slab: revenue grouped by each line item's GST rate (0% = exempt)
     prisma.$queryRaw<{ rate: number; revenue: number }[]>`
@@ -143,8 +148,9 @@ async function getSales(outletId: string): Promise<SalesData> {
       JOIN orders o ON o.id = oi."orderId"
       LEFT JOIN menu_items mi ON mi.id = oi."itemId"
       WHERE o."outletId" = ${outletId}::uuid
-        AND o."status" <> 'cancelled'
-        AND o."placedAt" >= now() - interval '30 days'
+        AND o."status" = 'settled'
+        AND o."settledAt" IS NOT NULL
+        AND o."settledAt" >= now() - interval '30 days'
       GROUP BY 1
       ORDER BY 1
     `,
@@ -454,8 +460,8 @@ async function getMonitor(outletId: string, tenantId: string): Promise<MonitorDa
   const [today, payToday, prog, stock, occ, tableCount, staffOnDuty, poAgg, payAgg, vendAgg, avg7Row, alerts, alertCount] = await Promise.all([
     prisma.$queryRaw<{ orders: number; sales: number }[]>`
       SELECT COUNT(*)::int AS orders, COALESCE(SUM("totalPaise"),0)::int AS sales
-      FROM orders WHERE "outletId" = ${outletId}::uuid AND status <> 'cancelled'
-        AND ("placedAt" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date`,
+      FROM orders WHERE "outletId" = ${outletId}::uuid AND status = 'settled' AND "settledAt" IS NOT NULL
+        AND ("settledAt" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date`,
     prisma.$queryRaw<{ method: string; amount: number }[]>`
       SELECT method::text AS method, COALESCE(SUM("amountPaise"),0)::int AS amount
       FROM payments WHERE "outletId" = ${outletId}::uuid AND status = 'success'
@@ -474,10 +480,10 @@ async function getMonitor(outletId: string, tenantId: string): Promise<MonitorDa
     prisma.vendor.aggregate({ where: { tenantId }, _sum: { openingBalancePaise: true } }),
     prisma.$queryRaw<{ avg: number }[]>`
       SELECT COALESCE(AVG(d.sales),0)::float AS avg FROM (
-        SELECT ("placedAt" AT TIME ZONE ${TZ})::date AS day, SUM("totalPaise")::int AS sales
-        FROM orders WHERE "outletId" = ${outletId}::uuid AND status <> 'cancelled'
-          AND ("placedAt" AT TIME ZONE ${TZ})::date >= (now() AT TIME ZONE ${TZ})::date - 7
-          AND ("placedAt" AT TIME ZONE ${TZ})::date < (now() AT TIME ZONE ${TZ})::date
+        SELECT ("settledAt" AT TIME ZONE ${TZ})::date AS day, SUM("totalPaise")::int AS sales
+        FROM orders WHERE "outletId" = ${outletId}::uuid AND status = 'settled' AND "settledAt" IS NOT NULL
+          AND ("settledAt" AT TIME ZONE ${TZ})::date >= (now() AT TIME ZONE ${TZ})::date - 7
+          AND ("settledAt" AT TIME ZONE ${TZ})::date < (now() AT TIME ZONE ${TZ})::date
         GROUP BY 1
       ) d`,
     prisma.notification.findMany({ where: { outletId, readAt: null }, orderBy: { createdAt: 'desc' }, take: 12 }),
@@ -564,7 +570,7 @@ async function getTables(outletId: string): Promise<TablesData> {
       WHERE t."outletId" = ${outletId}::uuid
       GROUP BY t.id, t.label
     `,
-    // revenue per table over 30 days (settled / non-cancelled)
+    // revenue per table over 30 days (settled orders)
     prisma.$queryRaw<{ id: string; label: string; orders: number; revenue: number; stay: number }[]>`
       SELECT t.id::text AS id, t.label AS label,
              COUNT(o.*)::int AS orders,
@@ -572,8 +578,9 @@ async function getTables(outletId: string): Promise<TablesData> {
              COALESCE(AVG(LEAST(EXTRACT(EPOCH FROM (COALESCE(o."settledAt", o."placedAt") - o."placedAt")), 14400)), 0)::float AS stay
       FROM tables_map t
       LEFT JOIN orders o ON o."tableId" = t.id
-        AND o."status" <> 'cancelled'
-        AND o."placedAt" >= now() - interval '30 days'
+        AND o."status" = 'settled'
+        AND o."settledAt" IS NOT NULL
+        AND o."settledAt" >= now() - interval '30 days'
       WHERE t."outletId" = ${outletId}::uuid
       GROUP BY t.id, t.label
       ORDER BY revenue DESC
@@ -585,20 +592,22 @@ async function getTables(outletId: string): Promise<TablesData> {
       FROM orders o
       WHERE o."outletId" = ${outletId}::uuid
         AND o."status" = 'settled'
+        AND o."settledAt" IS NOT NULL
         AND o."tableId" IS NOT NULL
-        AND o."placedAt" >= now() - interval '30 days'
-      GROUP BY o."tableId", ("placedAt" AT TIME ZONE ${TZ})::date
+        AND o."settledAt" >= now() - interval '30 days'
+      GROUP BY o."tableId", ("settledAt" AT TIME ZONE ${TZ})::date
     `,
-    // revenue heatmap by day-of-week × hour
+    // revenue heatmap by day-of-week × hour (settled orders)
     prisma.$queryRaw<{ dow: number; hour: number; orders: number; revenue: number }[]>`
-      SELECT EXTRACT(DOW FROM (o."placedAt" AT TIME ZONE ${TZ}))::int AS dow,
-             EXTRACT(HOUR FROM (o."placedAt" AT TIME ZONE ${TZ}))::int AS hour,
+      SELECT EXTRACT(DOW FROM (o."settledAt" AT TIME ZONE ${TZ}))::int AS dow,
+             EXTRACT(HOUR FROM (o."settledAt" AT TIME ZONE ${TZ}))::int AS hour,
              COUNT(*)::int AS orders,
              COALESCE(SUM(o."totalPaise"), 0)::int AS revenue
       FROM orders o
       WHERE o."outletId" = ${outletId}::uuid
-        AND o."status" <> 'cancelled'
-        AND o."placedAt" >= now() - interval '30 days'
+        AND o."status" = 'settled'
+        AND o."settledAt" IS NOT NULL
+        AND o."settledAt" >= now() - interval '30 days'
       GROUP BY 1, 2
     `,
   ]);
@@ -727,8 +736,9 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
       FROM orders o
       LEFT JOIN staff_users s ON s.id = o."staffId"
       WHERE o."outletId" = ${outletId}::uuid
-        AND o."status" <> 'cancelled'
-        AND o."placedAt" >= now() - interval '30 days'
+        AND o."status" = 'settled'
+        AND o."settledAt" IS NOT NULL
+        AND o."settledAt" >= now() - interval '30 days'
       GROUP BY 1, 2
       ORDER BY gross DESC
     `,
@@ -763,8 +773,8 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
       LEFT JOIN (
         SELECT "staffId", COUNT(*)::int AS orders, COALESCE(SUM("totalPaise"),0)::int AS gross
         FROM orders
-        WHERE "outletId" = ${outletId}::uuid AND status <> 'cancelled'
-          AND ("placedAt" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date
+        WHERE "outletId" = ${outletId}::uuid AND status = 'settled' AND "settledAt" IS NOT NULL
+          AND ("settledAt" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date
         GROUP BY "staffId"
       ) ord ON ord."staffId" = s.id
       LEFT JOIN (

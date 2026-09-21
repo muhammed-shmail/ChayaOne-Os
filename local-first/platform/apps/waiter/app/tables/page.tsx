@@ -16,6 +16,8 @@ import {
   LogOut,
   ChevronRight,
   BellRing,
+  Check,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface TableItem {
@@ -26,11 +28,34 @@ interface TableItem {
 }
 
 interface OccupancyInfo {
+  id?: string;
+  orderId?: string;
   number: number;
   sinceMs: number;
   billPaise: number;
   orders: number;
   status: string;
+}
+
+interface TableOrderLine {
+  id: string;
+  orderId: string;
+  name: string;
+  qty: number;
+  unitPricePaise: number;
+  linePaise: number;
+  station: string | null;
+  kotStatus: string;
+}
+
+interface TableOrderData {
+  orders: Array<{ id: string; number: number; totalPaise: number; placedAt: string }>;
+  lines: TableOrderLine[];
+  totals: {
+    totalPaise: number;
+    subtotalPaise: number;
+    discountPaise: number;
+  };
 }
 
 export default function WaiterTablesPage() {
@@ -39,6 +64,10 @@ export default function WaiterTablesPage() {
   const [occupiedMap, setOccupiedMap] = useState<Record<string, OccupancyInfo>>({});
   const [filter, setFilter] = useState<'all' | 'free' | 'occupied' | 'billed'>('all');
   const [selectedTable, setSelectedTable] = useState<TableItem | null>(null);
+  const [tableOrder, setTableOrder] = useState<TableOrderData | null>(null);
+  const [loadingOrder, setLoadingOrder] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -98,6 +127,103 @@ export default function WaiterTablesPage() {
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     router.push('/login');
+  };
+
+  // Fetch running order details when an occupied table is selected
+  useEffect(() => {
+    if (selectedTable && occupiedMap[selectedTable.id]) {
+      setLoadingOrder(true);
+      fetch(`/api/tables/order?tableId=${selectedTable.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data) setTableOrder(data);
+        })
+        .catch((e) => console.error('Error fetching table order', e))
+        .finally(() => setLoadingOrder(false));
+    } else {
+      setTableOrder(null);
+    }
+  }, [selectedTable, occupiedMap]);
+
+  // Toast auto-clear
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 2800);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
+
+  const handleMarkServed = async () => {
+    if (!selectedTable) return;
+    const occ = occupiedMap[selectedTable.id];
+    const orderId = occ?.orderId || occ?.id;
+    if (!orderId) return;
+
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'served' }),
+      });
+
+      if (res.ok) {
+        setToastMessage(`✓ Order #${occ.number} marked as Served!`);
+        setOccupiedMap((prev) => ({
+          ...prev,
+          [selectedTable.id]: {
+            ...prev[selectedTable.id]!,
+            status: 'served',
+          },
+        }));
+        fetchTables();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.message || 'Failed to update order status');
+      }
+    } catch (err) {
+      console.error('Error marking order served', err);
+      alert('Network error updating status');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRequestBill = async (cancel = false) => {
+    if (!selectedTable) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: cancel ? 'cancel_bill_request' : 'request_bill',
+          tableId: selectedTable.id,
+        }),
+      });
+
+      if (res.ok) {
+        setToastMessage(
+          cancel
+            ? `Bill request cleared for Table ${selectedTable.label}`
+            : `🧾 Bill requested for Table ${selectedTable.label}!`
+        );
+        const nextState = cancel ? 'seated' : 'billed';
+        setTables((prev) =>
+          prev.map((t) => (t.id === selectedTable.id ? { ...t, state: nextState } : t))
+        );
+        setSelectedTable((prev) => (prev ? { ...prev, state: nextState } : null));
+        fetchTables();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.message || 'Failed to update bill request');
+      }
+    } catch (err) {
+      console.error('Error requesting bill', err);
+      alert('Network error updating bill request');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const getTableStatus = (table: TableItem): { label: string; bg: string; text: string; border: string } => {
@@ -304,7 +430,105 @@ export default function WaiterTablesPage() {
             </div>
 
             {/* Quick Actions List */}
-            <div className="space-y-2 mt-4">
+            <div className="space-y-3 mt-3">
+              {occupiedMap[selectedTable.id] && (
+                <div className="p-3.5 rounded-2xl bg-gray-800/60 border border-gray-700/60 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-white">
+                        Order #{occupiedMap[selectedTable.id]?.number}
+                      </span>
+                      <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
+                        <Clock className="w-3 h-3 text-gray-400" />
+                        {formatElapsed(occupiedMap[selectedTable.id]!.sinceMs)} ago
+                      </span>
+                    </div>
+
+                    <span
+                      className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border uppercase tracking-wider ${
+                        occupiedMap[selectedTable.id]?.status === 'served'
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                          : occupiedMap[selectedTable.id]?.status === 'ready'
+                          ? 'bg-sky-500/15 text-sky-400 border-sky-500/30 animate-pulse'
+                          : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                      }`}
+                    >
+                      {occupiedMap[selectedTable.id]?.status === 'served'
+                        ? '✓ Served'
+                        : occupiedMap[selectedTable.id]?.status === 'ready'
+                        ? 'Ready to Serve'
+                        : 'Preparing (KOT)'}
+                    </span>
+                  </div>
+
+                  {/* Ordered Items Preview */}
+                  {loadingOrder ? (
+                    <div className="py-2 text-[11px] text-gray-400 animate-pulse">Loading order items...</div>
+                  ) : tableOrder && tableOrder.lines.length > 0 ? (
+                    <div className="max-h-32 overflow-y-auto space-y-1 pr-1 border-t border-gray-700/50 pt-2">
+                      {tableOrder.lines.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs text-gray-300">
+                          <div className="flex items-center gap-1.5 flex-1 pr-2 truncate">
+                            <span className="font-bold text-sky-400 text-[11px]">{item.qty}x</span>
+                            <span className="truncate">{item.name}</span>
+                            {item.station && (
+                              <span className="text-[8px] uppercase px-1 py-0.5 rounded bg-gray-700/80 text-gray-300 font-semibold">
+                                {item.station}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-gray-400 text-[11px] tnum">
+                            ₹{(item.linePaise / 100).toFixed(0)}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between text-xs font-bold text-white pt-1.5 border-t border-gray-700/50">
+                        <span className="text-gray-400 text-[11px]">Running Total</span>
+                        <span className="tnum">₹{(occupiedMap[selectedTable.id]!.billPaise / 100).toFixed(0)}</span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* 1-Tap Action Buttons */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    {occupiedMap[selectedTable.id]?.status !== 'served' ? (
+                      <button
+                        onClick={handleMarkServed}
+                        disabled={actionLoading}
+                        className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 transition-all disabled:opacity-50"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Mark as Served</span>
+                      </button>
+                    ) : (
+                      <div className="py-2.5 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold text-xs flex items-center justify-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Food Served</span>
+                      </div>
+                    )}
+
+                    {selectedTable.state === 'billed' ? (
+                      <button
+                        onClick={() => handleRequestBill(true)}
+                        disabled={actionLoading}
+                        className="py-2.5 px-3 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-all"
+                      >
+                        <span>Cancel Bill</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleRequestBill(false)}
+                        disabled={actionLoading}
+                        className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-500/20 transition-all disabled:opacity-50"
+                      >
+                        <Receipt className="w-3.5 h-3.5" />
+                        <span>Request Bill</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={() => router.push(`/order/${selectedTable.id}`)}
                 className="w-full py-3.5 px-4 rounded-2xl bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white font-semibold flex items-center justify-between transition-all shadow-lg shadow-sky-500/20"
@@ -362,6 +586,14 @@ export default function WaiterTablesPage() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 py-2.5 px-5 rounded-2xl bg-emerald-500 text-white font-bold text-xs shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top duration-200">
+          <Check className="w-4 h-4" />
+          <span>{toastMessage}</span>
         </div>
       )}
 

@@ -358,6 +358,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       } : m));
 
       // Refresh layout data
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
       setTimeout(() => refresh(), 1000);
     } catch (e: any) {
       setErrorMessage(e.message || 'Error occurred while saving modifications.');
@@ -422,6 +423,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       setNewStaffDesignation('');
       setNewStaffJoiningDate('');
       
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
       refresh();
     } catch (e: any) {
       setErrorMessage(e.message || 'Verification failed while saving.');
@@ -442,6 +444,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         })
       });
       if (res.ok) {
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
         refresh();
       }
     } catch (e) {
@@ -695,7 +698,10 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({ action: 'remove', id: m.id })
-                                      }).then(() => refresh());
+                                      }).then(() => {
+                                        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
+                                        refresh();
+                                      });
                                     }
                                   }}
                                   className="px-2 py-1 rounded hover:bg-red-500/10 text-ink-3 hover:text-red-500 transition-all text-xs"

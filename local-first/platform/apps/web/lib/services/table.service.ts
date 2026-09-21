@@ -192,6 +192,15 @@ export class TableService {
       }
       await tx.tableMap.update({ where: { id: toTableId }, data: { state: TableState.seated } });
 
+      // 6. Resolve safe staff ID for relational tables
+      let validStaffId: string | null = null;
+      if (staffId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId)) {
+        const staffExists = await tx.staffUser.findUnique({ where: { id: staffId }, select: { id: true } });
+        if (staffExists) {
+          validStaffId = staffId;
+        }
+      }
+
       // 6. Record TableTransfer ledger entries
       for (const o of activeOrders) {
         await tx.tableTransfer.create({
@@ -200,9 +209,11 @@ export class TableService {
             orderId: o.id,
             fromTableId,
             toTableId,
-            transferredBy: staffId,
+            transferredBy: validStaffId,
             reason: reason?.trim() || null,
           },
+        }).catch((err) => {
+          console.warn('[TABLE TRANSFER LEDGER WARN]', err);
         });
       }
 
@@ -211,7 +222,7 @@ export class TableService {
         await tx.auditLog.create({
           data: {
             outletId,
-            actorId: staffId,
+            actorId: validStaffId,
             action: 'table.transferred',
             entity: 'table',
             entityId: toTableId,
@@ -230,6 +241,8 @@ export class TableService {
               reason: reason?.trim() || null,
             },
           },
+        }).catch((err) => {
+          console.warn('[AUDIT LOG WARN]', err);
         });
       }
 
@@ -255,10 +268,12 @@ export class TableService {
             fromTableLabel: fromTable.label,
             toTableId,
             toTableLabel: toTable.label,
-            transferredBy: staffId,
+            transferredBy: validStaffId,
             transferredByName: staffName ?? null,
             reason: reason?.trim() || null,
           },
+        }).catch((err) => {
+          console.warn('[OUTBOX WARN]', err);
         });
       }
 
@@ -280,16 +295,20 @@ export class TableService {
           );
 
           for (const job of transferJobs) {
-            await createPrintJob(tx, {
-              tenantId: resolvedTenantId,
-              outletId,
-              jobId: `${o.id}-transfer-${job.stationId}-${Date.now()}`,
-              orderId: o.id,
-              printerId: job.targetDevice?.id ?? null,
-              stationId: job.stationId,
-              payload: job.payload,
-              priority: 1,
-            });
+            try {
+              await createPrintJob(tx, {
+                tenantId: resolvedTenantId,
+                outletId,
+                jobId: crypto.randomUUID(),
+                orderId: o.id,
+                printerId: job.targetDevice?.id ?? null,
+                stationId: job.stationId,
+                payload: job.payload,
+                priority: 1,
+              });
+            } catch (printErr) {
+              console.warn('[TABLE TRANSFER PRINT WARN]', printErr);
+            }
           }
         }
       }

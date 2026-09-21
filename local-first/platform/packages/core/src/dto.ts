@@ -67,3 +67,85 @@ export type CreateOrderInput = z.infer<typeof CreateOrderSchema>;
 export const AdvanceOrderSchema = z.object({
   status: z.enum(['open', 'in_kitchen', 'ready', 'served', 'settled', 'cancelled']),
 });
+
+/** Cash Denominations breakdown (counts of bills and total coins paise) */
+export const CashDenominationsSchema = z.object({
+  d500: z.number().int().min(0).default(0),
+  d200: z.number().int().min(0).default(0),
+  d100: z.number().int().min(0).default(0),
+  d50: z.number().int().min(0).default(0),
+  d20: z.number().int().min(0).default(0),
+  d10: z.number().int().min(0).default(0),
+  coinsPaise: z.number().int().min(0).default(0),
+});
+export type CashDenominations = z.infer<typeof CashDenominationsSchema>;
+
+/** Calculate total actual cash paise from denominations object */
+export function calculateDenominationsTotalPaise(denoms: CashDenominations | null | undefined): number {
+  if (!denoms) return 0;
+  return (
+    (denoms.d500 || 0) * 50000 +
+    (denoms.d200 || 0) * 20000 +
+    (denoms.d100 || 0) * 10000 +
+    (denoms.d50 || 0) * 5000 +
+    (denoms.d20 || 0) * 2000 +
+    (denoms.d10 || 0) * 1000 +
+    (denoms.coinsPaise || 0)
+  );
+}
+
+/** Verification of physical cash counted by manager/cashier */
+export const DayClosingVerifyCashSchema = z.object({
+  businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  denominations: CashDenominationsSchema.optional(),
+  actualCashPaise: z.number().int().min(0),
+  varianceReason: z.string().optional(),
+  varianceNote: z.string().optional(),
+});
+export type DayClosingVerifyCashInput = z.infer<typeof DayClosingVerifyCashSchema>;
+
+/** Commitment / Final closure of a restaurant business day */
+export const DayClosingCommitSchema = z.object({
+  businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  actualCashPaise: z.number().int().min(0),
+  varianceReason: z.string().optional(),
+  varianceNote: z.string().optional(),
+  denominations: CashDenominationsSchema.optional(),
+  tomorrowOpeningCashPaise: z.number().int().min(0),
+  tomorrowOption: z.enum(['same', 'entire', 'custom', 'zero']).default('same'),
+  cashDepositDestination: z.enum(['bank', 'vault', 'owner_withdrawal', 'petty_cash', 'other']).default('vault'),
+  cashDepositAccountId: z.string().optional(),
+  cashDepositAccountName: z.string().optional(),
+  notes: z.string().optional(),
+  managerPin: z.string().optional(),
+});
+export type DayClosingCommitInput = z.infer<typeof DayClosingCommitSchema>;
+
+/** Reopen an already closed business day (manager authorized) */
+export const DayClosingReopenSchema = z.object({
+  businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  reason: z.string().min(3),
+  managerPin: z.string().optional(),
+});
+export type DayClosingReopenInput = z.infer<typeof DayClosingReopenSchema>;
+
+/** Make an audited adjustment after day closing */
+export const DayClosingAdjustSchema = z.object({
+  closingId: z.string().uuid(),
+  reason: z.string().min(3),
+  field: z.string(),
+  beforeValue: z.any(),
+  afterValue: z.any(),
+  managerPin: z.string().optional(),
+});
+export type DayClosingAdjustInput = z.infer<typeof DayClosingAdjustSchema>;
+
+/** Force close an active cashier shift */
+export const ForceCloseShiftSchema = z.object({
+  shiftId: z.string().uuid(),
+  actualCashPaise: z.number().int().min(0),
+  varianceReason: z.string().optional(),
+  notes: z.string().optional(),
+  managerPin: z.string().optional(),
+});
+export type ForceCloseShiftInput = z.infer<typeof ForceCloseShiftSchema>;

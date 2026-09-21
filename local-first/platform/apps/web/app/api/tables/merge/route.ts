@@ -83,10 +83,16 @@ export async function POST(req: NextRequest) {
       });
 
       // 3. Create AuditLog entry
+      let validActorId: string | null = null;
+      if (session.staffId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.staffId)) {
+        const staffExists = await tx.staffUser.findUnique({ where: { id: session.staffId }, select: { id: true } });
+        if (staffExists) validActorId = session.staffId;
+      }
+
       await tx.auditLog.create({
         data: {
           outletId: session.outletId,
-          actorId: session.staffId,
+          actorId: validActorId,
           action: 'table.merged',
           entity: 'TableMap',
           entityId: destTableId,
@@ -100,7 +106,7 @@ export async function POST(req: NextRequest) {
             reason: reason || null,
           },
         },
-      });
+      }).catch((e) => console.warn('[MERGE AUDIT WARN]', e));
 
       // 4. Fetch updated destination orders with items
       const updatedDestOrders = await tx.order.findMany({

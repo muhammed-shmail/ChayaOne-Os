@@ -69,4 +69,7 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.test.manifest)
 
   testImplementation(libs.junit)
+
+  // QR Code Scanner (Offline embedded camera scanner)
+  implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { RefreshCw, Settings, Wifi, WifiOff, Trash2, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, Settings, Wifi, WifiOff, Trash2, CheckCircle2, QrCode, X } from 'lucide-react';
 
 interface ServerSyncCardProps {
   className?: string;
@@ -16,6 +16,7 @@ export function ServerSyncCard({ className = '', onManualSync, compact = false }
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Just now');
   const [cacheMessage, setCacheMessage] = useState<string | null>(null);
+  const [showQrModal, setShowQrModal] = useState<boolean>(false);
 
 
   // Detect server address from AndroidBridge or window.location
@@ -185,7 +186,7 @@ export function ServerSyncCard({ className = '', onManualSync, compact = false }
       {/* Remote Link moved to Settings → App Cores & Extensions */}
 
       {/* Action Buttons Row */}
-      <div className={`grid grid-cols-3 ${compact ? 'gap-1 pt-0.5' : 'gap-1.5 pt-1'}`}>
+      <div className={`grid grid-cols-4 ${compact ? 'gap-1 pt-0.5' : 'gap-1.5 pt-1'}`}>
         {/* Sync Now Button */}
         <button
           type="button"
@@ -193,7 +194,7 @@ export function ServerSyncCard({ className = '', onManualSync, compact = false }
           disabled={isSyncing}
           aria-label="Sync with Server"
           title="Sync orders and data with Main PC"
-          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95 disabled:opacity-50`}
+          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-1.5 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95 disabled:opacity-50`}
           style={{
             background: 'var(--ink, #0f172a)',
             color: 'var(--paper-2, #ffffff)',
@@ -204,13 +205,30 @@ export function ServerSyncCard({ className = '', onManualSync, compact = false }
           <span>Sync</span>
         </button>
 
+        {/* Waiter App Connect QR Code Button */}
+        <button
+          type="button"
+          onClick={() => setShowQrModal(true)}
+          aria-label="Waiter App Connect QR Code"
+          title="Display QR code to pair Waiter tablets instantly"
+          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-1.5 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95`}
+          style={{
+            background: 'color-mix(in srgb, var(--turmeric, #e8902a) 18%, var(--paper-2, #1e293b))',
+            color: 'var(--turmeric, #e8902a)',
+            border: '1px solid color-mix(in srgb, var(--turmeric, #e8902a) 40%, var(--line, #334155))',
+          }}
+        >
+          <QrCode size={compact ? 11 : 12} aria-hidden />
+          <span>QR</span>
+        </button>
+
         {/* Server Reconfigure / Settings Button */}
         <button
           type="button"
           onClick={handleOpenSettings}
           aria-label="Server Settings / Scan QR"
           title="Configure Server or Scan QR"
-          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95`}
+          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-1.5 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95`}
           style={{
             background: 'var(--paper-2, #1e293b)',
             color: 'var(--ink, #ffffff)',
@@ -227,7 +245,7 @@ export function ServerSyncCard({ className = '', onManualSync, compact = false }
           onClick={handleClearCache}
           aria-label="Clear App Cache"
           title="Smooth App Operations"
-          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95`}
+          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-1.5 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95`}
           style={{
             background: 'var(--paper-2, #1e293b)',
             color: 'var(--ink-2, #cbd5e1)',
@@ -238,6 +256,57 @@ export function ServerSyncCard({ className = '', onManualSync, compact = false }
           <span>Cache</span>
         </button>
       </div>
+
+      {/* QR Pairing Modal */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div
+            className="w-full max-w-sm rounded-3xl p-6 border shadow-2xl flex flex-col items-center gap-4 text-center"
+            style={{
+              background: 'var(--paper, #15110d)',
+              borderColor: 'var(--line, #332b24)',
+              color: 'var(--ink, #f5efe6)'
+            }}
+          >
+            <div className="flex items-center justify-between w-full border-b pb-3" style={{ borderColor: 'var(--line, #332b24)' }}>
+              <div className="flex items-center gap-2">
+                <QrCode size={18} className="text-amber-500" />
+                <span className="font-bold text-sm">Waiter App Wi-Fi Pairing</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQrModal(false)}
+                className="w-7 h-7 grid place-items-center rounded-lg hover:bg-white/10 text-stone-400 hover:text-white transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-3 bg-white rounded-2xl shadow-md">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=6&data=${encodeURIComponent(`http://${serverIp || '127.0.0.1'}:${serverPort || '3000'}/pos?server=${serverIp || '127.0.0.1'}&port=${serverPort || '3000'}`)}`}
+                alt="Waiter Connection QR Code"
+                className="w-48 h-48 rounded-xl"
+              />
+            </div>
+
+            <div className="text-center">
+              <p className="text-xs font-bold text-amber-500 font-mono">{serverIp || '127.0.0.1'}:{serverPort || '3000'}</p>
+              <p className="text-[11px] text-stone-400 mt-1 leading-snug">
+                Open ChayaOne Waiter App on your tablet or phone and tap <b>&quot;Scan POS QR Code&quot;</b> to connect instantly.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowQrModal(false)}
+              className="w-full py-2 rounded-xl text-xs font-bold bg-amber-500 text-black hover:bg-amber-400 transition cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {cacheMessage && (
         <div className="text-[9px] text-center font-bold text-emerald-400">

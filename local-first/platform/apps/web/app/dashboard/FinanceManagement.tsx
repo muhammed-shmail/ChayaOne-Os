@@ -10,8 +10,8 @@ import {
 } from '@/components/ui';
 import { PrimaryKPIs } from './components/PrimaryKPIs';
 import { KPIGroup } from './components/KPIGroup';
-import { QuickActions } from './components/QuickActions';
 import { IndianRupee, Wallet, Banknote, Smartphone, CreditCard, Receipt, ReceiptText, BriefcaseBusiness, TrendingUp, RotateCcw, BadgePercent, CircleDollarSign, Truck, Users, FileBadge2, Landmark, Building2, PiggyBank, ArrowRight, ArrowRightLeft, FileSpreadsheet, ChartColumn, BookOpen, ArrowLeftRight, TriangleAlert, Mail } from 'lucide-react';
+import { DayClosingView } from '@/components/finance/DayClosingView';
 
 interface FinanceManagementProps {
   outlet: { name: string; brand: string; plan: string; gstin: string | null };
@@ -180,7 +180,7 @@ function CustomSelect({ value, onChange, options, placeholder = 'Select...', cla
 
 export default function FinanceManagement({ outlet, staff, kpi, formatINR }: FinanceManagementProps) {
   // Navigation
-  const [activeTab, setActiveTab] = useState<'overview' | 'drawer' | 'expenses' | 'vendors' | 'settlements' | 'banks' | 'payroll' | 'accounting' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'drawer' | 'day_closing' | 'expenses' | 'vendors' | 'settlements' | 'banks' | 'payroll' | 'accounting' | 'settings'>('overview');
 
   // Modals state
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -390,8 +390,9 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   const allowedTabs = useMemo(() => {
     if (isOwner || isManager) {
       return [
-        { key: 'overview', label: '📊 Dashboard' },
+        { key: 'overview', label: '📊 Finance Dashboard' },
         { key: 'drawer', label: '🗄️ Cash Drawer' },
+        { key: 'day_closing', label: '📅 Day Closing' },
         { key: 'expenses', label: '🧾 Expenses' },
         { key: 'vendors', label: '🤝 Vendors' },
         { key: 'banks', label: '🏦 Bank Accounts' },
@@ -403,16 +404,18 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
     }
     if (isAccountant) {
       return [
-        { key: 'overview', label: '📊 Dashboard' },
+        { key: 'overview', label: '📊 Finance Dashboard' },
+        { key: 'day_closing', label: '📅 Day Closing' },
         { key: 'expenses', label: '🧾 Expenses' },
         { key: 'vendors', label: '🤝 Vendors' },
         { key: 'banks', label: '🏦 Bank Accounts' },
+        { key: 'settlements', label: '⌛ Settlements' },
         { key: 'accounting', label: '📓 Accounting' }
       ] as const;
     }
     // Cashier
     return [
-      { key: 'overview', label: '📊 Dashboard' },
+      { key: 'overview', label: '📊 Finance Dashboard' },
       { key: 'drawer', label: '🗄️ Cash Drawer' }
     ] as const;
   }, [isOwner, isManager, isAccountant]);
@@ -1003,6 +1006,11 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
             </section>
           </div>
         </div>
+      )}
+
+      {/* ── 2b. DAY CLOSING TAB ── */}
+      {activeTab === 'day_closing' && (
+        <DayClosingView outlet={outlet} currentStaff={staff} />
       )}
 
       {/* ── 3. EXPENSE MANAGEMENT TAB ── */}

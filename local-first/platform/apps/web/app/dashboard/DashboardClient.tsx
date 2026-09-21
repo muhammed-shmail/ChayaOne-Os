@@ -385,15 +385,19 @@ export default function DashboardClient({
             void liveDot.current.offsetWidth;
             liveDot.current.style.animation = '';
           }
-        } else if (msg.type === 'staff.updated' && (!currentStaff.id || msg.staffId === currentStaff.id)) {
-          fetch('/api/auth/me')
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => {
-              if (d?.staff) {
-                setCurrentStaff((prev) => ({ ...prev, ...d.staff }));
-              }
-            })
-            .catch(() => {});
+        } else if (msg.type === 'staff.updated') {
+          loadStaff();
+          if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
+          if (!currentStaff.id || msg.staffId === currentStaff.id) {
+            fetch('/api/auth/me')
+              .then((r) => (r.ok ? r.json() : null))
+              .then((d) => {
+                if (d?.staff) {
+                  setCurrentStaff((prev) => ({ ...prev, ...d.staff }));
+                }
+              })
+              .catch(() => {});
+          }
         } else if (msg.type === 'outlet.updated') {
           if (msg.logoUrl !== undefined) {
             setLogoUrl(msg.logoUrl);
@@ -992,14 +996,14 @@ export default function DashboardClient({
       body: JSON.stringify({ action: 'create', name: nuName.trim(), phone: nuPhone.trim() || undefined, role: nuRole, pin: nuPin }),
     });
     const d = await res.json().catch(() => ({}));
-    if (res.ok) { flashMessage(`Added ${nuName} (${ROLE_LABELS[nuRole as keyof typeof ROLE_LABELS]})`); setNuName(''); setNuPhone(''); setNuPin(''); loadStaff(); }
+    if (res.ok) { flashMessage(`Added ${nuName} (${ROLE_LABELS[nuRole as keyof typeof ROLE_LABELS]})`); setNuName(''); setNuPhone(''); setNuPin(''); loadStaff(); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed')); }
     else flashMessage(`Could not add user: ${(d.error ?? 'failed').replace(/_/g, ' ')}`);
   };
 
   const handleStaffUpdate = async (id: string, patch: { role?: string; active?: boolean }) => {
     const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'update', id, ...patch }) });
     const d = await res.json().catch(() => ({}));
-    if (res.ok) { flashMessage('Staff updated'); loadStaff(); }
+    if (res.ok) { flashMessage('Staff updated'); loadStaff(); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed')); }
     else flashMessage(`Update failed: ${(d.error ?? 'failed').replace(/_/g, ' ')}`);
   };
 
@@ -1007,7 +1011,7 @@ export default function DashboardClient({
     if (!confirm(`Remove ${name}? They will no longer be able to log in. History is preserved.`)) return;
     const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'remove', id }) });
     const d = await res.json().catch(() => ({}));
-    if (res.ok) { flashMessage(`${name} removed`); loadStaff(); }
+    if (res.ok) { flashMessage(`${name} removed`); loadStaff(); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed')); }
     else flashMessage(`Could not remove: ${(d.error ?? 'failed').replace(/_/g, ' ')}`);
   };
 
@@ -3951,6 +3955,7 @@ export default function DashboardClient({
                 menuItems={menuItems}
                 menuCategories={menuCategories}
                 setMenuItems={setMenuItems}
+                staffMembers={staffMembers}
               />
             )}
 

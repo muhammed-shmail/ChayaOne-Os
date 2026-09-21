@@ -22,6 +22,13 @@ export interface CreatePrintJobParams {
 let isProcessingQueue = false;
 let queueWorkerInterval: NodeJS.Timeout | null = null;
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function safeUuid(val?: string | null): string | null {
+  if (typeof val === 'string' && UUID_REGEX.test(val)) return val;
+  return null;
+}
+
 /**
  * Atomically create a PrintJob entry in the database.
  */
@@ -29,7 +36,7 @@ export async function createPrintJob(
   tx: Prisma.TransactionClient,
   params: CreatePrintJobParams,
 ) {
-  const jobId = params.jobId || crypto.randomUUID();
+  const jobId = safeUuid(params.jobId) || crypto.randomUUID();
   const jobType = params.jobType || PrintJobType.KOT;
 
   return await tx.printJob.create({
@@ -37,8 +44,8 @@ export async function createPrintJob(
       tenantId: params.tenantId,
       outletId: params.outletId,
       jobId,
-      orderId: params.orderId ?? null,
-      kotId: params.kotId ?? null,
+      orderId: safeUuid(params.orderId),
+      kotId: safeUuid(params.kotId),
       printerId: params.printerId ?? null,
       stationId: params.stationId ?? null,
       jobType,

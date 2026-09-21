@@ -62,7 +62,7 @@ export class PrintService {
       data: {
         tenantId: job.tenantId,
         outletId: job.outletId,
-        jobId: `${job.jobId}-reprint-${Date.now()}`,
+        jobId: crypto.randomUUID(),
         orderId: job.orderId,
         kotId: job.kotId,
         printerId: job.printerId,

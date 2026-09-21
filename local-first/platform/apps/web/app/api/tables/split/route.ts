@@ -204,10 +204,16 @@ export async function POST(req: NextRequest) {
       }
 
       // 4. Audit Log
+      let validActorId: string | null = null;
+      if (session.staffId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.staffId)) {
+        const staffExists = await tx.staffUser.findUnique({ where: { id: session.staffId }, select: { id: true } });
+        if (staffExists) validActorId = session.staffId;
+      }
+
       await tx.auditLog.create({
         data: {
           outletId: session.outletId,
-          actorId: session.staffId,
+          actorId: validActorId,
           action: 'table.split',
           entity: 'Order',
           entityId: originalOrder.id,
@@ -222,7 +228,7 @@ export async function POST(req: NextRequest) {
             reason: reason || null,
           },
         },
-      });
+      }).catch((e) => console.warn('[SPLIT AUDIT WARN]', e));
 
       return {
         updatedOriginal,

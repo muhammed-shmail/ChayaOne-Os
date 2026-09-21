@@ -137,8 +137,9 @@ async function todayKpis(outletId: string, daysAgo: number, cutoffHour = 4) {
         + COUNT(*) FILTER (WHERE "customerId" IS NULL))::int AS footfall
     FROM orders
     WHERE "outletId" = ${outletId}::uuid
-      AND "status" <> 'cancelled'
-      AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
+      AND "status" = 'settled'
+      AND "settledAt" IS NOT NULL
+      AND (("settledAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
           = (("now"() AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date - ${daysAgo}::int
   `;
   return rows[0] ?? { orders: 0, gross: 0, footfall: 0 };
@@ -151,13 +152,14 @@ async function trend(outletId: string, cutoffHour = 4): Promise<TrendPoint[]> {
     { day: Date; orders: number; gross: number }[]
   >`
     SELECT
-      ((o."placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date AS day,
+      ((o."settledAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date AS day,
       COUNT(*)::int AS orders,
       COALESCE(SUM(o."totalPaise"), 0)::int AS gross
     FROM orders o
     WHERE o."outletId" = ${outletId}::uuid
-      AND o."status" <> 'cancelled'
-      AND ((o."placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
+      AND o."status" = 'settled'
+      AND o."settledAt" IS NOT NULL
+      AND ((o."settledAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
           > (("now"() AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date - 7
     GROUP BY 1
   `;
@@ -184,12 +186,13 @@ async function trend(outletId: string, cutoffHour = 4): Promise<TrendPoint[]> {
 async function hourly(outletId: string): Promise<number[]> {
   const rows = await prisma.$queryRaw<{ hour: number; n: number }[]>`
     SELECT
-      EXTRACT(HOUR FROM ("placedAt" AT TIME ZONE ${TZ}))::int AS hour,
+      EXTRACT(HOUR FROM ("settledAt" AT TIME ZONE ${TZ}))::int AS hour,
       COUNT(*)::int AS n
     FROM orders
     WHERE "outletId" = ${outletId}::uuid
-      AND "status" <> 'cancelled'
-      AND "placedAt" >= now() - interval '7 days'
+      AND "status" = 'settled'
+      AND "settledAt" IS NOT NULL
+      AND "settledAt" >= now() - interval '7 days'
     GROUP BY 1
   `;
   const buckets = new Array(24).fill(0);
@@ -217,8 +220,9 @@ async function itemAgg(outletId: string): Promise<ItemRow[]> {
     FROM order_items oi
     JOIN orders o ON o.id = oi."orderId"
     WHERE o."outletId" = ${outletId}::uuid
-      AND o."status" <> 'cancelled'
-      AND o."placedAt" >= now() - interval '30 days'
+      AND o."status" = 'settled'
+      AND o."settledAt" IS NOT NULL
+      AND o."settledAt" >= now() - interval '30 days'
     GROUP BY 1, 2
     ORDER BY qty DESC
   `;
@@ -317,7 +321,9 @@ async function qrShare(outletId: string): Promise<number> {
       COUNT(*) FILTER (WHERE "tableId" IS NOT NULL AND "type" = 'dine_in')::int AS viaqr
     FROM orders
     WHERE "outletId" = ${outletId}::uuid
-      AND "placedAt" >= now() - interval '7 days'
+      AND "status" = 'settled'
+      AND "settledAt" IS NOT NULL
+      AND "settledAt" >= now() - interval '7 days'
   `;
   const r = rows[0];
   return r && r.total > 0 ? Math.round((r.viaqr / r.total) * 100) : 0;

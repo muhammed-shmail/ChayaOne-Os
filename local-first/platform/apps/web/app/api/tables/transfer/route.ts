@@ -62,6 +62,6 @@ export async function POST(req: NextRequest) {
     }
 
     console.error('[TABLE TRANSFER ERROR]', err);
-    return NextResponse.json({ error: 'transfer_failed', message: 'Could not transfer table' }, { status: 500 });
+    return NextResponse.json({ error: 'transfer_failed', message: err?.message || 'Could not transfer table' }, { status: 500 });
   }
 }

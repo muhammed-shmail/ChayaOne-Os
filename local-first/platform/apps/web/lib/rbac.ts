@@ -163,6 +163,8 @@ export const PERMISSION_MODULES: { category: string; permissions: PermissionItem
       { key: 'finance:profit', label: 'Profit', actions: ['view'] },
       { key: 'finance:loss', label: 'Loss', actions: ['view'] },
       { key: 'finance:daily_summary', label: 'Daily Summary', actions: ['view'] },
+      { key: 'finance:day_closing', label: 'Day Closing', actions: ['view', 'create', 'edit', 'approve'] },
+      { key: 'finance:cash_reconcile', label: 'Cash Reconciliation & Verification', actions: ['view', 'edit', 'approve'] },
       { key: 'finance:tax_summary', label: 'Tax Summary', actions: ['view'] },
       { key: 'finance:gst_reports', label: 'GST Reports', actions: ['view', 'export'] },
       { key: 'finance:pl', label: 'Profit & Loss', actions: ['view'] },
@@ -287,6 +289,15 @@ export const PRESETS: Record<string, string[]> = {
     'staff:attendance:edit',
     'staff:scheduling:view',
     'staff:scheduling:edit',
+    'finance:day_closing:view',
+    'finance:day_closing:create',
+    'finance:day_closing:edit',
+    'finance:day_closing:approve',
+    'finance:cash_reconcile:view',
+    'finance:cash_reconcile:edit',
+    'finance:cash_reconcile:approve',
+    'finance:daily_summary:view',
+    'finance:cash_flow:view',
   ],
   cashier: [
     'pos:open:view',
@@ -613,5 +624,24 @@ export function canViewReminders(subject: StaffSubject): boolean {
     return false;
   }
   return hasPermission(subject, 'notifications:view') || hasPermission(subject, 'dashboard:view');
+}
+
+/** Check if subject has authority to view/start/reconcile day closing */
+export function canManageDayClosing(subject: StaffSubject): boolean {
+  if (hasRole(subject, ['owner', 'manager'])) return true;
+  return (
+    hasPermission(subject, 'finance:day_closing:approve') ||
+    hasPermission(subject, 'finance:day_closing:edit') ||
+    hasPermission(subject, 'finance.day_close')
+  );
+}
+
+/** Check if subject has authority to confirm final day closing or reopen */
+export function canCloseDay(subject: StaffSubject): boolean {
+  if (hasRole(subject, ['owner', 'manager'])) return true;
+  return (
+    hasPermission(subject, 'finance:day_closing:approve') ||
+    hasPermission(subject, 'finance.day_close')
+  );
 }
 

@@ -1,9 +1,14 @@
 package com.chayaone.waiter
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.view.ViewGroup
@@ -12,21 +17,28 @@ import android.webkit.*
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -37,11 +49,92 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import com.chayaone.waiter.theme.*
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.*
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
+
+// Native Javascript Bridge exposed to POS / Waiter web app
+class AndroidBridge(
+    private val activity: Activity,
+    private val onOpenSettings: () -> Unit,
+    private val onScanQr: () -> Unit,
+    private val onClearCache: () -> Unit,
+    private val serverIp: String,
+    private val serverPort: String
+) {
+    @JavascriptInterface
+    fun openSettings() {
+        activity.runOnUiThread { onOpenSettings() }
+    }
+
+    @JavascriptInterface
+    fun scanQrCode() {
+        activity.runOnUiThread { onScanQr() }
+    }
+
+    @JavascriptInterface
+    fun getServerIp(): String = serverIp
+
+    @JavascriptInterface
+    fun getServerPort(): String = serverPort
+
+    @JavascriptInterface
+    fun clearAppCache() {
+        activity.runOnUiThread { onClearCache() }
+    }
+}
+
+data class ParsedServerUrl(
+    val ip: String,
+    val port: String,
+    val path: String = "/pos",
+    val user: String = ""
+)
+
+fun parseServerQr(raw: String): ParsedServerUrl {
+    var ip = ""
+    var port = "3000"
+    var path = "/pos"
+    var user = ""
+    try {
+        val trimmed = raw.trim()
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            val json = JSONObject(trimmed)
+            ip = json.optString("ip", json.optString("server", ""))
+            port = json.optString("port", "3000")
+            path = json.optString("path", "/pos")
+            user = json.optString("user", "")
+        } else if (trimmed.contains("://") || trimmed.contains("?")) {
+            val uri = Uri.parse(trimmed)
+            val qIp = uri.getQueryParameter("ip") ?: uri.getQueryParameter("server") ?: uri.host
+            val qPort = uri.getQueryParameter("port") ?: (if (uri.port > 0) uri.port.toString() else null)
+            val qUser = uri.getQueryParameter("user")
+            val qPath = uri.getQueryParameter("path") ?: uri.path
+
+            if (!qIp.isNullOrBlank()) ip = qIp
+            if (!qPort.isNullOrBlank()) port = qPort
+            if (!qUser.isNullOrBlank()) user = qUser
+            if (!qPath.isNullOrBlank() && qPath != "/") path = qPath
+        } else if (trimmed.contains(":")) {
+            val parts = trimmed.split(":")
+            if (parts.isNotEmpty()) ip = parts[0].trim()
+            if (parts.size > 1) {
+                val portPart = parts[1].trim().split("/")[0]
+                port = portPart
+            }
+        } else if (trimmed.isNotBlank()) {
+            ip = trimmed
+        }
+    } catch (_: Exception) {
+    }
+    return ParsedServerUrl(ip, port, path, user)
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -61,6 +154,8 @@ class MainActivity : ComponentActivity() {
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+        handleIncomingUri(intent?.data)
+
         val keepAwake = prefs.getBoolean(KEY_KEEP_AWAKE, true)
         if (keepAwake) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -69,6 +164,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             ChayaOneWaiterTheme {
                 WaiterAppRoot(
+                    activity = this,
                     prefs = prefs,
                     onKeepAwakeChanged = { awake ->
                         prefs.edit().putBoolean(KEY_KEEP_AWAKE, awake).apply()
@@ -83,6 +179,24 @@ class MainActivity : ComponentActivity() {
                     }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingUri(intent.data)
+    }
+
+    private fun handleIncomingUri(uri: Uri?) {
+        if (uri == null) return
+        val parsed = parseServerQr(uri.toString())
+        if (parsed.ip.isNotBlank()) {
+            prefs.edit()
+                .putString(KEY_SERVER_IP, parsed.ip)
+                .putString(KEY_SERVER_PORT, parsed.port)
+                .putString(KEY_SERVER_URL, "http://${parsed.ip}:${parsed.port}${if (parsed.port == "3002") "/tables" else "/pos"}")
+                .apply()
         }
     }
 
@@ -103,6 +217,7 @@ enum class ScreenState {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WaiterAppRoot(
+    activity: Activity,
     prefs: SharedPreferences,
     onKeepAwakeChanged: (Boolean) -> Unit,
     onRegisterWebView: (WebView) -> Unit
@@ -155,7 +270,7 @@ fun WaiterAppRoot(
                     screenState = ScreenState.WEBVIEW
                     activeWebView?.loadUrl(targetUrl)
                 } else {
-                    errorMessage = "Cannot reach ChayaOne Server at $cleanIp:$cleanPort.\nPlease check Wi-Fi connection and that the POS PC is running."
+                    errorMessage = "Cannot reach ChayaOne Server at $cleanIp:$cleanPort.\nPlease ensure Wi-Fi is connected and the POS Server PC is running."
                     screenState = ScreenState.SETUP
                 }
             }
@@ -169,73 +284,134 @@ fun WaiterAppRoot(
         foundServers = emptyList()
 
         coroutineScope.launch(Dispatchers.IO) {
-            val subnet = getLocalSubnetPrefix(context)
-            val discovered = mutableListOf<String>()
+            val subnet = getLocalSubnetPrefix(context) ?: "192.168.1."
+            val candidates = mutableListOf<String>()
 
-            if (subnet != null) {
-                val candidateIps = (1..254).map { "$subnet$it" }
-                val ports = listOf("3000", "3002")
-                var checked = 0
-                val totalChecks = candidateIps.size
+            // Quick scan of likely local host IPs (.1 to .254)
+            val ipRange = (1..254).toList()
+            val total = ipRange.size
+            var checked = 0
 
-                val chunks = candidateIps.chunked(25)
-                for (chunk in chunks) {
-                    val jobs = chunk.map { host ->
-                        async {
-                            for (p in ports) {
-                                if (probeHttp("http://$host:$p/api/server/info", 600)) {
-                                    synchronized(discovered) {
-                                        discovered.add("$host:$p")
-                                    }
+            // Common POS ports to test: 3000 (POS Till), 3002 (Waiter), 80
+            val portsToTest = listOf("3000", "3002")
+
+            // Scan in batches of 25 for fast completion
+            ipRange.chunked(25).forEach { chunk ->
+                val jobs = chunk.map { lastOctet ->
+                    async {
+                        val testIp = "$subnet$lastOctet"
+                        for (p in portsToTest) {
+                            if (probeHttp("http://$testIp:$p/api/server/info", 600)) {
+                                synchronized(candidates) {
+                                    candidates.add("$testIp:$p")
                                 }
+                                break
                             }
                         }
                     }
-                    jobs.awaitAll()
-                    checked += chunk.size
-                    withContext(Dispatchers.Main) {
-                        scanProgress = checked.toFloat() / totalChecks.toFloat()
-                        foundServers = discovered.toList()
-                    }
+                }
+                jobs.awaitAll()
+                checked += chunk.size
+                withContext(Dispatchers.Main) {
+                    scanProgress = checked.toFloat() / total.toFloat()
                 }
             }
 
             withContext(Dispatchers.Main) {
                 isScanning = false
-                if (discovered.isNotEmpty()) {
-                    val first = discovered.first()
+                foundServers = candidates
+                if (candidates.isNotEmpty()) {
+                    val first = candidates.first()
                     val parts = first.split(":")
                     serverIp = parts[0]
-                    serverPort = parts.getOrElse(1) { "3000" }
-                    Toast.makeText(context, "Found ChayaOne Server at $first!", Toast.LENGTH_SHORT).show()
+                    if (parts.size > 1) serverPort = parts[1]
+                    Toast.makeText(context, "Found ChayaOne Server: $first", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "No ChayaOne Server found on local Wi-Fi. Enter IP manually.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "No servers found automatically. Please enter IP manually or scan QR code.", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
-    // Initial check on app startup
-    LaunchedEffect(Unit) {
-        if (fullUrl.isNotBlank() && serverIp.isNotBlank()) {
-            testAndConnect(serverIp, serverPort, fullUrl)
-        } else {
-            screenState = ScreenState.SETUP
+    // QR Code Scanner Result Launcher
+    val qrScanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val scanned = result.contents
+        if (!scanned.isNullOrBlank()) {
+            val parsed = parseServerQr(scanned)
+            if (parsed.ip.isNotBlank()) {
+                serverIp = parsed.ip
+                serverPort = parsed.port
+                Toast.makeText(context, "Connecting to Main POS (${parsed.ip}:${parsed.port})…", Toast.LENGTH_SHORT).show()
+                val targetUrl = "http://${parsed.ip}:${parsed.port}${if (parsed.port == "3002") "/tables" else "/pos"}${if (parsed.user.isNotBlank()) "?user=${Uri.encode(parsed.user)}" else ""}"
+                testAndConnect(parsed.ip, parsed.port, targetUrl)
+            } else {
+                errorMessage = "Scanned QR does not contain a valid POS server address: $scanned"
+            }
         }
     }
 
-    // Back handler for WebView navigation
+    // Camera Permission Launcher for QR Scanner
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val options = ScanOptions().apply {
+                setPrompt("Point camera at Desktop Main POS QR code")
+                setBeepEnabled(true)
+                setOrientationLocked(true)
+                setCaptureActivity(PortraitCaptureActivity::class.java)
+                setBarcodeImageEnabled(false)
+                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            }
+            qrScanLauncher.launch(options)
+        } else {
+            Toast.makeText(
+                context,
+                "Camera permission is required to scan the POS QR code.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    fun launchCameraScanner() {
+        val permission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+        if (permission == PackageManager.PERMISSION_GRANTED) {
+            val options = ScanOptions().apply {
+                setPrompt("Point camera at Desktop Main POS QR code")
+                setBeepEnabled(true)
+                setOrientationLocked(true)
+                setCaptureActivity(PortraitCaptureActivity::class.java)
+                setBarcodeImageEnabled(false)
+                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            }
+            qrScanLauncher.launch(options)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // Initial connection attempt on launch
+    LaunchedEffect(Unit) {
+        if (serverIp.isNotBlank()) {
+            testAndConnect(serverIp, serverPort, fullUrl.ifBlank { null })
+        } else {
+            screenState = ScreenState.SETUP
+            startAutoScan()
+        }
+    }
+
+    // Hardware Back Button: navigate webview history before exiting
     BackHandler(enabled = screenState == ScreenState.WEBVIEW) {
         if (activeWebView?.canGoBack() == true) {
             activeWebView?.goBack()
         } else {
             if (backPressedOnce) {
-                (context as? ComponentActivity)?.finish()
+                activity.finish()
             } else {
                 backPressedOnce = true
-                Toast.makeText(context, "Press back again to exit ChayaOne", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Press back again to exit Waiter App", Toast.LENGTH_SHORT).show()
                 coroutineScope.launch {
-                    delay(2000)
+                    delay(2500)
                     backPressedOnce = false
                 }
             }
@@ -285,7 +461,8 @@ fun WaiterAppRoot(
                     onIpChanged = { serverIp = it },
                     onPortChanged = { serverPort = it },
                     onConnect = { ip, port -> testAndConnect(ip, port) },
-                    onScan = { startAutoScan() }
+                    onScan = { startAutoScan() },
+                    onScanQr = { launchCameraScanner() }
                 )
             }
 
@@ -353,7 +530,7 @@ fun WaiterAppRoot(
                                     .fillMaxWidth()
                                     .height(2.dp),
                                 color = ChayaGold,
-                                trackColor = ChayaEspresso,
+                                trackColor = ChayaCard
                             )
                         }
 
@@ -366,6 +543,22 @@ fun WaiterAppRoot(
                                         ViewGroup.LayoutParams.MATCH_PARENT
                                     )
                                     configureWebViewSettings(this)
+
+                                    // Expose Native Bridge to web application
+                                    addJavascriptInterface(
+                                        AndroidBridge(
+                                            activity = activity,
+                                            onOpenSettings = { showSettingsModal = true },
+                                            onScanQr = { launchCameraScanner() },
+                                            onClearCache = {
+                                                clearCache(true)
+                                                Toast.makeText(context, "App cache cleared", Toast.LENGTH_SHORT).show()
+                                            },
+                                            serverIp = serverIp,
+                                            serverPort = serverPort
+                                        ),
+                                        "AndroidBridge"
+                                    )
 
                                     webViewClient = object : WebViewClient() {
                                         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -438,25 +631,26 @@ fun WaiterAppRoot(
                                         color = ChayaPaper
                                     )
                                     Text(
-                                        text = errorMessage,
-                                        style = MaterialTheme.typography.bodyLarge,
+                                        text = "Cannot reach Main PC at $serverIp:$serverPort.\nPlease ensure Wi-Fi is active and the Desktop POS is running.",
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = ChayaMuted,
-                                        textAlign = TextAlign.Center,
-                                        fontSize = 14.sp
+                                        textAlign = TextAlign.Center
                                     )
                                     Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
                                         OutlinedButton(
                                             onClick = { screenState = ScreenState.SETUP },
                                             modifier = Modifier.weight(1f),
-                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ChayaPaper)
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ChayaGold)
                                         ) {
-                                            Text("Change IP")
+                                            Text("Setup IP")
                                         }
                                         Button(
-                                            onClick = { testAndConnect(serverIp, serverPort, fullUrl) },
+                                            onClick = {
+                                                testAndConnect(serverIp, serverPort, fullUrl)
+                                            },
                                             modifier = Modifier.weight(1f),
                                             colors = ButtonDefaults.buttonColors(containerColor = ChayaGold, contentColor = ChayaEspresso)
                                         ) {
@@ -478,6 +672,19 @@ fun WaiterAppRoot(
                             text = {
                                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                     Text("Server IP: $serverIp:$serverPort", color = ChayaPaper, fontSize = 14.sp)
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            showSettingsModal = false
+                                            launchCameraScanner()
+                                        },
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ChayaGold),
+                                        border = BorderStroke(1.dp, ChayaGold),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("📷 Scan New POS QR Code", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
 
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -528,26 +735,6 @@ fun WaiterAppRoot(
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
-private fun configureWebViewSettings(wv: WebView) {
-    wv.settings.apply {
-        javaScriptEnabled = true
-        domStorageEnabled = true
-        databaseEnabled = true
-        allowFileAccess = true
-        allowContentAccess = true
-        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        cacheMode = WebSettings.LOAD_DEFAULT
-        useWideViewPort = true
-        loadWithOverviewMode = true
-        displayZoomControls = false
-        builtInZoomControls = false
-        userAgentString = "${wv.settings.userAgentString} ChayaOneWaiter/1.0"
-    }
-    wv.isVerticalScrollBarEnabled = false
-    wv.isHorizontalScrollBarEnabled = false
-}
-
 @Composable
 fun ServerSetupScreen(
     currentIp: String,
@@ -559,55 +746,119 @@ fun ServerSetupScreen(
     onIpChanged: (String) -> Unit,
     onPortChanged: (String) -> Unit,
     onConnect: (String, String) -> Unit,
-    onScan: () -> Unit
+    onScan: () -> Unit,
+    onScanQr: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .widthIn(max = 440.dp),
+                .widthIn(max = 440.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header with luxury badge
+            // Header with Full ChayaOne Logo
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 8.dp)
             ) {
-                Box(
+                Image(
+                    painter = painterResource(id = R.drawable.logo_chaya_one),
+                    contentDescription = "ChayaOne Full Logo",
                     modifier = Modifier
-                        .size(72.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(ChayaCard)
-                        .border(1.dp, ChayaBorder, RoundedCornerShape(20.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "☕",
-                        fontSize = 36.sp
-                    )
-                }
+                        .fillMaxWidth(0.68f)
+                        .height(56.dp),
+                    contentScale = ContentScale.Fit
+                )
 
                 Text(
                     text = "ChayaOne Waiter",
-                    fontSize = 26.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = ChayaGold
                 )
 
                 Text(
                     text = "Connect to Main POS on your Café Wi-Fi",
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     color = ChayaMuted,
                     textAlign = TextAlign.Center
                 )
+            }
+
+            // PRIMARY HERO CARD: SCAN POS QR CODE (INSTANT AUTO-ENTER)
+            Card(
+                onClick = onScanQr,
+                colors = CardDefaults.cardColors(containerColor = ChayaCard),
+                border = BorderStroke(1.5.dp, ChayaGold),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(ChayaGold.copy(alpha = 0.15f))
+                            .border(1.dp, ChayaGold.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("📷", fontSize = 24.sp)
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Scan POS QR Code",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ChayaPaper
+                        )
+                        Text(
+                            text = "Point camera at POS Settings QR to enter instantly",
+                            fontSize = 12.sp,
+                            color = ChayaGold
+                        )
+                    }
+
+                    Text(
+                        text = "➔",
+                        fontSize = 18.sp,
+                        color = ChayaGold,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Subtle divider
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                HorizontalDivider(modifier = Modifier.weight(1f), color = ChayaBorder)
+                Text(
+                    text = "OR CONNECT MANUALLY",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ChayaMuted,
+                    letterSpacing = 0.8.sp
+                )
+                HorizontalDivider(modifier = Modifier.weight(1f), color = ChayaBorder)
             }
 
             if (errorMessage.isNotBlank()) {
@@ -635,8 +886,8 @@ fun ServerSetupScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     OutlinedTextField(
                         value = currentIp,
@@ -734,7 +985,7 @@ fun ServerSetupScreen(
                                     },
                                     color = ChayaEspresso,
                                     shape = RoundedCornerShape(8.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, ChayaBorder),
+                                    border = BorderStroke(1.dp, ChayaBorder),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
@@ -779,6 +1030,26 @@ fun ServerSetupScreen(
             }
         }
     }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+private fun configureWebViewSettings(wv: WebView) {
+    wv.settings.apply {
+        javaScriptEnabled = true
+        domStorageEnabled = true
+        databaseEnabled = true
+        allowFileAccess = true
+        allowContentAccess = true
+        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        cacheMode = WebSettings.LOAD_DEFAULT
+        useWideViewPort = true
+        loadWithOverviewMode = true
+        displayZoomControls = false
+        builtInZoomControls = false
+        userAgentString = "${wv.settings.userAgentString} ChayaOneWaiter/1.0"
+    }
+    wv.isVerticalScrollBarEnabled = false
+    wv.isHorizontalScrollBarEnabled = false
 }
 
 // Utility: HTTP reachability probe

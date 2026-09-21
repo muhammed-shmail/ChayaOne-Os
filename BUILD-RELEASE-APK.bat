@@ -31,7 +31,7 @@ echo.
 echo -----------------------------------------------------------------
 echo Compiling ChayaOne Waiter App (Release Build)...
 echo -----------------------------------------------------------------
-cd /d "%~dp0android\chayaone-waiter"
+cd /d "%~dp0local-first\platform\apps\waiter-android"
 call gradlew.bat assembleRelease
 if %ERRORLEVEL% NEQ 0 goto :waiter_error
 
@@ -39,9 +39,10 @@ if %ERRORLEVEL% NEQ 0 goto :waiter_error
 cd /d "%~dp0"
 if not exist "android\release-apks" mkdir "android\release-apks"
 
-copy /y "android\chayaone-waiter\app\build\outputs\apk\release\app-release.apk" "android\release-apks\ChayaOne-Waiter-Release.apk" >nul
-copy /y "android\chayaone-waiter\app\build\outputs\apk\release\app-release.apk" "android\release-apks\ChayaOne-Waiter.apk" >nul
-copy /y "android\chayaone-waiter\app\build\outputs\apk\release\app-release.apk" "local-first\platform\apps\web\public\downloads\ChayaOne-Waiter.apk" >nul
+copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "android\release-apks\ChayaOne-Waiter-Release.apk" >nul
+copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "android\release-apks\ChayaOne-Waiter.apk" >nul
+copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "local-first\platform\apps\web\public\downloads\ChayaOne-Waiter.apk" >nul
+copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "local-first\platform\apps\web\public\downloads\waiter.apk" >nul
 
 echo.
 echo =================================================================
