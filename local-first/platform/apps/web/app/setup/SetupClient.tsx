@@ -165,7 +165,7 @@ export default function SetupClient() {
       setError('Please set both start and end dates.');
       return;
     }
-    if (period === 'custom' && new Date(customEnd) <= new Date(customStart)) {
+    if (period === 'custom' && new Date(customEnd ?? '') <= new Date(customStart ?? '')) {
       setError('End date must be after start date.');
       return;
     }
