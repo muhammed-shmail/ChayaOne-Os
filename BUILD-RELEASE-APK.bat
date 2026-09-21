@@ -41,6 +41,7 @@ if not exist "android\release-apks" mkdir "android\release-apks"
 
 copy /y "android\chayaone-waiter\app\build\outputs\apk\release\app-release.apk" "android\release-apks\ChayaOne-Waiter-Release.apk" >nul
 copy /y "android\chayaone-waiter\app\build\outputs\apk\release\app-release.apk" "android\release-apks\ChayaOne-Waiter.apk" >nul
+copy /y "android\chayaone-waiter\app\build\outputs\apk\release\app-release.apk" "local-first\platform\apps\web\public\downloads\ChayaOne-Waiter.apk" >nul
 
 echo.
 echo =================================================================
@@ -49,7 +50,7 @@ echo.
 echo Release APK file: android\release-apks\ChayaOne-Waiter-Release.apk
 echo.
 echo Sideloading: Transfer this APK to any Android tablet/handheld
-echo via USB or run INSTALL-APK-TO-DEVICE.bat to deploy via ADB.
+echo via USB cable, Google Drive, or WhatsApp, and tap to install.
 echo =================================================================
 echo.
 goto :done

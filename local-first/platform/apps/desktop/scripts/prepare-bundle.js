@@ -36,6 +36,7 @@ const staticSrc = path.join(platformDir, 'apps', 'web', '.next', 'static');
 const staticDest = path.join(webServerDest, 'apps', 'web', '.next', 'static');
 console.log(`Copying Next.js static assets from:\n  ${staticSrc}\n  to: ${staticDest}`);
 copyDir(staticSrc, staticDest);
+copyDir(staticSrc, path.join(webServerDest, '.next', 'static'));
 
 // 4. Copy Public Folder
 const publicSrc = path.join(platformDir, 'apps', 'web', 'public');
@@ -43,6 +44,19 @@ const publicDest = path.join(webServerDest, 'apps', 'web', 'public');
 if (fs.existsSync(publicSrc)) {
   console.log(`Copying public assets from:\n  ${publicSrc}\n  to: ${publicDest}`);
   copyDir(publicSrc, publicDest);
+  copyDir(publicSrc, path.join(webServerDest, 'public'));
+}
+
+// 4a. Also copy static & public directly to apps/web/.next/standalone for dev/standalone execution
+try {
+  copyDir(staticSrc, path.join(standaloneSrc, 'apps', 'web', '.next', 'static'));
+  copyDir(staticSrc, path.join(standaloneSrc, '.next', 'static'));
+  if (fs.existsSync(publicSrc)) {
+    copyDir(publicSrc, path.join(standaloneSrc, 'apps', 'web', 'public'));
+    copyDir(publicSrc, path.join(standaloneSrc, 'public'));
+  }
+} catch (err) {
+  console.warn('Could not copy to dev standalone:', err.message);
 }
 
 // 4b. Copy .env if present in platform

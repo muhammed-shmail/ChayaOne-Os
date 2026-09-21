@@ -34,7 +34,7 @@ export async function GET() {
 
 /**
  * POST /api/staff — manage staff users.
- *  { action: 'create', name, role, phone?, pin, permissions? }
+ *  { action: 'create', name, role, phone?, username, password, payType?, payRatePaise?, permissions? }
  *  { action: 'update', id, role?, permissions?, active? }
  *  { action: 'setpin', id, pin }
  *  { action: 'remove', id }   // soft-delete (active=false) to preserve order history
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   const { action } = body;
 
   if (action === 'create') {
-    const { name, role, phone, pin, employeeCode } = body;
+    const { name, role, phone, employeeCode } = body;
     if (!name?.trim()) return NextResponse.json({ error: 'missing_fields' }, { status: 400 });
 
     const rawAssignedRoles: string[] = Array.isArray(body.permissions?.assignedRoles) && body.permissions.assignedRoles.length > 0
@@ -59,27 +59,22 @@ export async function POST(req: NextRequest) {
     if (!isRole(resolvedRole) || !assignableRoles(session).includes(resolvedRole)) {
       return NextResponse.json({ error: 'role_not_allowed' }, { status: 403 });
     }
-    if (!/^\d{4,6}$/.test(String(pin ?? ''))) return NextResponse.json({ error: 'pin_must_be_4_to_6_digits' }, { status: 400 });
 
-    const pinHash = hashPin(String(pin));
-    const clash = await prisma.staffUser.findFirst({ where: { pinHash, active: true }, select: { id: true } });
-    if (clash) return NextResponse.json({ error: 'pin_in_use' }, { status: 409 });
+    // Username + password are required for dashboard login (no random/default PINs)
+    const u = String(body.username ?? '').trim().toLowerCase();
+    const pw = String(body.password ?? '');
+    if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username' }, { status: 400 });
+    if (pw.length < 6) return NextResponse.json({ error: 'password_too_short' }, { status: 400 });
+    const uClash = await prisma.staffUser.findFirst({ where: { tenantId: session.tenantId, username: u }, select: { id: true } });
+    if (uClash) return NextResponse.json({ error: 'username_in_use' }, { status: 409 });
+    const username = u;
+    const passwordHash = hashPassword(pw);
 
-    // optional username + password login (secure dashboard access)
-    let username: string | null = null;
-    let passwordHash: string | null = null;
-    if (body.username || body.password) {
-      const u = String(body.username ?? '').trim().toLowerCase();
-      const pw = String(body.password ?? '');
-      if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username' }, { status: 400 });
-      if (pw.length < 6) return NextResponse.json({ error: 'password_too_short' }, { status: 400 });
-      const uClash = await prisma.staffUser.findFirst({ where: { tenantId: session.tenantId, username: u }, select: { id: true } });
-      if (uClash) return NextResponse.json({ error: 'username_in_use' }, { status: 409 });
-      username = u;
-      passwordHash = hashPassword(pw);
-    }
+    // Optional pay configuration at creation time
+    const payType = body.payType === 'monthly' || body.payType === 'hourly' ? body.payType : null;
+    const payRatePaise = body.payRatePaise != null ? Math.round(Number(body.payRatePaise)) : null;
 
-    // slot enforcement (G6): staff seats per plan
+    // slot enforcement: staff seats per plan
     try {
       await assertSlot(session.tenantId, 'staff');
     } catch (e) {
@@ -99,9 +94,11 @@ export async function POST(req: NextRequest) {
         phone: phone ? String(phone).trim() : null,
         employeeCode: employeeCode ? String(employeeCode).trim() : null,
         role: resolvedRole,
-        pinHash,
+        pinHash: null,
         username,
         passwordHash,
+        payType,
+        payRatePaise,
         active: true,
         permissions: permissionsData as Prisma.InputJsonValue,
       },
@@ -113,9 +110,20 @@ export async function POST(req: NextRequest) {
       await publish(session.outletId, { type: 'staff.updated', staffId: created.id }).catch(() => {});
     }
 
+    // Create optional first shift if provided
+    if (body.shiftStartsAt && body.shiftEndsAt) {
+      const start = new Date(body.shiftStartsAt);
+      const end = new Date(body.shiftEndsAt);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start) {
+        await prisma.shift.create({
+          data: { outletId: session.outletId, staffId: created.id, startsAt: start, endsAt: end, role: resolvedRole, status: 'scheduled' },
+        }).catch(() => {});
+      }
+    }
+
     await bumpUsage(session.tenantId, 'staff').catch(() => {});
     await audit(session, 'staff.created', created.id, { name: created.name, role: created.role });
-    return NextResponse.json({ ok: true, member: { ...created, hasPin: true } });
+    return NextResponse.json({ ok: true, member: { ...created, hasPin: false, hasLogin: true } });
   }
 
   // ---- shifts (roster) — subject is body.staffId ----
@@ -267,6 +275,43 @@ export async function POST(req: NextRequest) {
     });
     await audit(session, 'staff.salary_paid', id, { periodLabel, amountPaise, method });
     return NextResponse.json({ ok: true, payment: pay });
+  }
+
+  // ---- manager manual attendance punch ----
+  if (action === 'attendance_punch') {
+    const punchAction = body.punchAction === 'out' ? 'out' : 'in';
+    let open = await prisma.attendance.findFirst({
+      where: { outletId: session.outletId, staffId: id, clockOut: null },
+      orderBy: { clockIn: 'desc' },
+    });
+
+    if (punchAction === 'in') {
+      if (open && Date.now() - open.clockIn.getTime() > 16 * 3600 * 1000) {
+        await prisma.attendance.update({
+          where: { id: open.id },
+          data: { clockOut: new Date(open.clockIn.getTime() + 8 * 3600 * 1000) },
+        }).catch(() => {});
+        open = null;
+      } else if (open) {
+        return NextResponse.json({ ok: true, message: `${target.name} is already clocked in`, open: { id: open.id, clockIn: open.clockIn.toISOString() } });
+      }
+      const rec = await prisma.attendance.create({
+        data: { outletId: session.outletId, staffId: id, clockIn: new Date(), source: 'manager_punch' },
+        select: { id: true, clockIn: true },
+      });
+      await audit(session, 'attendance.manager_clock_in', id, { name: target.name, punchId: rec.id });
+      return NextResponse.json({ ok: true, punch: rec });
+    } else {
+      if (!open) {
+        return NextResponse.json({ ok: true, message: `${target.name} is already clocked out` });
+      }
+      await prisma.attendance.update({
+        where: { id: open.id },
+        data: { clockOut: new Date() },
+      });
+      await audit(session, 'attendance.manager_clock_out', id, { name: target.name, punchId: open.id });
+      return NextResponse.json({ ok: true, message: `${target.name} clocked out successfully` });
+    }
   }
 
   if (action === 'setpin') {

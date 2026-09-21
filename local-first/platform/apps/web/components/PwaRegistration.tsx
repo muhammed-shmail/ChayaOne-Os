@@ -7,15 +7,35 @@ export function PwaRegistration() {
   const pathname = usePathname();
 
   useEffect(() => {
-    // 1. Register Service Worker (ONLY IN PRODUCTION)
-    if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+    const isDesktopOrNative = typeof window !== 'undefined' && (
+      window.navigator.userAgent.includes('Electron') ||
+      !!(window as any).electronAPI ||
+      !!(window as any).chayaOne ||
+      !!(window as any).AndroidBridge
+    );
+
+    // 1. In Electron / Native app, disable service worker to avoid chunk caching conflicts
+    if (isDesktopOrNative) {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (const registration of registrations) {
+            registration.unregister();
+          }
+        });
+        if ('caches' in window) {
+          caches.keys().then((keys) => {
+            for (const key of keys) caches.delete(key);
+          });
+        }
+      }
+    } else if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+      // Register Service Worker for mobile browser PWA only
       navigator.serviceWorker.register('/sw.js')
         .then((reg) => console.log('Service Worker registered with scope:', reg.scope))
         .catch((err) => console.error('Service Worker registration failed:', err));
     } else if ('serviceWorker' in navigator) {
-      // Unregister any existing service workers in dev mode to fix caching issues
-      navigator.serviceWorker.getRegistrations().then(function(registrations) {
-        for(let registration of registrations) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) {
           registration.unregister();
         }
       });

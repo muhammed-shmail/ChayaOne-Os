@@ -1,0 +1,88 @@
+18:33:27.268 > [ChayaOne ERROR] [Web ERROR] order create failed PrismaClientKnownRequestError: 
+Invalid `prisma.printJob.create()` invocation:
+
+
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38
+    at $n.handleRequestError (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:7315)
+    at $n.handleAndLogRequestError (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at async l (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at async b (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\3220.js:1:2827)
+    at async C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\8645.js:1:16566
+    at async Proxy._transactionWithCallback (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:130:8000)
+    at async S.createOrder (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\8645.js:1:13038)
+    at async f (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\app\api\orders\route.js:1:3201)
+    at async C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\next\dist\compiled\next-server\app-route.runtime.prod.js:6:38411 {
+  code: 'P2023',
+  clientVersion: '5.22.0',
+  meta: {
+    modelName: 'PrintJob',
+    message: 'Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38'
+  }
+}
+18:34:41.486 > [ChayaOne ERROR] [Web ERROR] order create failed PrismaClientKnownRequestError: 
+Invalid `prisma.printJob.create()` invocation:
+
+
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38
+    at $n.handleRequestError (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:7315)
+    at $n.handleAndLogRequestError (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at async l (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at async b (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\3220.js:1:2827)
+    at async C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\8645.js:1:16566
+    at async Proxy._transactionWithCallback (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:130:8000)
+    at async S.createOrder (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\8645.js:1:13038)
+    at async f (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\app\api\orders\route.js:1:3201)
+    at async C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\next\dist\compiled\next-server\app-route.runtime.prod.js:6:38411 {
+  code: 'P2023',
+  clientVersion: '5.22.0',
+  meta: {
+    modelName: 'PrintJob',
+    message: 'Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38'
+  }
+}
+18:35:41.759 > [ChayaOne ERROR] [Web ERROR] order create failed PrismaClientKnownRequestError: 
+Invalid `prisma.printJob.create()` invocation:
+
+
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38
+    at $n.handleRequestError (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:7315)
+    at $n.handleAndLogRequestError (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at async l (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at async b (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\3220.js:1:2827)
+    at async C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\8645.js:1:16566
+    at async Proxy._transactionWithCallback (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:130:8000)
+    at async S.createOrder (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\8645.js:1:13038)
+    at async f (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\app\api\orders\route.js:1:3201)
+    at async C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\next\dist\compiled\next-server\app-route.runtime.prod.js:6:38411 {
+  code: 'P2023',
+  clientVersion: '5.22.0',
+  meta: {
+    modelName: 'PrintJob',
+    message: 'Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38'
+  }
+}
+18:36:29.356 > [ChayaOne ERROR] [Web ERROR] order create failed PrismaClientKnownRequestError: 
+Invalid `prisma.printJob.create()` invocation:
+
+
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38
+    at $n.handleRequestError (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:7315)
+    at $n.handleAndLogRequestError (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:6623)
+    at $n.request (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:121:6307)
+    at async l (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:130:9633)
+    at async b (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\3220.js:1:2827)
+    at async C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\8645.js:1:16566
+    at async Proxy._transactionWithCallback (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\@prisma\client\runtime\library.js:130:8000)
+    at async S.createOrder (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\chunks\8645.js:1:13038)
+    at async f (C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\.next\server\app\api\orders\route.js:1:3201)
+    at async C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules\next\dist\compiled\next-server\app-route.runtime.prod.js:6:38411 {
+  code: 'P2023',
+  clientVersion: '5.22.0',
+  meta: {
+    modelName: 'PrintJob',
+    message: 'Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38'
+  }
+}

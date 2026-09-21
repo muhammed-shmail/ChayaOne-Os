@@ -10,7 +10,9 @@ import ReceiptPreviewModal from '@/components/receipt/ReceiptPreviewModal';
 import {
   Table2, Search, RefreshCw, Printer, Receipt, ArrowLeft,
   X, User, Smartphone, CreditCard,
-  Lock, DollarSign, History, HelpCircle
+  Lock, DollarSign, History, HelpCircle, CheckCircle2,
+  Banknote, SplitSquareVertical, ChevronRight, Clock, ShoppingBag,
+  Zap,
 } from 'lucide-react';
 import { LocalPrinterClient } from '@/lib/printer-client';
 import { subscribeStaff } from '@/lib/realtime-client';
@@ -47,51 +49,40 @@ interface TBillingProps {
 }
 
 export default function TBillingClient({ outlet, staff, tables, initialOrders = [] }: TBillingProps) {
-  // Views: 'queue' (Ready to Bill) | 'workspace' (Billing Active Order) | 'completed' (Settled Result) | 'history' (Past Bills)
   const [view, setView] = useState<'queue' | 'workspace' | 'completed' | 'history'>('queue');
 
-  // Search & Filter state for Ready-to-Bill queue
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'unpaid' | 'ready' | 'takeaway' | 'completed'>('ready');
   const [orders, setOrders] = useState<any[]>(initialOrders);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
-  // Active Billing Order
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
 
-  // Discount state
   const [discountType, setDiscountType] = useState<'pct' | 'flat'>('pct');
   const [discountVal, setDiscountVal] = useState<string>('0');
 
-  // Customer state
   const [custName, setCustName] = useState<string>('Walk-in Customer');
   const [custPhone, setCustPhone] = useState<string>('');
   const [custGstin, setCustGstin] = useState<string>('');
 
-  // Payment state
   const [payTab, setPayTab] = useState<'cash' | 'upi' | 'card' | 'split'>('cash');
   const [cashReceived, setCashReceived] = useState<string>('');
   const [upiRef, setUpiRef] = useState<string>('');
   const [cardRef, setCardRef] = useState<string>('');
-  
-  // Split payment state
+
   const [splitCash, setSplitCash] = useState<string>('0');
   const [splitUpi, setSplitUpi] = useState<string>('0');
   const [splitCard, setSplitCard] = useState<string>('0');
 
-  // Settlement Result state
   const [settledResult, setSettledResult] = useState<any | null>(null);
   const [settleBusy, setSettleBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Receipt Modal preview state
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [previewOrderOverride, setPreviewOrderOverride] = useState<any | null>(null);
 
-  // Keyboard shortcut help modal state
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Billing History state
   const [historyList, setHistoryList] = useState<any[]>([]);
   const [historySearch, setHistorySearch] = useState('');
   const [historyRange, setHistoryRange] = useState('today');
@@ -109,7 +100,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
   const isManagerOrOwner = hasRole(currentStaff, ['owner', 'manager']);
   const canApplyDiscount = canDiscount(currentStaff);
 
-  // Exit T-Billing (notifies parent if in iframe or modal, or navigates back)
   const handleExit = useCallback(() => {
     if (typeof window !== 'undefined') {
       if (window.parent && window.parent !== window) {
@@ -124,13 +114,11 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     }
   }, []);
 
-  // Toast Helper
   const flash = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Load Orders
   const loadOrders = useCallback(async () => {
     setOrdersLoading(true);
     try {
@@ -146,7 +134,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     }
   }, []);
 
-  // Load History
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
@@ -162,7 +149,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     }
   }, [historySearch, historyRange]);
 
-  // Realtime subscription for instant updates
   useEffect(() => {
     loadOrders();
     return subscribeStaff((msg) => {
@@ -186,7 +172,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     if (view === 'history') loadHistory();
   }, [view, loadHistory]);
 
-  // Filtered Orders Queue
   const filteredOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
     return orders.filter((o) => {
@@ -210,7 +195,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     });
   }, [orders, search, filter]);
 
-  // Select Order for Billing Workspace
   const startBilling = (order: any) => {
     if (order.status === 'cancelled') {
       flash('Cancelled orders cannot be billed.');
@@ -232,7 +216,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     setView('workspace');
   };
 
-  // Keep selected index valid when filtered orders list changes
   useEffect(() => {
     if (filteredOrders.length === 0) {
       setSelectedOrderIndex(-1);
@@ -241,7 +224,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     }
   }, [filteredOrders.length, selectedOrderIndex]);
 
-  // Smoothly scroll active card into view during keyboard navigation
   useEffect(() => {
     if (view === 'queue' && selectedOrderIndex >= 0 && orderCardRefs.current[selectedOrderIndex]) {
       orderCardRefs.current[selectedOrderIndex]?.scrollIntoView({
@@ -252,7 +234,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     }
   }, [selectedOrderIndex, view]);
 
-  // Keyboard Shortcuts (F2: Search, F4: Payment, F6: Print, F8: Settle, Esc: Back/Exit, Arrows & Enter: Bill Navigation)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
@@ -260,7 +241,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         searchInputRef.current?.focus();
         return;
       }
-      
+
       if (e.key === 'F4') {
         e.preventDefault();
         if (view === 'workspace') {
@@ -269,7 +250,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         }
         return;
       }
-      
+
       if (e.key === 'F6') {
         e.preventDefault();
         if (view === 'workspace' || view === 'completed') {
@@ -277,7 +258,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         }
         return;
       }
-      
+
       if (e.key === 'F8') {
         e.preventDefault();
         if (view === 'workspace' && selectedOrder && !settleBusy) {
@@ -285,7 +266,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         }
         return;
       }
-      
+
       if (e.key === 'Escape') {
         if (receiptModalOpen) setReceiptModalOpen(false);
         else if (shortcutsOpen) setShortcutsOpen(false);
@@ -296,10 +277,8 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         return;
       }
 
-      // If a modal is open, don't intercept queue navigation
       if (receiptModalOpen || shortcutsOpen) return;
 
-      // When in Ready-to-Bill queue view:
       if (view === 'queue') {
         const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
         const isSearchFocused = activeEl === searchInputRef.current;
@@ -309,7 +288,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
 
         if (isOtherInputFocused) return;
 
-        // In search bar:
         if (isSearchFocused) {
           if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -327,11 +305,9 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
             }
             return;
           }
-          // Note: Tab and standard keys operate as normal inside search input
           return;
         }
 
-        // In queue cards list (Tab key is intentionally NOT intercepted so desktop Tab flows normally):
         if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
           if (filteredOrders.length > 0) {
             e.preventDefault();
@@ -370,10 +346,9 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [view, receiptModalOpen, shortcutsOpen, selectedOrder, settleBusy, filteredOrders, selectedOrderIndex, handleExit]);
 
-  // Compute Bill Summary Dynamically
   const calculatedBill = useMemo(() => {
     if (!selectedOrder) return { subtotalPaise: 0, discountPaise: 0, taxablePaise: 0, cgstPaise: 0, sgstPaise: 0, igstPaise: 0, roundOffPaise: 0, totalPaise: 0 };
-    
+
     const lines = (selectedOrder.items || []).map((i: any) => ({
       pricePaise: i.unitPricePaise,
       modPaise: ((i.modifiers as any) || []).reduce((s: number, m: any) => s + (m.pricePaise || 0), 0),
@@ -393,18 +368,15 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     });
   }, [selectedOrder, discountType, discountVal, outlet]);
 
-  // Cash Change Calculation
   const cashReceivedPaise = Math.round((parseFloat(cashReceived) || 0) * 100);
   const cashChangePaise = Math.max(0, cashReceivedPaise - calculatedBill.totalPaise);
 
-  // Split Payment Total Calculation
   const splitTotalPaise =
     Math.round((parseFloat(splitCash) || 0) * 100) +
     Math.round((parseFloat(splitUpi) || 0) * 100) +
     Math.round((parseFloat(splitCard) || 0) * 100);
   const splitRemainingPaise = Math.max(0, calculatedBill.totalPaise - splitTotalPaise);
 
-  // Settle Order Handler
   const handleSettleOrder = async () => {
     if (!selectedOrder || settleBusy) return;
 
@@ -463,7 +435,6 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     }
   };
 
-  // Unified Receipt Input Data for Preview Modal and Thermal Printing
   const previewData: ReceiptInputData | null = useMemo(() => {
     if (previewOrderOverride) return previewOrderOverride;
     if (settledResult?.receipt) {
@@ -531,18 +502,15 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     };
   }, [previewOrderOverride, settledResult, selectedOrder, calculatedBill, outlet, payTab]);
 
-  // Print Receipt Handler (Dispatches to local desktop client and server-side print queue)
   const handlePrintReceipt = async (receiptDataOverride?: any, widthOverride?: ReceiptPaperWidth) => {
     const activeData = receiptDataOverride || previewData;
     const targetOrderId = previewOrderOverride ? (previewOrderOverride as any).orderId : (selectedOrder?.id || settledResult?.order?.id);
 
-    // 1. Try local desktop thermal printer agent
     const desktopOk = await LocalPrinterClient.requestPrint({
       ...(activeData || {}),
       paperWidth: widthOverride || outlet.receipt.paperWidth || '80mm',
     }).catch(() => false);
 
-    // 2. Queue print job on server for LAN thermal printer
     let queueOk = false;
     if (targetOrderId) {
       try {
@@ -563,95 +531,187 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     if (desktopOk || queueOk) {
       flash('Receipt sent to thermal printer 🖨️');
     } else {
-      // Fallback to browser print window if no hardware printer reachable
       window.print();
     }
   };
 
+  // ── Payment method icons & labels
+  const payMethods = [
+    { key: 'cash', label: 'Cash', icon: Banknote },
+    { key: 'upi', label: 'UPI', icon: Smartphone },
+    { key: 'card', label: 'Card', icon: CreditCard },
+    { key: 'split', label: 'Split', icon: SplitSquareVertical },
+  ] as const;
+
   return (
-    <div className="min-h-screen flex flex-col font-sans" style={{ background: 'var(--paper)', color: 'var(--ink)' }}>
-      {/* ── TOP HEADER BAR ── */}
-      <header className="flex items-center justify-between px-5 py-3.5 border-b sticky top-0 z-40 backdrop-blur" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }}>
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl grid place-items-center font-bold" style={{ background: 'var(--paper-3)', color: 'var(--gold)' }}>
-            <Table2 size={22} />
+    <div
+      className="min-h-screen flex flex-col font-sans"
+      style={{ background: 'var(--paper)', color: 'var(--ink)' }}
+    >
+      {/* ════════════════════ TOP HEADER BAR ════════════════════ */}
+      <header
+        className="flex items-center justify-between px-4 sm:px-6 py-3 border-b sticky top-0 z-40 backdrop-blur-md"
+        style={{
+          borderColor: 'var(--line)',
+          background: 'color-mix(in srgb, var(--paper-2) 92%, transparent)',
+          boxShadow: '0 1px 24px color-mix(in srgb, var(--espresso) 8%, transparent)',
+        }}
+      >
+        {/* Left: Brand */}
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="w-10 h-10 rounded-2xl grid place-items-center shrink-0 shadow-md"
+            style={{
+              background: 'linear-gradient(135deg, var(--gold) 0%, var(--espresso) 120%)',
+            }}
+          >
+            <Table2 size={20} className="text-white" />
           </div>
-          <div>
-            <h1 className="font-display font-bold text-xl leading-none flex items-center gap-2">
-              T-Billing Terminal
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full uppercase" style={{ background: 'var(--gold)/10', color: 'var(--gold-d)' }}>
-                {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
+          <div className="min-w-0">
+            <h1 className="font-display font-bold text-lg leading-tight flex flex-wrap items-center gap-1.5">
+              <span style={{ color: 'var(--ink)' }}>T-Billing</span>
+              <span style={{ color: 'var(--gold-d)' }}>Terminal</span>
+              <span
+                className="text-[10px] font-mono px-2 py-0.5 rounded-full uppercase tracking-wider"
+                style={{
+                  background: 'color-mix(in srgb, var(--gold) 15%, var(--paper-3))',
+                  color: 'var(--gold-d)',
+                  border: '1px solid color-mix(in srgb, var(--gold) 30%, transparent)',
+                }}
+              >
+                {currentStaff.roles && currentStaff.roles.length > 1
+                  ? currentStaff.roles.join(' + ')
+                  : currentStaff.role}
               </span>
             </h1>
-            <p className="text-xs font-semibold mt-0.5" style={{ color: 'var(--ink-3)' }}>
-              Instant Billing & Customer Receipts · {outlet.name}
+            <p className="text-[11px] font-medium truncate" style={{ color: 'var(--ink-3)' }}>
+              Instant Billing · {outlet.name}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {/* View Toggles */}
+        {/* Right: Actions */}
+        <div className="flex items-center gap-2 shrink-0">
           {view === 'queue' && (
-            <button onClick={() => setView('history')} className="btn btn-sm inline-flex items-center gap-1.5" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}>
-              <History size={15} /> Billing History
+            <button
+              onClick={() => setView('history')}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition hover:opacity-80 active:scale-95"
+              style={{
+                background: 'var(--paper-3)',
+                border: '1px solid var(--line)',
+                color: 'var(--ink-2)',
+              }}
+            >
+              <History size={14} /> History
             </button>
           )}
           {view !== 'queue' && (
-            <button onClick={() => setView('queue')} className="btn btn-sm inline-flex items-center gap-1.5" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}>
-              <ArrowLeft size={15} /> Back to Queue
+            <button
+              onClick={() => setView('queue')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition hover:opacity-80 active:scale-95"
+              style={{
+                background: 'var(--paper-3)',
+                border: '1px solid var(--line)',
+                color: 'var(--ink-2)',
+              }}
+            >
+              <ArrowLeft size={14} /> Queue
             </button>
           )}
-
-          <button onClick={loadOrders} disabled={ordersLoading} className="btn btn-icon btn-sm btn-ghost" title="Refresh orders">
-            <RefreshCw size={16} className={ordersLoading ? 'animate-spin' : ''} />
-          </button>
-          <button onClick={() => setShortcutsOpen(true)} className="btn btn-icon btn-sm btn-ghost" title="Keyboard shortcuts (F2, F4, F6, F8)">
-            <HelpCircle size={16} />
+          <button
+            onClick={loadOrders}
+            disabled={ordersLoading}
+            className="w-8 h-8 rounded-xl grid place-items-center transition hover:opacity-80 active:scale-95"
+            style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+            title="Refresh orders"
+          >
+            <RefreshCw size={14} className={ordersLoading ? 'animate-spin' : ''} style={{ color: 'var(--ink-2)' }} />
           </button>
           <button
-            type="button"
+            onClick={() => setShortcutsOpen(true)}
+            className="w-8 h-8 rounded-xl grid place-items-center transition hover:opacity-80 active:scale-95"
+            style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+            title="Keyboard shortcuts"
+          >
+            <HelpCircle size={14} style={{ color: 'var(--ink-2)' }} />
+          </button>
+          <button
             onClick={handleExit}
-            className="btn btn-sm btn-ghost inline-flex items-center gap-1 cursor-pointer hover:opacity-80"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition hover:opacity-80 active:scale-95"
+            style={{
+              background: 'color-mix(in srgb, var(--clay) 12%, var(--paper-3))',
+              border: '1px solid color-mix(in srgb, var(--clay) 25%, transparent)',
+              color: 'var(--clay)',
+            }}
             title="Exit T-Billing (Esc)"
           >
-            <X size={16} /> Exit
+            <X size={14} /> Exit
           </button>
         </div>
       </header>
 
-      {/* ── MAIN CONTENT WORKSPACE ── */}
-      <main className="flex-1 p-4 md:p-6 max-w-[1600px] w-full mx-auto flex flex-col">
-        {/* ---------------- 1. READY TO BILL ORDER QUEUE VIEW ---------------- */}
+      {/* ════════════════════ MAIN CONTENT ════════════════════ */}
+      <main className="flex-1 p-3 sm:p-5 max-w-[1600px] w-full mx-auto flex flex-col gap-4">
+
+        {/* ── 1. READY TO BILL QUEUE VIEW ── */}
         {view === 'queue' && (
-          <div className="flex flex-col gap-5 flex-1">
+          <div className="flex flex-col gap-4 flex-1">
+
             {/* Search & Filter Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl border" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
-              <div className="relative flex-1 min-w-[280px]">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--ink-3)]" size={18} />
+            <div
+              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-3 rounded-2xl border"
+              style={{
+                background: 'var(--paper-2)',
+                borderColor: 'var(--line)',
+                boxShadow: '0 1px 8px color-mix(in srgb, var(--espresso) 4%, transparent)',
+              }}
+            >
+              {/* Search */}
+              <div className="relative flex-1">
+                <Search
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2"
+                  size={16}
+                  style={{ color: 'var(--ink-3)' }}
+                />
                 <input
                   ref={searchInputRef}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search order #, table, customer, phone (Press F2)..."
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm outline-none transition"
-                  style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+                  placeholder="Search order #, table, customer... (F2)"
+                  className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm outline-none transition"
+                  style={{
+                    background: 'var(--paper-3)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--ink)',
+                  }}
                 />
               </div>
 
-              {/* Quick Filter Chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {/* Filter chips */}
+              <div className="flex items-center gap-1.5 flex-wrap">
                 {[
-                  { key: 'ready', label: 'Ready to Bill' },
-                  { key: 'all', label: 'All Open' },
-                  { key: 'takeaway', label: 'Takeaway' },
-                  { key: 'completed', label: 'Completed' },
+                  { key: 'ready', label: '⚡ Ready to Bill' },
+                  { key: 'all', label: '📋 All Open' },
+                  { key: 'takeaway', label: '🥡 Takeaway' },
+                  { key: 'completed', label: '✅ Completed' },
                 ].map((f) => (
                   <button
                     key={f.key}
                     onClick={() => setFilter(f.key as any)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                      filter === f.key ? 'bg-[var(--gold)] text-[#2A1607]' : 'bg-[var(--paper-3)] text-[var(--ink-2)] hover:text-[var(--ink)]'
-                    }`}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold transition active:scale-95"
+                    style={
+                      filter === f.key
+                        ? {
+                            background: 'var(--gold)',
+                            color: '#2A1607',
+                            boxShadow: '0 2px 8px color-mix(in srgb, var(--gold) 35%, transparent)',
+                          }
+                        : {
+                            background: 'var(--paper-3)',
+                            color: 'var(--ink-2)',
+                            border: '1px solid var(--line)',
+                          }
+                    }
                   >
                     {f.label}
                   </button>
@@ -659,165 +719,281 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
               </div>
             </div>
 
-            {/* Ready to Bill Orders Cards Grid */}
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="font-bold text-sm uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>
-                  Ready to Bill Orders ({filteredOrders.length})
+            {/* Queue Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-base" style={{ color: 'var(--ink)' }}>
+                  Ready to Bill
                 </h2>
-                <span className="text-xs font-bold flex items-center gap-2" style={{ color: 'var(--ink-3)' }}>
-                  <span className="hidden sm:inline">Use <kbd className="px-1.5 py-0.5 rounded bg-[var(--paper-3)] border border-[var(--line)] font-mono text-[10px]">↑</kbd> <kbd className="px-1.5 py-0.5 rounded bg-[var(--paper-3)] border border-[var(--line)] font-mono text-[10px]">↓</kbd> or <kbd className="px-1.5 py-0.5 rounded bg-[var(--paper-3)] border border-[var(--line)] font-mono text-[10px]">Tab</kbd> to navigate, <kbd className="px-1.5 py-0.5 rounded bg-[var(--gold)] text-[#2A1607] font-mono text-[10px] font-bold">Enter</kbd> to bill</span>
+                <span
+                  className="px-2.5 py-0.5 rounded-full text-xs font-extrabold"
+                  style={{
+                    background: filteredOrders.length > 0
+                      ? 'color-mix(in srgb, var(--gold) 18%, var(--paper-3))'
+                      : 'var(--paper-3)',
+                    color: filteredOrders.length > 0 ? 'var(--gold-d)' : 'var(--ink-3)',
+                    border: '1px solid color-mix(in srgb, var(--gold) 25%, transparent)',
+                  }}
+                >
+                  {filteredOrders.length} orders
                 </span>
               </div>
+              <span className="text-xs hidden sm:flex items-center gap-1.5 font-medium" style={{ color: 'var(--ink-3)' }}>
+                <kbd
+                  className="px-1.5 py-0.5 rounded text-[10px] font-mono"
+                  style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+                >↑↓</kbd>
+                navigate ·
+                <kbd
+                  className="px-1.5 py-0.5 rounded text-[10px] font-mono"
+                  style={{ background: 'var(--gold)', color: '#2A1607', border: 'none' }}
+                >
+                  Enter
+                </kbd>
+                to bill
+              </span>
+            </div>
 
-              {filteredOrders.length === 0 ? (
-                <div className="lux-card p-12 text-center flex flex-col items-center justify-center gap-3">
-                  <Receipt size={48} className="text-[var(--ink-3)] opacity-40" />
-                  <p className="font-bold text-lg">No orders ready for billing</p>
-                  <p className="text-xs text-[var(--ink-3)] max-w-sm">
-                    Orders created in POS or waiter mobile app will appear here automatically for instant billing.
+            {/* Order Cards Grid */}
+            {filteredOrders.length === 0 ? (
+              <div
+                className="flex-1 rounded-2xl border flex flex-col items-center justify-center py-20 gap-4"
+                style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+              >
+                <div
+                  className="w-16 h-16 rounded-2xl grid place-items-center"
+                  style={{ background: 'color-mix(in srgb, var(--gold) 10%, var(--paper-3))' }}
+                >
+                  <Receipt size={30} style={{ color: 'var(--gold-d)', opacity: 0.6 }} />
+                </div>
+                <div className="text-center">
+                  <p className="font-bold text-base" style={{ color: 'var(--ink-2)' }}>
+                    No orders ready for billing
+                  </p>
+                  <p className="text-xs mt-1 max-w-xs" style={{ color: 'var(--ink-3)' }}>
+                    Orders from POS and waiter app appear here instantly for billing.
                   </p>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {filteredOrders.map((o, index) => {
-                    const isSelected = selectedOrderIndex === index;
-                    const isCancelled = o.status === 'cancelled';
-                    const isSettled = o.status === 'settled';
-                    const itemCount = (o.items || []).reduce((sum: number, i: any) => sum + i.qty, 0);
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {filteredOrders.map((o, index) => {
+                  const isSelected = selectedOrderIndex === index;
+                  const isCancelled = o.status === 'cancelled';
+                  const isSettled = o.status === 'settled';
+                  const itemCount = (o.items || []).reduce((sum: number, i: any) => sum + i.qty, 0);
+                  const isTakeaway = o.type === 'takeaway';
 
-                    return (
-                      <div
-                        key={o.id}
-                        ref={(el) => { orderCardRefs.current[index] = el; }}
-                        tabIndex={0}
-                        role="button"
-                        aria-pressed={isSelected}
-                        onClick={() => setSelectedOrderIndex(index)}
-                        onDoubleClick={() => startBilling(o)}
-                        onFocus={() => setSelectedOrderIndex(index)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            startBilling(o);
-                          }
-                        }}
-                        className={`lux-card card-glow p-5 flex flex-col justify-between transition-all cursor-pointer outline-none relative ${
-                          isSelected
-                            ? 'ring-2 ring-[var(--gold)] border-[var(--gold)] shadow-xl shadow-[var(--gold)]/15 -translate-y-1 bg-[var(--paper-2)]'
-                            : isCancelled
-                            ? 'opacity-50'
-                            : 'hover:-translate-y-0.5'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-start justify-between gap-2 mb-3">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-display font-extrabold text-xl">#{o.number}</span>
-                                {isSelected && (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--gold)] text-[#2A1607] flex items-center gap-1 shadow-sm">
-                                    ↵ Enter
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs font-bold" style={{ color: 'var(--gold-d)' }}>
-                                {o.table?.label ? `Table ${o.table.label}` : o.type === 'takeaway' ? '🥡 Takeaway' : '📍 Direct'}
-                              </p>
-                            </div>
-                            <span
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wide ${
-                                isSettled
-                                  ? 'bg-[var(--ok-bg)] text-[var(--ok-ink)]'
-                                  : isCancelled
-                                  ? 'bg-[var(--danger-bg)] text-[var(--danger-ink)]'
-                                  : 'bg-[var(--warn-bg)] text-[var(--warn-ink)]'
-                              }`}
-                            >
-                              {isSettled ? 'Paid ✓' : isCancelled ? 'Cancelled' : 'Ready to Bill'}
+                  return (
+                    <div
+                      key={o.id}
+                      ref={(el) => { orderCardRefs.current[index] = el; }}
+                      tabIndex={0}
+                      role="button"
+                      aria-pressed={isSelected}
+                      onClick={() => setSelectedOrderIndex(index)}
+                      onDoubleClick={() => startBilling(o)}
+                      onFocus={() => setSelectedOrderIndex(index)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          startBilling(o);
+                        }
+                      }}
+                      className="flex flex-col justify-between outline-none cursor-pointer transition-all duration-150 rounded-2xl border"
+                      style={{
+                        background: isSelected
+                          ? 'color-mix(in srgb, var(--gold) 6%, var(--paper-2))'
+                          : 'var(--paper-2)',
+                        borderColor: isSelected
+                          ? 'var(--gold)'
+                          : isCancelled
+                          ? 'color-mix(in srgb, var(--clay) 30%, var(--line))'
+                          : 'var(--line)',
+                        boxShadow: isSelected
+                          ? '0 4px 24px color-mix(in srgb, var(--gold) 18%, transparent), 0 0 0 2px color-mix(in srgb, var(--gold) 40%, transparent)'
+                          : '0 1px 4px color-mix(in srgb, var(--espresso) 5%, transparent)',
+                        transform: isSelected ? 'translateY(-2px)' : 'none',
+                        opacity: isCancelled ? 0.55 : 1,
+                      }}
+                    >
+                      {/* Card Top: Order meta */}
+                      <div className="p-4">
+                        {/* Header row */}
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-display font-extrabold text-2xl leading-none" style={{ color: 'var(--ink)' }}>
+                              #{o.number}
                             </span>
+                            {isSelected && (
+                              <span
+                                className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold flex items-center gap-0.5"
+                                style={{ background: 'var(--gold)', color: '#2A1607' }}
+                              >
+                                ↵ Enter
+                              </span>
+                            )}
                           </div>
-
-                          <div className="space-y-1 text-xs mb-4" style={{ color: 'var(--ink-2)' }}>
-                            <p className="font-medium truncate">👤 {o.customer?.name || 'Walk-in Customer'}</p>
-                            <p className="truncate">🍽️ {itemCount} item{itemCount === 1 ? '' : 's'}</p>
-                            <p className="text-[11px]" style={{ color: 'var(--ink-3)' }} suppressHydrationWarning>
-                              🕒 {new Date(o.placedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                          </div>
+                          {/* Status badge */}
+                          <span
+                            className="shrink-0 px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wider"
+                            style={
+                              isSettled
+                                ? { background: 'color-mix(in srgb, var(--cardamom) 15%, var(--paper-3))', color: 'var(--cardamom-d, #34d399)' }
+                                : isCancelled
+                                ? { background: 'color-mix(in srgb, var(--clay) 15%, var(--paper-3))', color: 'var(--clay)' }
+                                : { background: 'color-mix(in srgb, var(--gold) 15%, var(--paper-3))', color: 'var(--gold-d)' }
+                            }
+                          >
+                            {isSettled ? '✓ Paid' : isCancelled ? 'Cancelled' : '● Ready'}
+                          </span>
                         </div>
 
-                        <div className="pt-3 border-t border-[var(--line)] flex items-center justify-between gap-2">
-                          <span className="font-display font-extrabold text-lg">{formatINR(o.totalPaise)}</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startBilling(o);
-                            }}
-                            disabled={isCancelled}
-                            className={`btn text-xs px-3.5 py-2 rounded-xl transition ${
-                              isSelected ? 'btn-lux ring-2 ring-[var(--gold)]/50' : 'btn-lux'
-                            }`}
-                          >
-                            {isSettled ? 'View Bill' : 'Bill Now ↵'}
-                          </button>
+                        {/* Table / Type label */}
+                        <p className="text-xs font-extrabold mb-3 flex items-center gap-1.5" style={{ color: 'var(--gold-d)' }}>
+                          {isTakeaway
+                            ? <><ShoppingBag size={12} /> Takeaway</>
+                            : o.table?.label
+                            ? <><Table2 size={12} /> Table {o.table.label}</>
+                            : '📍 Direct'}
+                        </p>
+
+                        {/* Order details */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--ink-2)' }}>
+                            <User size={11} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
+                            <span className="truncate font-medium">{o.customer?.name || 'Walk-in Customer'}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--ink-2)' }}>
+                            <Receipt size={11} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
+                            <span>{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--ink-3)' }} suppressHydrationWarning>
+                            <Clock size={11} style={{ flexShrink: 0 }} />
+                            <span>{new Date(o.placedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+
+                      {/* Card Bottom: Amount + CTA */}
+                      <div
+                        className="px-4 py-3 flex items-center justify-between gap-2 border-t rounded-b-2xl"
+                        style={{
+                          borderColor: isSelected
+                            ? 'color-mix(in srgb, var(--gold) 30%, var(--line))'
+                            : 'var(--line)',
+                          background: isSelected
+                            ? 'color-mix(in srgb, var(--gold) 5%, var(--paper-3))'
+                            : 'var(--paper-3)',
+                        }}
+                      >
+                        <span className="font-display font-extrabold text-lg tnum" style={{ color: 'var(--ink)' }}>
+                          {formatINR(o.totalPaise)}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startBilling(o);
+                          }}
+                          disabled={isCancelled}
+                          className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition active:scale-95 disabled:opacity-40"
+                          style={
+                            isSelected
+                              ? {
+                                  background: 'var(--gold)',
+                                  color: '#2A1607',
+                                  boxShadow: '0 2px 8px color-mix(in srgb, var(--gold) 40%, transparent)',
+                                }
+                              : {
+                                  background: 'color-mix(in srgb, var(--gold) 18%, var(--paper-2))',
+                                  color: 'var(--gold-d)',
+                                  border: '1px solid color-mix(in srgb, var(--gold) 30%, var(--line))',
+                                }
+                          }
+                        >
+                          {isSettled ? 'View' : 'Bill Now'}
+                          <ChevronRight size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
-        {/* ---------------- 2. DEDICATED BILLING WORKSPACE VIEW ---------------- */}
+        {/* ── 2. BILLING WORKSPACE VIEW ── */}
         {view === 'workspace' && selectedOrder && (
-          <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
-            {/* LEFT PANEL: Bill Details & Itemized Table */}
+          <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0">
+
+            {/* LEFT PANEL: Bill Details */}
             <div className="flex-1 flex flex-col gap-4 min-w-0">
-              <div className="lux-card p-5 flex-1 flex flex-col min-w-0 overflow-hidden">
-                {/* Bill Header Info */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[var(--line)]">
+              <div
+                className="rounded-2xl border p-5 flex-1 flex flex-col min-w-0 overflow-hidden"
+                style={{
+                  background: 'var(--paper-2)',
+                  borderColor: 'var(--line)',
+                  boxShadow: '0 2px 16px color-mix(in srgb, var(--espresso) 5%, transparent)',
+                }}
+              >
+                {/* Invoice Header */}
+                <div className="flex flex-wrap items-start justify-between gap-3 pb-4 mb-4 border-b" style={{ borderColor: 'var(--line)' }}>
                   <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-[var(--gold-d)]" suppressHydrationWarning>
-                      Invoice Preview: INV-{new Date().getFullYear()}-{String(selectedOrder.number).padStart(6, '0')}
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest" style={{ color: 'var(--gold-d)' }} suppressHydrationWarning>
+                      Invoice Preview — INV-{new Date().getFullYear()}-{String(selectedOrder.number).padStart(6, '0')}
                     </span>
-                    <h2 className="font-display text-2xl font-bold mt-0.5">
-                      Order #{selectedOrder.number} · {selectedOrder.table?.label ? `Table ${selectedOrder.table.label}` : 'Takeaway'}
+                    <h2 className="font-display text-2xl font-extrabold mt-0.5" style={{ color: 'var(--ink)' }}>
+                      Order #{selectedOrder.number}
+                      <span className="text-base font-semibold ml-2" style={{ color: 'var(--gold-d)' }}>
+                        · {selectedOrder.table?.label ? `Table ${selectedOrder.table.label}` : 'Takeaway'}
+                      </span>
                     </h2>
                   </div>
-                  <div className="text-right text-xs text-[var(--ink-3)]">
-                    <p className="font-bold text-[var(--ink)]">Staff: {staff.name}</p>
-                    <p suppressHydrationWarning>{new Date().toLocaleDateString('en-IN')} · {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+                  <div className="text-right text-xs" style={{ color: 'var(--ink-3)' }}>
+                    <p className="font-bold" style={{ color: 'var(--ink-2)' }}>{staff.name}</p>
+                    <p suppressHydrationWarning>
+                      {new Date().toLocaleDateString('en-IN')} · {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
                   </div>
                 </div>
 
-                {/* Itemized Bill Table */}
-                <div className="flex-1 overflow-y-auto my-4 pr-1">
+                {/* Items Table */}
+                <div className="flex-1 overflow-y-auto -mx-1 px-1">
                   <table className="w-full text-sm">
-                    <thead className="bg-[var(--paper-3)] text-[var(--ink-3)] text-xs uppercase tracking-wider sticky top-0">
-                      <tr>
-                        <th className="px-3 py-2.5 text-left font-bold">Item</th>
-                        <th className="px-3 py-2.5 text-center font-bold">Qty</th>
-                        <th className="px-3 py-2.5 text-right font-bold">Rate</th>
-                        <th className="px-3 py-2.5 text-right font-bold">Tax</th>
-                        <th className="px-3 py-2.5 text-right font-bold">Amount</th>
+                    <thead>
+                      <tr
+                        style={{
+                          background: 'var(--paper-3)',
+                          color: 'var(--ink-3)',
+                        }}
+                      >
+                        <th className="px-3 py-2.5 text-left text-[11px] font-extrabold uppercase tracking-wider rounded-l-xl">Item</th>
+                        <th className="px-3 py-2.5 text-center text-[11px] font-extrabold uppercase tracking-wider">Qty</th>
+                        <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider">Rate</th>
+                        <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider">Tax</th>
+                        <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider rounded-r-xl">Amount</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[var(--line)]">
-                      {(selectedOrder.items || []).map((i: any) => {
+                    <tbody>
+                      {(selectedOrder.items || []).map((i: any, idx: number) => {
                         const gstRate = Number(i.item?.gstRate ?? 5);
                         const lineTotal = i.unitPricePaise * i.qty;
                         return (
-                          <tr key={i.id} className="hover:bg-[var(--paper-3)] transition-colors">
-                            <td className="px-3 py-3 font-semibold text-[var(--ink)]">
+                          <tr
+                            key={i.id}
+                            className="transition-colors"
+                            style={{ borderBottom: '1px solid var(--line)' }}
+                          >
+                            <td className="px-3 py-3 font-semibold" style={{ color: 'var(--ink)' }}>
                               {i.nameSnapshot}
-                              {i.notes && <p className="text-[11px] text-[var(--ink-3)] italic">{i.notes}</p>}
+                              {i.notes && (
+                                <p className="text-[11px] italic mt-0.5" style={{ color: 'var(--ink-3)' }}>{i.notes}</p>
+                              )}
                             </td>
                             <td className="px-3 py-3 text-center font-bold tnum">{i.qty}</td>
                             <td className="px-3 py-3 text-right font-medium tnum">{formatINR(i.unitPricePaise)}</td>
-                            <td className="px-3 py-3 text-right text-xs text-[var(--ink-3)] tnum">{gstRate}% GST</td>
+                            <td className="px-3 py-3 text-right text-xs tnum" style={{ color: 'var(--ink-3)' }}>{gstRate}%</td>
                             <td className="px-3 py-3 text-right font-bold tnum">{formatINR(lineTotal)}</td>
                           </tr>
                         );
@@ -826,256 +1002,338 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                   </table>
                 </div>
 
-                {/* Add Discount Control */}
-                <div className="pt-3 border-t border-[var(--line)]">
+                {/* Discount Row */}
+                <div className="pt-4 mt-2 border-t" style={{ borderColor: 'var(--line)' }}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--ink-2)' }}>
-                      <DollarSign size={14} /> Add Authorized Discount
+                      <DollarSign size={13} /> Discount
                     </span>
                     {!canApplyDiscount && (
-                      <span className="text-[11px] font-bold text-[var(--warn-ink)] flex items-center gap-1">
-                        <Lock size={12} /> Requires Discount Permission
+                      <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: 'var(--gold-d)' }}>
+                        <Lock size={11} /> Requires Permission
                       </span>
                     )}
                   </div>
                   <div className="flex gap-2 items-center">
-                    <div className="flex rounded-xl border border-[var(--line)] bg-[var(--paper-3)] p-1">
-                      <button
-                        disabled={!canApplyDiscount}
-                        onClick={() => setDiscountType('pct')}
-                        className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
-                          discountType === 'pct' ? 'bg-[var(--gold)] text-[#2A1607]' : 'text-[var(--ink-3)]'
-                        }`}
-                      >
-                        % Off
-                      </button>
-                      <button
-                        disabled={!canApplyDiscount}
-                        onClick={() => setDiscountType('flat')}
-                        className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
-                          discountType === 'flat' ? 'bg-[var(--gold)] text-[#2A1607]' : 'text-[var(--ink-3)]'
-                        }`}
-                      >
-                        Flat ₹
-                      </button>
+                    <div
+                      className="flex rounded-xl p-0.5"
+                      style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+                    >
+                      {(['pct', 'flat'] as const).map((t) => (
+                        <button
+                          key={t}
+                          disabled={!canApplyDiscount}
+                          onClick={() => setDiscountType(t)}
+                          className="px-3 py-1.5 text-xs font-bold rounded-lg transition disabled:opacity-50"
+                          style={
+                            discountType === t
+                              ? { background: 'var(--gold)', color: '#2A1607' }
+                              : { color: 'var(--ink-3)' }
+                          }
+                        >
+                          {t === 'pct' ? '% Off' : 'Flat ₹'}
+                        </button>
+                      ))}
                     </div>
                     <input
                       type="number"
                       disabled={!canApplyDiscount}
                       value={discountVal}
                       onChange={(e) => setDiscountVal(e.target.value)}
-                      placeholder={discountType === 'pct' ? '10' : '50'}
-                      className="w-32 px-3.5 py-2 rounded-xl border text-sm outline-none font-bold tnum disabled:opacity-50"
-                      style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                      placeholder={discountType === 'pct' ? '0' : '0.00'}
+                      className="w-28 px-3.5 py-2 rounded-xl border text-sm outline-none font-bold tnum disabled:opacity-50 transition"
+                      style={{
+                        background: 'var(--paper-3)',
+                        borderColor: 'var(--line)',
+                        color: 'var(--ink)',
+                      }}
                     />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* RIGHT PANEL: Bill Summary & Payment Workspace */}
-            <div className="w-full lg:w-[460px] flex flex-col gap-4 shrink-0">
-              <div className="lux-card p-5 space-y-4">
-                {/* Bill Summary Breakdown */}
-                <h3 className="font-display font-bold text-lg border-b border-[var(--line)] pb-2">BILL SUMMARY</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between text-[var(--ink-2)]">
-                    <span>Subtotal</span>
-                    <span className="font-mono">{formatINR(calculatedBill.subtotalPaise)}</span>
-                  </div>
-                  {calculatedBill.discountPaise > 0 && (
-                    <div className="flex justify-between font-bold text-[var(--ok-ink)]">
-                      <span>Discount</span>
-                      <span className="font-mono">- {formatINR(calculatedBill.discountPaise)}</span>
+            {/* RIGHT PANEL: Bill Summary + Payment */}
+            <div className="w-full lg:w-[440px] flex flex-col gap-3 shrink-0">
+              <div
+                className="rounded-2xl border p-5 flex flex-col gap-4"
+                style={{
+                  background: 'var(--paper-2)',
+                  borderColor: 'var(--line)',
+                  boxShadow: '0 2px 16px color-mix(in srgb, var(--espresso) 5%, transparent)',
+                }}
+              >
+                {/* Bill Summary */}
+                <div>
+                  <h3
+                    className="text-[11px] font-extrabold uppercase tracking-widest pb-3 mb-3 border-b"
+                    style={{ color: 'var(--ink-3)', borderColor: 'var(--line)' }}
+                  >
+                    Bill Summary
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between" style={{ color: 'var(--ink-2)' }}>
+                      <span>Subtotal</span>
+                      <span className="font-mono font-semibold">{formatINR(calculatedBill.subtotalPaise)}</span>
                     </div>
-                  )}
-                  <div className="flex justify-between text-[var(--ink-2)]">
-                    <span>Taxable Amount</span>
-                    <span className="font-mono">{formatINR(calculatedBill.subtotalPaise - calculatedBill.discountPaise)}</span>
+                    {calculatedBill.discountPaise > 0 && (
+                      <div className="flex justify-between font-bold" style={{ color: 'var(--cardamom-d, #34d399)' }}>
+                        <span>Discount Applied</span>
+                        <span className="font-mono">− {formatINR(calculatedBill.discountPaise)}</span>
+                      </div>
+                    )}
+                    {outlet.gstEnabled && (
+                      <>
+                        <div className="flex justify-between text-xs" style={{ color: 'var(--ink-3)' }}>
+                          <span>CGST</span>
+                          <span className="font-mono">{formatINR(calculatedBill.cgstPaise)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs" style={{ color: 'var(--ink-3)' }}>
+                          <span>SGST</span>
+                          <span className="font-mono">{formatINR(calculatedBill.sgstPaise)}</span>
+                        </div>
+                      </>
+                    )}
+                    {calculatedBill.roundOffPaise !== 0 && (
+                      <div className="flex justify-between text-xs" style={{ color: 'var(--ink-3)' }}>
+                        <span>Round Off</span>
+                        <span className="font-mono">{formatINR(calculatedBill.roundOffPaise)}</span>
+                      </div>
+                    )}
                   </div>
-                  {outlet.gstEnabled && (
-                    <>
-                      <div className="flex justify-between text-xs text-[var(--ink-3)]">
-                        <span>CGST</span>
-                        <span className="font-mono">{formatINR(calculatedBill.cgstPaise)}</span>
-                      </div>
-                      <div className="flex justify-between text-xs text-[var(--ink-3)]">
-                        <span>SGST</span>
-                        <span className="font-mono">{formatINR(calculatedBill.sgstPaise)}</span>
-                      </div>
-                    </>
-                  )}
-                  {calculatedBill.roundOffPaise !== 0 && (
-                    <div className="flex justify-between text-xs text-[var(--ink-3)]">
-                      <span>Round Off</span>
-                      <span className="font-mono">{formatINR(calculatedBill.roundOffPaise)}</span>
-                    </div>
-                  )}
                 </div>
 
-                {/* Grand Total Callout */}
-                <div className="p-4 rounded-2xl text-center bg-[var(--paper-3)] border border-[var(--gold)]">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[var(--gold-d)]">Grand Total Payable</span>
-                  <div className="font-display text-4xl font-extrabold mt-1 tracking-tight text-[var(--gold-d)] tnum">
+                {/* Grand Total */}
+                <div
+                  className="p-4 rounded-2xl text-center"
+                  style={{
+                    background: 'linear-gradient(135deg, color-mix(in srgb, var(--gold) 12%, var(--paper-3)) 0%, color-mix(in srgb, var(--espresso) 8%, var(--paper-3)) 100%)',
+                    border: '1.5px solid color-mix(in srgb, var(--gold) 35%, var(--line))',
+                  }}
+                >
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest block mb-1" style={{ color: 'var(--gold-d)' }}>
+                    Grand Total Payable
+                  </span>
+                  <div className="font-display text-4xl font-extrabold tracking-tight tnum" style={{ color: 'var(--gold-d)' }}>
                     {formatINR(calculatedBill.totalPaise)}
                   </div>
                 </div>
 
-                {/* Customer Details Input */}
-                <div className="space-y-2 pt-2 border-t border-[var(--line)]">
-                  <span className="text-xs font-bold text-[var(--ink-2)] flex items-center gap-1.5">
-                    <User size={14} /> Customer Information
+                {/* Customer Info */}
+                <div className="border-t pt-3" style={{ borderColor: 'var(--line)' }}>
+                  <span className="text-xs font-bold flex items-center gap-1.5 mb-2" style={{ color: 'var(--ink-3)' }}>
+                    <User size={12} /> Customer
                   </span>
                   <div className="grid grid-cols-2 gap-2">
                     <input
                       value={custName}
                       onChange={(e) => setCustName(e.target.value)}
-                      placeholder="Walk-in Customer"
-                      className="w-full px-3 py-2 rounded-xl border text-xs outline-none"
-                      style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+                      placeholder="Customer name"
+                      className="w-full px-3 py-2 rounded-xl border text-xs outline-none transition"
+                      style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
                     />
                     <input
                       value={custPhone}
                       onChange={(e) => setCustPhone(e.target.value)}
-                      placeholder="Phone number"
-                      className="w-full px-3 py-2 rounded-xl border text-xs outline-none"
-                      style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+                      placeholder="Phone"
+                      className="w-full px-3 py-2 rounded-xl border text-xs outline-none transition"
+                      style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
                     />
                   </div>
                 </div>
 
                 {/* Payment Methods */}
-                <div className="space-y-3 pt-2 border-t border-[var(--line)]">
-                  <span className="text-xs font-bold text-[var(--ink-2)]">SELECT PAYMENT METHOD</span>
-                  <div className="grid grid-cols-4 gap-1.5 p-1 rounded-xl bg-[var(--paper-3)] border border-[var(--line)]">
-                    {(['cash', 'upi', 'card', 'split'] as const).map((m) => (
+                <div className="border-t pt-3" style={{ borderColor: 'var(--line)' }}>
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest mb-2 block" style={{ color: 'var(--ink-3)' }}>
+                    Payment Method
+                  </span>
+
+                  {/* Method Tabs */}
+                  <div
+                    className="grid grid-cols-4 gap-1 p-1 rounded-xl mb-3"
+                    style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+                  >
+                    {payMethods.map(({ key, label, icon: Icon }) => (
                       <button
-                        key={m}
-                        onClick={() => setPayTab(m)}
-                        className={`py-2 rounded-lg text-xs font-bold uppercase transition ${
-                          payTab === m ? 'bg-[var(--gold)] text-[#2A1607]' : 'text-[var(--ink-2)]'
-                        }`}
+                        key={key}
+                        onClick={() => setPayTab(key)}
+                        className="py-2 rounded-lg text-[11px] font-bold flex flex-col items-center gap-0.5 transition active:scale-95"
+                        style={
+                          payTab === key
+                            ? { background: 'var(--gold)', color: '#2A1607', boxShadow: '0 2px 6px color-mix(in srgb, var(--gold) 30%, transparent)' }
+                            : { color: 'var(--ink-3)' }
+                        }
                       >
-                        {m}
+                        <Icon size={14} />
+                        {label}
                       </button>
                     ))}
                   </div>
 
-                  {/* CASH PAYMENT WORKSPACE */}
+                  {/* CASH */}
                   {payTab === 'cash' && (
-                    <div className="space-y-3 p-3.5 rounded-xl border bg-[var(--paper-2)]" style={{ borderColor: 'var(--line)' }}>
+                    <div className="space-y-3 p-3.5 rounded-xl border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
                       <div>
-                        <label className="text-xs font-bold text-[var(--ink-3)] block mb-1">Amount Received (₹)</label>
+                        <label className="text-[10px] font-extrabold uppercase tracking-wider block mb-1.5" style={{ color: 'var(--ink-3)' }}>
+                          Amount Received (₹)
+                        </label>
                         <input
                           id="cash-received-input"
                           type="number"
                           value={cashReceived}
                           onChange={(e) => setCashReceived(e.target.value)}
-                          placeholder={(calculatedBill.totalPaise / 100).toString()}
-                          className="w-full px-3.5 py-2.5 rounded-xl border text-lg font-bold outline-none tnum"
-                          style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                          placeholder={(calculatedBill.totalPaise / 100).toFixed(0)}
+                          className="w-full px-3.5 py-3 rounded-xl border text-xl font-extrabold outline-none tnum transition"
+                          style={{ background: 'var(--paper-2)', borderColor: 'color-mix(in srgb, var(--gold) 40%, var(--line))', color: 'var(--ink)' }}
                         />
                       </div>
-
-                      {/* Quick Denomination Chips */}
-                      <div className="flex gap-2">
+                      {/* Quick amounts */}
+                      <div className="grid grid-cols-4 gap-1.5">
                         {[
                           Math.ceil(calculatedBill.totalPaise / 100),
-                          Math.ceil(calculatedBill.totalPaise / 100 / 100) * 100 + 100,
+                          Math.ceil(calculatedBill.totalPaise / 10000) * 100 + 100,
                           500,
                           2000,
                         ].map((amt, idx) => (
                           <button
                             key={idx}
                             onClick={() => setCashReceived(amt.toString())}
-                            className="flex-1 py-1.5 rounded-lg text-xs font-bold border border-[var(--line)] bg-[var(--paper-3)] hover:border-[var(--gold)]"
+                            className="py-2 rounded-lg text-xs font-bold border transition hover:border-[var(--gold)] active:scale-95"
+                            style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}
                           >
                             ₹{amt}
                           </button>
                         ))}
                       </div>
-
-                      {/* Change Output */}
-                      <div className="flex justify-between items-center p-3 rounded-xl bg-[var(--paper-3)] border border-[var(--line)]">
-                        <span className="text-xs font-bold text-[var(--ink-3)]">Return Change:</span>
-                        <span className="font-display font-extrabold text-xl text-[var(--ok-ink)] tnum">
+                      {/* Change */}
+                      <div
+                        className="flex justify-between items-center px-3.5 py-2.5 rounded-xl border"
+                        style={{
+                          background: cashChangePaise > 0 ? 'color-mix(in srgb, var(--cardamom) 8%, var(--paper-2))' : 'var(--paper-2)',
+                          borderColor: cashChangePaise > 0 ? 'color-mix(in srgb, var(--cardamom) 25%, var(--line))' : 'var(--line)',
+                        }}
+                      >
+                        <span className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>Return Change</span>
+                        <span className="font-display font-extrabold text-xl tnum" style={{ color: 'var(--cardamom-d, #34d399)' }}>
                           {formatINR(cashChangePaise)}
                         </span>
                       </div>
                     </div>
                   )}
 
-                  {/* UPI PAYMENT WORKSPACE */}
+                  {/* UPI */}
                   {payTab === 'upi' && (
-                    <div className="space-y-3 p-3.5 rounded-xl border bg-[var(--paper-2)] text-center" style={{ borderColor: 'var(--line)' }}>
-                      <Smartphone size={32} className="mx-auto text-[var(--gold)]" />
-                      <p className="text-sm font-bold">UPI QR / Mobile Payment</p>
-                      <p className="text-xs text-[var(--ink-3)]">Pay {formatINR(calculatedBill.totalPaise)} to outlet QR</p>
+                    <div className="p-4 rounded-xl border text-center space-y-3" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                      <div
+                        className="w-12 h-12 rounded-2xl mx-auto grid place-items-center"
+                        style={{ background: 'color-mix(in srgb, var(--gold) 15%, var(--paper-2))' }}
+                      >
+                        <Smartphone size={24} style={{ color: 'var(--gold-d)' }} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold" style={{ color: 'var(--ink)' }}>UPI / QR Payment</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>
+                          Collect {formatINR(calculatedBill.totalPaise)} via UPI
+                        </p>
+                      </div>
                       <input
                         value={upiRef}
                         onChange={(e) => setUpiRef(e.target.value)}
-                        placeholder="UPI Ref / Txn ID (optional)"
-                        className="w-full px-3.5 py-2 rounded-xl border text-xs outline-none"
-                        style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                        placeholder="UTR / Txn ID (optional)"
+                        className="w-full px-3.5 py-2 rounded-xl border text-xs outline-none transition"
+                        style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink)' }}
                       />
                     </div>
                   )}
 
-                  {/* CARD PAYMENT WORKSPACE */}
+                  {/* CARD */}
                   {payTab === 'card' && (
-                    <div className="space-y-3 p-3.5 rounded-xl border bg-[var(--paper-2)] text-center" style={{ borderColor: 'var(--line)' }}>
-                      <CreditCard size={32} className="mx-auto text-[var(--gold)]" />
-                      <p className="text-sm font-bold">Card POS Machine</p>
+                    <div className="p-4 rounded-xl border text-center space-y-3" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                      <div
+                        className="w-12 h-12 rounded-2xl mx-auto grid place-items-center"
+                        style={{ background: 'color-mix(in srgb, var(--gold) 15%, var(--paper-2))' }}
+                      >
+                        <CreditCard size={24} style={{ color: 'var(--gold-d)' }} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold" style={{ color: 'var(--ink)' }}>Card POS Machine</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>
+                          Swipe / Tap for {formatINR(calculatedBill.totalPaise)}
+                        </p>
+                      </div>
                       <input
                         value={cardRef}
                         onChange={(e) => setCardRef(e.target.value)}
-                        placeholder="Card Auth / Txn Ref Number"
-                        className="w-full px-3.5 py-2 rounded-xl border text-xs outline-none"
-                        style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                        placeholder="Auth / Approval Code (optional)"
+                        className="w-full px-3.5 py-2 rounded-xl border text-xs outline-none transition"
+                        style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink)' }}
                       />
                     </div>
                   )}
 
-                  {/* SPLIT PAYMENT WORKSPACE */}
+                  {/* SPLIT */}
                   {payTab === 'split' && (
-                    <div className="space-y-2 p-3.5 rounded-xl border bg-[var(--paper-2)]" style={{ borderColor: 'var(--line)' }}>
+                    <div className="p-3.5 rounded-xl border space-y-3" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
                       <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <label className="text-[10px] font-bold text-[var(--ink-3)]">Cash (₹)</label>
-                          <input type="number" value={splitCash} onChange={(e) => setSplitCash(e.target.value)} className="w-full p-2 rounded-lg border text-xs font-bold tnum" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-[var(--ink-3)]">UPI (₹)</label>
-                          <input type="number" value={splitUpi} onChange={(e) => setSplitUpi(e.target.value)} className="w-full p-2 rounded-lg border text-xs font-bold tnum" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-[var(--ink-3)]">Card (₹)</label>
-                          <input type="number" value={splitCard} onChange={(e) => setSplitCard(e.target.value)} className="w-full p-2 rounded-lg border text-xs font-bold tnum" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} />
-                        </div>
+                        {[
+                          { label: 'Cash (₹)', val: splitCash, set: setSplitCash },
+                          { label: 'UPI (₹)', val: splitUpi, set: setSplitUpi },
+                          { label: 'Card (₹)', val: splitCard, set: setSplitCard },
+                        ].map(({ label, val, set }) => (
+                          <div key={label}>
+                            <label className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: 'var(--ink-3)' }}>
+                              {label}
+                            </label>
+                            <input
+                              type="number"
+                              value={val}
+                              onChange={(e) => set(e.target.value)}
+                              className="w-full px-2.5 py-2 rounded-lg border text-sm font-bold tnum outline-none transition"
+                              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                            />
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex justify-between text-xs font-bold pt-2 border-t border-[var(--line)]">
-                        <span>Remaining:</span>
-                        <span style={{ color: splitRemainingPaise > 0 ? 'var(--warn-ink)' : 'var(--ok-ink)' }}>{formatINR(splitRemainingPaise)}</span>
+                      <div
+                        className="flex justify-between items-center text-xs font-bold pt-2.5 border-t"
+                        style={{ borderColor: 'var(--line)' }}
+                      >
+                        <span style={{ color: 'var(--ink-2)' }}>Remaining:</span>
+                        <span style={{ color: splitRemainingPaise > 0 ? 'var(--clay)' : 'var(--cardamom-d, #34d399)' }}>
+                          {formatINR(splitRemainingPaise)}
+                        </span>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Final Action Buttons */}
-                <div className="grid grid-cols-2 gap-2 pt-2">
+                {/* Action Buttons */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
                     onClick={() => setReceiptModalOpen(true)}
-                    className="btn btn-ghost text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-1.5"
+                    className="py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition hover:opacity-80 active:scale-95"
+                    style={{
+                      background: 'var(--paper-3)',
+                      border: '1px solid var(--line)',
+                      color: 'var(--ink-2)',
+                    }}
                   >
-                    <Receipt size={16} /> Preview Receipt
+                    <Receipt size={15} /> Preview (F6)
                   </button>
-
                   <button
                     disabled={settleBusy}
                     onClick={handleSettleOrder}
-                    className="btn btn-lux text-xs font-extrabold py-3 rounded-xl flex items-center justify-center gap-1.5"
+                    className="py-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-60"
+                    style={{
+                      background: settleBusy
+                        ? 'var(--paper-3)'
+                        : 'linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 60%, var(--espresso)) 100%)',
+                      color: settleBusy ? 'var(--ink-3)' : '#2A1607',
+                      boxShadow: settleBusy ? 'none' : '0 3px 12px color-mix(in srgb, var(--gold) 35%, transparent)',
+                    }}
                   >
-                    <Printer size={16} /> {settleBusy ? 'Completing…' : 'Complete & Print (F8)'}
+                    <Printer size={15} />
+                    {settleBusy ? 'Processing…' : 'Complete & Print (F8)'}
                   </button>
                 </div>
               </div>
@@ -1083,85 +1341,166 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
           </div>
         )}
 
-        {/* ---------------- 3. PAYMENT COMPLETED SCREEN VIEW ---------------- */}
+        {/* ── 3. PAYMENT COMPLETED SCREEN ── */}
         {view === 'completed' && settledResult && (
-          <div className="lux-card p-8 max-w-xl mx-auto w-full my-auto text-center space-y-6">
-            <div className="w-16 h-16 rounded-full bg-[var(--ok-bg)] text-[var(--ok-ink)] grid place-items-center mx-auto text-3xl">
-              ✓
-            </div>
-            <div>
-              <h2 className="font-display text-3xl font-extrabold">Payment Completed 🎉</h2>
-              <p className="text-sm font-bold text-[var(--gold-d)] mt-1">Invoice: {settledResult.invoiceNo}</p>
-            </div>
+          <div className="flex-1 flex items-center justify-center py-8">
+            <div
+              className="max-w-md w-full rounded-3xl border p-8 text-center space-y-6"
+              style={{
+                background: 'var(--paper-2)',
+                borderColor: 'color-mix(in srgb, var(--cardamom) 30%, var(--line))',
+                boxShadow: '0 8px 48px color-mix(in srgb, var(--cardamom) 12%, transparent)',
+              }}
+            >
+              {/* Success Icon */}
+              <div
+                className="w-20 h-20 rounded-full mx-auto grid place-items-center text-4xl"
+                style={{
+                  background: 'linear-gradient(135deg, color-mix(in srgb, var(--cardamom) 20%, var(--paper-3)) 0%, color-mix(in srgb, var(--cardamom) 10%, var(--paper-3)) 100%)',
+                  border: '2px solid color-mix(in srgb, var(--cardamom) 35%, transparent)',
+                }}
+              >
+                <CheckCircle2 size={40} style={{ color: 'var(--cardamom-d, #34d399)' }} />
+              </div>
 
-            <div className="p-4 rounded-2xl bg-[var(--paper-3)] border border-[var(--line)] space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-[var(--ink-3)]">Order Number:</span>
-                <span className="font-bold">#{settledResult.order.number}</span>
+              <div>
+                <h2 className="font-display text-3xl font-extrabold" style={{ color: 'var(--ink)' }}>
+                  Payment Done! 🎉
+                </h2>
+                <p className="text-sm font-bold mt-1" style={{ color: 'var(--gold-d)' }}>
+                  {settledResult.invoiceNo}
+                </p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--ink-3)]">Total Amount Paid:</span>
-                <span className="font-bold font-mono">{formatINR(settledResult.bill.totalPaise)}</span>
-              </div>
-              {settledResult.changePaise > 0 && (
-                <div className="flex justify-between font-bold text-[var(--ok-ink)]">
-                  <span>Return Change:</span>
-                  <span className="font-mono">{formatINR(settledResult.changePaise)}</span>
+
+              {/* Summary */}
+              <div
+                className="p-4 rounded-2xl border space-y-2.5 text-sm text-left"
+                style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+              >
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--ink-3)' }}>Order</span>
+                  <span className="font-bold">#{settledResult.order.number}</span>
                 </div>
-              )}
-            </div>
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--ink-3)' }}>Total Paid</span>
+                  <span className="font-bold font-mono">{formatINR(settledResult.bill.totalPaise)}</span>
+                </div>
+                {settledResult.changePaise > 0 && (
+                  <div className="flex justify-between font-bold" style={{ color: 'var(--cardamom-d, #34d399)' }}>
+                    <span>Return Change</span>
+                    <span className="font-mono">{formatINR(settledResult.changePaise)}</span>
+                  </div>
+                )}
+              </div>
 
-            <div className="grid grid-cols-3 gap-3 pt-2">
-              <button onClick={() => handlePrintReceipt(settledResult.receipt)} className="btn btn-ghost py-3 text-xs font-bold flex items-center justify-center gap-1">
-                <Printer size={15} /> Reprint Receipt
-              </button>
-              <button onClick={() => setView('queue')} className="btn btn-lux py-3 text-xs font-bold flex items-center justify-center gap-1 col-span-2">
-                + New Bill (Queue)
-              </button>
+              {/* Actions */}
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => handlePrintReceipt(settledResult.receipt)}
+                  className="py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition hover:opacity-80 active:scale-95"
+                  style={{
+                    background: 'var(--paper-3)',
+                    border: '1px solid var(--line)',
+                    color: 'var(--ink-2)',
+                  }}
+                >
+                  <Printer size={14} /> Reprint
+                </button>
+                <button
+                  onClick={() => setView('queue')}
+                  className="py-3 rounded-xl text-xs font-extrabold col-span-2 flex items-center justify-center gap-1.5 transition active:scale-95"
+                  style={{
+                    background: 'linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 60%, var(--espresso)) 100%)',
+                    color: '#2A1607',
+                    boxShadow: '0 3px 12px color-mix(in srgb, var(--gold) 30%, transparent)',
+                  }}
+                >
+                  <Zap size={14} /> New Bill
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* ---------------- 4. BILLING HISTORY VIEW ---------------- */}
+        {/* ── 4. BILLING HISTORY VIEW ── */}
         {view === 'history' && (
-          <div className="lux-card p-6 flex-1 flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4">
-              <h2 className="font-display font-bold text-xl flex items-center gap-2">
-                <History size={20} className="text-[var(--gold)]" /> Billing History & Invoices
+          <div
+            className="rounded-2xl border flex-1 flex flex-col overflow-hidden"
+            style={{
+              background: 'var(--paper-2)',
+              borderColor: 'var(--line)',
+              boxShadow: '0 2px 16px color-mix(in srgb, var(--espresso) 5%, transparent)',
+            }}
+          >
+            {/* History Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b" style={{ borderColor: 'var(--line)' }}>
+              <h2 className="font-display font-bold text-xl flex items-center gap-2" style={{ color: 'var(--ink)' }}>
+                <History size={20} style={{ color: 'var(--gold-d)' }} />
+                Billing History
               </h2>
               <div className="flex items-center gap-2">
-                <input
-                  value={historySearch}
-                  onChange={(e) => setHistorySearch(e.target.value)}
-                  placeholder="Search invoice, customer..."
-                  className="px-3.5 py-2 rounded-xl border text-xs outline-none"
-                  style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
-                />
-                <button onClick={loadHistory} className="btn btn-sm btn-ghost"><RefreshCw size={15} /></button>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={13} style={{ color: 'var(--ink-3)' }} />
+                  <input
+                    value={historySearch}
+                    onChange={(e) => setHistorySearch(e.target.value)}
+                    placeholder="Search invoice, customer..."
+                    className="pl-8 pr-3 py-2 rounded-xl border text-xs outline-none transition"
+                    style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                  />
+                </div>
+                <button
+                  onClick={loadHistory}
+                  disabled={historyLoading}
+                  className="w-8 h-8 rounded-xl grid place-items-center transition hover:opacity-80 active:scale-95"
+                  style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+                >
+                  <RefreshCw size={13} className={historyLoading ? 'animate-spin' : ''} style={{ color: 'var(--ink-3)' }} />
+                </button>
               </div>
             </div>
 
+            {/* History Table */}
             <div className="overflow-x-auto flex-1">
               <table className="w-full text-sm">
-                <thead className="bg-[var(--paper-3)] text-[var(--ink-3)] text-xs uppercase tracking-wider">
+                <thead
+                  className="sticky top-0"
+                  style={{ background: 'var(--paper-3)', borderBottom: '1px solid var(--line)' }}
+                >
                   <tr>
-                    <th className="px-4 py-3 text-left font-bold">Invoice #</th>
-                    <th className="px-4 py-3 text-left font-bold">Order #</th>
-                    <th className="px-4 py-3 text-left font-bold">Table / Type</th>
-                    <th className="px-4 py-3 text-left font-bold">Customer</th>
-                    <th className="px-4 py-3 text-left font-bold">Method</th>
-                    <th className="px-4 py-3 text-right font-bold">Amount</th>
-                    <th className="px-4 py-3 text-right font-bold">Actions</th>
+                    {['Invoice #', 'Order #', 'Table / Type', 'Customer', 'Method', 'Amount', ''].map((h, i) => (
+                      <th
+                        key={i}
+                        className={`px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider ${i === 5 || i === 6 ? 'text-right' : 'text-left'}`}
+                        style={{ color: 'var(--ink-3)' }}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--line)]">
+                <tbody>
                   {historyList.map((h) => (
-                    <tr key={h.id} className="hover:bg-[var(--paper-3)] transition-colors">
-                      <td className="px-4 py-3.5 font-mono font-bold text-[var(--gold-d)]">{h.invoiceNo}</td>
+                    <tr
+                      key={h.id}
+                      className="transition-colors"
+                      style={{ borderBottom: '1px solid var(--line)' }}
+                    >
+                      <td className="px-4 py-3.5 font-mono font-bold text-xs" style={{ color: 'var(--gold-d)' }}>{h.invoiceNo}</td>
                       <td className="px-4 py-3.5 font-bold">#{h.number}</td>
-                      <td className="px-4 py-3.5 text-xs text-[var(--ink-2)]">{h.tableName}</td>
+                      <td className="px-4 py-3.5 text-xs" style={{ color: 'var(--ink-2)' }}>{h.tableName}</td>
                       <td className="px-4 py-3.5 font-medium">{h.customerName}</td>
-                      <td className="px-4 py-3.5 text-xs font-bold">{h.paymentMethods}</td>
+                      <td className="px-4 py-3.5">
+                        <span
+                          className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold uppercase"
+                          style={{
+                            background: 'color-mix(in srgb, var(--gold) 12%, var(--paper-3))',
+                            color: 'var(--gold-d)',
+                          }}
+                        >
+                          {h.paymentMethods}
+                        </span>
+                      </td>
                       <td className="px-4 py-3.5 text-right font-bold font-mono">{formatINR(h.totalPaise)}</td>
                       <td className="px-4 py-3.5 text-right">
                         <button
@@ -1200,16 +1539,26 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                             setPreviewOrderOverride(histData as any);
                             setReceiptModalOpen(true);
                           }}
-                          className="btn btn-sm btn-ghost text-xs font-bold inline-flex items-center gap-1"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition hover:opacity-80 active:scale-95"
+                          style={{
+                            background: 'var(--paper-3)',
+                            border: '1px solid var(--line)',
+                            color: 'var(--ink-2)',
+                          }}
                         >
-                          <Printer size={14} /> Preview / Reprint
+                          <Printer size={12} /> Reprint
                         </button>
                       </td>
                     </tr>
                   ))}
                   {historyList.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-[var(--ink-3)]">No billing history found.</td>
+                      <td colSpan={7} className="px-4 py-16 text-center" style={{ color: 'var(--ink-3)' }}>
+                        <div className="flex flex-col items-center gap-2">
+                          <History size={32} style={{ opacity: 0.3 }} />
+                          <span className="text-sm font-medium">No billing history found</span>
+                        </div>
+                      </td>
                     </tr>
                   )}
                 </tbody>
@@ -1219,7 +1568,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         )}
       </main>
 
-      {/* ── PRODUCTION THERMAL RECEIPT PREVIEW MODAL (58mm / 80mm with dynamic UPI QR) ── */}
+      {/* ── RECEIPT PREVIEW MODAL ── */}
       {previewData && (
         <ReceiptPreviewModal
           isOpen={receiptModalOpen}
@@ -1233,54 +1582,89 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
             await handlePrintReceipt(undefined, width);
           }}
           onReprint={async (width) => {
-            const orderId = previewOrderOverride ? (previewOrderOverride as any).orderId : (selectedOrder?.id || settledResult?.order?.id);
+            const orderId = previewOrderOverride
+              ? (previewOrderOverride as any).orderId
+              : (selectedOrder?.id || settledResult?.order?.id);
             if (orderId) {
               const res = await fetch('/api/print/reprint', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ orderId, type: 'RECEIPT' }),
               });
-              if (!res.ok) {
-                throw new Error('Thermal printer is offline or failed to reprint.');
-              }
+              if (!res.ok) throw new Error('Thermal printer is offline or failed to reprint.');
               flash('Reprint dispatched to billing receipt printer 🖨️');
             }
           }}
         />
       )}
 
-      {/* ── KEYBOARD SHORTCUTS HELP MODAL ── */}
+      {/* ── KEYBOARD SHORTCUTS MODAL ── */}
       {shortcutsOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShortcutsOpen(false)}>
-          <div className="lux-card p-6 max-w-md w-full space-y-4" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display font-bold text-xl flex items-center gap-2">
-              <HelpCircle size={20} className="text-[var(--gold)]" /> Cashier Keyboard Shortcuts
+        <div
+          className="fixed inset-0 z-50 grid place-items-center p-4 backdrop-blur-sm"
+          style={{ background: 'rgba(0,0,0,0.65)' }}
+          onClick={() => setShortcutsOpen(false)}
+        >
+          <div
+            className="rounded-3xl border p-6 max-w-md w-full space-y-4"
+            style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display font-bold text-xl flex items-center gap-2" style={{ color: 'var(--ink)' }}>
+              <HelpCircle size={20} style={{ color: 'var(--gold-d)' }} />
+              Cashier Shortcuts
             </h3>
-            <div className="space-y-2 text-xs">
+            <div className="space-y-1.5 text-xs">
               {[
                 ['F2', 'Focus Order Search Bar'],
                 ['↑ / ↓ / ← / →', 'Navigate Ready Bills'],
-                ['Enter', 'Open Selected Bill for Cashier Billing'],
-                ['Tab', 'Normal Desktop Navigation Between Controls'],
-                ['F4', 'Focus Received Cash Input (in Workspace)'],
-                ['F6', 'Print Receipt'],
-                ['F8', 'Complete Payment & Settle Bill'],
-                ['Esc', 'Back to Queue / Exit T-Billing'],
+                ['Enter', 'Open Selected Bill for Billing'],
+                ['Tab', 'Navigate Between Controls'],
+                ['F4', 'Focus Cash Amount Input'],
+                ['F6', 'Preview Receipt'],
+                ['F8', 'Complete Payment & Settle'],
+                ['Esc', 'Back to Queue / Exit'],
               ].map(([key, desc]) => (
-                <div key={key} className="flex justify-between items-center p-2 rounded-xl bg-[var(--paper-3)] border border-[var(--line)]">
-                  <kbd className="px-2 py-1 rounded bg-[var(--paper-2)] border border-[var(--line)] font-mono font-bold text-xs">{key}</kbd>
-                  <span className="font-semibold text-[var(--ink-2)]">{desc}</span>
+                <div
+                  key={key}
+                  className="flex items-center justify-between p-2.5 rounded-xl border"
+                  style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                >
+                  <kbd
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold font-mono shrink-0"
+                    style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--gold-d)' }}
+                  >
+                    {key}
+                  </kbd>
+                  <span className="font-semibold ml-3" style={{ color: 'var(--ink-2)' }}>{desc}</span>
                 </div>
               ))}
             </div>
-            <button onClick={() => setShortcutsOpen(false)} className="btn btn-lux w-full py-2.5 rounded-xl text-xs">Got it</button>
+            <button
+              onClick={() => setShortcutsOpen(false)}
+              className="w-full py-2.5 rounded-xl text-xs font-extrabold transition active:scale-95"
+              style={{
+                background: 'linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 60%, var(--espresso)) 100%)',
+                color: '#2A1607',
+              }}
+            >
+              Got it ✓
+            </button>
           </div>
         </div>
       )}
 
-      {/* Toast Notification */}
+      {/* ── TOAST ── */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-[var(--espresso)] text-white text-xs font-bold shadow-2xl animate-in slide-in-from-bottom-2">
+        <div
+          className="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl text-xs font-bold shadow-2xl"
+          style={{
+            background: 'var(--espresso)',
+            color: '#ffffff',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+            animation: 'slideInBottom 0.25s ease-out',
+          }}
+        >
           {toast}
         </div>
       )}

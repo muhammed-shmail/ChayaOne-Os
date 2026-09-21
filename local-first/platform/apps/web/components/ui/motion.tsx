@@ -20,7 +20,7 @@ export function Reveal({ children, delay = 0, y = 30, className, style }: { chil
     <motion.div
       className={className}
       style={style}
-      initial={reduce ? false : { opacity: 0, y }}
+      initial={typeof window === 'undefined' ? false : (reduce ? false : { opacity: 0, y })}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: EASE, delay }}
     >

@@ -29,16 +29,32 @@ export const viewport: Viewport = {
   viewportFit: 'cover', // respect notch / safe areas on mobile PWA
 };
 
-/* Set the persisted theme before first paint to avoid a light→dark flash. */
-const noFlashTheme = `(function(){try{var t=localStorage.getItem('cafe-theme');if(!t){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.setAttribute('data-theme','dark');}}catch(e){}})();`;
+/* Set the persisted theme before first paint and auto-recover from ChunkLoadErrors on updates */
+const initScript = `(function(){
+  try {
+    var t = localStorage.getItem('cafe-theme');
+    if (!t) { t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+    if (t === 'dark') { document.documentElement.setAttribute('data-theme', 'dark'); }
+  } catch(e) {}
+  window.addEventListener('error', function(e) {
+    var m = (e && (e.message || (e.error && e.error.message))) || '';
+    if (m.indexOf('ChunkLoadError') !== -1 || m.indexOf('Loading chunk') !== -1) {
+      window.location.reload();
+    }
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    var m = (e && e.reason && (e.reason.message || e.reason.name)) || '';
+    if (m.indexOf('ChunkLoadError') !== -1 || m.indexOf('Loading chunk') !== -1) {
+      window.location.reload();
+    }
+  });
+})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`} suppressHydrationWarning>
       <body suppressHydrationWarning>
-        {/* Runs before body paints → sets data-theme on <html> with no flash.
-            Kept out of a manual <head> so Next.js still injects global CSS links. */}
-        <script dangerouslySetInnerHTML={{ __html: noFlashTheme }} />
+        <script dangerouslySetInnerHTML={{ __html: initScript }} />
         <PwaRegistration />
         {children}
       </body>

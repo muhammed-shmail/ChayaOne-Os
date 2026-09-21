@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Store, CheckCircle2, AlertCircle, ShieldAlert, Sparkles, RefreshCw,
   Package, ChefHat, Users, Smartphone, BarChart3, HelpCircle, Layers,
-  ChevronRight, ArrowRight, Info, Sliders, Check
+  ChevronRight, ArrowRight, Info, Sliders, Check, Globe, ExternalLink, Copy, QrCode, X
 } from 'lucide-react';
 import type {
   ModuleId,
@@ -24,6 +24,7 @@ interface ModuleManagementProps {
   moduleConfig: ModuleSystemConfig;
   onConfigUpdated: (newConfig: ModuleSystemConfig) => void;
   flashMessage?: (msg: string) => void;
+  tunnelUrl?: string | null;
 }
 
 const MODULE_ICONS: Record<ModuleId, React.ComponentType<any>> = {
@@ -48,6 +49,7 @@ export default function ModuleManagement({
   moduleConfig,
   onConfigUpdated,
   flashMessage,
+  tunnelUrl,
 }: ModuleManagementProps) {
   const [businessType, setBusinessType] = useState<BusinessTypeId>(moduleConfig.businessType || 'cafe');
   const [enabledModules, setEnabledModules] = useState<ModuleId[]>(
@@ -57,6 +59,24 @@ export default function ModuleManagement({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'business' | 'operations' | 'engagement' | 'intelligence'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Cloud Remote Access Extension state
+  const [tunnel, setTunnel] = useState<string | null>(tunnelUrl || null);
+  const [copiedTunnel, setCopiedTunnel] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+
+  useEffect(() => {
+    if (tunnelUrl) {
+      setTunnel(tunnelUrl);
+      return;
+    }
+    fetch('/api/tunnel')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.publicUrl) setTunnel(d.publicUrl);
+      })
+      .catch(() => {});
+  }, [tunnelUrl]);
 
   const allModules = useMemo(() => Object.values(MODULE_REGISTRY), []);
   const presets = useMemo(() => Object.values(BUSINESS_PRESETS), []);
@@ -241,6 +261,140 @@ export default function ModuleManagement({
             );
           })}
         </div>
+      </div>
+
+      {/* ── App Cores & Cloud Extensions: Remote Access ── */}
+      <div
+        className="p-5 sm:p-6 rounded-2xl border flex flex-col gap-4 relative overflow-hidden shadow-xs"
+        style={{
+          background: 'linear-gradient(135deg, var(--paper-2) 0%, color-mix(in srgb, var(--turmeric) 5%, var(--paper-2)) 100%)',
+          borderColor: 'var(--line)',
+        }}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span
+              className="w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 shadow-xs"
+              style={{
+                background: 'color-mix(in srgb, var(--turmeric) 15%, var(--paper-3))',
+                borderColor: 'color-mix(in srgb, var(--turmeric) 30%, transparent)',
+                color: 'var(--turmeric)',
+              }}
+            >
+              <Globe size={22} />
+            </span>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-base font-display text-ink">Cloud Remote Access Extension</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-paper-3 border border-line text-ink-3">
+                  Core Add-On
+                </span>
+                {tunnel ? (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Tunnel Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                    Standby
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-ink-3 mt-0.5">
+                High-speed encrypted Cloudflare tunnel extension providing remote owner dashboard access from anywhere outside the local network.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {tunnel ? (
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5 p-3.5 rounded-xl bg-paper-3/80 border border-line">
+            <div className="flex-1 flex items-center gap-2 min-w-0">
+              <span className="text-[11px] font-mono font-bold text-ink-3 uppercase shrink-0">
+                Remote Link:
+              </span>
+              <span className="text-xs font-mono font-bold text-turmeric truncate select-all">
+                {tunnel}/dashboard
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    navigator.clipboard?.writeText(`${tunnel}/dashboard`);
+                    setCopiedTunnel(true);
+                    setTimeout(() => setCopiedTunnel(false), 2500);
+                  }
+                }}
+                className="btn btn-sm inline-flex items-center gap-1.5 cursor-pointer transition font-semibold"
+                style={{
+                  background: copiedTunnel ? 'var(--cardamom)' : 'var(--paper-2)',
+                  color: copiedTunnel ? '#ffffff' : 'var(--ink)',
+                  border: '1px solid var(--line)',
+                }}
+              >
+                {copiedTunnel ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedTunnel ? 'Copied Link!' : 'Copy Link'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowQr(!showQr)}
+                className="btn btn-sm inline-flex items-center gap-1.5 cursor-pointer transition font-semibold"
+                style={{
+                  background: showQr ? 'var(--paper-1)' : 'var(--paper-2)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--ink)',
+                }}
+              >
+                <QrCode size={14} />
+                <span>{showQr ? 'Hide QR' : 'Mobile QR'}</span>
+              </button>
+
+              <a
+                href={`${tunnel}/dashboard`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-sm btn-primary inline-flex items-center gap-1.5 cursor-pointer transition"
+              >
+                <ExternalLink size={14} />
+                <span>Open Remote</span>
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-xl bg-paper-3/60 border border-dashed border-line text-xs text-ink-3 flex items-center gap-2.5">
+            <Info size={16} className="text-amber-500 shrink-0" />
+            <span>
+              Cloudflare Remote Tunnel starts automatically when the ChayaOne server is running online. When active, your secure remote link and mobile QR code will be displayed here.
+            </span>
+          </div>
+        )}
+
+        {/* QR Code expansion */}
+        {showQr && tunnel && (
+          <div className="p-4 rounded-xl bg-paper-3 border border-line flex flex-col sm:flex-row items-center gap-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-2 bg-white rounded-xl border border-gray-200 shrink-0">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
+                  `${tunnel}/dashboard`
+                )}`}
+                alt="Remote Dashboard QR Code"
+                className="w-32 h-32"
+              />
+            </div>
+            <div className="space-y-1 text-center sm:text-left">
+              <h4 className="font-bold text-sm">Scan with Phone Camera</h4>
+              <p className="text-xs text-ink-3">
+                Scan this QR code from your smartphone or tablet to instantly access your live store dashboard, sales analytics, and active tables from anywhere.
+              </p>
+              <p className="font-mono text-[11px] text-turmeric mt-1">
+                {tunnel}/dashboard
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modules Filter & Search Bar */}

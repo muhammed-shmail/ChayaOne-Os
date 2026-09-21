@@ -7,11 +7,14 @@ import type { LicenseStatusResponse } from '@cafeos/types';
 interface LicenseStatusBadgeProps {
   className?: string;
   onOpenRenewModal?: () => void;
+  /** When true, only renders if license is expiring soon (≤10 days) or expired */
+  warningOnly?: boolean;
 }
 
 export default function LicenseStatusBadge({
   className = '',
   onOpenRenewModal,
+  warningOnly = false,
 }: LicenseStatusBadgeProps) {
   const [data, setData] = useState<LicenseStatusResponse | null>(null);
   const [showPopover, setShowPopover] = useState(false);
@@ -40,6 +43,9 @@ export default function LicenseStatusBadge({
 
   const isExpired = data.isExpired || data.status === 'EXPIRED';
   const isExpiring = data.isExpiringSoon || data.status === 'EXPIRING_SOON';
+
+  // In warningOnly mode: only show if expiring soon or expired
+  if (warningOnly && !isExpired && !isExpiring) return null;
 
   // Badge styling
   let dotColor = '#16a34a'; // green

@@ -184,6 +184,35 @@ async function createWindow() {
 
     mainWindow.removeMenu();
 
+    // Forward renderer console logs to main process logger & auto-recover from chunk load errors
+    let isReloadingOnError = false;
+    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      logger.info(`[Renderer L${level}] ${message} (${sourceId}:${line})`);
+      if (!isReloadingOnError && (message.includes('ChunkLoadError') || message.includes('Loading chunk') || message.includes('Minified React error #423'))) {
+        isReloadingOnError = true;
+        logger.warn('Detected ChunkLoadError / React error in renderer. Auto-reloading page...');
+        setTimeout(() => {
+          isReloadingOnError = false;
+          mainWindow?.webContents.reloadIgnoringCache();
+        }, 1200);
+      }
+    });
+
+    // Keyboard shortcuts: F11 (Fullscreen), F5 / Ctrl+R (Reload), F12 (DevTools)
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      if (input.key === 'F11') {
+        mainWindow?.setFullScreen(!mainWindow.isFullScreen());
+        event.preventDefault();
+      } else if (input.key === 'F5' || (input.control && input.key.toLowerCase() === 'r')) {
+        mainWindow?.webContents.reload();
+        event.preventDefault();
+      } else if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+        mainWindow?.webContents.toggleDevTools();
+        event.preventDefault();
+      }
+    });
+
     mainWindow.once('ready-to-show', () => {
       logger.info('Main window ready-to-show event fired. Displaying window.');
       mainWindow?.show();
@@ -454,6 +483,7 @@ app.on('second-instance', (_event, commandLine) => {
     mainWindow.focus();
     mainWindow.setAlwaysOnTop(false);
 
+    let routeLoaded = false;
     if (commandLine) {
       const routeArg = commandLine.find((arg: string) => arg.startsWith('--route='));
       if (routeArg) {
@@ -461,7 +491,14 @@ app.on('second-instance', (_event, commandLine) => {
         if (custom) {
           const route = custom.startsWith('/') ? custom : `/${custom}`;
           mainWindow.loadURL(`http://127.0.0.1:3000${route}`);
+          routeLoaded = true;
         }
+      }
+    }
+    if (!routeLoaded) {
+      const curUrl = mainWindow.webContents.getURL();
+      if (!curUrl || curUrl.includes('about:blank')) {
+        mainWindow.loadURL('http://127.0.0.1:3000/pos');
       }
     }
   } else {
@@ -509,6 +546,15 @@ app.whenReady().then(async () => {
 
 
   // IPC Handlers
+  ipcMain.handle('toggle-fullscreen', () => {
+    if (mainWindow) {
+      const next = !mainWindow.isFullScreen();
+      mainWindow.setFullScreen(next);
+      return next;
+    }
+    return false;
+  });
+  ipcMain.handle('is-fullscreen', () => mainWindow?.isFullScreen() ?? false);
   ipcMain.handle('get-printer-status', () => printerManager.getStatus());
   ipcMain.handle('get-server-status', () => serverManager.getStatus());
   ipcMain.handle('get-database-status', () => dbManager.getStatus());

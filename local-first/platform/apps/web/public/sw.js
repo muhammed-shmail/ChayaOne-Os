@@ -77,6 +77,9 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Never intercept or cache requests when running on local desktop loopback
+  if (self.location.hostname === '127.0.0.1' || self.location.hostname === 'localhost') return;
+
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);

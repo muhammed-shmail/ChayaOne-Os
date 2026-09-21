@@ -664,21 +664,56 @@ export interface StaffActivity {
   activeTables: string[]; activeOrders: number;
   today: { orders: number; approvals: number; settled: number; voided: number; grossPaise: number };
 }
+export interface StaffPayrollItem {
+  staffId: string;
+  name: string;
+  role: string;
+  employeeCode: string | null;
+  payType: string | null;
+  payRatePaise: number | null;
+  daysWorked: number;
+  totalHoursWorked: number;
+  expectedPayPaise: number;
+  paidThisPeriodPaise: number;
+  pendingBalancePaise: number;
+  status: 'paid' | 'partial' | 'due' | 'advance' | 'unconfigured';
+  recent: { id: string; periodLabel: string; amountPaise: number; method: string; paidAt: string; note: string | null }[];
+}
+
 export interface StaffData {
   members: StaffMember[];
   sales: { staffId: string | null; name: string; orders: number; grossPaise: number }[];
   attendance: { id: string; name: string; clockIn: string; clockOut: string | null }[];
   // ---- Staff/HR module (Phase F) ----
   activity: StaffActivity[];
-  attendanceToday: { staffId: string; name: string; clockIn: string | null; clockOut: string | null; minutes: number; present: boolean }[];
+  attendanceToday: { id: string; staffId: string; name: string; role: string; clockIn: string | null; clockOut: string | null; minutes: number; present: boolean }[];
   shifts: { id: string; staffId: string; name: string; startsAt: string; endsAt: string; role: string | null }[];
-  payroll: { staffId: string; name: string; payType: string | null; payRatePaise: number | null; paidThisPeriodPaise: number; recent: { id: string; periodLabel: string; amountPaise: number; method: string; paidAt: string }[] }[];
+  payroll: StaffPayrollItem[];
   period: string; // current payroll period "YYYY-MM"
 }
 
 async function getStaff(outletId: string, tenantId: string): Promise<StaffData> {
   const period = new Date().toISOString().slice(0, 7);
-  const [memberRows, sales, attendance, active, todayWork, attToday, shiftRows, payRows] = await Promise.all([
+
+  // Auto-close any stale unclosed attendance punches older than 16 hours
+  await prisma.attendance.updateMany({
+    where: {
+      outletId,
+      clockOut: null,
+      clockIn: { lt: new Date(Date.now() - 16 * 3600 * 1000) },
+    },
+    data: {
+      clockOut: new Date(),
+    },
+  }).catch(() => {});
+
+  const parts = period.split('-').map(Number);
+  const periodYear = Number.isFinite(parts[0]) && parts[0] ? parts[0] : new Date().getFullYear();
+  const periodMonth = Number.isFinite(parts[1]) && parts[1] ? parts[1] : new Date().getMonth() + 1;
+  const periodStart = new Date(Date.UTC(periodYear, periodMonth - 1, 1, 0, 0, 0));
+  const periodEnd = new Date(Date.UTC(periodYear, periodMonth, 1, 0, 0, 0));
+
+  const [memberRows, sales, attendance, active, todayWork, attToday, shiftRows, payRows, monthPunches] = await Promise.all([
     prisma.staffUser.findMany({
       where: { tenantId, OR: [{ outletId }, { outletId: null }] },
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
@@ -744,12 +779,12 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
       ) al ON al."actorId" = s.id
       WHERE s."tenantId" = ${tenantId}::uuid
     `,
-    // today's attendance punches
-    prisma.$queryRaw<{ staffId: string; name: string; clockIn: Date | null; clockOut: Date | null }[]>`
-      SELECT a."staffId"::text AS "staffId", s.name AS name, a."clockIn" AS "clockIn", a."clockOut" AS "clockOut"
+    // today's attendance punches (including any open active punches)
+    prisma.$queryRaw<{ id: string; staffId: string; name: string; role: string; clockIn: Date | null; clockOut: Date | null }[]>`
+      SELECT a."id"::text AS "id", a."staffId"::text AS "staffId", s.name AS name, s.role AS role, a."clockIn" AS "clockIn", a."clockOut" AS "clockOut"
       FROM attendance a JOIN staff_users s ON s.id = a."staffId"
       WHERE a."outletId" = ${outletId}::uuid
-        AND ("clockIn" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date
+        AND (("clockIn" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date OR a."clockOut" IS NULL)
       ORDER BY a."clockIn" DESC
     `,
     // today + upcoming shifts
@@ -763,7 +798,15 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
     prisma.salaryPayment.findMany({
       where: { outletId, periodLabel: period },
       orderBy: { paidAt: 'desc' },
-      select: { id: true, staffId: true, periodLabel: true, amountPaise: true, method: true, paidAt: true },
+      select: { id: true, staffId: true, periodLabel: true, amountPaise: true, method: true, note: true, paidAt: true },
+    }),
+    // month attendance punches for wage & hours tracking
+    prisma.attendance.findMany({
+      where: {
+        outletId,
+        clockIn: { gte: periodStart, lt: periodEnd },
+      },
+      select: { staffId: true, clockIn: true, clockOut: true },
     }),
   ]);
 
@@ -772,6 +815,19 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
   const workBy = new Map(todayWork.map((w) => [w.staffId, w]));
   const paidBy = new Map<string, number>();
   for (const p of payRows) paidBy.set(p.staffId, (paidBy.get(p.staffId) ?? 0) + p.amountPaise);
+
+  // Month attendance aggregation per staff member
+  const monthStaffDays = new Map<string, Set<string>>();
+  const monthStaffMinutes = new Map<string, number>();
+  for (const p of monthPunches) {
+    const dayKey = p.clockIn.toISOString().slice(0, 10);
+    if (!monthStaffDays.has(p.staffId)) monthStaffDays.set(p.staffId, new Set());
+    monthStaffDays.get(p.staffId)!.add(dayKey);
+
+    const end = p.clockOut ? new Date(p.clockOut).getTime() : Math.min(Date.now(), new Date(p.clockIn).getTime() + 8 * 3600 * 1000);
+    const durMins = Math.max(0, Math.round((end - new Date(p.clockIn).getTime()) / 60000));
+    monthStaffMinutes.set(p.staffId, (monthStaffMinutes.get(p.staffId) ?? 0) + durMins);
+  }
 
   // activity board — only staff who can take/serve orders (exclude kitchen)
   const activity: StaffActivity[] = members
@@ -791,14 +847,60 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
   const attendanceToday = attToday.map((a) => {
     const end = a.clockOut ? new Date(a.clockOut).getTime() : Date.now();
     const minutes = a.clockIn ? Math.max(0, Math.round((end - new Date(a.clockIn).getTime()) / 60000)) : 0;
-    return { staffId: a.staffId, name: a.name, clockIn: a.clockIn ? new Date(a.clockIn).toISOString() : null, clockOut: a.clockOut ? new Date(a.clockOut).toISOString() : null, minutes, present: !!a.clockIn && !a.clockOut };
+    return { id: a.id, staffId: a.staffId, name: a.name, role: a.role, clockIn: a.clockIn ? new Date(a.clockIn).toISOString() : null, clockOut: a.clockOut ? new Date(a.clockOut).toISOString() : null, minutes, present: !!a.clockIn && !a.clockOut };
   });
 
-  const payroll = members.filter((m) => m.active).map((m) => ({
-    staffId: m.id, name: m.name, payType: m.payType, payRatePaise: m.payRatePaise,
-    paidThisPeriodPaise: paidBy.get(m.id) ?? 0,
-    recent: payRows.filter((p) => p.staffId === m.id).map((p) => ({ id: p.id, periodLabel: p.periodLabel, amountPaise: p.amountPaise, method: p.method, paidAt: p.paidAt.toISOString() })),
-  }));
+  const payroll: StaffPayrollItem[] = members.filter((m) => m.active).map((m) => {
+    const daysWorked = monthStaffDays.get(m.id)?.size ?? 0;
+    const totalMins = monthStaffMinutes.get(m.id) ?? 0;
+    const totalHoursWorked = Number((totalMins / 60).toFixed(1));
+    const paid = paidBy.get(m.id) ?? 0;
+
+    let expectedPayPaise = 0;
+    if (m.payType === 'monthly' && m.payRatePaise) {
+      expectedPayPaise = m.payRatePaise;
+    } else if (m.payType === 'hourly' && m.payRatePaise) {
+      expectedPayPaise = Math.round((m.payRatePaise / 60) * totalMins);
+    }
+
+    const pendingBalancePaise = Math.max(0, expectedPayPaise - paid);
+
+    let status: 'paid' | 'partial' | 'due' | 'advance' | 'unconfigured' = 'unconfigured';
+    if (!m.payType || !m.payRatePaise) {
+      status = paid > 0 ? 'advance' : 'unconfigured';
+    } else if (paid >= expectedPayPaise && expectedPayPaise > 0) {
+      status = 'paid';
+    } else if (paid > 0 && paid < expectedPayPaise) {
+      status = 'partial';
+    } else if (paid === 0 && expectedPayPaise > 0) {
+      status = 'due';
+    } else if (paid > expectedPayPaise) {
+      status = 'advance';
+    }
+
+    return {
+      staffId: m.id,
+      name: m.name,
+      role: m.role,
+      employeeCode: m.employeeCode,
+      payType: m.payType,
+      payRatePaise: m.payRatePaise,
+      daysWorked,
+      totalHoursWorked,
+      expectedPayPaise,
+      paidThisPeriodPaise: paid,
+      pendingBalancePaise,
+      status,
+      recent: payRows.filter((p) => p.staffId === m.id).map((p) => ({
+        id: p.id,
+        periodLabel: p.periodLabel,
+        amountPaise: p.amountPaise,
+        method: p.method,
+        paidAt: p.paidAt.toISOString(),
+        note: p.note || null,
+      })),
+    };
+  });
 
   return {
     members,

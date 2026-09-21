@@ -116,11 +116,11 @@ export function MobileDrawer({
           />
         </div>
 
-        <div className="px-2 mb-3 shrink-0 flex flex-col gap-2">
+        <div className="px-1 mb-2 shrink-0 flex flex-col gap-1.5">
           <div className="flex justify-center">
             <ShiftStatus />
           </div>
-          <ServerSyncCard />
+          <ServerSyncCard compact />
         </div>
 
         <nav className="flex flex-col gap-0.5">

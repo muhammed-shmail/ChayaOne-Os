@@ -18,5 +18,7 @@ contextBridge.exposeInMainWorld(
     getInstallationId: () => ipcRenderer.invoke('get-installation-id'),
     restartService: (serviceName: string) => ipcRenderer.invoke('restart-service', serviceName),
     testPrint: () => ipcRenderer.invoke('test-print'),
+    toggleFullscreen: () => ipcRenderer.invoke('toggle-fullscreen'),
+    isFullscreen: () => ipcRenderer.invoke('is-fullscreen'),
   }
 );

@@ -29,11 +29,12 @@ const PRESETS: { key: string; label: string; days: number }[] = [
 
 const DOW_SHORT = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-export function RevenuePanel({ initialTrend, restrictToToday }: { initialTrend: TrendPoint[]; restrictToToday?: boolean }) {
+export function RevenuePanel({ initialTrend = [], restrictToToday }: { initialTrend?: TrendPoint[]; restrictToToday?: boolean }) {
   const today = ymd(new Date());
 
   const seed = useMemo<Revenue>(() => {
-    let daily: Daily[] = initialTrend.map((t) => ({ date: t.date, label: t.label, dateLabel: labelOf(t.date), orders: t.orders, grossPaise: t.grossPaise }));
+    const list = Array.isArray(initialTrend) ? initialTrend : [];
+    let daily: Daily[] = list.map((t) => ({ date: t.date, label: t.label, dateLabel: labelOf(t.date), orders: t.orders, grossPaise: t.grossPaise }));
     if (restrictToToday) {
       daily = daily.filter((d) => d.date === today);
       if (daily.length === 0) {
@@ -73,7 +74,7 @@ export function RevenuePanel({ initialTrend, restrictToToday }: { initialTrend: 
   }, [from, to]);
 
   return (
-    <Reveal delay={0.35}>
+    <div className="w-full">
       <section className="card card-glow p-5 flex flex-col gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -145,7 +146,7 @@ export function RevenuePanel({ initialTrend, restrictToToday }: { initialTrend: 
           )}
         </div>
       </section>
-    </Reveal>
+    </div>
   );
 }
 

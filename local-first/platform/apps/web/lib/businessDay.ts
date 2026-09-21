@@ -168,10 +168,57 @@ export function readBusinessDay(settings: unknown, now = new Date(), tz = DEFAUL
 }
 
 /**
+ * Determine if current wall-clock time is within 30 minutes prior to closing time,
+ * or currently past closing time while the business day is still open/extended before cutoffHour.
+ */
+export function isWithinClosingWindow(
+  state: BusinessDayState,
+  now = new Date(),
+  tz = DEFAULT_TIMEZONE
+): boolean {
+  if (state.status === 'closed') return false;
+  if (state.isExtended) return true;
+
+  const { hour, minute } = getWallClockTimeInTz(now, tz);
+  const currentMinutes = hour * 60 + minute;
+
+  // Parse closing time HH:mm (default '00:00')
+  const parts = (state.closingTime || '00:00').split(':');
+  const cH = parseInt(parts[0] || '0', 10) || 0;
+  const cM = parseInt(parts[1] || '0', 10) || 0;
+
+  // Normalize closing time:
+  // If 00:00, it represents midnight = 24:00 (1440 min)
+  // If cH is an early morning hour (e.g. 01:30 and cutoff is 04:00), it represents 1440 + minutes
+  const isPostMidnightClose = cH < state.cutoffHour;
+  const closeMinutes = isPostMidnightClose
+    ? 1440 + (cH * 60 + cM)
+    : (cH === 0 && cM === 0 ? 1440 : cH * 60 + cM);
+
+  const windowStartMinutes = closeMinutes - 30; // Exactly 30 minutes before closing
+  const cutoffMinutes = state.cutoffHour * 60; // Cutoff in early morning
+
+  // Normalize currentMinutes if currently in early morning before cutoff
+  const normalizedCurrentMinutes = hour < state.cutoffHour ? 1440 + currentMinutes : currentMinutes;
+
+  // Within the 30-min window before close and up to morning cutoff
+  if (normalizedCurrentMinutes >= windowStartMinutes && normalizedCurrentMinutes < 1440 + cutoffMinutes) {
+    return true;
+  }
+
+  // Also check if past midnight before morning cutoff
+  if (hour < state.cutoffHour && (state.closingTime !== '00:00' || currentMinutes < cutoffMinutes)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Determine if the midnight / closing prompt should appear to the user.
  * Returns true if:
  * 1. autoPromptAtMidnight is enabled
- * 2. Current time is at or past closing time (or past 23:45 / midnight) and before cutoffHour
+ * 2. Current time is within 30 minutes before closing or past closing time before cutoffHour
  * 3. The business day is not yet extended or closed
  */
 export function shouldPromptBusinessDayExtension(
@@ -183,13 +230,5 @@ export function shouldPromptBusinessDayExtension(
   if (state.isExtended) return false;
   if (state.status === 'closed') return false;
 
-  const { hour, minute, timeStr } = getWallClockTimeInTz(now, tz);
-
-  // Check if we are approaching or past closing time (e.g. 23:45 onwards or >= 00:00)
-  // Window: 23:45 to cutoffHour:00
-  const isLateNight = hour >= 23 && minute >= 45;
-  const isPastMidnightBeforeCutoff = hour < state.cutoffHour;
-  const isPastConfiguredClosing = timeStr >= state.closingTime && state.closingTime !== '00:00';
-
-  return isLateNight || isPastMidnightBeforeCutoff || isPastConfiguredClosing;
+  return isWithinClosingWindow(state, now, tz);
 }

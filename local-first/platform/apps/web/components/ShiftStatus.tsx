@@ -21,7 +21,12 @@ export function ShiftStatus({ className = '' }: { className?: string }) {
     fetch('/api/attendance')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        setClockIn(d?.open?.clockIn ?? null);
+        const openTime = d?.open?.clockIn;
+        if (openTime && Date.now() - new Date(openTime).getTime() > 16 * 3600 * 1000) {
+          setClockIn(null);
+        } else {
+          setClockIn(openTime ?? null);
+        }
       })
       .catch(() => {});
   };
@@ -52,6 +57,7 @@ export function ShiftStatus({ className = '' }: { className?: string }) {
         setFeedback('Clocked in!');
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('pos-entry-sync'));
+          window.dispatchEvent(new CustomEvent('attendance-refresh'));
         }
       } else {
         alert(data.message || 'Could not mark attendance — check location/Wi-Fi');
@@ -82,6 +88,7 @@ export function ShiftStatus({ className = '' }: { className?: string }) {
         setFeedback('Clocked out');
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('pos-entry-sync'));
+          window.dispatchEvent(new CustomEvent('attendance-refresh'));
         }
       }
     } catch {

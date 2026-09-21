@@ -214,11 +214,21 @@ export async function GET(req: NextRequest) {
     queryStaffId = targetStaffId;
   }
 
-  const open = await prisma.attendance.findFirst({
+  let open = await prisma.attendance.findFirst({
     where: { outletId: session.outletId, staffId: queryStaffId, clockOut: null },
     orderBy: { clockIn: 'desc' },
     select: { id: true, clockIn: true },
   });
+
+  // Stale punch auto-close: if an open punch is older than 16 hours, auto-close it
+  if (open && Date.now() - open.clockIn.getTime() > 16 * 3600 * 1000) {
+    const autoOut = new Date(open.clockIn.getTime() + 8 * 3600 * 1000);
+    await prisma.attendance.update({
+      where: { id: open.id },
+      data: { clockOut: autoOut },
+    }).catch(() => {});
+    open = null;
+  }
 
   const loc = await getOutletLocation(session.outletId);
   const geoRequired = loc.enabled && loc.gateAttendance && loc.lat !== null && session.role !== 'owner';
@@ -259,10 +269,20 @@ export async function POST(req: NextRequest) {
     staffId = body.staffId;
   }
 
-  const open = await prisma.attendance.findFirst({
+  let open = await prisma.attendance.findFirst({
     where: { outletId: session.outletId, staffId, clockOut: null },
     orderBy: { clockIn: 'desc' },
   });
+
+  // Stale punch auto-close: if punch is older than 16 hours, auto-close it before proceeding
+  if (open && Date.now() - open.clockIn.getTime() > 16 * 3600 * 1000) {
+    const autoOut = new Date(open.clockIn.getTime() + 8 * 3600 * 1000);
+    await prisma.attendance.update({
+      where: { id: open.id },
+      data: { clockOut: autoOut },
+    }).catch(() => {});
+    open = null;
+  }
 
   // 1. CLOCK IN / BREAK END
   if (action === 'in' || action === 'break_end') {

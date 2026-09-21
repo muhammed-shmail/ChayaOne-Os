@@ -1,0 +1,71 @@
+
+17:45:08.525 > [ChayaOne] Electron app is ready.
+17:45:08.577 > [ChayaOne] Creating main POS window...
+17:45:08.583 > [ChayaOne] Starting local services...
+17:45:08.584 > [ChayaOne] Starting Printer Manager...
+17:45:08.653 > [ChayaOne] Starting Local PostgreSQL Database on port 5433...
+17:45:08.658 > [ChayaOne] Cleaned up stale postmaster.pid lock file
+17:45:08.668 > [ChayaOne] PostgreSQL binary: C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\postgres\bin\postgres.exe
+17:45:08.669 > [ChayaOne] PostgreSQL data directory: C:\Users\nmsss\AppData\Roaming\@cafeos\desktop\database
+17:45:08.811 > [ChayaOne] PostgreSQL spawned directly with PID: 3744
+17:45:08.834 > [ChayaOne] Server initializing on port 3000. Displaying branded splash screen...
+17:45:09.078 > [ChayaOne] Main window ready-to-show event fired. Displaying window.
+17:45:09.826 > [ChayaOne] Local PostgreSQL Database is now RUNNING on port 5433 (verified via TCP)
+17:45:09.828 > [ChayaOne] Starting Local WebSocket Server...
+17:45:09.833 > [ChayaOne] Local WebSocket Server is RUNNING on port 3001
+17:45:09.835 > [ChayaOne] Starting Next.js Server in headless background mode...
+17:45:09.836 > [ChayaOne] Next.js server script: C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\server.js
+17:45:09.837 > [ChayaOne] Next.js server cwd: C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web
+17:45:09.837 > [ChayaOne] Next.js NODE_PATH: C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\node_modules
+17:45:09.839 > [ChayaOne] 📦 Launching production standalone bundle: C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\web-server\apps\web\server.js
+17:45:09.840 > [ChayaOne] Executing web server with: C:\Program Files\nodejs\node.exe
+17:45:10.433 > [ChayaOne] [Web] ▲ Next.js 14.2.35
+17:45:10.434 > [ChayaOne] [Web] - Local:        http://localhost:3000
+  - Network:      http://0.0.0.0:3000
+
+ ✓ Starting...
+17:45:10.561 > [ChayaOne] [Web] ✓ Ready in 154ms
+17:45:10.562 > [ChayaOne] Next.js Server is now RUNNING on port 3000
+17:45:10.563 > [ChayaOne] Starting Cloudflare Tunnel for customer 4G QR ordering using: C:\Users\nmsss\AppData\Local\Programs\@cafeosdesktop\resources\bin\cloudflared.exe
+17:45:10.564 > [ChayaOne] Running Cloudflare Tunnel in Quick Tunnel mode (port 3000)...
+17:45:11.347 > [ChayaOne] Server detected on port 3000! Transitioning to: http://127.0.0.1:3000/pos
+17:45:11.363 > [ChayaOne] Next.js Server is now RUNNING on port 3000 (detected via HTTP probe)
+17:45:11.364 > [ChayaOne] Server detected on port 3000! Transitioning to: http://127.0.0.1:3000/pos
+17:45:12.086 > [ChayaOne] [Web] [REALTIME WS] Port 3001 in use (desktop WebSocket hub active). Reusing port 3001.
+17:45:12.105 > [ChayaOne DEBUG] New WebSocket connection established.
+17:45:12.111 > [ChayaOne DEBUG] Received WS message: {"type":"subscribe","channel":"outlet:01aa51b8-7628-4715-9225-f69b7e0b77f9"}
+17:45:17.204 > [ChayaOne] 🎉 Customer 4G Tunnel ACTIVE! Public URL: https://generated-step-tournament-palestinian.trycloudflare.com
+18:11:57.810 > [ChayaOne] [Web] [REALTIME WS] Port 3001 in use (desktop WebSocket hub active). Reusing port 3001.
+18:11:58.177 > [ChayaOne DEBUG] New WebSocket connection established.
+18:11:58.340 > [ChayaOne DEBUG] Received WS message: {"type":"subscribe","channel":"outlet:01aa51b8-7628-4715-9225-f69b7e0b77f9"}
+18:19:12.430 > [ChayaOne] [Web] [REALTIME WS] Port 3001 in use (desktop WebSocket hub active). Reusing port 3001.
+18:19:12.466 > [ChayaOne DEBUG] New WebSocket connection established.
+18:19:12.475 > [ChayaOne DEBUG] Received WS message: {"type":"subscribe","channel":"outlet:01aa51b8-7628-4715-9225-f69b7e0b77f9"}
+18:22:42.978 > [ChayaOne] [Web] [REALTIME WS] Port 3001 in use (desktop WebSocket hub active). Reusing port 3001.
+18:22:42.994 > [ChayaOne DEBUG] New WebSocket connection established.
+18:22:42.996 > [ChayaOne DEBUG] Received WS message: {"type":"subscribe","channel":"outlet:01aa51b8-7628-4715-9225-f69b7e0b77f9"}
+18:33:27.238 > [ChayaOne] [Web] prisma:error 
+Invalid `prisma.printJob.create()` invocation:
+
+
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38
+18:34:41.483 > [ChayaOne] [Web] prisma:error 
+Invalid `prisma.printJob.create()` invocation:
+
+
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38
+18:35:41.756 > [ChayaOne] [Web] prisma:error 
+Invalid `prisma.printJob.create()` invocation:
+
+
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38
+18:36:29.353 > [ChayaOne] [Web] prisma:error 
+Invalid `prisma.printJob.create()` invocation:
+
+
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `r` at 38
+18:39:00.756 > [ChayaOne] [Web] [REALTIME WS] Port 3001 in use (desktop WebSocket hub active). Reusing port 3001.
+18:39:00.759 > [ChayaOne] [Web] [REALTIME] event=order.new outlet=01aa51b8-7628-4715-9225-f69b7e0b77f9 entity=eb1cd2aa-2c29-4387-9236-39a66e4f4184 clients=0
+[REALTIME] event=order.new outlet=01aa51b8-7628-4715-9225-f69b7e0b77f9 entity=eb1cd2aa-2c29-4387-9236-39a66e4f4184 clients=0
+[REALTIME WS] Port 3001 in use (desktop WebSocket hub active). Reusing port 3001.
+[REALTIME] event=table.updated outlet=01aa51b8-7628-4715-9225-f69b7e0b77f9 entity= clients=0

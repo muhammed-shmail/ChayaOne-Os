@@ -14,6 +14,7 @@ export default function LoginClient() {
   const router = useRouter();
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // after a correct PIN we pause on an attendance-confirm step before entering
@@ -34,7 +35,14 @@ export default function LoginClient() {
   // shared post-login step: cookie is set — check today's attendance then show confirm
   async function enterWith(who: Staff) {
     const att = await fetch('/api/attendance').then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    setOpenSince(att?.open?.clockIn ?? null);
+    let validSince: string | null = att?.open?.clockIn ?? null;
+    if (validSince) {
+      const punchMs = new Date(validSince).getTime();
+      if (Date.now() - punchMs > 16 * 3600 * 1000) {
+        validSince = null; // Stale punch from previous day, allow fresh clock-in
+      }
+    }
+    setOpenSince(validSince);
     setGeoRequired(!!att?.geoRequired);
     setStaff(who);
   }
@@ -42,6 +50,7 @@ export default function LoginClient() {
   async function submit(code: string) {
     setBusy(true);
     setError(false);
+    setErrorMsg(null);
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -55,31 +64,65 @@ export default function LoginClient() {
       setBusy(false);
     } catch {
       setError(true);
+      setErrorMsg('Wrong PIN — try again');
       setPin('');
       setBusy(false);
     }
   }
 
-  async function submitPassword(e: FormEvent) {
+  async function submitPassword(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
+
+    // Read values directly from DOM form elements in case of browser autofill
+    const form = e.currentTarget;
+    const userEl = form.elements.namedItem('username') as HTMLInputElement | null;
+    const passEl = form.elements.namedItem('password') as HTMLInputElement | null;
+    const userVal = (userEl?.value || username).trim();
+    const passVal = passEl?.value || password;
+
+    if (!userVal || !passVal) {
+      setError(true);
+      setErrorMsg('Please enter both username and password');
+      return;
+    }
+
     setBusy(true);
     setError(false);
+    setErrorMsg(null);
     setNotice(null);
+
     try {
       const res = await fetch('/api/auth/login/password', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ username: userVal, password: passVal }),
       });
-      if (!res.ok) throw new Error();
-      const { staff: who } = await res.json().catch(() => ({ staff: null }));
-      if (!who?.role) throw new Error();
-      await enterWith(who);
-      setBusy(false);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.ok) {
+        setError(true);
+        setErrorMsg(data?.message || 'Wrong username or password');
+        setBusy(false);
+        return;
+      }
+
+      const who = data.staff;
+      // Direct entrance into app without attendance gate
+      const targetDest =
+        who?.role === 'owner' || who?.role === 'manager' || who?.role === 'accountant'
+          ? '/dashboard'
+          : '/pos';
+
+      if (typeof window !== 'undefined') {
+        window.location.href = targetDest;
+      } else {
+        router.replace(targetDest);
+        router.refresh();
+      }
     } catch {
       setError(true);
-      setPassword('');
+      setErrorMsg('Network error. Could not reach server.');
       setBusy(false);
     }
   }
@@ -110,8 +153,33 @@ export default function LoginClient() {
         return;
       }
     }
-    router.replace(dest);
-    router.refresh();
+    if (typeof window !== 'undefined') {
+      window.location.href = dest;
+    } else {
+      router.replace(dest);
+      router.refresh();
+    }
+  }
+
+  async function clockOutAndExit() {
+    setBusy(true);
+    setAttError(null);
+    try {
+      const geo = geoRequired ? await getGeoHeaders(12000) : {};
+      await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...geo },
+        body: JSON.stringify({ action: 'out' }),
+      });
+      setOpenSince(null);
+      setStaff(null);
+      setPin('');
+      setNotice('Shift ended. You have been clocked out successfully.');
+    } catch {
+      setAttError('Network error clocking out.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   function press(k: string) {
@@ -171,9 +239,18 @@ export default function LoginClient() {
             {busy ? 'One sec…' : openSince ? 'Continue →' : 'Confirm attendance & continue →'}
           </button>
 
-          {!openSince && (
+          {openSince ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={clockOutAndExit}
+              className="w-full mt-3 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 font-bold text-xs hover:bg-red-500/20 active:scale-95 transition cursor-pointer"
+            >
+              {busy ? 'Clocking out…' : 'Clock out & end shift'}
+            </button>
+          ) : (
             <button disabled={busy} onClick={() => confirmAttendance(false)}
-              className="w-full mt-3 text-sm font-bold" style={{ color: 'var(--ink-3)', background: 'none', border: 'none' }}>
+              className="w-full mt-3 text-sm font-bold cursor-pointer" style={{ color: 'var(--ink-3)', background: 'none', border: 'none' }}>
               Skip for now
             </button>
           )}
@@ -232,22 +309,33 @@ export default function LoginClient() {
             </div>
           </>
         ) : (
-          <form onSubmit={submitPassword} className={`space-y-3 ${error ? 'shake' : ''}`}>
-            {notice && <p className="text-center text-sm font-bold mb-1" style={{ color: 'var(--gold-d)' }}>{notice}</p>}
-            {error && <p role="alert" className="text-center text-sm font-bold" style={{ color: 'var(--clay)' }}>Wrong username or password</p>}
+          <form onSubmit={submitPassword} className={`space-y-3.5 ${error ? 'shake' : ''}`}>
+            {notice && (
+              <div className="p-3 rounded-2xl text-center text-xs font-bold" style={{ background: 'color-mix(in srgb, var(--gold, #eab308) 15%, transparent)', color: 'var(--gold-d, #b45309)', border: '1px solid color-mix(in srgb, var(--gold, #eab308) 30%, transparent)' }}>
+                {notice}
+              </div>
+            )}
+            {errorMsg && (
+              <div role="alert" className="p-3 rounded-2xl text-center text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-sm" style={{ background: 'rgba(239, 68, 68, 0.12)', color: '#dc2626', border: '1px solid rgba(239, 68, 68, 0.35)' }}>
+                <span>⚠️</span>
+                <span>{errorMsg}</span>
+              </div>
+            )}
             <input
+              name="username"
               type="text" autoCapitalize="none" autoCorrect="off" autoComplete="username"
-              value={username} onChange={(e) => setUsername(e.target.value)}
+              value={username} onChange={(e) => { setUsername(e.target.value); setError(false); setErrorMsg(null); }}
               placeholder="Username" disabled={busy}
-              className="w-full px-4 py-3 rounded-2xl text-[15px] outline-none disabled:opacity-50"
+              className="w-full px-4 py-3.5 rounded-2xl text-[15px] outline-none disabled:opacity-50 transition"
               style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', boxShadow: 'var(--sh-1)', color: 'var(--ink)' }}
             />
             <div className="relative">
               <input
+                name="password"
                 type={showPassword ? 'text' : 'password'} autoComplete="current-password"
-                value={password} onChange={(e) => setPassword(e.target.value)}
+                value={password} onChange={(e) => { setPassword(e.target.value); setError(false); setErrorMsg(null); }}
                 placeholder="Password" disabled={busy}
-                className="w-full pl-4 pr-12 py-3 rounded-2xl text-[15px] outline-none disabled:opacity-50"
+                className="w-full pl-4 pr-12 py-3.5 rounded-2xl text-[15px] outline-none disabled:opacity-50 transition"
                 style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', boxShadow: 'var(--sh-1)', color: 'var(--ink)' }}
               />
               <button
@@ -255,15 +343,26 @@ export default function LoginClient() {
                 onClick={() => setShowPassword((v) => !v)}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                 aria-pressed={showPassword}
-                className="absolute right-2 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-xl transition disabled:opacity-50"
+                className="absolute right-2 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-xl transition disabled:opacity-50 cursor-pointer"
                 style={{ color: 'var(--ink-3)', background: 'none', border: 'none' }}
               >
                 {showPassword ? <EyeOff size={18} aria-hidden /> : <Eye size={18} aria-hidden />}
               </button>
             </div>
-            <button type="submit" disabled={busy || !username.trim() || !password}
-              className="btn btn-lux w-full" style={{ padding: '14px', borderRadius: 16, fontSize: 16 }}>
-              {busy ? 'One sec…' : 'Sign in →'}
+            <button
+              type="submit"
+              disabled={busy}
+              className="btn btn-lux w-full disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer transition active:scale-[0.99] flex items-center justify-center gap-2.5 font-bold"
+              style={{ padding: '15px', borderRadius: 16, fontSize: 16 }}
+            >
+              {busy ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                  <span>Signing in…</span>
+                </>
+              ) : (
+                'Sign in →'
+              )}
             </button>
           </form>
         )}

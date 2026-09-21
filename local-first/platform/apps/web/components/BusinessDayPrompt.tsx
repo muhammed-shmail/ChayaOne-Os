@@ -245,26 +245,37 @@ export function BusinessDayPrompt({ currentStaff }: { currentStaff?: StaffUserPr
 }
 
 /**
- * Top Header Status Badge: Allows Manager & Owner to view and manage active business day anytime.
+ * Top Header Status Badge: Only appears / pops up within 30 minutes before closing time
+ * or during night extension, keeping the header clean during normal operating hours.
  */
 export function BusinessDayHeaderBadge({ className = '' }: { className?: string }) {
   const [state, setState] = useState<BusinessDayState | null>(null);
   const [canManage, setCanManage] = useState(false);
+  const [isClosingWindow, setIsClosingWindow] = useState(false);
   const [openModal, setOpenModal] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    fetch('/api/dashboard/business-day')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (alive && d) {
-          setState(d.state);
-          setCanManage(d.canManage);
-        }
-      })
-      .catch(() => {});
-    return () => { alive = false; };
+    const fetchStatus = () => {
+      fetch('/api/dashboard/business-day')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (alive && d) {
+            setState(d.state);
+            setCanManage(d.canManage);
+            setIsClosingWindow(!!d.isWithinClosingWindow || !!d.shouldPrompt || !!d.state?.isExtended);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchStatus();
+    const timer = setInterval(fetchStatus, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
   }, [openModal]);
 
   async function handleQuickExtend(minutes?: number) {
@@ -299,7 +310,8 @@ export function BusinessDayHeaderBadge({ className = '' }: { className?: string 
     }
   }
 
-  if (!state) return null;
+  // Only appear within 30 minutes before closing time or if extended
+  if (!state || (!isClosingWindow && !state.isExtended)) return null;
 
   const isExtended = state.isExtended;
 
@@ -309,28 +321,30 @@ export function BusinessDayHeaderBadge({ className = '' }: { className?: string 
         type="button"
         onClick={() => canManage && setOpenModal(true)}
         title={canManage ? 'Manage Business Day & Night Shift' : `Active Business Day: ${state.currentBusinessDate}`}
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition ${
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition animate-in fade-in zoom-in-95 duration-200 ${
           canManage ? 'hover:scale-105 cursor-pointer active:scale-95' : 'cursor-default'
         } ${className}`}
         style={{
           background: isExtended
             ? 'color-mix(in srgb, var(--turmeric) 15%, var(--paper-2))'
-            : 'var(--paper-2)',
+            : 'color-mix(in srgb, var(--clay, #ef4444) 12%, var(--paper-2))',
           borderColor: isExtended
             ? 'color-mix(in srgb, var(--turmeric) 40%, var(--line))'
-            : 'var(--line)',
-          color: isExtended ? 'var(--turmeric)' : 'var(--ink-2)',
+            : 'color-mix(in srgb, var(--clay, #ef4444) 35%, var(--line))',
+          color: isExtended ? 'var(--turmeric)' : 'var(--clay, #ef4444)',
         }}
       >
         <span
           className="w-1.5 h-1.5 rounded-full shrink-0"
           style={{
-            background: isExtended ? 'var(--turmeric)' : 'var(--cardamom)',
-            boxShadow: isExtended ? '0 0 0 3px rgba(245, 158, 11, 0.25)' : undefined,
+            background: isExtended ? 'var(--turmeric)' : 'var(--clay, #ef4444)',
+            boxShadow: isExtended
+              ? '0 0 0 3px rgba(245, 158, 11, 0.25)'
+              : '0 0 0 3px rgba(239, 68, 68, 0.25)',
           }}
         />
         <Moon size={12} className="shrink-0" />
-        <span>{isExtended ? 'Day Extended' : 'Day Active'}</span>
+        <span>{isExtended ? 'Day Extended' : 'Closing Soon · Day Active'}</span>
         {state.currentBusinessDate && (
           <span className="hidden sm:inline opacity-75 font-mono">· {state.currentBusinessDate.slice(5)}</span>
         )}

@@ -17,6 +17,7 @@ import type { ModuleSystemConfig } from '@cafeos/types';
 import SystemManagement from './SystemManagement';
 import ModuleManagement from './ModuleManagement';
 import ServerDashboardClient from '../server/ServerDashboardClient';
+import LicenseStatusBadge from '@/components/license/LicenseStatusBadge';
 
 // Category groups & metadata
 export interface SettingItem {
@@ -75,7 +76,7 @@ const SECTIONS: SettingSection[] = [
     },
     items: [
       { key: 'general', label: 'Business Profile', desc: 'Store profile, branding & contact details', icon: Store, badge: 'Profile', keywords: ['store', 'profile', 'address', 'city', 'pincode', 'currency', 'language', 'timezone', 'logo', 'gstin', 'website', 'email', 'phone', 'contact'] },
-      { key: 'modules', label: 'Modules & Business Profile', desc: 'Enable or configure business modules (Cafe, Restaurant, Juice, Waiter, KDS, Inventory...)', icon: Layers, sensitive: true, ownerOnly: true, badge: 'Core Engine', keywords: ['modules', 'business type', 'cafe', 'restaurant', 'hotel', 'juice', 'meals', 'waiter', 'kds', 'customer qr', 'inventory', 'crm', 'loyalty'] },
+      { key: 'modules', label: 'App Cores & Extensions', desc: 'Core architecture modules, operational presets & cloud remote access extensions', icon: Layers, sensitive: true, ownerOnly: true, badge: 'App Cores', keywords: ['modules', 'cores', 'app cores', 'extensions', 'extension', 'remote link', 'remote access', 'cloudflare', 'tunnel', 'business type', 'cafe', 'restaurant', 'hotel', 'juice', 'meals', 'waiter', 'kds', 'customer qr', 'inventory', 'crm', 'loyalty'] },
       { key: 'business_hours', label: 'Business Hours', desc: 'Opening, closing hours, breaks & festival timings', icon: Clock, badge: 'Schedule', keywords: ['time', 'opening', 'closing', 'weekly', 'holiday', 'festival', 'break', 'temporary closure', 'emergency'] },
       { key: 'tax', label: 'Tax & GST', desc: 'GSTIN, CGST/SGST, service & packaging charges', icon: Percent, sensitive: true, badge: 'Compliance', keywords: ['gstin', 'tax', 'cgst', 'sgst', 'igst', 'exclusive', 'inclusive', 'hsn', 'sac', 'composition', 'flat rate', 'billing', 'reports', 'audit'] },
       { key: 'menu', label: 'Menu Configuration', desc: 'Categories, variants, add-ons & happy hours', icon: BookOpen, badge: 'Catalog', keywords: ['veg', 'non-veg', 'dietary', 'combo', 'happy hours', 'discount', 'variants', 'add-ons'] },
@@ -212,6 +213,7 @@ interface SettingsCenterProps {
   features: Record<string, boolean>;
   moduleConfig?: ModuleSystemConfig;
   onModuleConfigUpdated?: (cfg: ModuleSystemConfig) => void;
+  tunnelUrl?: string | null;
 
   profile: any;
   setProfile: React.Dispatch<React.SetStateAction<any>>;
@@ -285,6 +287,7 @@ export default function SettingsCenter({
   features,
   moduleConfig,
   onModuleConfigUpdated,
+  tunnelUrl,
   profile,
   setProfile,
   handleSaveProfile,
@@ -1531,7 +1534,8 @@ export default function SettingsCenter({
               </p>
             </div>
 
-            <div className="flex items-center gap-3 self-start sm:self-auto shrink-0">
+            <div className="flex items-center gap-3 self-start sm:self-auto shrink-0 flex-wrap">
+              <LicenseStatusBadge warningOnly />
               <div className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-paper-2 border border-line shadow-sm text-xs">
                 <Store size={15} className="text-turmeric" />
                 <span className="font-bold text-ink">{outlet.name || 'Store'}</span>
@@ -1970,6 +1974,7 @@ export default function SettingsCenter({
                       if (onModuleConfigUpdated) onModuleConfigUpdated(cfg);
                     }}
                     flashMessage={flashMessage}
+                    tunnelUrl={tunnelUrl}
                   />
                 </div>
               )}
@@ -5721,7 +5726,17 @@ export default function SettingsCenter({
 
               {/* ── SERVER & COMMERCIAL LICENSE ── */}
               {activePanel === 'server_license' && (
-                <div className="card p-5 sm:p-6 bg-paper-2">
+                <div className="card p-5 sm:p-6 bg-paper-2 flex flex-col gap-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-line">
+                    <div className="flex items-center gap-3">
+                      <Server className="text-turmeric" size={24} />
+                      <div>
+                        <h2 className="text-xl font-bold font-display">Server & Commercial License</h2>
+                        <p className="text-xs text-ink-3">Local database engine, thermal print spooler, background services & commercial license.</p>
+                      </div>
+                    </div>
+                    <LicenseStatusBadge />
+                  </div>
                   <ServerDashboardClient />
                 </div>
               )}
@@ -6765,6 +6780,7 @@ export default function SettingsCenter({
                               if (onModuleConfigUpdated) onModuleConfigUpdated(cfg);
                             }}
                             flashMessage={flashMessage}
+                            tunnelUrl={tunnelUrl}
                           />
                         </div>
                       </div>

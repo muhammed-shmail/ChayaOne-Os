@@ -10,6 +10,7 @@ import { CountUp } from '@/components/ui/motion';
 import { TeaLoader } from '@/components/ui/TeaLoader';
 import { RevenuePanel } from '@/components/dashboard/RevenuePanel';
 import type { DashboardData } from '@/lib/analytics';
+import { Maximize2, Minimize2, Globe } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { SECTION_KEY, SectionView } from './Sections';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, assignableRoles, ALL_ROLES, hasRole as rbacHasRole, hasPermission as rbacHasPermission } from '@/lib/rbac';
@@ -31,6 +32,7 @@ import {
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import { BusinessDayPrompt, BusinessDayHeaderBadge } from '@/components/BusinessDayPrompt';
+import LicenseStatusBadge from '@/components/license/LicenseStatusBadge';
 import StaffDevices from '@/components/StaffDevices';
 import { MobileDrawer, BottomNav, type NavItem } from '@/components/dashboard/MobileNav';
 
@@ -204,7 +206,15 @@ export default function DashboardClient({
     return true;
   });
   const [isPending, startTransition] = useTransition();
-  const { kpi, trend, hourly, topItems, menuQuadrant, lowStock, loyalty, briefing } = data;
+  const kpi = data?.kpi ?? { todaySalesPaise: 0, todayOrders: 0, aovPaise: 0, footfall: 0, salesDeltaPct: null, ordersDeltaPct: null };
+  const trend = data?.trend ?? [];
+  const hourly = data?.hourly ?? [];
+  const topItems = data?.topItems ?? [];
+  const menuQuadrant = data?.menuQuadrant ?? [];
+  const lowStock = data?.lowStock ?? [];
+  const loyalty = data?.loyalty ?? { customers: 0, repeatPct: 0, gamesPlayed: 0, pointsLiability: 0, qrScanPct: 0 };
+  const briefing = data?.briefing ?? [];
+  const activeFeatures = features ?? {};
 
   const [showPos, setShowPos] = useState(false);
   const [showTBilling, setShowTBilling] = useState(false);
@@ -272,6 +282,39 @@ export default function DashboardClient({
 
   // Mobile-only slide-out drawer (the full menu); desktop uses the sidebar above.
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (typeof window !== 'undefined' && (window as any).chayaOne?.toggleFullscreen) {
+      (window as any).chayaOne.toggleFullscreen().then((fs: boolean) => setIsFullscreen(fs)).catch(() => {});
+      return;
+    }
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  // Cloudflare Remote Access Link
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
+  const [copiedRemote, setCopiedRemote] = useState<boolean>(false);
+
+  useEffect(() => {
+    fetch('/api/tunnel')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.publicUrl) setTunnelUrl(d.publicUrl);
+      })
+      .catch(() => {});
+  }, []);
 
   // 2. Navigation State
   const [activeMenu, setActiveMenu] = useState('home');
@@ -2244,6 +2287,18 @@ export default function DashboardClient({
 
             <ThemeToggle />
 
+            {/* Fullscreen Toggle */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Exit Fullscreen (F11)' : 'Enter Fullscreen (F11)'}
+              aria-label="Toggle Fullscreen"
+              className="relative w-9 h-9 rounded-xl grid place-items-center hover:opacity-80 transition cursor-pointer"
+              style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+            >
+              {isFullscreen ? <Minimize2 size={16} aria-hidden /> : <Maximize2 size={16} aria-hidden />}
+            </button>
+
             {/* notification bell */}
             <div className="relative">
               <button onClick={() => { setBellOpen((o) => !o); if (!bellOpen) loadNotifs(); }} className="relative w-9 h-9 rounded-xl grid place-items-center" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }} aria-label={unread > 0 ? `Alerts, ${unread} unread` : 'Alerts'}>
@@ -2344,7 +2399,7 @@ export default function DashboardClient({
               )}
             </div>
 
-            <div className="hidden md:inline-flex">
+            <div className="inline-flex">
               <ShiftStatus />
             </div>
           </div>
@@ -2490,7 +2545,7 @@ export default function DashboardClient({
             {activeSubTab === 'overview' && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* AI Briefing */}
-                <motion.section className="card col-span-2 p-5 flex flex-col justify-between" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.05 }}>
+                <motion.section className="card col-span-2 p-5 flex flex-col justify-between" initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
                   <div>
                     <span className="font-bold text-xs" style={{ color: 'var(--berry)' }}>✦ AI Morning Briefing</span>
                     <div className="grid gap-2.5 mt-3">
@@ -2510,19 +2565,19 @@ export default function DashboardClient({
 
                 {/* Constraints display: Sales, Orders, Profit, Low Stock, Top Sellers */}
                 <KpiCard label="Today's Sales" n={totalSales} format={formatINR} index={0} />
-                <KpiCard label="Orders" n={kpi.todayOrders} index={1} />
+                <KpiCard label="Orders" n={kpi.todayOrders ?? 0} index={1} />
                 <KpiCard label="Profit (est. 70%)" n={estimatedProfit} format={formatINR} tone="cardamom" index={2} />
                 <KpiCard label="Low Stock Items" n={lowStock.length} tone={lowStock.length > 0 ? 'gold' : undefined} index={3} />
 
                 {/* Revenue overview — total revenue + date-wise sales chart/report */}
-                {features.revenue_analytics !== false && (
+                {(activeFeatures.revenue_analytics ?? true) !== false && (
                   <div className="col-span-2 lg:col-span-4">
                     <RevenuePanel initialTrend={trend} restrictToToday={staff.role === 'cashier'} />
                   </div>
                 )}
 
                 {/* Low Stock Alerts list */}
-                <motion.section className="card col-span-2 p-5" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.1 }}>
+                <motion.section className="card col-span-2 p-5" initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
                   <h4 className="text-base font-bold mb-3">⚠ Low Stock Alerts</h4>
                   {lowStock.length === 0 ? (
                     <p className="text-sm text-ink-3">All ingredients look healthy!</p>
@@ -2539,7 +2594,7 @@ export default function DashboardClient({
                 </motion.section>
 
                 {/* Top Selling Items */}
-                <motion.section className="card col-span-2 p-5" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: 0.15 }}>
+                <motion.section className="card col-span-2 p-5" initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
                   <h4 className="text-base font-bold mb-3">⭐ Top Selling Items</h4>
                   {topItems.length === 0 ? (
                     <p className="text-sm text-ink-3">Not enough orders to rank bestsellers.</p>
@@ -2556,7 +2611,7 @@ export default function DashboardClient({
                 </motion.section>
 
                 {/* AI Assistant grounded box */}
-                {features.ai_assistant !== false && <Assistant />}
+                {(activeFeatures.ai_assistant ?? false) && <Assistant />}
               </div>
             )}
 
@@ -3839,6 +3894,7 @@ export default function DashboardClient({
                 features={features}
                 moduleConfig={moduleConfig}
                 onModuleConfigUpdated={setModuleConfig}
+                tunnelUrl={tunnelUrl}
                 profile={profile}
                 setProfile={setProfile}
                 handleSaveProfile={handleSaveProfile}
@@ -4933,9 +4989,9 @@ function KpiCard({ label, value, n, format, tone, index = 0 }: { label: string; 
   return (
     <motion.section
       className="card card-glow p-4"
-      initial={{ opacity: 0, y: 24 }}
+      initial={false}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.55, ease: [0.25, 0.8, 0.25, 1], delay: index * 0.08 }}
+      transition={{ duration: 0.3 }}
       whileHover={{ y: -3 }}
     >
       <span className="block text-xs mb-2 text-ink-3">{label}</span>

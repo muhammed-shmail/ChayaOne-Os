@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { formatINR } from '@cafeos/core';
 import type { StaffRole } from '@cafeos/db';
-import { ROLE_LABELS, ALL_ROLES, PERMISSION_MODULES, PRESETS, resolvePrimaryRole, type PermissionItem } from '@/lib/rbac';
+import { ROLE_LABELS, ROLE_DESCRIPTIONS, ALL_ROLES, PERMISSION_MODULES, PRESETS, resolvePrimaryRole, type PermissionItem } from '@/lib/rbac';
 
 interface CustomSelectOption {
   value: string;
@@ -128,8 +128,13 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   const [newStaffPhone, setNewStaffPhone] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffCode, setNewStaffCode] = useState('');
-  const [newStaffPin, setNewStaffPin] = useState('');
   const [newStaffPassword, setNewStaffPassword] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<StaffRole>('waiter');
+  const [newStaffPin, setNewStaffPin] = useState('');
+  const [newStaffPayType, setNewStaffPayType] = useState<'monthly' | 'hourly' | ''>('');
+  const [newStaffPayRate, setNewStaffPayRate] = useState('');
+  const [newStaffDesignation, setNewStaffDesignation] = useState('');
+  const [newStaffJoiningDate, setNewStaffJoiningDate] = useState('');
 
   // Local copy of members with nested metadata parsing
   const [membersList, setMembersList] = useState<any[]>([]);
@@ -366,7 +371,14 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     e.preventDefault();
     setErrorMessage(null);
     if (!newStaffName.trim()) return setErrorMessage('Full Name is required');
-    if (!/^\d{4,6}$/.test(newStaffPin)) return setErrorMessage('PIN must be 4 to 6 numeric digits');
+    if (!newStaffEmail.trim()) return setErrorMessage('Username / Email is required');
+    if (!newStaffPassword || newStaffPassword.length < 6) return setErrorMessage('Password must be at least 6 characters');
+    if (newStaffPin && !/^\d{4,6}$/.test(newStaffPin)) return setErrorMessage('PIN must be 4–6 digits');
+
+    // Build pay rate in paise (100 paise = ₹1)
+    const payRatePaise = newStaffPayRate && newStaffPayType
+      ? Math.round(parseFloat(newStaffPayRate) * 100)
+      : null;
 
     try {
       const res = await fetch('/api/staff', {
@@ -375,16 +387,26 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         body: JSON.stringify({
           action: 'create',
           name: newStaffName,
-          role: 'waiter', // default role, customizable immediately after
+          role: newStaffRole,
           phone: newStaffPhone || null,
-          pin: newStaffPin,
           employeeCode: newStaffCode || null,
-          username: newStaffEmail || null,
-          password: newStaffPassword || null
+          username: newStaffEmail.trim(),
+          password: newStaffPassword,
+          pin: newStaffPin || null,
+          payType: newStaffPayType || null,
+          payRatePaise,
+          designation: newStaffDesignation || null,
+          joiningDate: newStaffJoiningDate || null,
+          permissions: {
+            assignedRoles: [newStaffRole],
+            branchAccess: ['main-branch'],
+            overrides: {},
+            dataRestrictions: []
+          }
         })
       });
       const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'Conflict saving employee');
+      if (!res.ok || data.error) throw new Error(data.message || data.error || 'Error saving staff member');
 
       setShowAddModal(false);
       // Reset form states
@@ -392,8 +414,13 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       setNewStaffPhone('');
       setNewStaffEmail('');
       setNewStaffCode('');
-      setNewStaffPin('');
       setNewStaffPassword('');
+      setNewStaffRole('waiter');
+      setNewStaffPin('');
+      setNewStaffPayType('');
+      setNewStaffPayRate('');
+      setNewStaffDesignation('');
+      setNewStaffJoiningDate('');
       
       refresh();
     } catch (e: any) {
@@ -1030,14 +1057,17 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-paper-3 border border-line rounded-xl shadow-2xl w-full max-w-lg p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            className="bg-paper-3 border border-line rounded-xl shadow-2xl w-full max-w-xl p-6 overflow-y-auto max-h-[90vh] animate-in fade-in zoom-in-95 duration-200"
           >
             {/* Header */}
-            <div className="flex justify-between items-center border-b border-line pb-3 mb-4">
-              <h3 className="font-bold text-lg">Add New Staff Member</h3>
+            <div className="flex justify-between items-center border-b border-line pb-3 mb-5">
+              <div>
+                <h3 className="font-bold text-lg">Add New Staff Member</h3>
+                <p className="text-xs text-ink-3 mt-0.5">Fill required fields and set role — permissions can be tuned after.</p>
+              </div>
               <button 
                 onClick={() => setShowAddModal(false)}
-                className="text-ink-3 hover:text-ink transition-all"
+                className="text-ink-3 hover:text-ink transition-all flex-shrink-0 ml-4"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -1053,94 +1083,202 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
             )}
 
             {/* Form body */}
-            <form onSubmit={handleCreateStaff} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-ink-2">Full Name *</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={newStaffName} 
-                    onChange={(e) => setNewStaffName(e.target.value)}
-                    placeholder="Rahul Sharma"
-                    className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-ink-2">Employee ID Code</label>
-                  <input 
-                    type="text" 
-                    value={newStaffCode} 
-                    onChange={(e) => setNewStaffCode(e.target.value)}
-                    placeholder="CH-102"
-                    className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
-                  />
-                </div>
-              </div>
+            <form onSubmit={handleCreateStaff} className="space-y-5">
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-ink-2">Phone Number</label>
-                  <input 
-                    type="tel" 
-                    value={newStaffPhone} 
-                    onChange={(e) => setNewStaffPhone(e.target.value)}
-                    placeholder="9876543210"
-                    className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-ink-2">Login PIN * (4-6 digits)</label>
-                  <input 
-                    type="password" 
-                    required
-                    value={newStaffPin} 
-                    onChange={(e) => setNewStaffPin(e.target.value)}
-                    placeholder="••••"
-                    className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink font-mono text-sm focus:outline-none focus:border-turmeric"
-                  />
-                </div>
-              </div>
-
-              <div className="border-t border-line/50 pt-4">
-                <span className="block text-xs font-bold text-ink-2 uppercase tracking-wide mb-3">Login Credentials (Optional Dashboard Access)</span>
-                
-                <div className="grid grid-cols-2 gap-4">
+              {/* ── SECTION 1: Basic Info ── */}
+              <div>
+                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-3">Basic Information</span>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold mb-1 text-ink-2">Email / Username</label>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Full Name *</label>
                     <input 
                       type="text" 
-                      value={newStaffEmail} 
-                      onChange={(e) => setNewStaffEmail(e.target.value)}
-                      placeholder="rahul.s"
-                      className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                      required
+                      value={newStaffName} 
+                      onChange={(e) => setNewStaffName(e.target.value)}
+                      placeholder="Rahul Sharma"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold mb-1 text-ink-2">Dashboard Password</label>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Employee ID Code</label>
+                    <input 
+                      type="text" 
+                      value={newStaffCode} 
+                      onChange={(e) => setNewStaffCode(e.target.value)}
+                      placeholder="CH-102"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Phone Number</label>
+                    <input 
+                      type="tel" 
+                      value={newStaffPhone} 
+                      onChange={(e) => setNewStaffPhone(e.target.value)}
+                      placeholder="9876543210"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Login PIN <span className="font-normal text-ink-3">(4–6 digits, POS access)</span></label>
+                    <input 
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={newStaffPin} 
+                      onChange={(e) => setNewStaffPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="• • • •"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric tracking-widest"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── SECTION 2: Role ── */}
+              <div className="border-t border-line/50 pt-4">
+                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-3">Role *</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {ALL_ROLES.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setNewStaffRole(r)}
+                      className={`relative px-3 py-2.5 rounded-lg border text-xs font-semibold text-left transition-all ${
+                        newStaffRole === r
+                          ? 'border-turmeric bg-turmeric/10 text-turmeric'
+                          : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
+                      }`}
+                    >
+                      <span className="block capitalize">{ROLE_LABELS[r]}</span>
+                      {newStaffRole === r && (
+                        <span className="absolute top-1.5 right-2 text-[9px] text-turmeric">✓</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-ink-3 mt-2">
+                  {ROLE_DESCRIPTIONS[newStaffRole]}
+                </p>
+              </div>
+
+              {/* ── SECTION 3: Payment (Optional) ── */}
+              <div className="border-t border-line/50 pt-4">
+                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-3">Payment <span className="normal-case font-normal">(Optional)</span></span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Pay Type</label>
+                    <div className="flex gap-2">
+                      {(['monthly', 'hourly'] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setNewStaffPayType(prev => prev === t ? '' : t)}
+                          className={`flex-1 py-2 rounded-lg border text-xs font-semibold capitalize transition-all ${
+                            newStaffPayType === t
+                              ? 'border-turmeric bg-turmeric/10 text-turmeric'
+                              : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">
+                      Rate (₹){newStaffPayType === 'monthly' ? ' / month' : newStaffPayType === 'hourly' ? ' / hr' : ''}
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3 text-xs font-bold">₹</span>
+                      <input 
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={newStaffPayRate} 
+                        onChange={(e) => setNewStaffPayRate(e.target.value)}
+                        placeholder={newStaffPayType === 'hourly' ? '150.00' : '20000'}
+                        disabled={!newStaffPayType}
+                        className="w-full pl-7 pr-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric disabled:opacity-40"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── SECTION 4: Login Credentials ── */}
+              <div className="border-t border-line/50 pt-4">
+                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-1">Dashboard Login Credentials *</span>
+                <p className="text-[10px] text-ink-3 mb-3">Required for dashboard access. The username must be unique across your team.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Email / Username *</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={newStaffEmail} 
+                      onChange={(e) => setNewStaffEmail(e.target.value)}
+                      placeholder="rahul.sharma"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Dashboard Password *</label>
                     <input 
                       type="password" 
+                      required
+                      minLength={6}
                       value={newStaffPassword} 
                       onChange={(e) => setNewStaffPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-4 border-t border-line mt-4">
+              {/* ── SECTION 5: Other Details (Optional) ── */}
+              <div className="border-t border-line/50 pt-4">
+                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-3">Other Details <span className="normal-case font-normal">(Optional)</span></span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Designation / Title</label>
+                    <input 
+                      type="text" 
+                      value={newStaffDesignation} 
+                      onChange={(e) => setNewStaffDesignation(e.target.value)}
+                      placeholder="e.g. Head Waiter"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Joining Date</label>
+                    <input 
+                      type="date" 
+                      value={newStaffJoiningDate} 
+                      onChange={(e) => setNewStaffJoiningDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Actions ── */}
+              <div className="flex justify-end gap-2 pt-4 border-t border-line">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded bg-paper-2 hover:bg-line text-xs font-semibold transition-all"
+                  className="px-4 py-2 rounded-lg bg-paper-2 hover:bg-line text-xs font-semibold transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 transition-all"
+                  className="px-5 py-2 rounded-lg bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5"
                 >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+                  </svg>
                   Create & Setup RBAC
                 </button>
               </div>

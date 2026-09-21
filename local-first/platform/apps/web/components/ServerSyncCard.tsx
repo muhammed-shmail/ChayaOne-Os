@@ -6,15 +6,17 @@ import { RefreshCw, Settings, Wifi, WifiOff, Trash2, CheckCircle2 } from 'lucide
 interface ServerSyncCardProps {
   className?: string;
   onManualSync?: () => Promise<void> | void;
+  compact?: boolean;
 }
 
-export function ServerSyncCard({ className = '', onManualSync }: ServerSyncCardProps) {
+export function ServerSyncCard({ className = '', onManualSync, compact = false }: ServerSyncCardProps) {
   const [serverIp, setServerIp] = useState<string>('');
   const [serverPort, setServerPort] = useState<string>('3000');
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Just now');
   const [cacheMessage, setCacheMessage] = useState<string | null>(null);
+
 
   // Detect server address from AndroidBridge or window.location
   useEffect(() => {
@@ -140,37 +142,37 @@ export function ServerSyncCard({ className = '', onManualSync }: ServerSyncCardP
 
   return (
     <div
-      className={`rounded-2xl p-3 border flex flex-col gap-2.5 transition ${className}`}
+      className={`rounded-xl ${compact ? 'p-2 gap-1.5' : 'p-2.5 sm:p-3 gap-2 sm:gap-2.5'} border flex flex-col transition ${className}`}
       style={{
         background: 'var(--paper-3, #1e293b)',
         borderColor: isOnline ? 'color-mix(in srgb, var(--cardamom, #10b981) 40%, var(--line, #334155))' : 'color-mix(in srgb, var(--clay, #ef4444) 40%, var(--line, #334155))',
       }}
     >
       {/* Header: Status & IP */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <span
-            className="w-2.5 h-2.5 rounded-full shrink-0"
+            className={`${compact ? 'w-2 h-2' : 'w-2 sm:w-2.5 h-2 sm:h-2.5'} rounded-full shrink-0`}
             style={{
               background: isOnline ? 'var(--cardamom, #10b981)' : 'var(--clay, #ef4444)',
               boxShadow: isOnline
-                ? '0 0 0 3px color-mix(in srgb, var(--cardamom, #10b981) 25%, transparent)'
-                : '0 0 0 3px color-mix(in srgb, var(--clay, #ef4444) 25%, transparent)',
+                ? '0 0 0 2px color-mix(in srgb, var(--cardamom, #10b981) 25%, transparent)'
+                : '0 0 0 2px color-mix(in srgb, var(--clay, #ef4444) 25%, transparent)',
             }}
           />
           <div className="flex flex-col min-w-0">
-            <span className="text-[12px] font-extrabold truncate" style={{ color: 'var(--ink, #ffffff)' }}>
+            <span className={`${compact ? 'text-[11px]' : 'text-[11px] sm:text-[12px]'} font-extrabold truncate leading-tight`} style={{ color: 'var(--ink, #ffffff)' }}>
               {displayHost}
             </span>
-            <span className="text-[10px] font-medium" style={{ color: 'var(--ink-3, #94a3b8)' }}>
-              {isOnline ? 'Main PC Server Connected' : 'Reconnecting to Server...'}
+            <span className={`${compact ? 'text-[8.5px]' : 'text-[9px] sm:text-[10px]'} font-medium leading-none`} style={{ color: 'var(--ink-3, #94a3b8)' }}>
+              {isOnline ? 'Main PC Connected' : 'Reconnecting...'}
             </span>
           </div>
         </div>
 
         {/* Sync Status Badge */}
         <span
-          className="text-[10px] font-semibold px-2 py-0.5 rounded-md shrink-0"
+          className={`${compact ? 'text-[8.5px] px-1.5 py-0.5' : 'text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5'} font-semibold rounded-md shrink-0`}
           style={{
             background: isOnline ? 'color-mix(in srgb, var(--cardamom, #10b981) 15%, var(--paper, #0f172a))' : 'color-mix(in srgb, var(--clay, #ef4444) 15%, var(--paper, #0f172a))',
             color: isOnline ? 'var(--cardamom-d, #34d399)' : 'var(--clay, #f87171)',
@@ -180,8 +182,10 @@ export function ServerSyncCard({ className = '', onManualSync }: ServerSyncCardP
         </span>
       </div>
 
+      {/* Remote Link moved to Settings → App Cores & Extensions */}
+
       {/* Action Buttons Row */}
-      <div className="grid grid-cols-3 gap-1.5 pt-1">
+      <div className={`grid grid-cols-3 ${compact ? 'gap-1 pt-0.5' : 'gap-1.5 pt-1'}`}>
         {/* Sync Now Button */}
         <button
           type="button"
@@ -189,14 +193,14 @@ export function ServerSyncCard({ className = '', onManualSync }: ServerSyncCardP
           disabled={isSyncing}
           aria-label="Sync with Server"
           title="Sync orders and data with Main PC"
-          className="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-[11px] font-bold transition active:scale-95 disabled:opacity-50"
+          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95 disabled:opacity-50`}
           style={{
             background: 'var(--ink, #0f172a)',
             color: 'var(--paper-2, #ffffff)',
             border: '1px solid var(--line, #334155)',
           }}
         >
-          <RefreshCw size={13} className={isSyncing ? 'animate-spin' : ''} aria-hidden />
+          <RefreshCw size={compact ? 11 : 12} className={isSyncing ? 'animate-spin' : ''} aria-hidden />
           <span>Sync</span>
         </button>
 
@@ -206,14 +210,14 @@ export function ServerSyncCard({ className = '', onManualSync }: ServerSyncCardP
           onClick={handleOpenSettings}
           aria-label="Server Settings / Scan QR"
           title="Configure Server or Scan QR"
-          className="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-[11px] font-bold transition active:scale-95"
+          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95`}
           style={{
             background: 'var(--paper-2, #1e293b)',
             color: 'var(--ink, #ffffff)',
             border: '1px solid var(--line, #334155)',
           }}
         >
-          <Settings size={13} aria-hidden />
+          <Settings size={compact ? 11 : 12} aria-hidden />
           <span>Setup</span>
         </button>
 
@@ -223,20 +227,20 @@ export function ServerSyncCard({ className = '', onManualSync }: ServerSyncCardP
           onClick={handleClearCache}
           aria-label="Clear App Cache"
           title="Smooth App Operations"
-          className="inline-flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-[11px] font-bold transition active:scale-95"
+          className={`inline-flex items-center justify-center gap-1 ${compact ? 'py-1 px-1 rounded-lg text-[9.5px]' : 'py-1.5 sm:py-2 px-2 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px]'} font-bold transition active:scale-95`}
           style={{
             background: 'var(--paper-2, #1e293b)',
             color: 'var(--ink-2, #cbd5e1)',
             border: '1px solid var(--line, #334155)',
           }}
         >
-          <Trash2 size={13} aria-hidden />
+          <Trash2 size={compact ? 11 : 12} aria-hidden />
           <span>Cache</span>
         </button>
       </div>
 
       {cacheMessage && (
-        <div className="text-[10px] text-center font-bold text-emerald-400">
+        <div className="text-[9px] text-center font-bold text-emerald-400">
           ✓ {cacheMessage}
         </div>
       )}

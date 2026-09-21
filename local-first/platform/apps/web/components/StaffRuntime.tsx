@@ -69,6 +69,12 @@ export default function StaffRuntime({ pwa = false }: { pwa?: boolean }) {
     if (!pwa) return;
     if (process.env.NODE_ENV !== 'production') return;
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const isDesktopOrNative = typeof window !== 'undefined' && (
+      window.navigator.userAgent.includes('Electron') ||
+      !!(window as any).electronAPI ||
+      !!(window as any).AndroidBridge
+    );
+    if (isDesktopOrNative) return;
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }, [pwa]);
 

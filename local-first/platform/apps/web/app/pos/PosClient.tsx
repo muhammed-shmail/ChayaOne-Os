@@ -134,6 +134,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   const [discountFlatPaise, setDiscountFlatPaise] = useState(0);
   const [scPct, setScPct] = useState(0);
   const [floorOpen, setFloorOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
   const [floorFilter, setFloorFilter] = useState<string>('all'); // 'all' | floorId | 'unassigned'
   const [charging, setCharging] = useState(false);
   // when Send/Charge is tapped with no table, we open the floor map and remember the
@@ -914,8 +915,6 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
           <div className="px-1 flex flex-col gap-1.5">
             <ShiftStatus />
             <BusinessDayHeaderBadge />
-            <LicenseStatusBadge />
-            <ServerSyncCard onManualSync={refreshTables} />
           </div>
           <div className="flex rounded-full p-[3px] border" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
             {(['dine_in', 'takeaway'] as const).map((t) => (
@@ -974,6 +973,53 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               {search && <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center" style={{ color: 'var(--ink-3)' }}><X size={15} aria-hidden /></button>}
             </div>
             <span className="pill shrink-0 hidden lg:inline-flex">{outlet.stateCode} · GST intra-state</span>
+
+            {/* Small Sync Button in Top Bar */}
+            <div className="relative shrink-0 hidden md:block">
+              <button
+                id="topbar-sync-btn"
+                data-testid="topbar-sync-btn"
+                type="button"
+                onClick={() => setSyncOpen((o) => !o)}
+                title="Server Connection & Sync Settings"
+                className="pill flex items-center gap-1.5 cursor-pointer font-bold text-xs hover:opacity-85 transition"
+                style={{
+                  background: syncOpen ? 'var(--paper-3)' : 'var(--paper-2)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--ink-2)',
+                }}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <RefreshCw size={13} className={syncOpen ? 'text-emerald-500' : ''} />
+                <span>Sync</span>
+              </button>
+
+              {syncOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setSyncOpen(false)} />
+                  <div
+                    className="absolute right-0 mt-2 w-[340px] z-50 rounded-2xl p-2.5 shadow-2xl"
+                    style={{
+                      background: 'var(--paper)',
+                      border: '1px solid var(--line-2)',
+                      boxShadow: 'var(--sh-3)',
+                    }}
+                  >
+                    <div className="flex items-center justify-between px-2.5 py-1.5 border-b mb-2" style={{ borderColor: 'var(--line)' }}>
+                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>Server &amp; Sync Control</span>
+                      <button
+                        type="button"
+                        onClick={() => setSyncOpen(false)}
+                        className="btn btn-ghost btn-xs w-6 h-6 p-0 grid place-items-center rounded-lg cursor-pointer"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <ServerSyncCard onManualSync={refreshTables} compact />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           {live.length > 0 && <LiveOrders tickets={live} now={now} />}
@@ -1648,56 +1694,57 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       {moreOpen && (
         <div className="md:hidden fixed inset-0 z-[700]" role="dialog" aria-modal="true" aria-label="Menu">
           <div className="absolute inset-0 anim-fade" style={{ background: 'var(--scrim)' }} onClick={() => setMoreOpen(false)} />
-          <aside className="anim-drawer-l absolute left-0 top-0 h-full w-[82%] max-w-[300px] flex flex-col gap-3 p-4 overflow-y-auto no-scrollbar"
-            style={{ background: 'var(--paper-2)', borderRight: '1px solid var(--line)', paddingTop: 'calc(1rem + env(safe-area-inset-top))', paddingLeft: 'calc(1rem + env(safe-area-inset-left))' }}>
-            <div className="flex items-center justify-between gap-2">
+          <aside className="anim-drawer-l absolute left-0 top-0 h-full w-[82%] max-w-[285px] flex flex-col gap-2 p-3 overflow-y-auto no-scrollbar"
+            style={{ background: 'var(--paper-2)', borderRight: '1px solid var(--line)', paddingTop: 'calc(0.75rem + env(safe-area-inset-top))', paddingLeft: 'calc(0.75rem + env(safe-area-inset-left))' }}>
+            <div className="flex items-center justify-between gap-2 pb-0.5">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="w-12 h-7 shrink-0 overflow-hidden flex items-center justify-center">
+                <div className="w-10 h-6 shrink-0 overflow-hidden flex items-center justify-center">
                   <img src="/logo chaya one.png" alt="ChayaOne" className="brand-logo w-full h-full object-contain" />
                 </div>
-                <span className="font-display font-bold text-[16px] truncate">{(outlet.name.split('—')[0] ?? '').trim()}</span>
+                <span className="font-display font-bold text-[15px] truncate">{(outlet.name.split('—')[0] ?? '').trim()}</span>
               </div>
               <ThemeToggle />
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-7 h-7 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{currentStaff.name[0]}</span>
-              <span className="text-[13px] font-bold">{currentStaff.name}</span>
-              <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>
+              <span className="w-6 h-6 rounded-full grid place-items-center text-[10px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{currentStaff.name[0]}</span>
+              <span className="text-[12px] font-bold">{currentStaff.name}</span>
+              <span className="pill" style={{ padding: '1px 6px', fontSize: '9.5px', textTransform: 'capitalize' }}>
                 {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
               </span>
             </div>
             <ShiftStatus />
-            <div className="px-1 flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <BusinessDayHeaderBadge />
-              <LicenseStatusBadge />
-              <ServerSyncCard onManualSync={refreshTables} />
+              <ServerSyncCard onManualSync={refreshTables} compact />
             </div>
-            {canAccess(currentStaff, 'dashboard') && (
-              <a href="/dashboard" onClick={handleDashboardClick} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-                <LayoutDashboard size={18} aria-hidden /> Dashboard
-              </a>
-            )}
-            <button onClick={() => { setMoreOpen(false); setFloorOpen(true); }} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] border-[1.5px] border-dashed font-bold text-[14px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
-              <Table2 size={18} aria-hidden /> Floor map &amp; tables
-            </button>
-            <a href="/approvals" className="relative flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-              <ClipboardList size={18} aria-hidden /> QR Approvals
-              {pendingApprovals > 0 && (
-                <span className="ml-auto min-w-[22px] h-[22px] px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
+            <div className="flex flex-col gap-1 pt-0.5">
+              {canAccess(currentStaff, 'dashboard') && (
+                <a href="/dashboard" onClick={handleDashboardClick} className="flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                  <LayoutDashboard size={16} aria-hidden /> Dashboard
+                </a>
               )}
-            </a>
-            {showInstallApp && (
-              <button onClick={() => { setMoreOpen(false); staffInstall.promptInstall(); }} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-                <Download size={18} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
+              <button onClick={() => { setMoreOpen(false); setFloorOpen(true); }} className="flex items-center gap-2 px-2.5 py-2 rounded-xl border-[1.5px] border-dashed font-bold text-[13px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
+                <Table2 size={16} aria-hidden /> Floor map &amp; tables
               </button>
-            )}
-            {(hasRole(currentStaff, ['owner', 'manager', 'cashier']) || hasPermission(currentStaff, 'pos:t_billing')) && (
-              <button onClick={() => { setMoreOpen(false); setShowTBilling(true); }} className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-                <Table2 size={18} aria-hidden /> T-Billing Terminal
-              </button>
-            )}
-            <a href="/api/auth/logout" className="flex items-center gap-2.5 px-3 py-3 rounded-[14px] font-bold text-[14px] mt-auto" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}>
-              <LogOut size={18} aria-hidden /> Log out
+              <a href="/approvals" className="relative flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                <ClipboardList size={16} aria-hidden /> QR Approvals
+                {pendingApprovals > 0 && (
+                  <span className="ml-auto min-w-[20px] h-[20px] px-1.5 grid place-items-center rounded-full text-[10px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
+                )}
+              </a>
+              {showInstallApp && (
+                <button onClick={() => { setMoreOpen(false); staffInstall.promptInstall(); }} className="flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                  <Download size={16} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
+                </button>
+              )}
+              {(hasRole(currentStaff, ['owner', 'manager', 'cashier']) || hasPermission(currentStaff, 'pos:t_billing')) && (
+                <button onClick={() => { setMoreOpen(false); setShowTBilling(true); }} className="flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                  <Table2 size={16} aria-hidden /> T-Billing Terminal
+                </button>
+              )}
+            </div>
+            <a href="/api/auth/logout" className="flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px] mt-auto" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}>
+              <LogOut size={16} aria-hidden /> Log out
             </a>
           </aside>
         </div>

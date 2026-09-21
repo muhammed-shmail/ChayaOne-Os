@@ -21,12 +21,12 @@ let targetPath = '';
 let targetArgs = '--route=/pos';
 let iconLocation = '';
 
-if (fs.existsSync(unpackedExe)) {
-  targetPath = unpackedExe;
-  iconLocation = unpackedExe;
-} else if (fs.existsSync(installedExe)) {
+if (fs.existsSync(installedExe)) {
   targetPath = installedExe;
   iconLocation = installedExe;
+} else if (fs.existsSync(unpackedExe)) {
+  targetPath = unpackedExe;
+  iconLocation = unpackedExe;
 } else if (fs.existsSync(fallbackVbs)) {
   targetPath = fallbackVbs;
   targetArgs = '';
@@ -56,11 +56,11 @@ foreach ($d in $desktopPaths) {
   if (Test-Path $d) {
     try {
       $sc = $WshShell.CreateShortcut((Join-Path $d "ChayaOne.lnk"));
-      $sc.TargetPath = '${targetPath.replace(/\\/g, '\\\\')}';
+      $sc.TargetPath = '${targetPath}';
       $sc.Arguments = '${targetArgs}';
-      $sc.WorkingDirectory = '${path.dirname(targetPath).replace(/\\/g, '\\\\')}';
+      $sc.WorkingDirectory = '${path.dirname(targetPath)}';
       $sc.Description = 'ChayaOne OS — Main PC Desktop App';
-      ${iconLocation ? `$sc.IconLocation = '${iconLocation.replace(/\\/g, '\\\\')}';` : ''}
+      ${iconLocation ? `$sc.IconLocation = '${iconLocation}';` : ''}
       $sc.Save();
     } catch {}
   }
@@ -70,11 +70,11 @@ foreach ($s in $startMenuPaths) {
   if (Test-Path $s) {
     try {
       $sc = $WshShell.CreateShortcut((Join-Path $s "ChayaOne.lnk"));
-      $sc.TargetPath = '${targetPath.replace(/\\/g, '\\\\')}';
+      $sc.TargetPath = '${targetPath}';
       $sc.Arguments = '${targetArgs}';
-      $sc.WorkingDirectory = '${path.dirname(targetPath).replace(/\\/g, '\\\\')}';
+      $sc.WorkingDirectory = '${path.dirname(targetPath)}';
       $sc.Description = 'ChayaOne OS — Main PC Desktop App';
-      ${iconLocation ? `$sc.IconLocation = '${iconLocation.replace(/\\/g, '\\\\')}';` : ''}
+      ${iconLocation ? `$sc.IconLocation = '${iconLocation}';` : ''}
       $sc.Save();
     } catch {}
   }

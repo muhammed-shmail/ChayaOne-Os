@@ -1,7 +1,16 @@
 import log from 'electron-log';
 
+import { app } from 'electron';
+
 log.transports.file.level = 'info';
-log.transports.console.level = 'debug';
+log.transports.file.sync = true; // Synchronous disk writes so exit logs are never lost
+log.transports.console.level = (typeof app !== 'undefined' && app.isPackaged) ? false : 'debug';
+
+// Ignore broken pipe errors on stdio for detached GUI processes
+try {
+  process.stdout?.on?.('error', () => {});
+  process.stderr?.on?.('error', () => {});
+} catch {}
 
 export const logger = {
   info: (msg: string, ...args: any[]) => log.info(`[ChayaOne] ${msg}`, ...args),

@@ -243,7 +243,7 @@ function Inventory({ d }: { d: InventoryData }) {
 function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
   const [activeTab, setActiveTab] = useState<'directory' | 'shifts' | 'attendance' | 'payroll'>('directory');
   const [modal, setModal] = useState<{
-    type: 'add' | 'edit' | 'pin' | 'pay' | 'payout' | 'shift' | 'login';
+    type: 'add' | 'edit' | 'pin' | 'pay' | 'payout' | 'shift' | 'login' | 'punch';
     member?: any;
   } | null>(null);
 
@@ -255,6 +255,14 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
   const [employeeCode, setEmployeeCode] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+
+  // New staff creation pay state
+  const [newPayType, setNewPayType] = useState('none');
+  const [newPayRate, setNewPayRate] = useState('');
+
+  // New staff creation shift state
+  const [newShiftStartsAt, setNewShiftStartsAt] = useState('');
+  const [newShiftEndsAt, setNewShiftEndsAt] = useState('');
   
   // Pay states
   const [payType, setPayType] = useState<string>('none');
@@ -265,6 +273,11 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
   const [payMethod, setPayMethod] = useState<'cash' | 'upi' | 'bank'>('cash');
   const [periodLabel, setPeriodLabel] = useState(d.period || new Date().toISOString().slice(0, 7));
   const [payNote, setPayNote] = useState('');
+  const [allowOverpay, setAllowOverpay] = useState(false);
+
+  // Punch states (Manual attendance)
+  const [punchStaffId, setPunchStaffId] = useState('');
+  const [punchAction, setPunchAction] = useState<'in' | 'out'>('in');
 
   // Shift states
   const [shiftStaffId, setShiftStaffId] = useState('');
@@ -286,10 +299,13 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
       setName('');
       setRole('waiter');
       setPhone('');
-      setPin('');
       setEmployeeCode('');
       setUsername('');
       setPassword('');
+      setNewPayType('none');
+      setNewPayRate('');
+      setNewShiftStartsAt('');
+      setNewShiftEndsAt('');
     } else if (modal.type === 'edit' && modal.member) {
       setName(modal.member.name || '');
       setRole(modal.member.role || 'waiter');
@@ -305,17 +321,27 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
       setPayRate(modal.member.payRatePaise ? (modal.member.payRatePaise / 100).toString() : '');
       setEmployeeCode(modal.member.employeeCode || '');
     } else if (modal.type === 'payout' && modal.member) {
-      setPayAmount('');
+      const payItem = d.payroll.find((p) => p.staffId === modal.member.id);
+      const defaultAmount = payItem && payItem.pendingBalancePaise > 0
+        ? (payItem.pendingBalancePaise / 100).toString()
+        : modal.member.payRatePaise
+          ? (modal.member.payRatePaise / 100).toString()
+          : '';
+      setPayAmount(defaultAmount);
       setPayMethod('cash');
       setPeriodLabel(d.period || new Date().toISOString().slice(0, 7));
       setPayNote('');
+      setAllowOverpay(false);
+    } else if (modal.type === 'punch') {
+      setPunchStaffId(modal.member?.id || d.members.find((m) => m.active)?.id || '');
+      setPunchAction(modal.member?.present ? 'out' : 'in');
     } else if (modal.type === 'shift') {
       setShiftStaffId(d.members.find(m => m.active)?.id || '');
       setShiftStartsAt('');
       setShiftEndsAt('');
       setShiftRole('');
     }
-  }, [modal, d.period, d.members]);
+  }, [modal, d.period, d.members, d.payroll]);
 
   const handlePost = async (body: any) => {
     setSubmitting(true);
@@ -328,14 +354,38 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        throw new Error(data.error || `HTTP ${res.status}`);
+        throw new Error(data.message || data.error || `HTTP ${res.status}`);
       }
       refresh();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('attendance-refresh'));
+      }
       setModal(null);
     } catch (e: any) {
       setError(e.message || 'Something went wrong');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleQuickPunch = async (staffId: string, punchAction: 'in' | 'out') => {
+    try {
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'attendance_punch', id: staffId, punchAction }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        alert(data.message || data.error || 'Could not update attendance');
+      } else {
+        refresh();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('attendance-refresh'));
+        }
+      }
+    } catch {
+      alert('Network error updating attendance');
     }
   };
 
@@ -389,6 +439,17 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
               </svg>
               Schedule Shift
+            </button>
+          )}
+          {activeTab === 'attendance' && (
+            <button
+              onClick={() => setModal({ type: 'punch' })}
+              className="px-4 py-2 rounded-lg bg-turmeric text-[#2A1607] font-semibold text-sm hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Record Attendance Punch
             </button>
           )}
         </div>
@@ -548,32 +609,134 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
         {activeTab === 'attendance' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left/Middle: Live Attendance Today */}
-            <Card className="col-span-1 lg:col-span-2 p-5">
-              <CardHead title="Today's Attendance punches" hint={`${d.attendanceToday.filter(a => a.present).length} currently active`} />
-              {d.attendanceToday.length === 0 ? (
-                <Empty>No check-ins today. Staff can clock-in using their PIN at the POS.</Empty>
-              ) : (
-                <div className="grid gap-2">
-                  {d.attendanceToday.map((a) => (
-                    <div key={a.staffId} className="flex items-center justify-between p-3 rounded-lg bg-paper-3 border border-line">
-                      <div className="flex items-center gap-3">
-                        <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${a.present ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
-                        <div>
-                          <b className="text-sm block">{a.name}</b>
-                          <span className="text-xs text-ink-3" suppressHydrationWarning>
-                            In: {a.clockIn ? new Date(a.clockIn).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '—'}
-                            {a.clockOut ? ` · Out: ${new Date(a.clockOut).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}` : ''}
-                          </span>
+            <Card className="col-span-1 lg:col-span-2 p-5 flex flex-col gap-5">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-line">
+                <div>
+                  <h3 className="font-semibold text-base text-ink">Today&apos;s Attendance &amp; Punches</h3>
+                  <p className="text-xs text-ink-3 mt-0.5">
+                    {onShiftNow} staff currently on shift · {d.attendanceToday.length} check-in(s) today
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModal({ type: 'punch' })}
+                  className="px-3 py-1.5 rounded-lg bg-turmeric text-[#2A1607] font-semibold text-xs hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Clock In / Out Staff
+                </button>
+              </div>
+
+              {/* 1. Active on-shift staff */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-ink-3 mb-2.5 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  Currently On Shift ({d.attendanceToday.filter(a => a.present).length})
+                </h4>
+                {d.attendanceToday.filter(a => a.present).length === 0 ? (
+                  <div className="p-4 rounded-xl bg-paper-2 border border-line text-xs text-ink-3 text-center">
+                    No staff currently on shift. Use &quot;Clock In Staff&quot; or staff can punch in using their PIN at the POS.
+                  </div>
+                ) : (
+                  <div className="grid gap-2">
+                    {d.attendanceToday.filter(a => a.present).map((a) => (
+                      <div key={a.id || a.staffId} className="flex items-center justify-between p-3.5 rounded-xl bg-paper-2 border border-line hover:border-line-2 transition">
+                        <div className="flex items-center gap-3">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <b className="text-sm font-semibold text-ink">{a.name}</b>
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-paper-3 border border-line capitalize text-ink-3 font-medium">
+                                {ROLE_LABELS[a.role as StaffRole] || a.role}
+                              </span>
+                            </div>
+                            <span className="text-xs text-ink-3 mt-0.5 block" suppressHydrationWarning>
+                              Clocked in at {a.clockIn ? new Date(a.clockIn).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '—'}
+                              <span className="mx-1.5 text-ink-4">·</span>
+                              <span className="text-green-400 font-mono font-medium">{a.minutes} min active</span>
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Clock out ${a.name} from shift?`)) {
+                                handleQuickPunch(a.staffId, 'out');
+                              }
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-semibold transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                          >
+                            Clock Out
+                          </button>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-sm font-semibold font-mono">{a.minutes} min</span>
-                        <span className="block text-[10px] text-ink-3">{a.present ? 'on shift' : 'completed'}</span>
-                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Not Clocked In Today (Quick Clock In for Active Staff) */}
+              {(() => {
+                const notClockedIn = d.members.filter(m => m.active && !d.attendanceToday.some(a => a.staffId === m.id));
+                if (notClockedIn.length === 0) return null;
+                return (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-ink-3 mb-2.5 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-slate-500" />
+                      Active Staff Not Clocked In Today ({notClockedIn.length})
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {notClockedIn.map((m) => (
+                        <div key={m.id} className="flex items-center justify-between p-2.5 rounded-xl bg-paper-2 border border-line">
+                          <div className="min-w-0 pr-2">
+                            <b className="text-xs font-semibold text-ink block truncate">{m.name}</b>
+                            <span className="text-[10px] text-ink-3 capitalize">{ROLE_LABELS[m.role as StaffRole] || m.role}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickPunch(m.id, 'in')}
+                            className="px-2.5 py-1 rounded-lg bg-cardamom/15 hover:bg-cardamom/25 text-cardamom-d border border-cardamom/30 text-xs font-bold transition active:scale-95 shrink-0 cursor-pointer"
+                          >
+                            Clock In
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
+                  </div>
+                );
+              })()}
+
+              {/* 3. Completed Shifts Today */}
+              {(() => {
+                const completed = d.attendanceToday.filter(a => !a.present);
+                if (completed.length === 0) return null;
+                return (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-ink-3 mb-2.5 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-slate-400" />
+                      Completed Shifts Today ({completed.length})
+                    </h4>
+                    <div className="grid gap-2">
+                      {completed.map((a) => (
+                        <div key={a.id || a.staffId} className="flex items-center justify-between p-3 rounded-xl bg-paper-2 border border-line opacity-80">
+                          <div>
+                            <b className="text-xs font-semibold text-ink block">{a.name}</b>
+                            <span className="text-[11px] text-ink-3" suppressHydrationWarning>
+                              In: {a.clockIn ? new Date(a.clockIn).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '—'}
+                              {' → '}
+                              Out: {a.clockOut ? new Date(a.clockOut).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '—'}
+                            </span>
+                          </div>
+                          <span className="text-xs font-mono font-semibold text-ink-2">{a.minutes} min</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </Card>
 
             {/* Right: Last 12 entries */}
@@ -584,14 +747,14 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
               ) : (
                 <div className="space-y-3">
                   {d.attendance.map((a) => (
-                    <div key={a.id} className="text-xs border-b border-line pb-2">
+                    <div key={a.id} className="text-xs border-b border-line pb-2.5">
                       <div className="flex justify-between font-semibold text-ink mb-1">
                         <span>{a.name}</span>
-                        <span className={!a.clockOut ? 'text-green-500' : 'text-ink-3'}>
-                          {!a.clockOut ? 'Clocked In' : 'Completed'}
+                        <span className={!a.clockOut ? 'text-green-500 font-bold' : 'text-ink-3'}>
+                          {!a.clockOut ? '● Active' : 'Completed'}
                         </span>
                       </div>
-                      <div className="text-ink-2 flex flex-col">
+                      <div className="text-ink-2 flex flex-col gap-0.5">
                         <span suppressHydrationWarning>In: {dt(a.clockIn)}</span>
                         {a.clockOut && <span suppressHydrationWarning>Out: {dt(a.clockOut)}</span>}
                       </div>
@@ -603,78 +766,159 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
           </div>
         )}
 
-        {activeTab === 'payroll' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Left: Payroll structure & payouts */}
-            <Card className="col-span-1 lg:col-span-2 p-5">
-              <CardHead title={`Payroll Period · ${d.period}`} hint="Active team wages" />
-              <div className="overflow-x-auto">
-                <table className="rtable w-full text-sm border-collapse">
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                      <th className="pb-2 text-left text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>Name</th>
-                      <th className="pb-2 text-left text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>Wage Plan</th>
-                      <th className="pb-2 text-right text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>Paid this Period</th>
-                      <th className="pb-2 text-right text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {d.payroll.map((p) => {
-                      const member = d.members.find(m => m.id === p.staffId);
-                      if (!member?.active) return null;
-                      return (
-                        <tr key={p.staffId} style={{ borderBottom: '1px solid var(--line)' }}>
-                          <td className="py-3 font-semibold text-ink" data-label="Name">{p.name}</td>
-                          <td className="py-3 text-ink-2" data-label="Wage plan">
-                            {p.payType === 'hourly' && p.payRatePaise ? `${formatINR(p.payRatePaise)}/hr` :
-                             p.payType === 'monthly' && p.payRatePaise ? `${formatINR(p.payRatePaise)}/mo` : 'Not configured'}
-                          </td>
-                          <td className="py-3 text-right font-mono text-ink font-semibold" data-label="Paid">
-                            {formatINR(p.paidThisPeriodPaise)}
-                          </td>
-                          <td className="py-3 text-right">
-                            <button
-                              onClick={() => setModal({ type: 'payout', member: member })}
-                              className="px-2 py-1 rounded bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 transition-all"
-                            >
-                              Record Pay
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
+        {activeTab === 'payroll' && (() => {
+          const totalWages = d.payroll.reduce((s, p) => s + p.expectedPayPaise, 0);
+          const totalPaid = d.payroll.reduce((s, p) => s + p.paidThisPeriodPaise, 0);
+          const totalPending = d.payroll.reduce((s, p) => s + p.pendingBalancePaise, 0);
 
-            {/* Right: Payment Logs */}
-            <Card className="p-5">
-              <CardHead title="Recent payroll ledger" hint="This period" />
-              {d.payroll.flatMap(p => p.recent).length === 0 ? (
-                <Empty>No salary payments recorded this period.</Empty>
-              ) : (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                  {d.payroll
-                    .flatMap((p) => p.recent.map((r) => ({ ...r, staffName: p.name })))
-                    .sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime())
-                    .map((pay) => (
-                      <div key={pay.id} className="text-xs border-b border-line pb-2">
-                        <div className="flex justify-between font-semibold text-ink mb-1">
-                          <span>{pay.staffName}</span>
-                          <span className="font-mono text-turmeric-d">{formatINR(pay.amountPaise)}</span>
-                        </div>
-                        <div className="text-ink-3 flex justify-between">
-                          <span>Method: <b className="capitalize">{pay.method}</b></span>
-                          <span suppressHydrationWarning>{new Date(pay.paidAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-                        </div>
-                      </div>
-                    ))}
+          return (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Left: Summary KPIs & Payroll Table */}
+              <div className="col-span-1 lg:col-span-2 space-y-4">
+                {/* Summary KPIs */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-4 rounded-xl bg-paper-2 border border-line">
+                    <span className="text-xs text-ink-3 block mb-1">Monthly Wage Obligation</span>
+                    <b className="text-lg font-mono font-bold text-ink">{formatINR(totalWages)}</b>
+                  </div>
+                  <div className="p-4 rounded-xl bg-paper-2 border border-line">
+                    <span className="text-xs text-ink-3 block mb-1">Disbursed This Period</span>
+                    <b className="text-lg font-mono font-bold text-turmeric-d">{formatINR(totalPaid)}</b>
+                  </div>
+                  <div className="p-4 rounded-xl bg-paper-2 border border-line">
+                    <span className="text-xs text-ink-3 block mb-1">Pending Balance Due</span>
+                    <b className={`text-lg font-mono font-bold ${totalPending > 0 ? 'text-amber-400' : 'text-green-400'}`}>
+                      {formatINR(totalPending)}
+                    </b>
+                  </div>
                 </div>
-              )}
-            </Card>
-          </div>
-        )}
+
+                {/* Payroll Table */}
+                <Card className="p-5">
+                  <CardHead title={`Payroll Ledger · ${d.period}`} hint="Team compensation & payouts" />
+                  <div className="overflow-x-auto">
+                    <table className="rtable w-full text-sm border-collapse">
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--line)' }}>
+                          <th className="pb-2.5 text-left text-xs font-semibold text-ink-3">Staff Member</th>
+                          <th className="pb-2.5 text-left text-xs font-semibold text-ink-3">Wage Plan</th>
+                          <th className="pb-2.5 text-center text-xs font-semibold text-ink-3">Attendance</th>
+                          <th className="pb-2.5 text-right text-xs font-semibold text-ink-3">Due / Earned</th>
+                          <th className="pb-2.5 text-right text-xs font-semibold text-ink-3">Paid</th>
+                          <th className="pb-2.5 text-right text-xs font-semibold text-ink-3">Balance</th>
+                          <th className="pb-2.5 text-center text-xs font-semibold text-ink-3">Status</th>
+                          <th className="pb-2.5 text-right text-xs font-semibold text-ink-3">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {d.payroll.map((p) => {
+                          const member = d.members.find(m => m.id === p.staffId);
+                          if (!member?.active) return null;
+                          return (
+                            <tr key={p.staffId} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-paper-2/50 transition">
+                              <td className="py-3 font-semibold text-ink" data-label="Staff">
+                                <div>{p.name}</div>
+                                <div className="text-[10px] text-ink-3 font-normal capitalize">
+                                  {ROLE_LABELS[p.role as StaffRole] || p.role}
+                                  {p.employeeCode ? ` · ${p.employeeCode}` : ''}
+                                </div>
+                              </td>
+                              <td className="py-3 text-ink-2 text-xs" data-label="Wage Plan">
+                                {p.payType === 'hourly' && p.payRatePaise ? `${formatINR(p.payRatePaise)}/hr` :
+                                 p.payType === 'monthly' && p.payRatePaise ? `${formatINR(p.payRatePaise)}/mo` :
+                                 <span className="text-ink-4">Not set</span>}
+                              </td>
+                              <td className="py-3 text-center text-xs text-ink-2 font-mono" data-label="Attendance">
+                                <div>{p.daysWorked}d</div>
+                                <div className="text-[10px] text-ink-3">{p.totalHoursWorked}h</div>
+                              </td>
+                              <td className="py-3 text-right font-mono text-xs font-semibold text-ink" data-label="Due">
+                                {formatINR(p.expectedPayPaise)}
+                              </td>
+                              <td className="py-3 text-right font-mono text-xs font-semibold text-turmeric-d" data-label="Paid">
+                                {formatINR(p.paidThisPeriodPaise)}
+                              </td>
+                              <td className="py-3 text-right font-mono text-xs font-semibold" data-label="Balance">
+                                <span className={p.pendingBalancePaise > 0 ? 'text-amber-400 font-bold' : 'text-ink-3'}>
+                                  {formatINR(p.pendingBalancePaise)}
+                                </span>
+                              </td>
+                              <td className="py-3 text-center" data-label="Status">
+                                {p.status === 'paid' && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 border border-green-500/30">
+                                    Paid ✓
+                                  </span>
+                                )}
+                                {p.status === 'partial' && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                    Partial
+                                  </span>
+                                )}
+                                {p.status === 'due' && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">
+                                    Due
+                                  </span>
+                                )}
+                                {p.status === 'advance' && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                                    Advance
+                                  </span>
+                                )}
+                                {p.status === 'unconfigured' && (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30">
+                                    Unset
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 text-right" data-label="Action">
+                                <button
+                                  type="button"
+                                  onClick={() => setModal({ type: 'payout', member })}
+                                  className="px-2.5 py-1.5 rounded-lg bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 transition-all shadow-sm cursor-pointer whitespace-nowrap"
+                                >
+                                  Record Pay
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Right: Payment Logs */}
+              <Card className="p-5">
+                <CardHead title="Recent payroll ledger" hint="Disbursements" />
+                {d.payroll.flatMap(p => p.recent).length === 0 ? (
+                  <Empty>No salary payments recorded this period.</Empty>
+                ) : (
+                  <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                    {d.payroll
+                      .flatMap((p) => p.recent.map((r) => ({ ...r, staffName: p.name })))
+                      .sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime())
+                      .map((pay) => (
+                        <div key={pay.id} className="text-xs border-b border-line pb-2.5">
+                          <div className="flex justify-between font-semibold text-ink mb-1">
+                            <span>{pay.staffName}</span>
+                            <span className="font-mono text-turmeric-d font-bold">{formatINR(pay.amountPaise)}</span>
+                          </div>
+                          <div className="text-ink-3 flex justify-between items-center text-[11px]">
+                            <span>Method: <b className="capitalize font-semibold text-ink-2">{pay.method}</b></span>
+                            <span suppressHydrationWarning>{new Date(pay.paidAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                          </div>
+                          {pay.note && (
+                            <p className="text-[10px] text-ink-3 mt-1 italic">&quot;{pay.note}&quot;</p>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </Card>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Modals */}
@@ -684,7 +928,7 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
           onClick={() => !submitting && setModal(null)}
         >
           <div 
-            className="bg-paper-3 border border-line rounded-xl shadow-2xl w-full max-w-md p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            className={`bg-paper-3 border border-line rounded-xl shadow-2xl w-full p-6 animate-in fade-in zoom-in-95 duration-200 ${modal.type === 'add' ? 'max-w-lg max-h-[90vh] overflow-y-auto' : 'max-w-md overflow-hidden'}`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -697,6 +941,7 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                 {modal.type === 'pay' && `Compensation Settings: ${modal.member?.name}`}
                 {modal.type === 'payout' && `Record Payout: ${modal.member?.name}`}
                 {modal.type === 'shift' && 'Schedule Shift'}
+                {modal.type === 'punch' && 'Record Attendance Punch'}
               </h3>
               <button 
                 disabled={submitting} 
@@ -728,8 +973,26 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
 
               if (modal.type === 'add') {
                 if (!name.trim()) return setError('Name is required');
-                if (!/^\d{4,6}$/.test(pin)) return setError('PIN must be 4 to 6 numeric digits');
-                handlePost({ action: 'create', name, role, phone: phone || null, pin, employeeCode: employeeCode || null });
+                const u = username.trim();
+                if (!u) return setError('Username is required');
+                if (!password) return setError('Password is required');
+                if (password.length < 6) return setError('Password must be at least 6 characters');
+                const payRatePaise = newPayType !== 'none' && newPayRate
+                  ? Math.round(parseFloat(newPayRate) * 100)
+                  : null;
+                handlePost({
+                  action: 'create',
+                  name,
+                  role,
+                  phone: phone || null,
+                  employeeCode: employeeCode || null,
+                  username: u,
+                  password,
+                  payType: newPayType !== 'none' ? newPayType : null,
+                  payRatePaise,
+                  shiftStartsAt: newShiftStartsAt || null,
+                  shiftEndsAt: newShiftEndsAt || null,
+                });
               } else if (modal.type === 'edit') {
                 if (!name.trim()) return setError('Name is required');
                 handlePost({ action: 'update', id: modal.member.id, name, role, phone: phone || null, employeeCode: employeeCode || null });
@@ -765,7 +1028,15 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                   amountPaise: parsedAmount,
                   method: payMethod,
                   periodLabel,
-                  note: payNote || null
+                  note: payNote || null,
+                  allowOverpay,
+                });
+              } else if (modal.type === 'punch') {
+                if (!punchStaffId) return setError('Staff member is required');
+                handlePost({
+                  action: 'attendance_punch',
+                  id: punchStaffId,
+                  punchAction,
                 });
               } else if (modal.type === 'shift') {
                 if (!shiftStaffId) return setError('Staff member is required');
@@ -828,21 +1099,99 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                     />
                   </div>
                   {modal.type === 'add' && (
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-ink-2">Numeric POS PIN (4 to 6 digits)</label>
-                      <input 
-                        type="password" 
-                        pattern="\d*"
-                        minLength={4}
-                        maxLength={6}
-                        required
-                        value={pin} 
-                        onChange={(e) => setPin(e.target.value)}
-                        placeholder="e.g. 1478"
-                        className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm font-mono tracking-widest"
-                      />
-                      <span className="text-[10px] text-ink-3 mt-1 block">This PIN is hashed. Staff will use it to clock-in/out and log in at the POS terminal.</span>
-                    </div>
+                    <>
+                      {/* LOGIN CREDENTIALS — required for creation */}
+                      <div className="border-t border-line/50 pt-4">
+                        <span className="block text-[10px] font-bold uppercase tracking-widest text-ink-3 mb-3">Login Credentials <span className="text-turmeric">*</span></span>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold mb-1 text-ink-2">Username</label>
+                            <input
+                              type="text"
+                              required
+                              autoCapitalize="none"
+                              autoCorrect="off"
+                              value={username}
+                              onChange={(e) => setUsername(e.target.value)}
+                              placeholder="e.g. rahul.s"
+                              className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm"
+                            />
+                            <span className="text-[10px] text-ink-3 mt-0.5 block">3–30 chars: letters, digits, dot, dash</span>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold mb-1 text-ink-2">Password</label>
+                            <input
+                              type="password"
+                              required
+                              autoComplete="new-password"
+                              minLength={6}
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              placeholder="Min 6 characters"
+                              className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* PAY CONFIGURATION — optional */}
+                      <div className="border-t border-line/50 pt-4">
+                        <span className="block text-[10px] font-bold uppercase tracking-widest text-ink-3 mb-3">Pay Rate <span className="text-ink-3">(Optional)</span></span>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold mb-1 text-ink-2">Wage Type</label>
+                            <select
+                              value={newPayType}
+                              onChange={(e) => setNewPayType(e.target.value)}
+                              className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm cursor-pointer"
+                            >
+                              <option value="none">No Set Rate</option>
+                              <option value="hourly">Hourly (₹/hr)</option>
+                              <option value="monthly">Monthly Salary (₹/mo)</option>
+                            </select>
+                          </div>
+                          {newPayType !== 'none' && (
+                            <div>
+                              <label className="block text-xs font-semibold mb-1 text-ink-2">Rate (₹)</label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={newPayRate}
+                                onChange={(e) => setNewPayRate(e.target.value)}
+                                placeholder={newPayType === 'hourly' ? 'e.g. 150' : 'e.g. 15000'}
+                                className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm font-mono"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* FIRST SHIFT — optional */}
+                      <div className="border-t border-line/50 pt-4">
+                        <span className="block text-[10px] font-bold uppercase tracking-widest text-ink-3 mb-3">First Shift <span className="text-ink-3">(Optional)</span></span>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold mb-1 text-ink-2">Shift Start</label>
+                            <input
+                              type="datetime-local"
+                              value={newShiftStartsAt}
+                              onChange={(e) => setNewShiftStartsAt(e.target.value)}
+                              className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold mb-1 text-ink-2">Shift End</label>
+                            <input
+                              type="datetime-local"
+                              value={newShiftEndsAt}
+                              onChange={(e) => setNewShiftEndsAt(e.target.value)}
+                              className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
@@ -949,67 +1298,117 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
               )}
 
               {/* Form Fields: Record Salary Payment */}
-              {modal.type === 'payout' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold mb-1 text-ink-2">Staff Member</label>
-                    <input 
-                      type="text" 
-                      disabled
-                      value={modal.member?.name || ''}
-                      className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink-3 opacity-60 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1 text-ink-2">Amount Paid (Rupees ₹)</label>
-                    <input 
-                      type="number" 
-                      required
-                      min="0.01"
-                      step="0.01"
-                      value={payAmount} 
-                      onChange={(e) => setPayAmount(e.target.value)}
-                      placeholder="e.g. 5000"
-                      className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm font-mono"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold mb-1 text-ink-2">Payment Method</label>
-                      <select
-                        value={payMethod}
-                        onChange={(e) => setPayMethod(e.target.value as any)}
-                        className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm cursor-pointer"
-                      >
-                        <option value="cash">Cash</option>
-                        <option value="upi">UPI</option>
-                        <option value="bank">Bank Transfer</option>
-                      </select>
+              {modal.type === 'payout' && (() => {
+                const payItem = d.payroll.find((p) => p.staffId === modal.member?.id);
+                return (
+                  <div className="space-y-4">
+                    {/* Summary badge of current pay status */}
+                    <div className="p-3.5 rounded-xl bg-paper-2 border border-line space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-ink-3">Staff Member</span>
+                        <span className="text-xs font-bold text-ink">{modal.member?.name}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-ink-3">Configured Wage Plan</span>
+                        <span className="text-xs font-mono font-semibold text-ink-2">
+                          {modal.member?.payType === 'hourly' && modal.member?.payRatePaise
+                            ? `${formatINR(modal.member.payRatePaise)}/hr`
+                            : modal.member?.payType === 'monthly' && modal.member?.payRatePaise
+                            ? `${formatINR(modal.member.payRatePaise)}/mo`
+                            : 'Unconfigured'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-ink-3">Already Paid This Period</span>
+                        <span className="text-xs font-mono font-bold text-turmeric-d">
+                          {formatINR(payItem?.paidThisPeriodPaise ?? 0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-line">
+                        <span className="text-xs font-semibold text-ink">Pending Balance Due</span>
+                        <span className={`text-xs font-mono font-bold ${(payItem?.pendingBalancePaise ?? 0) > 0 ? 'text-amber-400' : 'text-green-400'}`}>
+                          {formatINR(payItem?.pendingBalancePaise ?? 0)}
+                        </span>
+                      </div>
                     </div>
+
                     <div>
-                      <label className="block text-xs font-semibold mb-1 text-ink-2">Payroll Period</label>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-xs font-semibold text-ink-2">Amount Paid (Rupees ₹)</label>
+                        {payItem && payItem.pendingBalancePaise > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setPayAmount((payItem.pendingBalancePaise / 100).toString())}
+                            className="text-[11px] text-turmeric hover:underline font-semibold cursor-pointer"
+                          >
+                            Fill Due ({formatINR(payItem.pendingBalancePaise)})
+                          </button>
+                        )}
+                      </div>
                       <input 
-                        type="text" 
+                        type="number" 
                         required
-                        value={periodLabel} 
-                        onChange={(e) => setPeriodLabel(e.target.value)}
-                        placeholder="YYYY-MM"
+                        min="0.01"
+                        step="0.01"
+                        value={payAmount} 
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        placeholder="e.g. 5000"
                         className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm font-mono"
                       />
                     </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold mb-1 text-ink-2">Payment Method</label>
+                        <select
+                          value={payMethod}
+                          onChange={(e) => setPayMethod(e.target.value as any)}
+                          className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm cursor-pointer"
+                        >
+                          <option value="cash">Cash</option>
+                          <option value="upi">UPI</option>
+                          <option value="bank">Bank Transfer</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold mb-1 text-ink-2">Payroll Period</label>
+                        <input 
+                          type="text" 
+                          required
+                          value={periodLabel} 
+                          onChange={(e) => setPeriodLabel(e.target.value)}
+                          placeholder="YYYY-MM"
+                          className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 p-2.5 rounded-lg bg-paper-2 border border-line">
+                      <input
+                        type="checkbox"
+                        id="allowOverpayCheck"
+                        checked={allowOverpay}
+                        onChange={(e) => setAllowOverpay(e.target.checked)}
+                        className="w-4 h-4 rounded text-turmeric focus:ring-turmeric cursor-pointer"
+                      />
+                      <label htmlFor="allowOverpayCheck" className="text-xs text-ink-2 cursor-pointer select-none">
+                        Allow payment exceeding monthly base salary (Bonus, Advance, or Incentive)
+                      </label>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold mb-1 text-ink-2">Notes (Optional)</label>
+                      <input 
+                        type="text" 
+                        value={payNote} 
+                        onChange={(e) => setPayNote(e.target.value)}
+                        placeholder="e.g. Monthly salary, Part-payment, or Festival bonus"
+                        className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold mb-1 text-ink-2">Notes (Optional)</label>
-                    <input 
-                      type="text" 
-                      value={payNote} 
-                      onChange={(e) => setPayNote(e.target.value)}
-                      placeholder="e.g. Part-payment or Advance salary"
-                      className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm"
-                    />
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Form Fields: Schedule Shift */}
               {modal.type === 'shift' && (
@@ -1059,6 +1458,62 @@ function Staff({ d, refresh }: { d: StaffData; refresh: () => void }) {
                       ))}
                     </select>
                   </div>
+                </div>
+              )}
+
+              {/* Form Fields: Record Attendance Punch */}
+              {modal.type === 'punch' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Staff Member</label>
+                    <select
+                      value={punchStaffId}
+                      onChange={(e) => setPunchStaffId(e.target.value)}
+                      className="w-full px-3 py-2 rounded bg-paper-3 border border-line text-ink focus:outline-none focus:border-turmeric text-sm cursor-pointer"
+                    >
+                      <option value="">Select staff member...</option>
+                      {d.members.filter(m => m.active).map((m) => {
+                        const isPresent = d.attendanceToday.some(a => a.staffId === m.id && a.present);
+                        return (
+                          <option key={m.id} value={m.id}>
+                            {m.name} ({ROLE_LABELS[m.role as StaffRole] || m.role}) {isPresent ? '— Currently Clocked In' : '— Off Shift'}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold mb-2 text-ink-2">Punch Action</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setPunchAction('in')}
+                        className={`p-3 rounded-xl border text-center font-bold text-xs transition cursor-pointer ${
+                          punchAction === 'in'
+                            ? 'bg-cardamom/20 border-cardamom text-cardamom-d shadow-sm'
+                            : 'bg-paper-2 border-line text-ink-3 hover:text-ink'
+                        }`}
+                      >
+                        Clock In (Start Shift)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPunchAction('out')}
+                        className={`p-3 rounded-xl border text-center font-bold text-xs transition cursor-pointer ${
+                          punchAction === 'out'
+                            ? 'bg-red-500/20 border-red-500 text-red-400 shadow-sm'
+                            : 'bg-paper-2 border-line text-ink-3 hover:text-ink'
+                        }`}
+                      >
+                        Clock Out (End Shift)
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-ink-3 p-3 rounded-lg bg-paper-2 border border-line">
+                    ℹ️ This records an immediate attendance punch for the selected employee with authorized manager verification.
+                  </p>
                 </div>
               )}
 

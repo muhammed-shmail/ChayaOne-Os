@@ -6,6 +6,7 @@ import {
   readBusinessDay,
   canManageBusinessDay,
   shouldPromptBusinessDayExtension,
+  isWithinClosingWindow,
   formatYmdInTz,
   DEFAULT_TIMEZONE,
   type BusinessDayState,
@@ -32,6 +33,7 @@ export async function GET(req: NextRequest) {
   const tz = outlet?.timezone || DEFAULT_TIMEZONE;
   const state = readBusinessDay(outlet?.settings, new Date(), tz);
   const canManage = canManageBusinessDay(session);
+  const isClosingWindow = isWithinClosingWindow(state, new Date(), tz);
   const shouldPrompt = shouldPromptBusinessDayExtension(state, new Date(), tz);
 
   return NextResponse.json({
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest) {
     state,
     canManage,
     shouldPrompt,
+    isWithinClosingWindow: isClosingWindow,
     timezone: tz,
   });
 }
