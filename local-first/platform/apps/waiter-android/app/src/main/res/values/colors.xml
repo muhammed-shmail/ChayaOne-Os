@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_espresso">#15110D</color>
+    <color name="brand_gold">#E8902A</color>
+    <color name="brand_gold_dark">#C47116</color>
+    <color name="brand_paper">#F6EFE3</color>
+    <color name="brand_card">#241C15</color>
+    <color name="brand_card_border">#3D2F24</color>
+    <color name="brand_green">#10B981</color>
+    <color name="brand_red">#EF4444</color>
+</resources>

@@ -19,6 +19,8 @@
     "build:all": "npm run build:all --prefix local-first/platform",
     "build:desktop": "npm run build:desktop --prefix local-first/platform",
     "build:waiter": "npm run build:waiter --prefix local-first/platform",
+    "build:waiter:apk": "npm run build:waiter:apk --prefix local-first/platform",
+    "release:waiter": "npm run release:waiter --prefix local-first/platform",
     "build:customer": "npm run build:customer --prefix local-first/platform",
     "build:owner": "npm run build --prefix Owner-chayaone",
     "build:installer": "npm run build:installer --prefix local-first/platform",
