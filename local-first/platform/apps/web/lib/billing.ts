@@ -5,6 +5,11 @@ import { LicenseService } from './license/license-service';
  * ChayaOne — tenant billing state & commercial license gate.
  * Operational actions (orders, settlements, KOTs) are blocked when the tenant
  * is suspended or its commercial license has lapsed/expired.
+ *
+ * Reasons:
+ *  - 'license_not_activated' : Fresh install, no license record exists yet
+ *  - 'license_expired'       : License existed but has expired/been revoked
+ *  - 'suspended' / 'expired' : Subscription-level block
  */
 const TTL_MS = 10_000;
 const cache = new Map<string, { blocked: boolean; reason: string | null; at: number }>();
@@ -12,8 +17,15 @@ const cache = new Map<string, { blocked: boolean; reason: string | null; at: num
 export async function tenantBilling(tenantId: string): Promise<{ blocked: boolean; reason: string | null }> {
   // 1. Check Commercial Main PC License
   try {
-    const licenseCheck = await LicenseService.isLicenseActive();
-    if (!licenseCheck.active) {
+    const licenseStatus = await LicenseService.getStatus();
+    if (!licenseStatus.isConfigured) {
+      // No license at all — fresh install that needs activation
+      return { blocked: true, reason: 'license_not_activated' };
+    }
+    if (licenseStatus.clockTampered) {
+      return { blocked: true, reason: 'clock_tampered' };
+    }
+    if (licenseStatus.isExpired) {
       return { blocked: true, reason: 'license_expired' };
     }
   } catch (err) {
@@ -44,4 +56,3 @@ export async function tenantBilling(tenantId: string): Promise<{ blocked: boolea
 export function clearBillingCache(): void {
   cache.clear();
 }
-
