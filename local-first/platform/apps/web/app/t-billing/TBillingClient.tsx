@@ -306,6 +306,16 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
   }, [loadOrders, loadCompletedOrders, filter, currentStaff.id]);
 
   useEffect(() => {
+    const handleParentMsg = (e: MessageEvent) => {
+      if (e.data && e.data.type === 't-billing-opened') {
+        loadOrders();
+      }
+    };
+    window.addEventListener('message', handleParentMsg);
+    return () => window.removeEventListener('message', handleParentMsg);
+  }, [loadOrders]);
+
+  useEffect(() => {
     if (view === 'history') loadHistory();
   }, [view, loadHistory]);
 

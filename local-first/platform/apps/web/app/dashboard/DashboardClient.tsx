@@ -222,6 +222,18 @@ export default function DashboardClient({
 
   const [showPos, setShowPos] = useState(false);
   const [showTBilling, setShowTBilling] = useState(false);
+  const [tBillingMounted, setTBillingMounted] = useState(false);
+  const [tBillingLoaded, setTBillingLoaded] = useState(false);
+  const tBillingIframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Pre-warm T-Billing terminal in the background after dashboard loads for 0ms click latency
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTBillingMounted(true);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
   const [posInitialFloorOpen, setPosInitialFloorOpen] = useState(false);
   const [showKds, setShowKds] = useState(false);
   useEffect(() => {
@@ -2327,11 +2339,19 @@ export default function DashboardClient({
           </div>
           <div suppressHydrationWarning className="flex items-center gap-2 flex-wrap justify-end">
             <BusinessDayHeaderBadge />
-            {/* T-Billing Button */}
+            {/* T-Billing Button — pre-warms on hover/touch for instant response */}
             <button
               type="button"
-              onClick={() => setShowTBilling(true)}
-              className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition cursor-pointer"
+              onMouseEnter={() => setTBillingMounted(true)}
+              onTouchStart={() => setTBillingMounted(true)}
+              onClick={() => {
+                setTBillingMounted(true);
+                setShowTBilling(true);
+                try {
+                  tBillingIframeRef.current?.contentWindow?.postMessage({ type: 't-billing-opened' }, '*');
+                } catch {}
+              }}
+              className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition cursor-pointer active:scale-95"
               id="header-t-billing"
               style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink)' }}
             >
@@ -5164,10 +5184,27 @@ export default function DashboardClient({
       )}
 
       {/* Mobile navigation — slide-out drawer (full menu) + bottom nav (key actions) */}
-      {showTBilling && (
-        <div className="fixed inset-0 z-[9500] flex flex-col bg-background">
+      {/* T-Billing Terminal — pre-warmed & kept mounted for instant 0ms latency */}
+      {tBillingMounted && (
+        <div
+          className={`fixed inset-0 z-[9500] flex flex-col bg-background transition-opacity duration-150 ${
+            showTBilling ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none -z-50'
+          }`}
+          style={{
+            visibility: showTBilling ? 'visible' : 'hidden',
+          }}
+        >
+          {!tBillingLoaded && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-paper">
+              <div className="w-9 h-9 border-3 border-turmeric/30 border-t-turmeric rounded-full animate-spin mb-2.5" />
+              <span className="text-xs font-bold text-ink">Opening T-Billing Terminal…</span>
+              <span className="text-[10px] text-ink-3">Preparing tables & orders</span>
+            </div>
+          )}
           <iframe
+            ref={tBillingIframeRef}
             src="/t-billing"
+            onLoad={() => setTBillingLoaded(true)}
             className="absolute inset-0 w-full h-full border-none"
             title="T-Billing Terminal"
           />

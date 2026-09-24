@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { computeBill, formatINR, type BillLine } from '@cafeos/core';
 import { STAGES, posStageOf } from '@/lib/orderStatus';
 import type { Floor } from '@/lib/floors';
@@ -213,6 +213,10 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
 
   // T-Billing modal
   const [showTBilling, setShowTBilling] = useState(false);
+  const [tBillingMounted, setTBillingMounted] = useState(false);
+  const [tBillingLoaded, setTBillingLoaded] = useState(false);
+  const tBillingIframeRef = useRef<HTMLIFrameElement>(null);
+
   // Order-level customer field visibility (desktop right rail + mobile cart sheet)
   const [showOrderCust, setShowOrderCust] = useState(false);
 
@@ -1738,7 +1742,20 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                 </button>
               )}
               {(hasRole(currentStaff, ['owner', 'manager', 'cashier']) || hasPermission(currentStaff, 'pos:t_billing')) && (
-                <button onClick={() => { setMoreOpen(false); setShowTBilling(true); }} className="flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                <button
+                  onMouseEnter={() => setTBillingMounted(true)}
+                  onTouchStart={() => setTBillingMounted(true)}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    setTBillingMounted(true);
+                    setShowTBilling(true);
+                    try {
+                      tBillingIframeRef.current?.contentWindow?.postMessage({ type: 't-billing-opened' }, '*');
+                    } catch {}
+                  }}
+                  className="flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px] cursor-pointer"
+                  style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+                >
                   <Table2 size={16} aria-hidden /> T-Billing Terminal
                 </button>
               )}
@@ -1750,20 +1767,38 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
         </div>
       )}
 
-      {/* T-Billing Terminal Modal */}
-      {showTBilling && (
-        <div className="fixed inset-0 z-[9500] flex flex-col bg-black">
+      {/* T-Billing Terminal Modal — pre-warmed & kept mounted for instant 0ms latency */}
+      {tBillingMounted && (
+        <div
+          className={`fixed inset-0 z-[9500] flex flex-col bg-black transition-opacity duration-150 ${
+            showTBilling ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none -z-50'
+          }`}
+          style={{
+            visibility: showTBilling ? 'visible' : 'hidden',
+          }}
+        >
           <div className="flex items-center justify-between p-3 border-b border-white/10 shrink-0">
             <h2 className="text-white font-bold text-sm flex items-center gap-2"><Table2 size={16} /> T-Billing Terminal</h2>
-            <button onClick={() => setShowTBilling(false)} className="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center font-bold">
+            <button onClick={() => setShowTBilling(false)} className="w-8 h-8 rounded-full bg-white/10 text-white flex items-center justify-center font-bold cursor-pointer">
               <X size={16} />
             </button>
           </div>
-          <iframe
-            src="/t-billing"
-            className="flex-1 w-full h-full border-none bg-[var(--paper)] rounded-t-lg"
-            title="T-Billing Terminal"
-          />
+          <div className="relative flex-1 w-full h-full bg-[var(--paper)] rounded-t-lg overflow-hidden">
+            {!tBillingLoaded && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-paper">
+                <div className="w-9 h-9 border-3 border-turmeric/30 border-t-turmeric rounded-full animate-spin mb-2.5" />
+                <span className="text-xs font-bold text-ink">Opening T-Billing Terminal…</span>
+                <span className="text-[10px] text-ink-3">Preparing tables & orders</span>
+              </div>
+            )}
+            <iframe
+              ref={tBillingIframeRef}
+              src="/t-billing"
+              onLoad={() => setTBillingLoaded(true)}
+              className="absolute inset-0 w-full h-full border-none"
+              title="T-Billing Terminal"
+            />
+          </div>
         </div>
       )}
 

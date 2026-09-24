@@ -8,7 +8,7 @@ import {
   BarChart3, ChefHat, ClipboardList, LayoutDashboard, LogOut, Package,
   QrCode, ShoppingCart, Table2, Users as UsersIcon, Wifi,
 } from '@/components/ui';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import StaffBell from '@/components/StaffBell';
 import { hasRole, hasPermission, canAccess } from '@/lib/rbac';
@@ -53,6 +53,17 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
   const crmEnabled = features.crm !== false;
   const kpi = data.kpi;
   const [showTBilling, setShowTBilling] = useState(false);
+  const [tBillingMounted, setTBillingMounted] = useState(false);
+  const [tBillingLoaded, setTBillingLoaded] = useState(false);
+  const tBillingIframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Pre-warm T-Billing terminal in the background after dashboard loads
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTBillingMounted(true);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
@@ -129,7 +140,19 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
               <div className="grid sm:grid-cols-2 gap-2.5">
                 {actions.map(({ href, label, icon: Icon, tone }) => (
                   href === '/t-billing' ? (
-                    <button key={label} onClick={() => setShowTBilling(true)} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                    <button
+                      key={label}
+                      onMouseEnter={() => setTBillingMounted(true)}
+                      onTouchStart={() => setTBillingMounted(true)}
+                      onClick={() => {
+                        setTBillingMounted(true);
+                        setShowTBilling(true);
+                        try {
+                          tBillingIframeRef.current?.contentWindow?.postMessage({ type: 't-billing-opened' }, '*');
+                        } catch {}
+                      }}
+                      className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}
+                    >
                       <Icon size={18} aria-hidden /> {label}
                     </button>
                   ) : (
@@ -191,7 +214,19 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
             <div className="grid sm:grid-cols-3 gap-3">
               {actions.map(({ href, label, icon: Icon, tone }) => (
                 href === '/t-billing' ? (
-                  <button key={label} onClick={() => setShowTBilling(true)} className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}>
+                  <button
+                    key={label}
+                    onMouseEnter={() => setTBillingMounted(true)}
+                    onTouchStart={() => setTBillingMounted(true)}
+                    onClick={() => {
+                      setTBillingMounted(true);
+                      setShowTBilling(true);
+                      try {
+                        tBillingIframeRef.current?.contentWindow?.postMessage({ type: 't-billing-opened' }, '*');
+                      } catch {}
+                    }}
+                    className={tone === 'primary' ? 'btn btn-primary justify-start' : 'btn justify-start'}
+                  >
                     <Icon size={18} aria-hidden /> {label}
                   </button>
                 ) : (
@@ -219,10 +254,27 @@ export default function RoleDashboardClient({ outlet, staff, data, features }: R
         </div>
       )}
 
-      {showTBilling && (
-        <div className="fixed inset-0 z-[9500] flex flex-col bg-background">
+      {/* T-Billing Modal — pre-warmed & kept mounted for instant 0ms latency */}
+      {tBillingMounted && (
+        <div
+          className={`fixed inset-0 z-[9500] flex flex-col bg-background transition-opacity duration-150 ${
+            showTBilling ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none -z-50'
+          }`}
+          style={{
+            visibility: showTBilling ? 'visible' : 'hidden',
+          }}
+        >
+          {!tBillingLoaded && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-paper">
+              <div className="w-9 h-9 border-3 border-turmeric/30 border-t-turmeric rounded-full animate-spin mb-2.5" />
+              <span className="text-xs font-bold text-ink">Opening T-Billing Terminal…</span>
+              <span className="text-[10px] text-ink-3">Preparing tables & orders</span>
+            </div>
+          )}
           <iframe
+            ref={tBillingIframeRef}
             src="/t-billing"
+            onLoad={() => setTBillingLoaded(true)}
             className="absolute inset-0 w-full h-full border-none"
             title="T-Billing Terminal"
           />
