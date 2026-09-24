@@ -23,13 +23,19 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (!canManageStaff(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
-  const rows = await prisma.staffUser.findMany({
-    where: { tenantId: session.tenantId },
-    orderBy: [{ active: 'desc' }, { name: 'asc' }],
-    select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true, permissions: true },
-  });
+  const [rows, customRoles] = await Promise.all([
+    prisma.staffUser.findMany({
+      where: { tenantId: session.tenantId },
+      orderBy: [{ active: 'desc' }, { name: 'asc' }],
+      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true, permissions: true },
+    }),
+    prisma.role.findMany({
+      where: { tenantId: session.tenantId },
+      orderBy: { name: 'asc' },
+    }).catch(() => []),
+  ]);
   const members = rows.map(({ pinHash, passwordHash, ...m }) => ({ ...m, hasPin: !!pinHash, hasLogin: !!passwordHash }));
-  return NextResponse.json({ members, assignable: assignableRoles(session) });
+  return NextResponse.json({ members, assignable: assignableRoles(session), customRoles });
 }
 
 /**
@@ -38,6 +44,8 @@ export async function GET() {
  *  { action: 'update', id, role?, permissions?, active? }
  *  { action: 'setpin', id, pin }
  *  { action: 'remove', id }   // soft-delete (active=false) to preserve order history
+ *  { action: 'create_custom_role', name, baseRole, permissions }
+ *  { action: 'delete_custom_role', id }
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -47,8 +55,39 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const { action } = body;
 
+  // ---- Custom Role Management ----
+  if (action === 'create_custom_role') {
+    const { name, baseRole, permissions } = body;
+    if (!name?.trim()) return NextResponse.json({ error: 'name_required' }, { status: 400 });
+    const trimmedName = String(name).trim();
+    const validBaseRole = isRole(baseRole) ? baseRole : 'waiter';
+
+    const roleData = {
+      tenantId: session.tenantId,
+      name: trimmedName,
+      permissions: {
+        baseRole: validBaseRole,
+        ...(typeof permissions === 'object' && permissions !== null ? permissions : {}),
+      },
+    };
+
+    try {
+      const created = await prisma.role.create({ data: roleData });
+      return NextResponse.json({ ok: true, role: created });
+    } catch (e: any) {
+      return NextResponse.json({ error: e?.message || 'failed_to_create_role' }, { status: 500 });
+    }
+  }
+
+  if (action === 'delete_custom_role') {
+    const { id } = body;
+    if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
+    await prisma.role.deleteMany({ where: { id, tenantId: session.tenantId } }).catch(() => {});
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === 'create') {
-    const { name, role, phone, employeeCode } = body;
+    const { name, role, phone, employeeCode, pin } = body;
     if (!name?.trim()) return NextResponse.json({ error: 'missing_fields' }, { status: 400 });
 
     const rawAssignedRoles: string[] = Array.isArray(body.permissions?.assignedRoles) && body.permissions.assignedRoles.length > 0
@@ -58,6 +97,14 @@ export async function POST(req: NextRequest) {
 
     if (!isRole(resolvedRole) || !assignableRoles(session).includes(resolvedRole)) {
       return NextResponse.json({ error: 'role_not_allowed' }, { status: 403 });
+    }
+
+    // PIN handling (POS quick access)
+    let pinHash: string | null = null;
+    if (pin && /^\d{4,6}$/.test(String(pin))) {
+      pinHash = hashPin(String(pin));
+      const clash = await prisma.staffUser.findFirst({ where: { pinHash, active: true }, select: { id: true } });
+      if (clash) return NextResponse.json({ error: 'pin_in_use' }, { status: 409 });
     }
 
     // Username + password are required for dashboard login (no random/default PINs)
@@ -83,8 +130,21 @@ export async function POST(req: NextRequest) {
     }
 
     const permissionsData = body.permissions
-      ? body.permissions
+      ? { ...body.permissions }
       : { assignedRoles: rawAssignedRoles, branchAccess: ['main-branch'], overrides: {}, dataRestrictions: [] };
+
+    if (body.customRole) {
+      permissionsData.customRole = body.customRole;
+      if (!permissionsData.assignedRoles.includes(body.customRole)) {
+        permissionsData.assignedRoles = [body.customRole, ...permissionsData.assignedRoles];
+      }
+    }
+    if (body.designation) {
+      permissionsData.designation = body.designation;
+    }
+    if (body.joiningDate) {
+      permissionsData.joiningDate = body.joiningDate;
+    }
 
     const created = await prisma.staffUser.create({
       data: {
@@ -94,7 +154,7 @@ export async function POST(req: NextRequest) {
         phone: phone ? String(phone).trim() : null,
         employeeCode: employeeCode ? String(employeeCode).trim() : null,
         role: resolvedRole,
-        pinHash: null,
+        pinHash,
         username,
         passwordHash,
         payType,
