@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { formatINR } from '@cafeos/core';
 import type { StaffRole } from '@cafeos/db';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, ALL_ROLES, PERMISSION_MODULES, PRESETS, resolvePrimaryRole, type PermissionItem } from '@/lib/rbac';
+import { DEFAULT_WAITER_STATIONS, type WaiterStation, formatStationBadge } from '@/lib/waiter-stations';
 
 interface CustomSelectOption {
   value: string;
@@ -143,6 +144,14 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   const [newRoleBase, setNewRoleBase] = useState<string>('waiter');
   const [isCreatingRole, setIsCreatingRole] = useState(false);
 
+  // Waiter section / station arrangement (P1 Lower, P2 Middle, P3 Upper, and custom stations)
+  const [waiterStations, setWaiterStations] = useState<WaiterStation[]>(DEFAULT_WAITER_STATIONS);
+  const [selectedStation, setSelectedStation] = useState<string>('p1');
+  const [showNewStationInput, setShowNewStationInput] = useState(false);
+  const [newStationCode, setNewStationCode] = useState('');
+  const [newStationName, setNewStationName] = useState('');
+  const [isCreatingStation, setIsCreatingStation] = useState(false);
+
   // Local copy of members with nested metadata parsing
   const [membersList, setMembersList] = useState<any[]>([]);
 
@@ -155,6 +164,12 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       })));
     }
   }, [d?.customRoles]);
+
+  useEffect(() => {
+    if (d?.waiterStations && Array.isArray(d.waiterStations) && d.waiterStations.length > 0) {
+      setWaiterStations(d.waiterStations);
+    }
+  }, [d?.waiterStations]);
 
   useEffect(() => {
     if (d?.members) {
@@ -174,7 +189,9 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           assignedRoles: permissionsObj.assignedRoles || [m.role],
           branchAccess: permissionsObj.branchAccess || ['main-branch'],
           overrides: permissionsObj.overrides || {},
-          dataRestrictions: permissionsObj.dataRestrictions || []
+          dataRestrictions: permissionsObj.dataRestrictions || [],
+          station: (permissionsObj as any).station || (m as any).station || null,
+          stationName: (permissionsObj as any).stationName || (m as any).stationName || null,
         };
       });
       setMembersList(formatted);
@@ -186,6 +203,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     setSelectedStaff(m);
     setAssignedRoles(m.assignedRoles || [m.role]);
     setBranchAccess(m.branchAccess || ['main-branch']);
+    setSelectedStation(m.station || m.permissions?.station || 'p1');
     
     // Resolve resolved check state
     const resolvedChecklist: string[] = [];
@@ -338,14 +356,18 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       }
     });
 
+    const primaryRole = resolvePrimaryRole(assignedRoles, selectedStaff.role);
+    const isWaiter = primaryRole.toLowerCase() === 'waiter' || assignedRoles.includes('waiter');
+    const stationLabel = waiterStations.find((s) => s.id === selectedStation)?.label || selectedStation;
+
     const permissionsPayload = {
       assignedRoles,
       branchAccess,
       overrides,
-      dataRestrictions
+      dataRestrictions,
+      station: isWaiter ? selectedStation : undefined,
+      stationName: isWaiter ? stationLabel : undefined,
     };
-
-    const primaryRole = resolvePrimaryRole(assignedRoles, selectedStaff.role);
 
     try {
       const res = await fetch('/api/staff', {
@@ -355,7 +377,9 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           action: 'update',
           id: selectedStaff.id,
           role: primaryRole,
-          permissions: permissionsPayload
+          permissions: permissionsPayload,
+          station: isWaiter ? selectedStation : undefined,
+          stationName: isWaiter ? stationLabel : undefined,
         })
       });
       const data = await res.json();
@@ -371,7 +395,9 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         assignedRoles,
         branchAccess,
         overrides,
-        dataRestrictions
+        dataRestrictions,
+        station: isWaiter ? selectedStation : m.station,
+        stationName: isWaiter ? stationLabel : m.stationName,
       } : m));
 
       // Refresh layout data
@@ -422,6 +448,58 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     }
   };
 
+  // Create Custom Waiter Station
+  const handleCreateCustomStation = async () => {
+    if (!newStationName.trim()) return;
+    setIsCreatingStation(true);
+    setErrorMessage(null);
+
+    const rawCode = (newStationCode || newStationName.slice(0, 4)).trim().toUpperCase();
+    const id = rawCode.toLowerCase();
+    const cleanName = newStationName.trim();
+    const newStation: WaiterStation = {
+      id,
+      code: rawCode,
+      name: cleanName,
+      label: `${rawCode} (${cleanName})`,
+      desc: 'Custom Floor Section Station',
+      isCustom: true,
+    };
+
+    try {
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_waiter_station',
+          code: rawCode,
+          name: cleanName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.message || data.error || 'Failed to save station');
+
+      const updatedList = Array.isArray(data.waiterStations) && data.waiterStations.length > 0
+        ? data.waiterStations
+        : [...waiterStations.filter((s) => s.id !== id), newStation];
+
+      setWaiterStations(updatedList);
+      setSelectedStation(id);
+      setNewStationCode('');
+      setNewStationName('');
+      setShowNewStationInput(false);
+    } catch (err: any) {
+      // Fallback: persist in local state so UI is never blocked
+      setWaiterStations((prev) => [...prev.filter((s) => s.id !== id), newStation]);
+      setSelectedStation(id);
+      setNewStationCode('');
+      setNewStationName('');
+      setShowNewStationInput(false);
+    } finally {
+      setIsCreatingStation(false);
+    }
+  };
+
   // Create Staff Action
   const handleCreateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -439,6 +517,10 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     const isCustom = !ALL_ROLES.includes(newStaffRole as StaffRole);
     const customRoleObj = customRoles.find(r => r.name.toLowerCase() === newStaffRole.toLowerCase());
     const baseRole = isCustom ? (customRoleObj?.baseRole || 'waiter') : newStaffRole;
+
+    const isWaiter = baseRole.toLowerCase() === 'waiter' || newStaffRole.toLowerCase() === 'waiter';
+    const assignedStation = isWaiter ? selectedStation : undefined;
+    const assignedStationLabel = isWaiter ? (waiterStations.find(s => s.id === selectedStation)?.label || selectedStation) : undefined;
 
     try {
       const res = await fetch('/api/staff', {
@@ -459,12 +541,16 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           payRatePaise,
           designation: newStaffDesignation || null,
           joiningDate: newStaffJoiningDate || null,
+          station: assignedStation,
+          stationName: assignedStationLabel,
           permissions: {
             assignedRoles: isCustom ? [newStaffRole, baseRole] : [newStaffRole],
             baseRole,
             branchAccess: ['main-branch'],
             overrides: {},
-            dataRestrictions: []
+            dataRestrictions: [],
+            station: assignedStation,
+            stationName: assignedStationLabel,
           }
         })
       });
@@ -698,12 +784,18 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
                             {/* Roles badges column */}
                             <td className="p-4" data-label="Roles">
-                              <div className="flex gap-1 flex-wrap">
+                              <div className="flex gap-1 flex-wrap items-center">
                                 {m.assignedRoles.map((roleKey: string) => (
                                   <span key={roleKey} className="text-[10px] px-2 py-0.5 rounded-md bg-paper-3 border border-line font-medium capitalize text-ink-2">
                                     {ROLE_LABELS[roleKey as StaffRole] || roleKey}
                                   </span>
                                 ))}
+                                {m.station && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1" title="Assigned Waiter Floor Section / Station">
+                                    <span>📍</span>
+                                    <span>{m.stationName || formatStationBadge(m.station, waiterStations)}</span>
+                                  </span>
+                                )}
                               </div>
                             </td>
 
@@ -900,6 +992,92 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                     Cumulative Perms: Checked boxes from active roles will automatically merge.
                   </span>
                 </div>
+
+                {assignedRoles.includes('waiter') && (
+                  <div className="border-t border-line/50 pt-4 space-y-2.5 animate-in fade-in duration-150">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs">📍</span>
+                        <span className="block text-xs font-bold text-turmeric uppercase tracking-wide">
+                          Floor Section / Station
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowNewStationInput(!showNewStationInput)}
+                        className="text-[11px] font-semibold text-turmeric hover:underline"
+                      >
+                        + Add Custom
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-ink-3">
+                      Orders placed by this waiter will automatically print to this station's designated printer.
+                    </p>
+
+                    {showNewStationInput && (
+                      <div className="p-2.5 rounded-lg border border-turmeric/40 bg-turmeric-l/5 space-y-2 mb-2 animate-in fade-in duration-150">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <input
+                            type="text"
+                            value={newStationCode}
+                            onChange={(e) => setNewStationCode(e.target.value)}
+                            placeholder="Code (e.g. P4)"
+                            maxLength={8}
+                            className="px-2 py-1 rounded bg-paper-3 border border-line text-xs uppercase font-bold text-ink"
+                          />
+                          <input
+                            type="text"
+                            value={newStationName}
+                            onChange={(e) => setNewStationName(e.target.value)}
+                            placeholder="Name (e.g. Terrace)"
+                            className="px-2 py-1 rounded bg-paper-3 border border-line text-xs text-ink"
+                          />
+                        </div>
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowNewStationInput(false)}
+                            className="px-2 py-1 text-[10px] text-ink-3 hover:text-ink"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isCreatingStation || !newStationName.trim()}
+                            onClick={handleCreateCustomStation}
+                            className="px-2.5 py-1 rounded bg-turmeric text-[#2A1607] font-bold text-[10px] disabled:opacity-50"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {waiterStations.map((st) => {
+                        const isSel = selectedStation.toLowerCase() === st.id.toLowerCase();
+                        return (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedStation(st.id);
+                              setIsModified(true);
+                            }}
+                            className={`p-2 rounded-lg border text-left text-xs transition-all flex flex-col justify-between ${
+                              isSel
+                                ? 'bg-turmeric-l/10 border-turmeric text-turmeric font-bold ring-1 ring-turmeric/30'
+                                : 'bg-paper-3 border-line text-ink-3 hover:border-ink-3 hover:text-ink'
+                            }`}
+                          >
+                            <span className="font-mono text-[10px] uppercase font-bold">{st.code}</span>
+                            <span className="truncate text-ink font-semibold">{st.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div className="border-t border-line/50 pt-4 space-y-3">
                   <span className="block text-xs font-bold text-ink-2 uppercase tracking-wide">Branch-Level Access Mapping</span>
@@ -1301,6 +1479,114 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                      : 'Point of sale and QR order approvals.')}
                 </p>
               </div>
+
+              {/* ── SECTION 2B: Waiter Floor Section / Station Arrangement (Only for Waiter) ── */}
+              {(newStaffRole.toLowerCase() === 'waiter' ||
+                customRoles.find((c) => c.name.toLowerCase() === newStaffRole.toLowerCase())?.baseRole === 'waiter') && (
+                <div className="border-t border-line/50 pt-4 animate-in fade-in duration-200">
+                  <div className="flex justify-between items-center mb-2.5">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm">📍</span>
+                        <span className="block text-[10px] font-bold text-turmeric uppercase tracking-widest">
+                          Floor Section / Station Assignment *
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-ink-3 mt-0.5">
+                        Assign this waiter to a floor section. Orders taken by this waiter will automatically print to that station's printer.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowNewStationInput(!showNewStationInput)}
+                      className="text-xs font-semibold text-turmeric hover:underline flex items-center gap-1 cursor-pointer shrink-0 ml-3"
+                    >
+                      <span>+ Add Custom Station</span>
+                    </button>
+                  </div>
+
+                  {/* Inline Add Custom Station Form */}
+                  {showNewStationInput && (
+                    <div className="p-3 mb-3 rounded-xl border border-turmeric/40 bg-turmeric-l/5 space-y-2.5 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-ink">Add Custom Floor Station</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowNewStationInput(false)}
+                          className="text-ink-3 hover:text-ink text-xs"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-ink-3 mb-1">Station Code * (e.g. P4, P5)</label>
+                          <input
+                            type="text"
+                            value={newStationCode}
+                            onChange={(e) => setNewStationCode(e.target.value)}
+                            placeholder="e.g. P4"
+                            maxLength={8}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink uppercase font-bold focus:outline-none focus:border-turmeric"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-ink-3 mb-1">Section Name * (e.g. Terrace)</label>
+                          <input
+                            type="text"
+                            value={newStationName}
+                            onChange={(e) => setNewStationName(e.target.value)}
+                            placeholder="e.g. Terrace / Rooftop"
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink focus:outline-none focus:border-turmeric"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          disabled={isCreatingStation || !newStationName.trim()}
+                          onClick={handleCreateCustomStation}
+                          className="px-3 py-1.5 rounded-lg bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 disabled:opacity-50 cursor-pointer"
+                        >
+                          {isCreatingStation ? 'Saving…' : 'Save & Select Station'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Station Selector Cards */}
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {waiterStations.map((st) => {
+                      const isSel = selectedStation.toLowerCase() === st.id.toLowerCase();
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setSelectedStation(st.id)}
+                          className={`relative p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                            isSel
+                              ? 'border-turmeric bg-turmeric/10 text-ink ring-2 ring-turmeric/30'
+                              : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-mono text-xs font-black uppercase px-2 py-0.5 rounded bg-turmeric/20 text-turmeric-d border border-turmeric/30">
+                              {st.code}
+                            </span>
+                            {isSel && (
+                              <span className="text-xs text-turmeric font-bold">✓</span>
+                            )}
+                          </div>
+                          <div>
+                            <b className="text-xs block font-bold text-ink truncate">{st.name}</b>
+                            <span className="text-[10px] text-ink-3 block truncate">{st.desc || st.label}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* ── SECTION 3: Payment (Optional) ── */}
               <div className="border-t border-line/50 pt-4">

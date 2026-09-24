@@ -28,9 +28,48 @@ export function routeOrderToStations(
     }>;
   },
   settings: unknown,
+  waiterStation?: string | null,
 ): StationRoutedJob[] {
   const devices = readDevices(settings);
   const kotPrinters = devices.filter((d) => d.type === 'kot_printer' || d.type === 'both_printer');
+
+  // If order was placed by a waiter in an assigned section/station (e.g. 'p1', 'p2', 'p3')
+  // and there is a physical printer configured specifically for that station, route directly to it.
+  const waiterStationClean = waiterStation?.trim().toLowerCase();
+  const waiterPrinters = waiterStationClean
+    ? kotPrinters.filter((p) => p.station?.trim().toLowerCase() === waiterStationClean)
+    : [];
+
+  if (waiterStationClean && waiterPrinters.length > 0) {
+    const primaryDevice: Device | null = waiterPrinters.find((p) => p.isDefault || p.priority === 'primary') || waiterPrinters[0] || null;
+    const backupDevice: Device | null = waiterPrinters.find((p) => p.id !== primaryDevice?.id) || null;
+    const stationLabel = waiterStationClean.toUpperCase();
+
+    const payload: KotPrintPayload = {
+      kotNumber: order.number * 10 + 1,
+      orderNumber: order.number,
+      tableLabel: order.table?.label ?? null,
+      orderType: order.type,
+      stationName: stationLabel,
+      placedAt: order.placedAt,
+      items: order.items.map((i) => ({
+        name: i.nameSnapshot,
+        qty: i.qty,
+        notes: i.notes ?? null,
+        modifiers: Array.isArray(i.modifiers) ? (i.modifiers as { name: string }[]) : [],
+      })),
+    };
+
+    return [
+      {
+        stationId: waiterStationClean,
+        stationName: stationLabel,
+        targetDevice: primaryDevice,
+        backupDevice,
+        payload,
+      },
+    ];
+  }
 
   // Group line items by station slug (default to 'kitchen' if null)
   const stationGroups = new Map<string, typeof order.items>();

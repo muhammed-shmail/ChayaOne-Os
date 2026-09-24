@@ -7,7 +7,7 @@ import {
   Lock, Database, Sparkles, Cpu, Sliders, Calendar, DollarSign, UserCheck, RefreshCw,
   AlertCircle, Trash2, Plus, Check, Search, ChevronRight, ChevronLeft, Info, X, Key,
   Heart, AlertTriangle, Play, HelpCircle, Megaphone, Download, Layers, QrCode,
-  Wifi, Copy, ExternalLink, User, Server, CheckCircle2, Monitor, Moon, Edit2
+  Wifi, Copy, ExternalLink, User, Server, CheckCircle2, Monitor, Moon, Edit2, Loader2
 } from 'lucide-react';
 import type { Kitchen } from '@/lib/kitchens';
 import type { Device } from '@/lib/devices';
@@ -245,7 +245,7 @@ interface SettingsCenterProps {
   devices: Device[];
   setDevices: React.Dispatch<React.SetStateAction<Device[]>>;
   handleSaveDevice: (e: React.FormEvent) => Promise<void>;
-  handleDeleteDevice: (id: string, name: string) => Promise<void>;
+  handleDeleteDevice: (id: string, name: string, skipConfirm?: boolean) => Promise<void>;
   handleSetDefaultDevice: (dev: Device) => Promise<void>;
   deviceForm: any;
   setDeviceForm: React.Dispatch<React.SetStateAction<any>>;
@@ -361,6 +361,7 @@ export default function SettingsCenter({
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [customerPort, setCustomerPort] = useState<string>('3003');
   const [customerTableToken, setCustomerTableToken] = useState<string>('demo');
+  const [deletingStationId, setDeletingStationId] = useState<string | null>(null);
 
   // ── Floor, Section & Table Management States ──
   const [floorList, setFloorList] = useState<any[]>(floors || []);
@@ -4126,7 +4127,7 @@ export default function SettingsCenter({
                       <h4 className="font-bold text-sm mb-3">Kitchen Preparation Stations</h4>
                       <div className="flex flex-col gap-2">
                         {kitchens.map((k) => (
-                          <div key={k.id} className="flex items-center justify-between p-3 rounded-xl border bg-paper-3 text-sm">
+                          <div key={k.id} className={`flex items-center justify-between p-3 rounded-xl border bg-paper-3 text-sm transition-opacity ${deletingStationId === k.id ? 'opacity-40 pointer-events-none' : ''}`}>
                             <div className="flex items-center gap-3">
                               <span className="w-3.5 h-3.5 rounded-full" style={{ background: k.color || 'var(--turmeric)' }} />
                               <b className="font-semibold">{k.name}</b>
@@ -4135,14 +4136,30 @@ export default function SettingsCenter({
                             {kitchens.length > 1 && (
                               <button
                                 type="button"
+                                disabled={kitchenBusy || deletingStationId === k.id}
                                 onClick={() => {
-                                  if (confirm(`Remove station "${k.name}"?`)) {
-                                    kitchenApi({ action: 'kitchen_delete', id: k.id }, `Station "${k.name}" deleted`);
-                                  }
+                                  setShowConfirmModal({
+                                    show: true,
+                                    title: `Remove Station "${k.name}"`,
+                                    message: `Are you sure you want to remove the "${k.name}" preparation station? Menu items mapped to this station will keep their tag until reassigned.`,
+                                    onConfirm: async () => {
+                                      setDeletingStationId(k.id);
+                                      try {
+                                        await kitchenApi({ action: 'kitchen_delete', id: k.id }, `Station "${k.name}" deleted`);
+                                      } finally {
+                                        setDeletingStationId(null);
+                                      }
+                                    },
+                                  });
                                 }}
-                                className="text-red-500 hover:text-red-600 transition-colors"
+                                className="text-red-500 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={`Delete station ${k.name}`}
                               >
-                                <Trash2 size={16} />
+                                {deletingStationId === k.id ? (
+                                  <Loader2 size={16} className="animate-spin text-red-500" />
+                                ) : (
+                                  <Trash2 size={16} />
+                                )}
                               </button>
                             )}
                           </div>
@@ -4900,7 +4917,16 @@ export default function SettingsCenter({
                                         Edit
                                       </button>
                                       <button
-                                        onClick={() => handleDeleteDevice(d.id, d.name)}
+                                        onClick={() => {
+                                          setShowConfirmModal({
+                                            show: true,
+                                            title: `Remove Device "${d.name}"`,
+                                            message: `Are you sure you want to remove the device "${d.name}" (${d.type})?`,
+                                            onConfirm: async () => {
+                                              await handleDeleteDevice(d.id, d.name, true);
+                                            },
+                                          });
+                                        }}
                                         className="text-red-500 hover:text-red-600 p-1"
                                         title="Delete device"
                                       >

@@ -1,9 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, type Prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
+import { readKitchens, kitchenSlug, KITCHEN_NAME_MAX, KITCHEN_PALETTE, type Kitchen } from '@/lib/kitchens';
+import { readKitchenWorkflow, normalizeKitchenWorkflowInput } from '@/lib/kitchenWorkflow';
+import { readDevices, normalizeDefaults, type Device } from '@/lib/devices';
+import { readReceiptConfig, RECEIPT_FIELD_MAX } from '@/lib/receipt';
+import { readUpiConfig } from '@/lib/print/upi';
+import { normalizeLocationInput } from '@/lib/geo';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const TYPE_VALUES = ['receipt_printer', 'kot_printer', 'both_printer', 'label_printer', 'cash_drawer', 'display', 'other'];
+const CONN_VALUES = ['network', 'usb', 'bluetooth'];
+
+async function saveDevices(outletId: string, devices: Device[]) {
+  const outlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
+  const merged = { ...((outlet?.settings as Record<string, unknown>) ?? {}), devices };
+  await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+}
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -23,6 +38,172 @@ export async function POST(req: NextRequest) {
   if (!outletId) return NextResponse.json({ error: 'no_outlet' }, { status: 400 });
 
   const body = await req.json().catch(() => ({}));
+
+  // ---- Hardware & Printers ----
+  if (body.action === 'device_save') {
+    const d = body.device ?? {};
+    const name = String(d.name ?? '').trim().slice(0, 40);
+    if (!name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
+    const type = TYPE_VALUES.includes(d.type) ? d.type : 'receipt_printer';
+    const connection = CONN_VALUES.includes(d.connection) ? d.connection : 'network';
+    const copies = Number(d.copies);
+    const ip = typeof d.ip === 'string' && d.ip ? d.ip.trim() : String(d.target ?? '').split(':')[0]?.trim() || '';
+    const port = d.port ? String(d.port).trim() : (String(d.target ?? '').split(':')[1] || '9100');
+    const target = String(d.target ?? '').trim() || (ip ? `${ip}:${port}` : '');
+    const priority = d.priority === 'backup' ? 'backup' : 'primary';
+    const kotRule = d.kotRule === 'all_items' ? 'all_items' : d.kotRule === 'custom' ? 'custom' : 'station_only';
+
+    const entry: Device = {
+      id: typeof d.id === 'string' && d.id ? d.id : crypto.randomUUID(),
+      name,
+      type,
+      connection,
+      target,
+      ip: ip || null,
+      port: port || '9100',
+      station: (type === 'kot_printer' || type === 'display') && d.station ? String(d.station).trim() : null,
+      priority,
+      kotRule,
+      copies: Number.isFinite(copies) && copies >= 1 ? Math.min(5, Math.round(copies)) : 1,
+      isDefault: !!d.isDefault,
+    };
+
+    const current = readDevices((await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }))?.settings);
+    const idx = current.findIndex((x) => x.id === entry.id);
+    if (idx >= 0) current[idx] = entry; else current.push(entry);
+
+    if (entry.type === 'kot_printer' && entry.station && entry.priority === 'primary') {
+      current.forEach((p) => {
+        if (p.id !== entry.id && p.type === 'kot_printer' && p.station === entry.station && p.priority === 'primary') {
+          p.priority = 'backup';
+        }
+      });
+    }
+
+    const next = normalizeDefaults(current, entry.isDefault ? entry.id : undefined);
+    await saveDevices(outletId, next);
+    return NextResponse.json({ ok: true, devices: next });
+  }
+
+  if (body.action === 'device_delete') {
+    if (!body.id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
+    const current = readDevices((await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }))?.settings);
+    const next = current.filter((x) => x.id !== body.id);
+    await saveDevices(outletId, next);
+    return NextResponse.json({ ok: true, devices: next });
+  }
+
+  // ---- kitchens / prep stations (stored in Outlet.settings.kitchens) ----
+  if (body.action === 'kitchen_add' || body.action === 'kitchen_rename' || body.action === 'kitchen_delete') {
+    const outlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
+    const settings = (outlet?.settings as Record<string, unknown>) ?? {};
+    const current = readKitchens(settings);
+    let next: Kitchen[];
+
+    if (body.action === 'kitchen_add') {
+      const name = String(body.name ?? '').trim().slice(0, KITCHEN_NAME_MAX);
+      if (!name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
+      if (current.some((k) => k.name.toLowerCase() === name.toLowerCase())) return NextResponse.json({ error: 'duplicate_name' }, { status: 409 });
+      let id = kitchenSlug(name) || 'kitchen';
+      if (current.some((k) => k.id === id)) { let n = 2; while (current.some((k) => k.id === `${id}-${n}`)) n++; id = `${id}-${n}`; }
+      const color = KITCHEN_PALETTE[current.length % KITCHEN_PALETTE.length];
+      next = [...current, { id, name, color, sort: current.length }];
+    } else if (body.action === 'kitchen_rename') {
+      const id = String(body.id ?? '');
+      const name = String(body.name ?? '').trim().slice(0, KITCHEN_NAME_MAX);
+      if (!id || !name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
+      if (current.some((k) => k.id !== id && k.name.toLowerCase() === name.toLowerCase())) return NextResponse.json({ error: 'duplicate_name' }, { status: 409 });
+      if (!current.some((k) => k.id === id)) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+      next = current.map((k) => (k.id === id ? { ...k, name } : k));
+    } else {
+      const id = String(body.id ?? '');
+      if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
+      if (current.length <= 1) return NextResponse.json({ error: 'last_kitchen' }, { status: 409 });
+      next = current.filter((k) => k.id !== id).map((k, i) => ({ ...k, sort: i }));
+    }
+
+    const merged = { ...settings, kitchens: next };
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.auditLog.create({
+      data: { outletId, actorId: session.staffId, action: `kitchen.${body.action.replace('kitchen_', '')}`, entity: 'outlet', entityId: outletId, after: { kitchens: next } as unknown as Prisma.InputJsonValue },
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, kitchens: next });
+  }
+
+  // ---- receipt layout ----
+  if (body.action === 'receipt') {
+    const r = (body.receipt ?? {}) as Record<string, unknown>;
+    const clean = (v: unknown) => String(v ?? '').slice(0, RECEIPT_FIELD_MAX);
+    const receipt = {
+      header: clean(r.header),
+      footer: clean(r.footer),
+      phone: clean(r.phone),
+      showLogo: r.showLogo !== false,
+      showAddress: r.showAddress !== false,
+      showPhone: r.showPhone !== false,
+      showGstin: r.showGstin !== false,
+      showTableNumber: r.showTableNumber !== false,
+      showOrderNumber: r.showOrderNumber !== false,
+      showDateTime: r.showDateTime !== false,
+      showItemNotes: !!r.showItemNotes,
+      showTaxDetails: r.showTaxDetails !== false,
+      showDiscount: r.showDiscount !== false,
+      showUpiQr: r.showUpiQr !== false,
+      showScanAndPay: r.showScanAndPay !== false,
+      paperWidth: r.paperWidth === '58mm' ? '58mm' : '80mm',
+      qrSize: r.qrSize === 'small' || r.qrSize === 'large' ? r.qrSize : 'medium',
+    };
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const merged = { ...settings, receipt };
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    return NextResponse.json({ ok: true, receipt: readReceiptConfig(merged) });
+  }
+
+  // ---- payment / UPI settings ----
+  if (body.action === 'payment') {
+    const p = (body.payment ?? {}) as Record<string, unknown>;
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { name: true, settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const existingPayment = (settings.payment as Record<string, unknown> | undefined) ?? {};
+
+    const updatedPayment = {
+      ...existingPayment,
+      upiEnabled: p.upiEnabled !== undefined ? !!p.upiEnabled : existingPayment.upiEnabled ?? true,
+      upiId: typeof p.upiId === 'string' ? p.upiId.trim() : existingPayment.upiId ?? '',
+      upiBusinessName: typeof p.upiBusinessName === 'string' ? p.upiBusinessName.trim() : (existingPayment.upiBusinessName ?? current?.name ?? 'Chaya Cafe'),
+      receiptQrEnabled: p.receiptQrEnabled !== undefined ? !!p.receiptQrEnabled : existingPayment.receiptQrEnabled ?? true,
+      receiptQrSize: p.receiptQrSize === 'small' || p.receiptQrSize === 'large' ? p.receiptQrSize : 'medium',
+      showScanAndPayText: p.showScanAndPayText !== undefined ? !!p.showScanAndPayText : existingPayment.showScanAndPayText ?? true,
+      cashEnabled: p.cashEnabled !== undefined ? !!p.cashEnabled : existingPayment.cashEnabled ?? true,
+      cardEnabled: p.cardEnabled !== undefined ? !!p.cardEnabled : existingPayment.cardEnabled ?? true,
+    };
+
+    const merged = { ...settings, payment: updatedPayment };
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    return NextResponse.json({ ok: true, payment: readUpiConfig(merged, current?.name) });
+  }
+
+  // ---- kitchen workflow ----
+  if (body.action === 'kitchen_workflow') {
+    const kitchenWorkflow = normalizeKitchenWorkflowInput(body.workflow ?? {});
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const merged = { ...settings, kitchenWorkflow };
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    return NextResponse.json({ ok: true, kitchenWorkflow: readKitchenWorkflow(merged) });
+  }
+
+  // ---- location gate ----
+  if (body.action === 'location') {
+    if (session.role !== 'owner') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    const location = normalizeLocationInput(body.location);
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const merged = { ...settings, location };
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    return NextResponse.json({ ok: true, location });
+  }
 
   if (body.action !== 'outlet') {
     return NextResponse.json({ error: 'invalid_action' }, { status: 400 });
