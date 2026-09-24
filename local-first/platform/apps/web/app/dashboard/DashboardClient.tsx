@@ -2318,6 +2318,7 @@ export default function DashboardClient({
             {/* Mobile: open the slide-out drawer (full menu) */}
             <button
               type="button"
+              suppressHydrationWarning
               onClick={() => setDrawerOpen(true)}
               aria-label="Open menu"
               aria-expanded={drawerOpen}
@@ -2342,6 +2343,7 @@ export default function DashboardClient({
             {/* T-Billing Button — pre-warms on hover/touch for instant response */}
             <button
               type="button"
+              suppressHydrationWarning
               onMouseEnter={() => setTBillingMounted(true)}
               onTouchStart={() => setTBillingMounted(true)}
               onClick={() => {
@@ -2361,6 +2363,7 @@ export default function DashboardClient({
             {tablesData && (
               <button
                 type="button"
+                suppressHydrationWarning
                 onClick={() => {
                   setActiveMenu('home');
                   setActiveSubTab('floor');
@@ -2375,6 +2378,8 @@ export default function DashboardClient({
             )}
             {/* Open POS - always visible in header; replaces sidebar POS link */}
             <button
+              type="button"
+              suppressHydrationWarning
               onClick={() => { setPosInitialFloorOpen(false); setShowPos(true); }}
               className="btn btn-sm inline-flex items-center gap-1.5 hover:opacity-85 transition cursor-pointer"
               id="header-open-pos"
@@ -2396,6 +2401,7 @@ export default function DashboardClient({
             {/* Fullscreen Toggle */}
             <button
               type="button"
+              suppressHydrationWarning
               onClick={toggleFullscreen}
               title={isFullscreen ? 'Exit Fullscreen (F11)' : 'Enter Fullscreen (F11)'}
               aria-label="Toggle Fullscreen"
@@ -2407,7 +2413,14 @@ export default function DashboardClient({
 
             {/* notification bell */}
             <div className="relative">
-              <button onClick={() => { setBellOpen((o) => !o); if (!bellOpen) loadNotifs(); }} className="relative w-9 h-9 rounded-xl grid place-items-center" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }} aria-label={unread > 0 ? `Alerts, ${unread} unread` : 'Alerts'}>
+              <button
+                type="button"
+                suppressHydrationWarning
+                onClick={() => { setBellOpen((o) => !o); if (!bellOpen) loadNotifs(); }}
+                className="relative w-9 h-9 rounded-xl grid place-items-center"
+                style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+                aria-label={unread > 0 ? `Alerts, ${unread} unread` : 'Alerts'}
+              >
                 <Bell size={18} aria-hidden />
                 {unread > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full text-[10px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }}>{unread > 99 ? '99+' : unread}</span>}
               </button>

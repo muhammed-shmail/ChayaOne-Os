@@ -32,12 +32,22 @@ export const viewport: Viewport = {
   viewportFit: 'cover', // respect notch / safe areas on mobile PWA
 };
 
-/* Set the persisted theme before first paint and auto-recover from ChunkLoadErrors on updates */
+/* Set the persisted theme before first paint, auto-recover from ChunkLoadErrors, and suppress extension hydration warnings */
 const initScript = `(function(){
   try {
     var t = localStorage.getItem('cafe-theme');
     if (!t) { t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
     if (t === 'dark') { document.documentElement.setAttribute('data-theme', 'dark'); }
+  } catch(e) {}
+  try {
+    var origErr = console.error;
+    console.error = function() {
+      var msg = arguments[0];
+      if (typeof msg === 'string' && (msg.indexOf('fdprocessedid') !== -1 || (msg.indexOf('Extra attributes from the server') !== -1 && msg.indexOf('fdprocessedid') !== -1))) {
+        return;
+      }
+      return origErr.apply(console, arguments);
+    };
   } catch(e) {}
   window.addEventListener('error', function(e) {
     var m = (e && (e.message || (e.error && e.error.message))) || '';

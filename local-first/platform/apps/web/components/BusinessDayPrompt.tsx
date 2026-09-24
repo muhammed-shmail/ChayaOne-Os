@@ -319,6 +319,7 @@ export function BusinessDayHeaderBadge({ className = '' }: { className?: string 
     <>
       <button
         type="button"
+        suppressHydrationWarning
         onClick={() => canManage && setOpenModal(true)}
         title={canManage ? 'Manage Business Day & Night Shift' : `Active Business Day: ${state.currentBusinessDate}`}
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition animate-in fade-in zoom-in-95 duration-200 ${
