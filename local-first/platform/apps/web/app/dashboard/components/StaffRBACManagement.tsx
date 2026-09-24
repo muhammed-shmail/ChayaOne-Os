@@ -144,13 +144,16 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   const [newRoleBase, setNewRoleBase] = useState<string>('waiter');
   const [isCreatingRole, setIsCreatingRole] = useState(false);
 
-  // Waiter section / station arrangement (P1 Lower, P2 Middle, P3 Upper, and custom stations)
+  // Waiter section / station arrangement (P1 Lower, P2 Upper, and custom stations)
   const [waiterStations, setWaiterStations] = useState<WaiterStation[]>(DEFAULT_WAITER_STATIONS);
   const [selectedStation, setSelectedStation] = useState<string>('p1');
   const [showNewStationInput, setShowNewStationInput] = useState(false);
   const [newStationCode, setNewStationCode] = useState('');
   const [newStationName, setNewStationName] = useState('');
   const [isCreatingStation, setIsCreatingStation] = useState(false);
+  const [editingStationId, setEditingStationId] = useState<string | null>(null);
+  const [stationToDelete, setStationToDelete] = useState<WaiterStation | null>(null);
+  const [isDeletingStation, setIsDeletingStation] = useState(false);
 
   // Local copy of members with nested metadata parsing
   const [membersList, setMembersList] = useState<any[]>([]);
@@ -166,8 +169,8 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   }, [d?.customRoles]);
 
   useEffect(() => {
-    if (d?.waiterStations && Array.isArray(d.waiterStations) && d.waiterStations.length > 0) {
-      setWaiterStations(d.waiterStations);
+    if (d?.waiterStations && Array.isArray(d.waiterStations)) {
+      setWaiterStations(d.waiterStations.length > 0 ? d.waiterStations : DEFAULT_WAITER_STATIONS);
     }
   }, [d?.waiterStations]);
 
@@ -448,7 +451,67 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     }
   };
 
-  // Create Custom Waiter Station
+  const handleStartEditStation = (st: WaiterStation, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingStationId(st.id);
+    setNewStationCode(st.code);
+    setNewStationName(st.name);
+    setShowNewStationInput(true);
+  };
+
+  const handleCancelStationForm = () => {
+    setShowNewStationInput(false);
+    setEditingStationId(null);
+    setNewStationCode('');
+    setNewStationName('');
+  };
+
+  const promptDeleteStation = (st: WaiterStation, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setStationToDelete(st);
+  };
+
+  const handleConfirmDeleteStation = async () => {
+    if (!stationToDelete) return;
+    const stId = stationToDelete.id;
+    setIsDeletingStation(true);
+    try {
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_waiter_station',
+          id: stId,
+        }),
+      });
+      const data = await res.json();
+      const nextList: WaiterStation[] = Array.isArray(data.waiterStations) && data.waiterStations.length > 0
+        ? data.waiterStations
+        : waiterStations.filter((s) => s.id !== stId);
+
+      setWaiterStations(nextList);
+      if (selectedStation === stId) {
+        setSelectedStation(nextList[0]?.id || 'p1');
+      }
+      if (editingStationId === stId) {
+        handleCancelStationForm();
+      }
+    } catch (err: any) {
+      const nextList = waiterStations.filter((s) => s.id !== stId);
+      setWaiterStations(nextList);
+      if (selectedStation === stId) {
+        setSelectedStation(nextList[0]?.id || 'p1');
+      }
+      if (editingStationId === stId) {
+        handleCancelStationForm();
+      }
+    } finally {
+      setIsDeletingStation(false);
+      setStationToDelete(null);
+    }
+  };
+
+  // Create or Update Custom Waiter Station
   const handleCreateCustomStation = async () => {
     if (!newStationName.trim()) return;
     setIsCreatingStation(true);
@@ -457,12 +520,15 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     const rawCode = (newStationCode || newStationName.slice(0, 4)).trim().toUpperCase();
     const id = rawCode.toLowerCase();
     const cleanName = newStationName.trim();
-    const newStation: WaiterStation = {
+    const isEditing = !!editingStationId;
+    const originalId = editingStationId;
+
+    const savedStation: WaiterStation = {
       id,
       code: rawCode,
       name: cleanName,
       label: `${rawCode} (${cleanName})`,
-      desc: 'Custom Floor Section Station',
+      desc: 'Floor Section Station',
       isCustom: true,
     };
 
@@ -471,7 +537,8 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'create_waiter_station',
+          action: isEditing ? 'update_waiter_station' : 'create_waiter_station',
+          originalId: originalId || undefined,
           code: rawCode,
           name: cleanName,
         }),
@@ -481,20 +548,26 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
       const updatedList = Array.isArray(data.waiterStations) && data.waiterStations.length > 0
         ? data.waiterStations
-        : [...waiterStations.filter((s) => s.id !== id), newStation];
+        : [
+            ...waiterStations.filter((s) => s.id !== originalId && s.id !== id),
+            savedStation,
+          ];
 
       setWaiterStations(updatedList);
-      setSelectedStation(id);
-      setNewStationCode('');
-      setNewStationName('');
-      setShowNewStationInput(false);
+      if (selectedStation === originalId || !selectedStation) {
+        setSelectedStation(id);
+      }
+      handleCancelStationForm();
     } catch (err: any) {
       // Fallback: persist in local state so UI is never blocked
-      setWaiterStations((prev) => [...prev.filter((s) => s.id !== id), newStation]);
-      setSelectedStation(id);
-      setNewStationCode('');
-      setNewStationName('');
-      setShowNewStationInput(false);
+      setWaiterStations((prev) => [
+        ...prev.filter((s) => s.id !== originalId && s.id !== id),
+        savedStation,
+      ]);
+      if (selectedStation === originalId || !selectedStation) {
+        setSelectedStation(id);
+      }
+      handleCancelStationForm();
     } finally {
       setIsCreatingStation(false);
     }
@@ -1004,8 +1077,17 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                       </div>
                       <button
                         type="button"
-                        onClick={() => setShowNewStationInput(!showNewStationInput)}
-                        className="text-[11px] font-semibold text-turmeric hover:underline"
+                        onClick={() => {
+                          if (showNewStationInput && !editingStationId) {
+                            handleCancelStationForm();
+                          } else {
+                            setEditingStationId(null);
+                            setNewStationCode('');
+                            setNewStationName('');
+                            setShowNewStationInput(true);
+                          }
+                        }}
+                        className="text-[11px] font-semibold text-turmeric hover:underline cursor-pointer"
                       >
                         + Add Custom
                       </button>
@@ -1016,12 +1098,24 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
                     {showNewStationInput && (
                       <div className="p-2.5 rounded-lg border border-turmeric/40 bg-turmeric-l/5 space-y-2 mb-2 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-ink">
+                            {editingStationId ? `Edit Station (${newStationCode || 'Selected'})` : 'Add Custom Floor Station'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleCancelStationForm}
+                            className="text-ink-3 hover:text-ink text-xs p-0.5 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
                         <div className="grid grid-cols-2 gap-1.5">
                           <input
                             type="text"
                             value={newStationCode}
                             onChange={(e) => setNewStationCode(e.target.value)}
-                            placeholder="Code (e.g. P4)"
+                            placeholder="Code (e.g. P1)"
                             maxLength={8}
                             className="px-2 py-1 rounded bg-paper-3 border border-line text-xs uppercase font-bold text-ink"
                           />
@@ -1036,8 +1130,8 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                         <div className="flex justify-end gap-1.5">
                           <button
                             type="button"
-                            onClick={() => setShowNewStationInput(false)}
-                            className="px-2 py-1 text-[10px] text-ink-3 hover:text-ink"
+                            onClick={handleCancelStationForm}
+                            className="px-2 py-1 text-[10px] text-ink-3 hover:text-ink cursor-pointer"
                           >
                             Cancel
                           </button>
@@ -1045,34 +1139,62 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                             type="button"
                             disabled={isCreatingStation || !newStationName.trim()}
                             onClick={handleCreateCustomStation}
-                            className="px-2.5 py-1 rounded bg-turmeric text-[#2A1607] font-bold text-[10px] disabled:opacity-50"
+                            className="px-2.5 py-1 rounded bg-turmeric text-[#2A1607] font-bold text-[10px] disabled:opacity-50 cursor-pointer"
                           >
-                            Save
+                            {isCreatingStation ? 'Saving…' : (editingStationId ? 'Update' : 'Save')}
                           </button>
                         </div>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {waiterStations.map((st) => {
                         const isSel = selectedStation.toLowerCase() === st.id.toLowerCase();
+                        const isBeingDeleted = isDeletingStation && stationToDelete?.id === st.id;
                         return (
-                          <button
+                          <div
                             key={st.id}
-                            type="button"
+                            role="button"
+                            tabIndex={0}
                             onClick={() => {
                               setSelectedStation(st.id);
                               setIsModified(true);
                             }}
-                            className={`p-2 rounded-lg border text-left text-xs transition-all flex flex-col justify-between ${
+                            className={`group relative p-2 rounded-lg border text-left text-xs transition-all flex flex-col justify-between cursor-pointer select-none ${
                               isSel
                                 ? 'bg-turmeric-l/10 border-turmeric text-turmeric font-bold ring-1 ring-turmeric/30'
                                 : 'bg-paper-3 border-line text-ink-3 hover:border-ink-3 hover:text-ink'
-                            }`}
+                            } ${isBeingDeleted ? 'opacity-40 pointer-events-none' : ''}`}
                           >
-                            <span className="font-mono text-[10px] uppercase font-bold">{st.code}</span>
+                            <div className="flex items-center justify-between mb-1 gap-1">
+                              <span className="font-mono text-[10px] uppercase font-bold">{st.code}</span>
+                              <div className="flex items-center gap-1">
+                                {/* Hover Edit & Delete ("during mouse touching time") */}
+                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                  <button
+                                    type="button"
+                                    title="Edit station"
+                                    onClick={(e) => handleStartEditStation(st, e)}
+                                    className="p-0.5 px-1 rounded bg-paper border border-line text-[10px] hover:text-turmeric hover:border-turmeric cursor-pointer"
+                                  >
+                                    ✏️
+                                  </button>
+                                  <button
+                                    type="button"
+                                    title="Delete station"
+                                    onClick={(e) => promptDeleteStation(st, e)}
+                                    className="p-0.5 px-1 rounded bg-paper border border-line text-[10px] hover:text-red-500 hover:border-red-400 cursor-pointer"
+                                  >
+                                    🗑️
+                                  </button>
+                                </div>
+                                {isSel && (
+                                  <span className="text-[10px] text-turmeric font-bold">✓</span>
+                                )}
+                              </div>
+                            </div>
                             <span className="truncate text-ink font-semibold">{st.name}</span>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -1498,34 +1620,45 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                     </div>
                     <button
                       type="button"
-                      onClick={() => setShowNewStationInput(!showNewStationInput)}
+                      onClick={() => {
+                        if (showNewStationInput && !editingStationId) {
+                          handleCancelStationForm();
+                        } else {
+                          setEditingStationId(null);
+                          setNewStationCode('');
+                          setNewStationName('');
+                          setShowNewStationInput(true);
+                        }
+                      }}
                       className="text-xs font-semibold text-turmeric hover:underline flex items-center gap-1 cursor-pointer shrink-0 ml-3"
                     >
                       <span>+ Add Custom Station</span>
                     </button>
                   </div>
 
-                  {/* Inline Add Custom Station Form */}
+                  {/* Inline Add/Edit Custom Station Form */}
                   {showNewStationInput && (
                     <div className="p-3 mb-3 rounded-xl border border-turmeric/40 bg-turmeric-l/5 space-y-2.5 animate-in fade-in duration-150">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-ink">Add Custom Floor Station</span>
+                        <span className="text-xs font-bold text-ink">
+                          {editingStationId ? `Edit Floor Station (${newStationCode || 'Station'})` : 'Add Custom Floor Station'}
+                        </span>
                         <button
                           type="button"
-                          onClick={() => setShowNewStationInput(false)}
-                          className="text-ink-3 hover:text-ink text-xs"
+                          onClick={handleCancelStationForm}
+                          className="text-ink-3 hover:text-ink text-xs p-1 cursor-pointer"
                         >
                           ✕
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[10px] font-semibold text-ink-3 mb-1">Station Code * (e.g. P4, P5)</label>
+                          <label className="block text-[10px] font-semibold text-ink-3 mb-1">Station Code * (e.g. P1, P2)</label>
                           <input
                             type="text"
                             value={newStationCode}
                             onChange={(e) => setNewStationCode(e.target.value)}
-                            placeholder="e.g. P4"
+                            placeholder="e.g. P1"
                             maxLength={8}
                             className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink uppercase font-bold focus:outline-none focus:border-turmeric"
                           />
@@ -1541,47 +1674,77 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                           />
                         </div>
                       </div>
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCancelStationForm}
+                          className="px-3 py-1.5 rounded-lg border border-line text-ink-3 hover:text-ink font-semibold text-xs cursor-pointer"
+                        >
+                          Cancel
+                        </button>
                         <button
                           type="button"
                           disabled={isCreatingStation || !newStationName.trim()}
                           onClick={handleCreateCustomStation}
                           className="px-3 py-1.5 rounded-lg bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 disabled:opacity-50 cursor-pointer"
                         >
-                          {isCreatingStation ? 'Saving…' : 'Save & Select Station'}
+                          {isCreatingStation ? 'Saving…' : (editingStationId ? 'Update Station' : 'Save & Select Station')}
                         </button>
                       </div>
                     </div>
                   )}
 
                   {/* Station Selector Cards */}
-                  <div className="grid grid-cols-3 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     {waiterStations.map((st) => {
                       const isSel = selectedStation.toLowerCase() === st.id.toLowerCase();
+                      const isBeingDeleted = isDeletingStation && stationToDelete?.id === st.id;
                       return (
-                        <button
+                        <div
                           key={st.id}
-                          type="button"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => setSelectedStation(st.id)}
-                          className={`relative p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                          className={`group relative p-3 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer select-none ${
                             isSel
                               ? 'border-turmeric bg-turmeric/10 text-ink ring-2 ring-turmeric/30'
                               : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
-                          }`}
+                          } ${isBeingDeleted ? 'opacity-40 pointer-events-none' : ''}`}
                         >
-                          <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center justify-between mb-1 gap-1">
                             <span className="font-mono text-xs font-black uppercase px-2 py-0.5 rounded bg-turmeric/20 text-turmeric-d border border-turmeric/30">
                               {st.code}
                             </span>
-                            {isSel && (
-                              <span className="text-xs text-turmeric font-bold">✓</span>
-                            )}
+                            <div className="flex items-center gap-1">
+                              {/* Hover Edit & Delete ("during mouse touching time") */}
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                <button
+                                  type="button"
+                                  title="Edit station"
+                                  onClick={(e) => handleStartEditStation(st, e)}
+                                  className="p-1 rounded bg-paper border border-line text-[11px] hover:text-turmeric hover:border-turmeric shadow-xs transition-colors cursor-pointer"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Delete station"
+                                  onClick={(e) => promptDeleteStation(st, e)}
+                                  className="p-1 rounded bg-paper border border-line text-[11px] hover:text-red-500 hover:border-red-400 shadow-xs transition-colors cursor-pointer"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                              {isSel && (
+                                <span className="text-xs text-turmeric font-bold ml-0.5">✓</span>
+                              )}
+                            </div>
                           </div>
                           <div>
                             <b className="text-xs block font-bold text-ink truncate">{st.name}</b>
                             <span className="text-[10px] text-ink-3 block truncate">{st.desc || st.label}</span>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -1709,6 +1872,45 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Standard Delete Station Confirmation Modal */}
+      {stationToDelete && (
+        <div
+          onClick={() => !isDeletingStation && setStationToDelete(null)}
+          className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-paper border border-line rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center animate-in zoom-in-95 duration-150"
+          >
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 mx-auto flex items-center justify-center text-xl mb-3.5">
+              🗑️
+            </div>
+            <h4 className="text-base font-bold text-ink mb-1.5">Delete Floor Station</h4>
+            <p className="text-xs text-ink-3 leading-relaxed mb-5">
+              Are you sure you want to delete station <b className="text-ink">{stationToDelete.code} ({stationToDelete.name})</b>?
+            </p>
+            <div className="flex gap-2 justify-center">
+              <button
+                type="button"
+                disabled={isDeletingStation}
+                onClick={() => setStationToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-line text-xs font-semibold text-ink-2 hover:bg-paper-2 transition-all cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingStation}
+                onClick={handleConfirmDeleteStation}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isDeletingStation ? 'Deleting…' : 'Yes, Delete Station'}
+              </button>
+            </div>
           </div>
         </div>
       )}

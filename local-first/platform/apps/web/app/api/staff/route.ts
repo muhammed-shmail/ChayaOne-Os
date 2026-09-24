@@ -93,8 +93,8 @@ export async function POST(req: NextRequest) {
   }
 
   // ---- Waiter Station Management ----
-  if (action === 'create_waiter_station') {
-    const { code, name, desc } = body;
+  if (action === 'create_waiter_station' || action === 'update_waiter_station') {
+    const { code, name, desc, originalId } = body;
     if (!name?.trim()) return NextResponse.json({ error: 'name_required' }, { status: 400 });
     const outlet = session.outletId
       ? await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } })
@@ -103,15 +103,16 @@ export async function POST(req: NextRequest) {
     const rawCode = (code || name.slice(0, 4)).trim().toUpperCase();
     const id = rawCode.toLowerCase();
     const cleanName = name.trim();
-    const newStation: WaiterStation = {
+    const updatedStation: WaiterStation = {
       id,
       code: rawCode,
       name: cleanName,
       label: `${rawCode} (${cleanName})`,
-      desc: desc?.trim() || 'Custom Floor Section Station',
+      desc: desc?.trim() || 'Floor Section Station',
       isCustom: true,
     };
-    const next = [...current.filter((s) => s.id !== id), newStation];
+    const targetToRemove = (originalId || id).trim().toLowerCase();
+    const next = [...current.filter((s) => s.id.toLowerCase() !== targetToRemove && s.id.toLowerCase() !== id), updatedStation];
     if (session.outletId) {
       const prevSettings = (outlet?.settings as Record<string, unknown>) || {};
       await prisma.outlet.update({
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
         data: { settings: { ...prevSettings, waiterStations: next } as any },
       });
     }
-    return NextResponse.json({ ok: true, waiterStations: next, station: newStation });
+    return NextResponse.json({ ok: true, waiterStations: next, station: updatedStation });
   }
 
   if (action === 'delete_waiter_station') {
@@ -129,7 +130,8 @@ export async function POST(req: NextRequest) {
       ? await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } })
       : null;
     const current = readWaiterStations(outlet?.settings);
-    const next = current.filter((s) => s.id !== id);
+    const targetId = id.trim().toLowerCase();
+    const next = current.filter((s) => s.id.toLowerCase() !== targetId && s.code.toLowerCase() !== targetId);
     if (session.outletId) {
       const prevSettings = (outlet?.settings as Record<string, unknown>) || {};
       await prisma.outlet.update({

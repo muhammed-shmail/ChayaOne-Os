@@ -19,6 +19,7 @@ import {
   Check,
   CheckCircle2,
 } from 'lucide-react';
+import { subscribeStaff } from '@/lib/realtime-client';
 
 interface TableItem {
   id: string;
@@ -74,7 +75,7 @@ export default function WaiterTablesPage() {
 
   const fetchTables = useCallback(async () => {
     try {
-      const res = await fetch('/api/tables');
+      const res = await fetch('/api/tables', { cache: 'no-store' });
       if (res.status === 401) {
         router.push('/login');
         return;
@@ -82,7 +83,31 @@ export default function WaiterTablesPage() {
       const data = await res.json();
       if (data.tables) {
         setTables(data.tables);
-        setOccupiedMap(data.occupied || {});
+        setOccupiedMap((prev) => {
+          const merged = { ...(data.occupied || {}) };
+          try {
+            const rawJustOrdered = sessionStorage.getItem('chayaone_just_ordered_table');
+            if (rawJustOrdered) {
+              const parsed = JSON.parse(rawJustOrdered);
+              if (parsed.tableId && Date.now() - parsed.time < 12000) {
+                if (!merged[parsed.tableId]) {
+                  merged[parsed.tableId] = {
+                    id: parsed.tableId,
+                    orderId: parsed.tableId,
+                    number: 0,
+                    sinceMs: parsed.time,
+                    billPaise: 0,
+                    orders: 1,
+                    status: 'in_kitchen',
+                  };
+                }
+              } else {
+                sessionStorage.removeItem('chayaone_just_ordered_table');
+              }
+            }
+          } catch {}
+          return merged;
+        });
       }
     } catch (err) {
       console.error('Failed to load tables', err);
@@ -94,7 +119,7 @@ export default function WaiterTablesPage() {
 
   const fetchAlertsCount = useCallback(async () => {
     try {
-      const res = await fetch('/api/staff/notifications');
+      const res = await fetch('/api/staff/notifications', { cache: 'no-store' });
       if (res.ok) {
         const d = await res.json();
         const unread = Array.isArray(d.items) ? d.items.filter((n: { readAt?: string | null }) => !n.readAt).length : 0;
@@ -109,13 +134,65 @@ export default function WaiterTablesPage() {
     fetchTables();
     fetchAlertsCount();
 
-    // Auto-polling interval for resilience
+    // 1. Realtime WebSocket subscription: instant live updates on floor tables
+    const unsub = subscribeStaff((msg: any) => {
+      if (msg.type === 'order.new' && msg.ticket?.tableId) {
+        const tId = msg.ticket.tableId;
+        setOccupiedMap((prev) => ({
+          ...prev,
+          [tId]: {
+            id: msg.ticket.id,
+            orderId: msg.ticket.id,
+            number: msg.ticket.number,
+            sinceMs: msg.ticket.placedAt || Date.now(),
+            billPaise: 0,
+            orders: 1,
+            status: msg.ticket.status || 'in_kitchen',
+          },
+        }));
+        setTables((prev) => prev.map((t) => (t.id === tId ? { ...t, state: 'seated' } : t)));
+      } else if (msg.type === 'table.updated') {
+        if (msg.state === 'free' && msg.tableId) {
+          setOccupiedMap((prev) => {
+            const next = { ...prev };
+            delete next[msg.tableId];
+            return next;
+          });
+          setTables((prev) => prev.map((t) => (t.id === msg.tableId ? { ...t, state: 'free' } : t)));
+        } else if (msg.state === 'seated' && msg.tableId) {
+          setTables((prev) => prev.map((t) => (t.id === msg.tableId ? { ...t, state: 'seated' } : t)));
+        }
+      }
+
+      // Re-fetch tables immediately on any order / table change
+      if (
+        msg.type === 'order.new' ||
+        msg.type === 'order.updated' ||
+        msg.type === 'order.pending' ||
+        msg.type === 'table.updated' ||
+        msg.type === 'table.transferred' ||
+        msg.type === 'table.merged' ||
+        msg.type === 'table.split' ||
+        msg.type === 'bill.requested'
+      ) {
+        fetchTables();
+      }
+
+      if (msg.type === 'waiter.called' || msg.type === 'bill.requested') {
+        fetchAlertsCount();
+      }
+    });
+
+    // 2. Fallback polling interval for resilience
     const interval = setInterval(() => {
       fetchTables();
       fetchAlertsCount();
-    }, 4000);
+    }, 6000);
 
-    return () => clearInterval(interval);
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
   }, [fetchTables, fetchAlertsCount]);
 
   const handleRefresh = () => {
