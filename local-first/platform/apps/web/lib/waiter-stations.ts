@@ -30,16 +30,8 @@ export const DEFAULT_WAITER_STATIONS: WaiterStation[] = [
   {
     id: 'p2',
     code: 'P2',
-    name: 'Middle',
-    label: 'P2 (Middle)',
-    desc: 'Middle Floor Section',
-    isCustom: false,
-  },
-  {
-    id: 'p3',
-    code: 'P3',
     name: 'Upper',
-    label: 'P3 (Upper)',
+    label: 'P2 (Upper)',
     desc: 'Upper Floor / Mezzanine Section',
     isCustom: false,
   },
@@ -48,20 +40,13 @@ export const DEFAULT_WAITER_STATIONS: WaiterStation[] = [
 /** Read & normalize configured waiter stations from Outlet.settings.waiterStations. Never throws. */
 export function readWaiterStations(settings: unknown): WaiterStation[] {
   const raw = (settings as { waiterStations?: unknown } | null)?.waiterStations;
-  if (!Array.isArray(raw) || raw.length === 0) {
+  if (!Array.isArray(raw)) {
     return DEFAULT_WAITER_STATIONS;
   }
 
-  const customList: WaiterStation[] = [];
+  const list: WaiterStation[] = [];
   const seenIds = new Set<string>();
 
-  // Add default stations first
-  for (const def of DEFAULT_WAITER_STATIONS) {
-    seenIds.add(def.id.toLowerCase());
-    customList.push(def);
-  }
-
-  // Add custom stations from settings
   for (const item of raw) {
     const obj = item as Record<string, unknown>;
     if (!obj || typeof obj.id !== 'string') continue;
@@ -71,20 +56,20 @@ export function readWaiterStations(settings: unknown): WaiterStation[] {
     const code = typeof obj.code === 'string' && obj.code ? obj.code.trim().toUpperCase() : id.toUpperCase();
     const name = typeof obj.name === 'string' && obj.name ? obj.name.trim() : code;
     const label = typeof obj.label === 'string' && obj.label ? obj.label.trim() : `${code} (${name})`;
-    const desc = typeof obj.desc === 'string' ? obj.desc.trim() : 'Custom Floor Station';
+    const desc = typeof obj.desc === 'string' ? obj.desc.trim() : 'Floor Section Station';
 
     seenIds.add(id);
-    customList.push({
+    list.push({
       id,
       code,
       name,
       label,
       desc,
-      isCustom: true,
+      isCustom: obj.isCustom !== false,
     });
   }
 
-  return customList;
+  return list.length > 0 ? list : DEFAULT_WAITER_STATIONS;
 }
 
 /** Format a station ID into a human-readable badge label (e.g. 'P1 · Lower'). */
