@@ -1880,11 +1880,11 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       {stationToDelete && (
         <div
           onClick={() => !isDeletingStation && setStationToDelete(null)}
-          className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-transparent animate-in fade-in duration-150"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-paper border border-line rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center animate-in zoom-in-95 duration-150"
+            className="bg-paper border border-line rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center animate-in zoom-in-95 duration-150 ring-1 ring-black/5"
           >
             <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 mx-auto flex items-center justify-center text-xl mb-3.5">
               🗑️
