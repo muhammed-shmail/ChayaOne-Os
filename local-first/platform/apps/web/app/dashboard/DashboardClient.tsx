@@ -369,6 +369,8 @@ export default function DashboardClient({
   const [toast, setToast] = useState<string | null>(null);
   const liveDot = useRef<HTMLSpanElement>(null);
 
+  const loadTablesRef = useRef<() => void>(() => {});
+
   // Self-healing realtime. The helper re-fetches a fresh token and rejoins the
   // private outlet channel on drop/expiry (the old hand-rolled EventSource
   // reconnect that kept the owner bell from sticking on "Offline" now lives there).
@@ -378,9 +380,66 @@ export default function DashboardClient({
         // any order lifecycle change (placed / bumped / settled anywhere) refreshes
         // the live queue, so a bill settled in the POS clears here without a manual
         // Refresh. Only refetch while the Orders tab is open (it reloads on open too).
-        if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending' || msg.type === 'table.transferred') {
+        if (
+          msg.type === 'order.new' ||
+          msg.type === 'order.updated' ||
+          msg.type === 'order.pending' ||
+          msg.type === 'table.transferred' ||
+          msg.type === 'table.merged' ||
+          msg.type === 'table.split' ||
+          msg.type === 'table.updated'
+        ) {
           if (activeMenuRef.current === 'orders') loadOrders();
+          // Realtime Floor: instantly reload live occupancy & floor map
+          loadTablesRef.current?.();
         }
+
+        // Instant optimistic live floor update for zero-latency UI flip
+        if (msg.type === 'order.new' && msg.ticket?.tableId) {
+          const tId = msg.ticket.tableId;
+          setTablesData((prev: any) => {
+            if (!prev) return prev;
+            const existingOcc = prev.occupancy || [];
+            if (existingOcc.some((o: any) => o.id === tId)) {
+              return {
+                ...prev,
+                occupancy: existingOcc.map((o: any) =>
+                  o.id === tId
+                    ? { ...o, orders: (o.orders || 1) + 1, status: msg.ticket.status || 'in_kitchen' }
+                    : o
+                ),
+              };
+            }
+            return {
+              ...prev,
+              totals: { ...prev.totals, occupied: (prev.totals?.occupied || 0) + 1 },
+              occupancy: [
+                ...existingOcc,
+                {
+                  id: tId,
+                  label: msg.ticket.table,
+                  sinceMs: msg.ticket.placedAt || Date.now(),
+                  durationMin: 0,
+                  billPaise: 0,
+                  orders: 1,
+                  status: msg.ticket.status || 'in_kitchen',
+                  number: msg.ticket.number,
+                  lowRevenue: false,
+                },
+              ],
+            };
+          });
+        } else if (msg.type === 'table.updated' && msg.state === 'free' && msg.tableId) {
+          setTablesData((prev: any) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              totals: { ...prev.totals, occupied: Math.max(0, (prev.totals?.occupied || 1) - 1) },
+              occupancy: (prev.occupancy || []).filter((o: any) => o.id !== msg.tableId),
+            };
+          });
+        }
+
         if (msg.type === 'order.new') {
           setLiveOrders((n) => n + 1);
           flashMessage(`New Order Received: #${msg.ticket.number}`);
@@ -795,7 +854,7 @@ export default function DashboardClient({
   const loadTables = async () => {
     setTablesLoading(true);
     try {
-      const res = await fetch('/api/dashboard/section?s=tables');
+      const res = await fetch('/api/dashboard/section?s=tables', { cache: 'no-store' });
       if (res.ok) {
         const d = await res.json();
         setTablesData(d.data || null);
@@ -811,10 +870,19 @@ export default function DashboardClient({
     }
   };
 
-  // refresh live occupancy every 30s globally (updates the header stats & floor map)
+  loadTablesRef.current = loadTables;
+
+  // Refresh tables whenever user switches to Live Floor tab
+  useEffect(() => {
+    if (activeSubTab === 'floor') {
+      loadTables();
+    }
+  }, [activeSubTab]);
+
+  // refresh live occupancy every 20s globally as fallback (updates the header stats & floor map)
   useEffect(() => {
     loadTables();
-    const t = setInterval(loadTables, 30000);
+    const t = setInterval(loadTables, 20000);
     return () => clearInterval(t);
   }, []);
 

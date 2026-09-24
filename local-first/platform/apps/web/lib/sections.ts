@@ -569,7 +569,7 @@ async function getTables(outletId: string): Promise<TablesData> {
       FROM tables_map t
       JOIN orders o ON o."tableId" = t.id
         AND o."type" = 'dine_in'
-        AND o."status" IN ('open', 'in_kitchen', 'ready', 'served')
+        AND o."status" IN ('open', 'in_kitchen', 'ready', 'served', 'pending_approval')
         AND o."settledAt" IS NULL
       WHERE t."outletId" = ${outletId}::uuid
       GROUP BY t.id, t.label

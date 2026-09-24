@@ -23,7 +23,7 @@ export async function GET() {
         outletId: outlet.id,
         tableId: { not: null },
         type: 'dine_in',
-        status: { in: ['open', 'in_kitchen', 'ready', 'served'] },
+        status: { in: ['open', 'in_kitchen', 'ready', 'served', 'pending_approval'] },
         settledAt: null,
       },
       orderBy: { placedAt: 'asc' },
@@ -63,5 +63,8 @@ export async function GET() {
     active: !disabledTables.includes(t.id),
   }));
 
-  return NextResponse.json({ tables: tableDtos, floors, occupied });
+  return NextResponse.json(
+    { tables: tableDtos, floors, occupied },
+    { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' } },
+  );
 }

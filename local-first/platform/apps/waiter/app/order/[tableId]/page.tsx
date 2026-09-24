@@ -228,10 +228,14 @@ export default function WaiterOrderBuilderPage() {
         return;
       }
 
+      try {
+        sessionStorage.setItem('chayaone_just_ordered_table', JSON.stringify({ tableId, tableLabel, time: Date.now() }));
+      } catch {}
+
       setSuccessToast(`✓ KOT Sent for ${tableLabel}!`);
       setTimeout(() => {
         router.push('/tables');
-      }, 1200);
+      }, 350);
     } catch (err) {
       console.error('Error sending KOT', err);
       alert('Network error sending KOT');
