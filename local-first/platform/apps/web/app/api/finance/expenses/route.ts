@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { formatYmdInTz, DEFAULT_TIMEZONE, readBusinessDay } from '@/lib/businessDay';
+import { FinancialYearService } from '@/lib/services/financial-year.service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,6 +48,8 @@ export async function POST(req: NextRequest) {
   const businessDate = bState.currentBusinessDate || formatYmdInTz(new Date(), tz);
 
   try {
+    await FinancialYearService.assertDateNotLocked(session.tenantId, session.outletId, businessDate);
+
     const expense = await prisma.expense.create({
       data: {
         outletId: session.outletId,

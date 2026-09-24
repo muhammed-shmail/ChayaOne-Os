@@ -149,3 +149,26 @@ export const ForceCloseShiftSchema = z.object({
   managerPin: z.string().optional(),
 });
 export type ForceCloseShiftInput = z.infer<typeof ForceCloseShiftSchema>;
+
+/** Financial Year Creation Schema */
+export const FinancialYearCreateSchema = z.object({
+  name: z.string().min(2).max(50),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD'),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD'),
+  isDefault: z.boolean().optional().default(false),
+  notes: z.string().optional(),
+}).refine((data) => data.startDate < data.endDate, {
+  message: 'Start date must be before end date',
+  path: ['startDate'],
+});
+export type FinancialYearCreateInput = z.infer<typeof FinancialYearCreateSchema>;
+
+/** Financial Year Close / Reopen Schema */
+export const FinancialYearCloseSchema = z.object({
+  id: z.string().uuid(),
+  action: z.enum(['close', 'reopen']),
+  notes: z.string().optional(),
+  managerPin: z.string().optional(),
+});
+export type FinancialYearCloseInput = z.infer<typeof FinancialYearCloseSchema>;
+

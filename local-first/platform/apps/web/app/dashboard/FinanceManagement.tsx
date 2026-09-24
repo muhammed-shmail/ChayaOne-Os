@@ -12,6 +12,8 @@ import { PrimaryKPIs } from './components/PrimaryKPIs';
 import { KPIGroup } from './components/KPIGroup';
 import { IndianRupee, Wallet, Banknote, Smartphone, CreditCard, Receipt, ReceiptText, BriefcaseBusiness, TrendingUp, RotateCcw, BadgePercent, CircleDollarSign, Truck, Users, FileBadge2, Landmark, Building2, PiggyBank, ArrowRight, ArrowRightLeft, FileSpreadsheet, ChartColumn, BookOpen, ArrowLeftRight, TriangleAlert, Mail } from 'lucide-react';
 import { DayClosingView } from '@/components/finance/DayClosingView';
+import { DayBookView } from '@/components/finance/DayBookView';
+import { FinancialYearManagement } from '@/components/finance/FinancialYearManagement';
 
 interface FinanceManagementProps {
   outlet: { name: string; brand: string; plan: string; gstin: string | null };
@@ -180,7 +182,7 @@ function CustomSelect({ value, onChange, options, placeholder = 'Select...', cla
 
 export default function FinanceManagement({ outlet, staff, kpi, formatINR }: FinanceManagementProps) {
   // Navigation
-  const [activeTab, setActiveTab] = useState<'overview' | 'drawer' | 'day_closing' | 'expenses' | 'vendors' | 'settlements' | 'banks' | 'payroll' | 'accounting' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'drawer' | 'day_closing' | 'day_book' | 'expenses' | 'vendors' | 'settlements' | 'banks' | 'payroll' | 'accounting' | 'settings'>('overview');
 
   // Modals state
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -393,6 +395,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
         { key: 'overview', label: '📊 Finance Dashboard' },
         { key: 'drawer', label: '🗄️ Cash Drawer' },
         { key: 'day_closing', label: '📅 Day Closing' },
+        { key: 'day_book', label: '📖 Day Book' },
         { key: 'expenses', label: '🧾 Expenses' },
         { key: 'vendors', label: '🤝 Vendors' },
         { key: 'banks', label: '🏦 Bank Accounts' },
@@ -406,6 +409,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
       return [
         { key: 'overview', label: '📊 Finance Dashboard' },
         { key: 'day_closing', label: '📅 Day Closing' },
+        { key: 'day_book', label: '📖 Day Book' },
         { key: 'expenses', label: '🧾 Expenses' },
         { key: 'vendors', label: '🤝 Vendors' },
         { key: 'banks', label: '🏦 Bank Accounts' },
@@ -1013,6 +1017,11 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
         <DayClosingView outlet={outlet} currentStaff={staff} />
       )}
 
+      {/* ── 2c. DAY BOOK TAB ── */}
+      {activeTab === 'day_book' && (
+        <DayBookView outlet={outlet} currentStaff={staff} />
+      )}
+
       {/* ── 3. EXPENSE MANAGEMENT TAB ── */}
       {activeTab === 'expenses' && (
         <div className="flex flex-col gap-4">
@@ -1526,7 +1535,10 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
 
       {/* ── 9. SETTINGS & AUDIT LOGS TAB ── */}
       {activeTab === 'settings' && (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-6">
+          {/* Financial Year Setup & History */}
+          <FinancialYearManagement currentStaff={staff} />
+
           <div className="grid lg:grid-cols-2 gap-4">
             {/* Configuration options */}
             <section className="card p-5 flex flex-col gap-4" style={{ background: 'var(--paper-2)' }}>

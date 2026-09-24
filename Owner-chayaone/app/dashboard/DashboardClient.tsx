@@ -1387,6 +1387,7 @@ export default function DashboardClient({
   const [editTableDraft, setEditTableDraft] = useState({ label: '', seats: '4' });
   const [qrTable, setQrTable] = useState<FloorTable | null>(null); // QR preview/print modal
   const [floorBusy, setFloorBusy] = useState(false);
+  const [liveFloorFilter, setLiveFloorFilter] = useState<string>('all');
 
   // ── PWA Settings (customer app config) ──
   type PwaMenuItem = { id: string; name: string; pricePaise: number; imageUrl: string | null; categoryName: string | null };
@@ -2538,55 +2539,93 @@ export default function DashboardClient({
             {/* Live Floor Tab */}
             {activeSubTab === 'floor' && (() => {
               const occMap = new Map<string, any>((tablesData?.occupancy ?? []).map((o: any) => [o.id, o]));
-              const STATUS = {
-                free: { label: 'Free', color: '#34C759' },
-                occupied: { label: 'Occupied', color: '#3B82F6' },
-                long: { label: 'Long stay', color: '#E8A22B' },
-                low: { label: 'Low revenue', color: '#C3492F' },
+              const TABLE_STAGES: Record<'free' | 'order' | 'kot' | 'ready' | 'served', { label: string; color: string }> = {
+                free: { label: 'Free', color: 'var(--ink-3)' },
+                order: { label: 'Order', color: '#3B82F6' },
+                kot: { label: 'KOT', color: '#F59E0B' },
+                ready: { label: 'Ready', color: '#10B981' },
+                served: { label: 'Served', color: '#8B5CF6' },
               };
-              const minutes = tablesData?.config?.minutes ?? 90;
-              const statusOf = (id: string): keyof typeof STATUS => {
-                const o = occMap.get(id);
-                if (!o) return 'free';
-                if (o.lowRevenue) return 'low';
-                if (o.durationMin >= minutes) return 'long';
-                return 'occupied';
+              const getStage = (status?: string): 'free' | 'order' | 'kot' | 'ready' | 'served' => {
+                if (!status) return 'free';
+                if (status === 'in_kitchen') return 'kot';
+                if (status === 'ready') return 'ready';
+                if (status === 'served') return 'served';
+                return 'order';
               };
-              const roster = tablesData?.roster ?? [];
+
+              const roster = (tablesData?.roster ?? []).filter((t: any) => t.active !== false);
               const floorList = tablesData?.floors ?? [];
               const floorIds = new Set(floorList.map((f: any) => f.id));
-              const groups = [
-                ...floorList.map((f: any) => ({ key: f.id, name: f.name, tables: roster.filter((t: any) => t.floorId === f.id) })),
-                { key: 'unassigned', name: 'Unassigned', tables: roster.filter((t: any) => !t.floorId || !floorIds.has(t.floorId)) },
+              const hasUnassigned = roster.some((t: any) => !t.floorId || !floorIds.has(t.floorId));
+
+              const groups: { key: string; name: string; tables: any[] }[] = [
+                ...floorList.map((f: any) => ({
+                  key: f.id,
+                  name: f.name,
+                  tables: roster.filter((t: any) => t.floorId === f.id),
+                })),
+                {
+                  key: 'unassigned',
+                  name: 'Unassigned',
+                  tables: roster.filter((t: any) => !t.floorId || !floorIds.has(t.floorId)),
+                },
               ].filter((g) => g.tables.length > 0);
 
+              const shownGroups = liveFloorFilter === 'all'
+                ? groups
+                : groups.filter((g) => g.key === liveFloorFilter);
+
               const renderTile = (t: any) => {
-                const st = statusOf(t.id);
-                const s = STATUS[st];
                 const o = occMap.get(t.id);
+                const stage = o ? getStage(o.status) : 'free';
+                const s = TABLE_STAGES[stage] ?? TABLE_STAGES.free;
                 return (
                   <div
                     key={t.id}
-                    onClick={o ? () => openTableOrders(t) : undefined}
-                    role={o ? 'button' : undefined}
-                    tabIndex={o ? 0 : undefined}
-                    onKeyDown={o ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTableOrders(t); } } : undefined}
-                    title={o ? 'View orders on this table' : undefined}
-                    className={`rounded-xl border p-3 flex flex-col gap-1${o ? ' cursor-pointer transition hover:-translate-y-0.5' : ''}`}
-                    style={{ background: `color-mix(in srgb, ${s.color} 8%, var(--paper-3))`, borderColor: s.color, borderTopWidth: 3, borderTopColor: s.color }}
+                    onClick={o ? () => openTableOrders(t) : () => { setShowPos(true); }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (o) openTableOrders(t);
+                      }
+                    }}
+                    title={o ? `Table ${t.label}: ${s.label} · Click to view orders` : `Table ${t.label}: Free · Click to open POS`}
+                    className="rounded-xl border p-3 flex flex-col justify-between gap-1.5 min-h-[96px] cursor-pointer transition hover:-translate-y-0.5"
+                    style={{
+                      background: o ? `color-mix(in srgb, ${s.color} 10%, var(--paper-3))` : 'var(--paper-3)',
+                      borderColor: s.color,
+                      borderTopWidth: 4,
+                      borderTopColor: s.color,
+                    }}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-display font-bold text-lg">{t.label}</span>
                       <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
                     </div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wide" style={{ color: s.color }}>{s.label}</span>
+
+                    <span className="text-[10px] font-extrabold uppercase tracking-wide" style={{ color: s.color }}>
+                      {s.label}
+                    </span>
+
                     {o ? (
                       <div className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>
-                        <div className="flex justify-between"><span>{o.durationMin} min</span><span className="font-mono">{formatINR(o.billPaise)}</span></div>
-                        <span className="flex justify-between"><span>{o.orders} order{o.orders > 1 ? 's' : ''}</span><span style={{ color: s.color }}>view ▸</span></span>
+                        <div className="flex justify-between font-mono font-bold text-ink">
+                          <span>#{o.number || '—'}</span>
+                          <span>{formatINR(o.billPaise)}</span>
+                        </div>
+                        <div className="flex justify-between text-[10px] mt-0.5">
+                          <span style={{ color: s.color }} className="font-bold uppercase">{s.label} · {o.durationMin}m</span>
+                          <span style={{ color: s.color }} className="font-semibold">view ▸</span>
+                        </div>
                       </div>
                     ) : (
-                      <span className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>{'•'.repeat(t.seats)} · open</span>
+                      <div className="text-[11px] mt-0.5 flex items-center justify-between" style={{ color: 'var(--ink-3)' }}>
+                        <span className="tracking-widest">{'•'.repeat(t.seats)}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider">FREE</span>
+                      </div>
                     )}
                   </div>
                 );
@@ -2594,25 +2633,96 @@ export default function DashboardClient({
 
               return (
                 <section className="card p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                    <h4 className="font-bold">Live Floor</h4>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h4 className="font-bold text-base">Live Floor Map</h4>
+                    {/* Stage status legend */}
                     <div className="flex flex-wrap gap-3">
-                      {Object.entries(STATUS).map(([k, s]) => (
+                      {Object.entries(TABLE_STAGES).map(([k, s]) => (
                         <span key={k} className="inline-flex items-center gap-1.5 text-xs font-bold" style={{ color: 'var(--ink-2)' }}>
-                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />{s.label}
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
+                          {s.label}
                         </span>
                       ))}
                     </div>
                   </div>
+
+                  {/* Section Filter Chips */}
+                  {floorList.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 mb-4 pb-3 border-b border-line">
+                      <span className="text-xs font-bold text-ink-3 uppercase mr-1">Section:</span>
+                      <button
+                        type="button"
+                        onClick={() => setLiveFloorFilter('all')}
+                        className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                          liveFloorFilter === 'all'
+                            ? 'bg-turmeric text-white shadow-sm'
+                            : 'bg-paper-3 text-ink-2 border border-line hover:border-turmeric/50'
+                        }`}
+                      >
+                        All ({roster.length})
+                      </button>
+                      {floorList.map((f: any) => {
+                        const count = roster.filter((t: any) => t.floorId === f.id).length;
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setLiveFloorFilter(f.id)}
+                            className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                              liveFloorFilter === f.id
+                                ? 'bg-turmeric text-white shadow-sm'
+                                : 'bg-paper-3 text-ink-2 border border-line hover:border-turmeric/50'
+                            }`}
+                          >
+                            {f.name} ({count})
+                          </button>
+                        );
+                      })}
+                      {hasUnassigned && (
+                        <button
+                          type="button"
+                          onClick={() => setLiveFloorFilter('unassigned')}
+                          className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                            liveFloorFilter === 'unassigned'
+                              ? 'bg-turmeric text-white shadow-sm'
+                              : 'bg-paper-3 text-ink-2 border border-line hover:border-turmeric/50'
+                          }`}
+                        >
+                          Unassigned ({roster.filter((t: any) => !t.floorId || !floorIds.has(t.floorId)).length})
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {tablesLoading && !tablesData ? (
                     <TeaLoader label="Loading tables…" size={44} />
                   ) : roster.length === 0 ? (
-                    <p className="text-sm text-ink-3">No tables configured yet.</p>
+                    <div className="p-8 text-center bg-paper-3 rounded-xl border border-line">
+                      <p className="text-sm font-bold text-ink-2">No active tables configured</p>
+                      <p className="text-xs text-ink-3 mt-1">Configure your dining sections and tables under Settings → Floor &amp; QR Codes.</p>
+                    </div>
+                  ) : shownGroups.length === 0 ? (
+                    <div className="p-8 text-center bg-paper-3 rounded-xl border border-line">
+                      <p className="text-sm font-bold text-ink-2">No tables found in this section</p>
+                      <button
+                        type="button"
+                        onClick={() => setLiveFloorFilter('all')}
+                        className="mt-2 text-xs font-bold text-turmeric underline cursor-pointer"
+                      >
+                        Show all tables
+                      </button>
+                    </div>
                   ) : (
-                    <div className="flex flex-col gap-5">
-                      {groups.map((g) => (
-                        <div key={g.key}>
-                          <h5 className="font-bold text-xs uppercase tracking-wider mb-2.5" style={{ color: 'var(--ink-3)' }}>{g.name} · {g.tables.length} table{g.tables.length === 1 ? '' : 's'}</h5>
+                    <div className="flex flex-col gap-6">
+                      {shownGroups.map((g) => (
+                        <div key={g.key} className="flex flex-col gap-3">
+                          <div className="flex items-center gap-2 border-b border-line/60 pb-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-turmeric" />
+                            <h5 className="font-bold text-sm text-ink">{g.name}</h5>
+                            <span className="pill text-[10px] font-bold">
+                              {g.tables.length} table{g.tables.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
                             {g.tables.map(renderTile)}
                           </div>
@@ -3373,87 +3483,191 @@ export default function DashboardClient({
 
             {activeSubTab === 'floor' && (() => {
               const occMap = new Map<string, any>((tablesData?.occupancy ?? []).map((o: any) => [o.id, o]));
-              const STATUS = {
-                free: { label: 'Free', color: '#34C759' },
-                occupied: { label: 'Occupied', color: '#3B82F6' },
-                long: { label: 'Long stay', color: '#E8A22B' },
-                low: { label: 'Low revenue', color: '#C3492F' },
+              const TABLE_STAGES: Record<'free' | 'order' | 'kot' | 'ready' | 'served', { label: string; color: string }> = {
+                free: { label: 'Free', color: 'var(--ink-3)' },
+                order: { label: 'Order', color: '#3B82F6' },
+                kot: { label: 'KOT', color: '#F59E0B' },
+                ready: { label: 'Ready', color: '#10B981' },
+                served: { label: 'Served', color: '#8B5CF6' },
               };
-              const minutes = tablesData?.config?.minutes ?? 90;
-              const statusOf = (id: string): keyof typeof STATUS => {
-                const o = occMap.get(id);
-                if (!o) return 'free';
-                if (o.lowRevenue) return 'low';
-                if (o.durationMin >= minutes) return 'long';
-                return 'occupied';
+              const getStage = (status?: string): 'free' | 'order' | 'kot' | 'ready' | 'served' => {
+                if (!status) return 'free';
+                if (status === 'in_kitchen') return 'kot';
+                if (status === 'ready') return 'ready';
+                if (status === 'served') return 'served';
+                return 'order';
               };
-              const roster = tablesData?.roster ?? [];
+
+              const roster = (tablesData?.roster ?? []).filter((t: any) => t.active !== false);
               const floorList = tablesData?.floors ?? [];
-              // group tables under their floor (mirrors the POS floor map); a missing/stale floorId falls under "Unassigned"
               const floorIds = new Set(floorList.map((f: any) => f.id));
+              const hasUnassigned = roster.some((t: any) => !t.floorId || !floorIds.has(t.floorId));
+
               const groups: { key: string; name: string; tables: any[] }[] = [
-                ...floorList.map((f: any) => ({ key: f.id, name: f.name, tables: roster.filter((t: any) => t.floorId === f.id) })),
-                { key: 'unassigned', name: 'Unassigned', tables: roster.filter((t: any) => !t.floorId || !floorIds.has(t.floorId)) },
+                ...floorList.map((f: any) => ({
+                  key: f.id,
+                  name: f.name,
+                  tables: roster.filter((t: any) => t.floorId === f.id),
+                })),
+                {
+                  key: 'unassigned',
+                  name: 'Unassigned',
+                  tables: roster.filter((t: any) => !t.floorId || !floorIds.has(t.floorId)),
+                },
               ].filter((g) => g.tables.length > 0);
+
+              const shownGroups = liveFloorFilter === 'all'
+                ? groups
+                : groups.filter((g) => g.key === liveFloorFilter);
+
               const renderTile = (t: any) => {
-                const st = statusOf(t.id);
-                const s = STATUS[st];
                 const o = occMap.get(t.id);
+                const stage = o ? getStage(o.status) : 'free';
+                const s = TABLE_STAGES[stage] ?? TABLE_STAGES.free;
                 return (
                   <div
                     key={t.id}
-                    onClick={o ? () => openTableOrders(t) : undefined}
-                    role={o ? 'button' : undefined}
-                    tabIndex={o ? 0 : undefined}
-                    onKeyDown={o ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTableOrders(t); } } : undefined}
-                    title={o ? 'View orders on this table' : undefined}
-                    className={`rounded-xl border p-3 flex flex-col gap-1${o ? ' cursor-pointer transition hover:-translate-y-0.5' : ''}`}
-                    style={{ background: `color-mix(in srgb, ${s.color} 8%, var(--paper-3))`, borderColor: s.color, borderTopWidth: 3, borderTopColor: s.color }}
+                    onClick={o ? () => openTableOrders(t) : () => { setShowPos(true); }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (o) openTableOrders(t);
+                      }
+                    }}
+                    title={o ? `Table ${t.label}: ${s.label} · Click to view orders` : `Table ${t.label}: Free · Click to open POS`}
+                    className="rounded-xl border p-3 flex flex-col justify-between gap-1.5 min-h-[96px] cursor-pointer transition hover:-translate-y-0.5"
+                    style={{
+                      background: o ? `color-mix(in srgb, ${s.color} 10%, var(--paper-3))` : 'var(--paper-3)',
+                      borderColor: s.color,
+                      borderTopWidth: 4,
+                      borderTopColor: s.color,
+                    }}
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-display font-bold text-lg">{t.label}</span>
                       <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
                     </div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wide" style={{ color: s.color }}>{s.label}</span>
+
+                    <span className="text-[10px] font-extrabold uppercase tracking-wide" style={{ color: s.color }}>
+                      {s.label}
+                    </span>
+
                     {o ? (
                       <div className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>
-                        <div className="flex justify-between"><span>{o.durationMin} min</span><span className="font-mono">{formatINR(o.billPaise)}</span></div>
-                        <span className="flex justify-between"><span>{o.orders} order{o.orders > 1 ? 's' : ''}</span><span style={{ color: s.color }}>view ▸</span></span>
+                        <div className="flex justify-between font-mono font-bold text-ink">
+                          <span>#{o.number || '—'}</span>
+                          <span>{formatINR(o.billPaise)}</span>
+                        </div>
+                        <div className="flex justify-between text-[10px] mt-0.5">
+                          <span style={{ color: s.color }} className="font-bold uppercase">{s.label} · {o.durationMin}m</span>
+                          <span style={{ color: s.color }} className="font-semibold">view ▸</span>
+                        </div>
                       </div>
                     ) : (
-                      <span className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>{'•'.repeat(t.seats)} · open</span>
+                      <div className="text-[11px] mt-0.5 flex items-center justify-between" style={{ color: 'var(--ink-3)' }}>
+                        <span className="tracking-widest">{'•'.repeat(t.seats)}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider">FREE</span>
+                      </div>
                     )}
                   </div>
                 );
               };
+
               return (
                 <section className="card p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                    <h4 className="font-bold">Live Floor</h4>
-                    {/* top status legend */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <h4 className="font-bold text-base">Live Floor Map</h4>
+                    {/* Stage status legend */}
                     <div className="flex flex-wrap gap-3">
-                      {Object.entries(STATUS).map(([k, s]) => (
+                      {Object.entries(TABLE_STAGES).map(([k, s]) => (
                         <span key={k} className="inline-flex items-center gap-1.5 text-xs font-bold" style={{ color: 'var(--ink-2)' }}>
-                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />{s.label}
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
+                          {s.label}
                         </span>
                       ))}
                     </div>
                   </div>
+
+                  {/* Section Filter Chips */}
+                  {floorList.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 mb-4 pb-3 border-b border-line">
+                      <span className="text-xs font-bold text-ink-3 uppercase mr-1">Section:</span>
+                      <button
+                        type="button"
+                        onClick={() => setLiveFloorFilter('all')}
+                        className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                          liveFloorFilter === 'all'
+                            ? 'bg-turmeric text-white shadow-sm'
+                            : 'bg-paper-3 text-ink-2 border border-line hover:border-turmeric/50'
+                        }`}
+                      >
+                        All ({roster.length})
+                      </button>
+                      {floorList.map((f: any) => {
+                        const count = roster.filter((t: any) => t.floorId === f.id).length;
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setLiveFloorFilter(f.id)}
+                            className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                              liveFloorFilter === f.id
+                                ? 'bg-turmeric text-white shadow-sm'
+                                : 'bg-paper-3 text-ink-2 border border-line hover:border-turmeric/50'
+                            }`}
+                          >
+                            {f.name} ({count})
+                          </button>
+                        );
+                      })}
+                      {hasUnassigned && (
+                        <button
+                          type="button"
+                          onClick={() => setLiveFloorFilter('unassigned')}
+                          className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                            liveFloorFilter === 'unassigned'
+                              ? 'bg-turmeric text-white shadow-sm'
+                              : 'bg-paper-3 text-ink-2 border border-line hover:border-turmeric/50'
+                          }`}
+                        >
+                          Unassigned ({roster.filter((t: any) => !t.floorId || !floorIds.has(t.floorId)).length})
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {tablesLoading && !tablesData ? (
-                    <TeaLoader label="Loading…" size={44} />
+                    <TeaLoader label="Loading tables…" size={44} />
                   ) : roster.length === 0 ? (
-                    <p className="text-sm text-ink-3">No tables configured yet.</p>
+                    <div className="p-8 text-center bg-paper-3 rounded-xl border border-line">
+                      <p className="text-sm font-bold text-ink-2">No active tables configured</p>
+                      <p className="text-xs text-ink-3 mt-1">Configure your dining sections and tables under Settings → Floor &amp; QR Codes.</p>
+                    </div>
+                  ) : shownGroups.length === 0 ? (
+                    <div className="p-8 text-center bg-paper-3 rounded-xl border border-line">
+                      <p className="text-sm font-bold text-ink-2">No tables found in this section</p>
+                      <button
+                        type="button"
+                        onClick={() => setLiveFloorFilter('all')}
+                        className="mt-2 text-xs font-bold text-turmeric underline cursor-pointer"
+                      >
+                        Show all tables
+                      </button>
+                    </div>
                   ) : (
-                    <div className="flex flex-col gap-5">
-                      {groups.map((g) => (
-                        <div key={g.key}>
-                          {floorList.length > 0 && (
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-xs font-extrabold uppercase tracking-wide" style={{ color: 'var(--ink-3)' }}>{g.name}</span>
-                              <span className="text-[11px]" style={{ color: 'var(--ink-3)' }}>· {g.tables.length} table{g.tables.length > 1 ? 's' : ''}</span>
-                            </div>
-                          )}
-                          <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
+                    <div className="flex flex-col gap-6">
+                      {shownGroups.map((g) => (
+                        <div key={g.key} className="flex flex-col gap-3">
+                          <div className="flex items-center gap-2 border-b border-line/60 pb-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-turmeric" />
+                            <h5 className="font-bold text-sm text-ink">{g.name}</h5>
+                            <span className="pill text-[10px] font-bold">
+                              {g.tables.length} table{g.tables.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
                             {g.tables.map(renderTile)}
                           </div>
                         </div>
@@ -3847,6 +4061,9 @@ export default function DashboardClient({
                 openDeviceForm={openDeviceForm}
                 floors={floors}
                 floorTables={floorTables}
+                onFloorUpdated={async () => {
+                  await Promise.all([loadProfile(), loadTables()]);
+                }}
                 kitchens={kitchens}
                 setKitchens={setKitchens}
                 kitchenApi={kitchenApi}

@@ -1,34 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma, type Prisma } from '@cafeos/db';
+import { prisma, type Prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { readFloors, readTableFloors, readDisabledTables, type Floor } from '@/lib/floors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * Floor & Table Management API
- *
- * GET  /api/dashboard/floor — returns all sections/floors and tables with occupancy & active status
- * POST /api/dashboard/floor — perform section and table operations:
- *   Section actions:
- *     - floor_add: { name, description? }
- *     - floor_update: { floorId, name?, description?, sort?, active? }
- *     - floor_rename: { floorId, name }
- *     - floor_reorder: { floorIds: string[] }
- *     - floor_delete: { floorId, reassignToFloorId? }
- *   Table actions:
- *     - create: { label, seats?, floorId?, active? }
- *     - update: { id, label?, seats?, floorId?, active?, state? }
- *     - assign: { id, floorId }
- *     - regenerate: { id }
- *     - bulk: { count, prefix?, seats?, floorId? }
- *     - delete: { id }
- */
-
 const STATES = ['free', 'seated', 'billed'] as const;
 
-/** short, URL-safe, collision-resistant token for a table QR. */
 const newToken = () => crypto.randomUUID().replace(/-/g, '').slice(0, 14);
 
 const cleanLabel = (v: unknown) => String(v ?? '').trim().slice(0, 24);
@@ -42,13 +21,11 @@ const cleanSeats = (v: unknown, fallback = 2) => {
   return Number.isFinite(n) && n >= 1 && n <= 50 ? n : fallback;
 };
 
-/** Read the outlet's settings JSON (floors + table→floor map live here). */
 async function readSettings(outletId: string) {
   const outlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
   return (outlet?.settings as Record<string, unknown>) ?? {};
 }
 
-/** Merge a partial patch back into Outlet.settings. */
 async function writeSettings(outletId: string, current: Record<string, unknown>, patch: Record<string, unknown>) {
   await prisma.outlet.update({
     where: { id: outletId },
@@ -134,7 +111,6 @@ export async function POST(req: NextRequest) {
       data: { outletId, actorId: session.staffId, action, entity: 'table', entityId, after: (after ?? {}) as Prisma.InputJsonValue },
     }).catch(() => {});
 
-  // ============================ floors / sections ============================
   if (body.action === 'floor_add') {
     const name = cleanLabel(body.name);
     if (!name) return NextResponse.json({ error: 'missing_label', message: 'Enter a section name.' }, { status: 400 });
@@ -245,8 +221,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  // ============================ tables ============================
-  // ----------------------------------------------------------- create
   if (body.action === 'create') {
     const label = cleanLabel(body.label);
     if (!label) return NextResponse.json({ error: 'missing_label', message: 'Enter a table name/number.' }, { status: 400 });
@@ -262,7 +236,6 @@ export async function POST(req: NextRequest) {
     let patchNeeded = false;
     const patch: Record<string, unknown> = {};
 
-    // floor assignment
     if (body.floorId) {
       const map = readTableFloors(settings);
       map[table.id] = String(body.floorId);
@@ -270,7 +243,6 @@ export async function POST(req: NextRequest) {
       patchNeeded = true;
     }
 
-    // active / disabled status
     if (body.active === false) {
       const disabled = readDisabledTables(settings);
       if (!disabled.includes(table.id)) {
@@ -287,7 +259,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, table: { ...table, floorId: body.floorId || null, active: body.active !== false } });
   }
 
-  // ------------------------------------------------------------- bulk
   if (body.action === 'bulk') {
     const count = Math.min(50, Math.max(1, Math.round(Number(body.count) || 0)));
     if (!count) return NextResponse.json({ error: 'invalid_count' }, { status: 400 });
@@ -323,13 +294,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, created: made });
   }
 
-  // everything below needs an id that belongs to this outlet
   const id = String(body.id ?? '');
   if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
   const owned = await prisma.tableMap.findFirst({ where: { id, outletId }, select: { id: true, label: true, seats: true, state: true, qrToken: true } });
   if (!owned) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
-  // ----------------------------------------------------------- update
   if (body.action === 'update') {
     const data: Prisma.TableMapUpdateInput = {};
     if (body.label !== undefined) {
@@ -355,7 +324,6 @@ export async function POST(req: NextRequest) {
     let patchNeeded = false;
     const patch: Record<string, unknown> = {};
 
-    // Handle section reassignment
     if (body.floorId !== undefined) {
       const map = readTableFloors(settings);
       const floorId = body.floorId ? String(body.floorId) : '';
@@ -368,7 +336,6 @@ export async function POST(req: NextRequest) {
       patchNeeded = true;
     }
 
-    // Handle active / disabled toggle
     if (body.active !== undefined) {
       const disabled = readDisabledTables(settings);
       const isCurrentlyDisabled = disabled.includes(id);
@@ -399,7 +366,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // ------------------------------------------------------- regenerate QR
   if (body.action === 'regenerate') {
     const table = await prisma.tableMap.update({
       where: { id },
@@ -410,9 +376,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, table });
   }
 
-  // ----------------------------------------------------------- delete
   if (body.action === 'delete') {
-    // Check for active orders in progress
     const activeOrderCount = await prisma.order.count({
       where: {
         tableId: id,
@@ -429,12 +393,10 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
-    // Check if historical orders exist
     const historicalOrderCount = await prisma.order.count({ where: { tableId: id } });
     const settings = await readSettings(outletId);
 
     if (historicalOrderCount > 0) {
-      // Soft-delete: deactivate table so order foreign keys and revenue audit remain 100% intact!
       const disabled = readDisabledTables(settings);
       const patch: Record<string, unknown> = {};
       if (!disabled.includes(id)) {
@@ -451,7 +413,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Safe hard delete: no active or historical orders
     await prisma.tableMap.delete({ where: { id } });
     const map = readTableFloors(settings);
     const disabled = readDisabledTables(settings).filter((x) => x !== id);
