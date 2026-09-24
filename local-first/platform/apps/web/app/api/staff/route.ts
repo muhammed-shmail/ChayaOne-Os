@@ -16,8 +16,8 @@ export const dynamic = 'force-dynamic';
 
 const isRole = (r: unknown): r is StaffRole => typeof r === 'string' && (ALL_ROLES as string[]).includes(r);
 const hashPin = (pin: string) => createHash('sha256').update(pin).digest('hex');
-// username: 3-30 chars, starts alphanumeric, then letters/digits/._- (case-insensitive, stored lowercase)
-const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/i;
+// username or email: 1-60 chars, starts alphanumeric, then letters/digits/._-@+ (case-insensitive, stored lowercase)
+const USERNAME_RE = /^[a-z0-9][a-z0-9._@+-]{0,59}$/i;
 
 /** GET /api/staff — staff users for the tenant (manager/owner only). */
 export async function GET() {
@@ -167,10 +167,11 @@ export async function POST(req: NextRequest) {
     // Username + password are required for dashboard login (no random/default PINs)
     const u = String(body.username ?? '').trim().toLowerCase();
     const pw = String(body.password ?? '');
-    if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username' }, { status: 400 });
-    if (pw.length < 6) return NextResponse.json({ error: 'password_too_short' }, { status: 400 });
+    if (!u) return NextResponse.json({ error: 'invalid_username', message: 'Username or Email is required.' }, { status: 400 });
+    if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username', message: 'Username must be 2–60 characters (letters, numbers, ., _, @, -).' }, { status: 400 });
+    if (pw.length < 6) return NextResponse.json({ error: 'password_too_short', message: 'Password must be at least 6 characters.' }, { status: 400 });
     const uClash = await prisma.staffUser.findFirst({ where: { tenantId: session.tenantId, username: u }, select: { id: true } });
-    if (uClash) return NextResponse.json({ error: 'username_in_use' }, { status: 409 });
+    if (uClash) return NextResponse.json({ error: 'username_in_use', message: `Username "${u}" is already in use. Please choose another.` }, { status: 409 });
     const username = u;
     const passwordHash = hashPassword(pw);
 
@@ -212,10 +213,17 @@ export async function POST(req: NextRequest) {
       permissionsData.stationName = body.stationName;
     }
 
+    // Ensure staff always has a valid outletId linked to their tenant
+    let targetOutletId: string | undefined = session.outletId || undefined;
+    if (!targetOutletId) {
+      const defaultOutlet = await prisma.outlet.findFirst({ where: { tenantId: session.tenantId }, select: { id: true } });
+      targetOutletId = defaultOutlet?.id || undefined;
+    }
+
     const created = await prisma.staffUser.create({
       data: {
         tenantId: session.tenantId,
-        outletId: session.outletId,
+        outletId: targetOutletId,
         name: String(name).trim(),
         phone: phone ? String(phone).trim() : null,
         employeeCode: employeeCode ? String(employeeCode).trim() : null,
@@ -232,24 +240,24 @@ export async function POST(req: NextRequest) {
     });
 
     invalidateStaffCache(created.id);
-    if (session.outletId) {
-      await publish(session.outletId, { type: 'staff.updated', staffId: created.id }).catch(() => {});
+    if (targetOutletId) {
+      await publish(targetOutletId, { type: 'staff.updated', staffId: created.id }).catch(() => {});
     }
 
     // Create optional first shift if provided
-    if (body.shiftStartsAt && body.shiftEndsAt) {
+    if (body.shiftStartsAt && body.shiftEndsAt && targetOutletId) {
       const start = new Date(body.shiftStartsAt);
       const end = new Date(body.shiftEndsAt);
       if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start) {
         await prisma.shift.create({
-          data: { outletId: session.outletId, staffId: created.id, startsAt: start, endsAt: end, role: resolvedRole, status: 'scheduled' },
+          data: { outletId: targetOutletId, staffId: created.id, startsAt: start, endsAt: end, role: resolvedRole, status: 'scheduled' },
         }).catch(() => {});
       }
     }
 
     await bumpUsage(session.tenantId, 'staff').catch(() => {});
     await audit(session, 'staff.created', created.id, { name: created.name, role: created.role });
-    return NextResponse.json({ ok: true, member: { ...created, hasPin: false, hasLogin: true } });
+    return NextResponse.json({ ok: true, member: { ...created, hasPin: !!pinHash, hasLogin: true } });
   }
 
   // ---- shifts (roster) — subject is body.staffId ----
@@ -476,16 +484,19 @@ export async function POST(req: NextRequest) {
       await audit(session, 'staff.login_cleared', id, {});
       return NextResponse.json({ ok: true });
     }
-    if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username' }, { status: 400 });
+    if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username', message: 'Username must be 2–60 characters (letters, numbers, ., _, @, -).' }, { status: 400 });
     const uClash = await prisma.staffUser.findFirst({ where: { tenantId: session.tenantId, username: u, NOT: { id } }, select: { id: true } });
-    if (uClash) return NextResponse.json({ error: 'username_in_use' }, { status: 409 });
+    if (uClash) return NextResponse.json({ error: 'username_in_use', message: `Username "${u}" is already in use. Please choose another.` }, { status: 409 });
     const data: Prisma.StaffUserUpdateInput = { username: u };
+    if (!target.outletId && session.outletId) {
+      data.outletId = session.outletId;
+    }
     // password optional: only change it when provided, so the username can be renamed alone
     if (pw) {
-      if (pw.length < 6) return NextResponse.json({ error: 'password_too_short' }, { status: 400 });
+      if (pw.length < 6) return NextResponse.json({ error: 'password_too_short', message: 'Password must be at least 6 characters.' }, { status: 400 });
       data.passwordHash = hashPassword(pw);
     } else if (!target.passwordHash) {
-      return NextResponse.json({ error: 'password_required' }, { status: 400 });
+      return NextResponse.json({ error: 'password_required', message: 'Set a password to create this login.' }, { status: 400 });
     }
     await prisma.staffUser.update({ where: { id }, data });
     invalidateStaffCache(id);

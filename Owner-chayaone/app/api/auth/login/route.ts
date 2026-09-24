@@ -18,13 +18,75 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  const { username, password } = body;
+  const { username, password, pin } = body as { username?: string; password?: string; pin?: string };
+
+  const ALLOWED_ROLES = ['owner', 'manager', 'cashier', 'accountant'];
+
+  // Optional quick PIN login (if PIN pad used on Owner portal)
+  if (pin) {
+    if (!/^\d{4,6}$/.test(pin)) {
+      return NextResponse.json({ error: 'PIN must be 4 to 6 numeric digits' }, { status: 400 });
+    }
+    const pinHash = createHash('sha256').update(pin).digest('hex');
+    const staff = await prisma.staffUser.findFirst({
+      where: { pinHash, active: true },
+      include: { tenant: { select: { id: true, name: true } } },
+    });
+    if (!staff) {
+      return NextResponse.json({ error: 'Wrong PIN — try again' }, { status: 401 });
+    }
+    if (!ALLOWED_ROLES.includes(staff.role)) {
+      return NextResponse.json(
+        { error: `Access denied. "${staff.name}" has role "${staff.role}". Floor roles must sign in via POS/Waiter App.` },
+        { status: 403 },
+      );
+    }
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const session = await prisma.staffSession.create({
+      data: {
+        staffId: staff.id,
+        tenantId: staff.tenantId,
+        label: req.headers.get('user-agent')?.slice(0, 100) ?? 'Owner PWA',
+        userAgent: req.headers.get('user-agent') ?? undefined,
+        expiresAt,
+      },
+    });
+    const accessToken = await signSession({
+      staffId: staff.id,
+      name: staff.name,
+      role: staff.role as 'owner' | 'manager' | 'cashier' | 'accountant',
+      tenantId: staff.tenantId,
+      outletId: staff.outletId ?? null,
+      sid: session.id,
+    });
+    const refreshToken = await signRefresh(session.id);
+    const response = NextResponse.json({
+      ok: true,
+      user: { id: staff.id, name: staff.name, role: staff.role, tenantId: staff.tenantId, outletId: staff.outletId },
+    });
+    response.cookies.set('owner_session', accessToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 30 * 60,
+    });
+    response.cookies.set('owner_refresh', refreshToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 30 * 24 * 60 * 60,
+    });
+    return response;
+  }
+
   if (!username?.trim() || !password) {
     return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
   }
 
   try {
-    // Find staff user by username across all tenants
+    // Find staff user by username or email across all tenants
     const staff = await prisma.staffUser.findFirst({
       where: {
         username: username.trim().toLowerCase(),
@@ -36,16 +98,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!staff || !staff.passwordHash) {
-      // Constant-time delay to prevent timing attacks
       await new Promise((r) => setTimeout(r, 200 + Math.random() * 100));
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
-    // Only allow owner/manager/accountant to use Owner Dashboard
-    const ALLOWED_ROLES = ['owner', 'manager', 'accountant'];
+    // Only allow owner/manager/cashier/accountant to use Owner Dashboard
     if (!ALLOWED_ROLES.includes(staff.role)) {
       return NextResponse.json(
-        { error: 'Access denied. Owner Dashboard is restricted to owners, managers, and accountants.' },
+        { error: `Access denied. "${staff.name}" has role "${staff.role}". Floor roles (waiter/kitchen) must sign in via POS/Waiter App.` },
         { status: 403 },
       );
     }

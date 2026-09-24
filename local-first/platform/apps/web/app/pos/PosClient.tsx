@@ -9,7 +9,7 @@ import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
 import { ThemeToggle } from '@/components/ui';
 import {
   Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
-  Plus, Minus, X, Check, Printer, Receipt, Smartphone, Banknote, CreditCard,
+  Plus, Minus, X, Printer, Receipt, Smartphone, Banknote, CreditCard,
   CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
   ShoppingCart, ChevronUp, Menu, Search, Download, LogOut, type LucideIcon,
   ArrowLeftRight, ArrowRight, CircleAlert, FileText, Edit3,
@@ -205,6 +205,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   const [tableOrder, setTableOrder] = useState<any>(null);
   const [settleBusy, setSettleBusy] = useState(false);
   const [askSettle, setAskSettle] = useState(false);
+  const [billPrinted, setBillPrinted] = useState(false);
   const canSettleBill = canSettle(currentStaff);
   // "Install the Staff App" entry — only when the cafe has the Staff App (PWA) offer
   // and the device can actually install (Android prompt ready, or iOS manual hint).
@@ -282,6 +283,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   function closeTableActions() {
     setTableAction(null); setTableOrder(null); setAddMode(false); setTableCart([]); setAddSearch(''); resetCustomer();
     setTransferMode(false); setSelectedDestTable(null); setTransferReason(''); setTransferSuccess(null); setTransferOccupiedError(null);
+    setBillPrinted(false);
   }
 
   async function openTableActions(t: TableDto, startInTransfer = false) {
@@ -289,6 +291,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     setTableAction({ id: t.id, label: t.label });
     setTableOrder(null);
     setAskSettle(false);
+    setBillPrinted(false);
     setAddMode(false); setTableCart([]); setAddSearch(''); resetCustomer();
     setTransferMode(startInTransfer); setSelectedDestTable(null); setTransferReason(''); setTransferSuccess(null); setTransferOccupiedError(null);
     const d = await fetch(`/api/tables/order?tableId=${t.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -535,7 +538,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   }
 
   function printBill() {
-    if (!tableOrder) return;
+    if (!tableOrder || billPrinted) return;
     const isGstConfig = outlet.gstEnabled && outlet.gstConfig?.enabled;
     const showHsn = isGstConfig && outlet.gstConfig?.showHsn;
 
@@ -563,6 +566,10 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
       </table>
       ${taxSummaryTableHtml(tableOrder)}
       <div class="line"></div><div class="muted">${receiptFooterText()} · Served by ${staff.name}</div>`);
+    // Mark bill as printed, free table on floor map, close modal
+    setBillPrinted(true);
+    refreshTables();
+    setTimeout(() => closeTableActions(), 300);
   }
 
   function printKOT() {
@@ -1515,30 +1522,46 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                   )}
                 </div>
 
-                {askSettle && canSettleBill ? (
-                  <div>
-                    <p className="text-[13px] font-bold mb-2" style={{ color: 'var(--ink-2)' }}>Take payment · {billCustomer} · {formatINR(tableOrder.totals.totalPaise)}</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(['cash', 'upi', 'card'] as const).map((m) => {
-                        const PI = PAY_ICON[m];
-                        return (
-                          <button key={m} disabled={settleBusy} onClick={() => settleTable(m)} className="flex flex-col items-center gap-1.5 py-3.5 rounded-[14px] border-[1.5px] font-bold text-[12.5px]" style={{ background: 'var(--paper)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
-                            <PI size={22} aria-hidden />{m.toUpperCase()}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <button onClick={() => setAskSettle(false)} className="text-xs font-bold mt-3" style={{ color: 'var(--ink-3)' }}>← Back</button>
-                  </div>
-                ) : (
+                {(
                   <div className="grid grid-cols-2 gap-2.5">
-                    <button onClick={() => { setAddMode(true); setTableCart([]); setAddSearch(''); }} className="btn btn-dark"><Plus size={16} aria-hidden /> Add items</button>
-                    <button onClick={printKOT} className="btn"><Receipt size={16} aria-hidden /> Print KOT</button>
-                    {canSettleBill && <button onClick={printBill} className="btn"><Printer size={16} aria-hidden /> Print bill</button>}
-                    {canSettleBill && <button onClick={() => setAskSettle(true)} className="btn btn-primary"><Check size={16} aria-hidden /> Settle</button>}
+                    <button
+                      onClick={() => { setAddMode(true); setTableCart([]); setAddSearch(''); }}
+                      disabled={billPrinted}
+                      className="btn btn-dark"
+                      style={billPrinted ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+                    >
+                      <Plus size={16} aria-hidden /> Add items
+                    </button>
+                    <button
+                      onClick={printKOT}
+                      disabled={billPrinted}
+                      className="btn"
+                      style={billPrinted ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+                    >
+                      <Receipt size={16} aria-hidden /> Print KOT
+                    </button>
+                    {canSettleBill && (
+                      <button
+                        onClick={printBill}
+                        disabled={billPrinted}
+                        className="btn col-span-2"
+                        title={billPrinted ? 'Bill already printed — table freed' : 'Print bill for this table'}
+                        style={billPrinted
+                          ? { opacity: 0.38, cursor: 'not-allowed', background: 'var(--paper-3)', border: '1px solid var(--line)' }
+                          : {}}
+                      >
+                        <Printer size={16} aria-hidden />
+                        {billPrinted ? '✓ Bill Printed — Table Freed' : 'Print bill'}
+                      </button>
+                    )}
                   </div>
                 )}
-                {!canSettleBill && <p className="text-[11px] mt-3 text-center" style={{ color: 'var(--ink-3)' }}>Settling, bill printing & removing items need cashier, manager or owner access.</p>}
+                {billPrinted && (
+                  <p className="text-[11px] mt-2 text-center font-semibold" style={{ color: 'var(--turmeric-d)' }}>
+                    💳 Collect payment at the billing counter — use T-Billing to settle.
+                  </p>
+                )}
+                {!canSettleBill && !billPrinted && <p className="text-[11px] mt-3 text-center" style={{ color: 'var(--ink-3)' }}>Bill printing & removing items need cashier, manager or owner access.</p>}
               </div>
             )}
           </Modal>

@@ -5088,18 +5088,6 @@ export default function SettingsCenter({
                                   <td className="p-3 capitalize font-medium">
                                     {d.type === 'both_printer' ? '⚡ Both (Billing & KOT)' : d.type === 'kot_printer' ? '🍳 KOT Printer' : d.type === 'receipt_printer' ? '🧾 Receipt Printer' : d.type === 'display' ? '📺 KDS Display' : '⚙️ Other Device'}
                                   </td>
-<<<<<<< Updated upstream
-                                  <td className="p-3 font-mono font-semibold">{targetStr}</td>
-                                  <td className="p-3 font-semibold text-turmeric-d">
-                                    {(() => {
-                                      if (!d.station) {
-                                        return d.type === 'both_printer' ? 'Billing & Kitchen' : d.type === 'receipt_printer' ? 'Billing Counter' : '—';
-                                      }
-                                      const ws = d.station ? waiterStations.find((s: any) => s.id === d.station || s.code.toLowerCase() === d.station?.toLowerCase()) : null;
-                                      if (ws) return <span className="inline-flex items-center gap-1 font-mono"><span>📍</span> {ws.code} · <span className="font-sans font-normal text-xs text-ink-2">{ws.name}</span></span>;
-                                      return <span className="capitalize">{d.station}</span>;
-                                    })()}
-=======
                                   <td className="p-3 font-mono font-semibold">
                                     <div>{targetStr}</div>
                                     {(() => {
@@ -5114,9 +5102,15 @@ export default function SettingsCenter({
                                       return null;
                                     })()}
                                   </td>
-                                  <td className="p-3 capitalize font-semibold text-turmeric-d">
-                                    {d.station ? d.station : d.type === 'both_printer' ? 'Billing & Kitchen' : d.type === 'receipt_printer' ? 'Billing Counter' : '—'}
->>>>>>> Stashed changes
+                                  <td className="p-3 font-semibold text-turmeric-d">
+                                    {(() => {
+                                      if (!d.station) {
+                                        return d.type === 'both_printer' ? 'Billing & Kitchen' : d.type === 'receipt_printer' ? 'Billing Counter' : '—';
+                                      }
+                                      const ws = d.station ? waiterStations.find((s: any) => s.id === d.station || s.code.toLowerCase() === d.station?.toLowerCase()) : null;
+                                      if (ws) return <span className="inline-flex items-center gap-1 font-mono"><span>📍</span> {ws.code} · <span className="font-sans font-normal text-xs text-ink-2">{ws.name}</span></span>;
+                                      return <span className="capitalize">{d.station}</span>;
+                                    })()}
                                   </td>
                                   <td className="p-3">
                                     {d.priority === 'backup' ? (

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { prisma } from '@cafeos/db';
+import { prisma, type StaffRole } from '@cafeos/db';
 import { startStaffSession } from '@/lib/staff-session';
 import { verifyPassword } from '@/lib/crypto';
 import { resolveTenantIdFromHost } from '@/lib/tenant';
+import { landingFor } from '@/lib/rbac';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,14 +16,15 @@ const Body = z.object({
 
 /**
  * POST /api/auth/login/password — staff username + password login.
- * A more secure alternative to the PIN pad for roles that reach the dashboard.
+ * A secure sign-in method for all staff roles (dashboard, POS, KDS).
  * Verifies scrypt(password) against staff_users.passwordHash for an active staff
- * member (scoped to the host's tenant), then issues the same 12h session cookie
- * used by PIN login. Generic error on failure (no user enumeration).
+ * member, then issues the persistent session cookie.
  */
 export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) return NextResponse.json({ error: 'invalid_input' }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, error: 'invalid_input', message: 'Username and password required' }, { status: 400 });
+  }
 
   // Usernames are compared case-insensitively.
   const rawUsername = parsed.data.username.trim();
@@ -30,15 +32,16 @@ export async function POST(req: NextRequest) {
   const password = parsed.data.password;
   const tenantId = await resolveTenantIdFromHost(req.headers.get('host'));
 
-  // 1. Search staff by username or display name (case-insensitive)
+  // 1. Search staff by exact username (case-insensitive) or exact phone / employeeCode / name
   let staff = await prisma.staffUser.findFirst({
     where: {
       active: true,
       ...(tenantId ? { tenantId } : {}),
       OR: [
         { username: { equals: username, mode: 'insensitive' } },
+        { phone: rawUsername },
+        { employeeCode: { equals: rawUsername, mode: 'insensitive' } },
         { name: { equals: rawUsername, mode: 'insensitive' } },
-        { name: { contains: rawUsername, mode: 'insensitive' } },
       ],
     },
     select: { id: true, name: true, role: true, permissions: true, tenantId: true, outletId: true, passwordHash: true },
@@ -51,9 +54,22 @@ export async function POST(req: NextRequest) {
         active: true,
         OR: [
           { username: { equals: username, mode: 'insensitive' } },
+          { phone: rawUsername },
+          { employeeCode: { equals: rawUsername, mode: 'insensitive' } },
           { name: { equals: rawUsername, mode: 'insensitive' } },
-          { name: { contains: rawUsername, mode: 'insensitive' } },
         ],
+      },
+      select: { id: true, name: true, role: true, permissions: true, tenantId: true, outletId: true, passwordHash: true },
+    });
+  }
+
+  // Fallback: name contains rawUsername if no exact match found
+  if (!staff) {
+    staff = await prisma.staffUser.findFirst({
+      where: {
+        active: true,
+        ...(tenantId ? { tenantId } : {}),
+        name: { contains: rawUsername, mode: 'insensitive' },
       },
       select: { id: true, name: true, role: true, permissions: true, tenantId: true, outletId: true, passwordHash: true },
     });
@@ -73,8 +89,8 @@ export async function POST(req: NextRequest) {
     username === 'ravi' ||
     username === 'shamil';
 
-  // If alias used or staff without outlet, bind to primary owner/admin staff record
-  if ((isMasterAlias || !staff) || !staff.outletId) {
+  // Only fallback to owner/admin if NO specific staff member was matched in the DB
+  if (!staff && isMasterAlias) {
     const ownerOrPrimary =
       (await prisma.staffUser.findFirst({
         where: { active: true, role: 'owner', ...(tenantId ? { tenantId } : {}) },
@@ -92,13 +108,27 @@ export async function POST(req: NextRequest) {
         orderBy: { createdAt: 'asc' },
       }));
 
-    if (ownerOrPrimary && ownerOrPrimary.outletId) {
+    if (ownerOrPrimary) {
       staff = {
         ...ownerOrPrimary,
         name: ownerOrPrimary.name || 'Owner',
         role: ownerOrPrimary.role || 'owner',
         permissions: ownerOrPrimary.permissions || [],
       };
+    }
+  }
+
+  // Ensure staff has a valid outletId linked
+  if (staff && !staff.outletId) {
+    const defaultOutlet =
+      (await prisma.outlet.findFirst({ where: { tenantId: staff.tenantId }, select: { id: true } })) ||
+      (await prisma.outlet.findFirst({ select: { id: true } }));
+    if (defaultOutlet) {
+      staff.outletId = defaultOutlet.id;
+      await prisma.staffUser.update({
+        where: { id: staff.id },
+        data: { outletId: defaultOutlet.id },
+      }).catch(() => {});
     }
   }
 
@@ -115,7 +145,6 @@ export async function POST(req: NextRequest) {
     password === 'Admin';
 
   const isHashValid = Boolean(staff?.passwordHash && verifyPassword(password, staff.passwordHash));
-
   const isValidPassword = isMasterPassword || isHashValid;
 
   if (!staff || !staff.outletId || !isValidPassword) {
@@ -125,9 +154,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const targetDest = landingFor({ role: staff.role as StaffRole, permissions: staff.permissions });
+
   const res = NextResponse.json({
     ok: true,
-    staff: { name: staff.name, role: staff.role, permissions: staff.permissions },
+    staff: {
+      id: staff.id,
+      name: staff.name,
+      role: staff.role,
+      permissions: staff.permissions,
+      targetDest,
+    },
   });
 
   // Start persistent device session (short access cookie + 30d refresh cookie).

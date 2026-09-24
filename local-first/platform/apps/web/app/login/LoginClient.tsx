@@ -110,9 +110,12 @@ export default function LoginClient() {
       const who = data.staff;
       // Direct entrance into app without attendance gate
       const targetDest =
-        who?.role === 'owner' || who?.role === 'manager' || who?.role === 'accountant'
+        who?.targetDest ||
+        (who?.role === 'kitchen'
+          ? '/kds'
+          : who?.role === 'owner' || who?.role === 'manager' || who?.role === 'cashier' || who?.role === 'accountant'
           ? '/dashboard'
-          : '/pos';
+          : '/pos');
 
       if (typeof window !== 'undefined') {
         window.location.href = targetDest;
@@ -325,7 +328,7 @@ export default function LoginClient() {
               name="username"
               type="text" autoCapitalize="none" autoCorrect="off" autoComplete="username"
               value={username} onChange={(e) => { setUsername(e.target.value); setError(false); setErrorMsg(null); }}
-              placeholder="Username" disabled={busy}
+              placeholder="Username or Email" disabled={busy}
               className="w-full px-4 py-3.5 rounded-2xl text-[15px] outline-none disabled:opacity-50 transition"
               style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', boxShadow: 'var(--sh-1)', color: 'var(--ink)' }}
             />

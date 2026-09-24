@@ -27,10 +27,32 @@ export async function POST(req: NextRequest) {
   // without DEV_TENANT_SUBDOMAIN) we fall back to a global lookup for convenience.
   const tenantId = await resolveTenantIdFromHost(req.headers.get('host'));
 
-  const staff = await prisma.staffUser.findFirst({
+  let staff = await prisma.staffUser.findFirst({
     where: { pinHash, active: true, ...(tenantId ? { tenantId } : {}) },
     select: { id: true, name: true, role: true, permissions: true, tenantId: true, outletId: true },
   });
+
+  // Fallback search without tenantId filter (local single-tenant)
+  if (!staff) {
+    staff = await prisma.staffUser.findFirst({
+      where: { pinHash, active: true },
+      select: { id: true, name: true, role: true, permissions: true, tenantId: true, outletId: true },
+    });
+  }
+
+  // Ensure staff has a valid outletId linked
+  if (staff && !staff.outletId) {
+    const defaultOutlet =
+      (await prisma.outlet.findFirst({ where: { tenantId: staff.tenantId }, select: { id: true } })) ||
+      (await prisma.outlet.findFirst({ select: { id: true } }));
+    if (defaultOutlet) {
+      staff.outletId = defaultOutlet.id;
+      await prisma.staffUser.update({
+        where: { id: staff.id },
+        data: { outletId: defaultOutlet.id },
+      }).catch(() => {});
+    }
+  }
 
   if (!staff || !staff.outletId) {
     return NextResponse.json({ error: 'invalid_credentials' }, { status: 401 });

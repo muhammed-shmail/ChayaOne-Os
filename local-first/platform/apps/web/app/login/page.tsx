@@ -13,7 +13,7 @@ export default async function LoginPage() {
       prisma.staffUser.findUnique({ where: { id: session.staffId } }),
     ]);
     if (outlet && staff) {
-      redirect('/pos');
+      redirect(session.role === 'kitchen' ? '/kds' : (session.role === 'owner' || session.role === 'manager' || session.role === 'cashier' || session.role === 'accountant' ? '/dashboard' : '/pos'));
     } else {
       redirect('/api/auth/logout');
     }
