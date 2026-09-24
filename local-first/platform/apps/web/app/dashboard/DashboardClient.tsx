@@ -2299,9 +2299,9 @@ export default function DashboardClient({
       </div>
       </aside>
 
-      <main className="min-w-0 flex-1 flex flex-col gap-4 px-5 pt-5 md:px-7 md:pt-7 pb-[calc(76px_+_env(safe-area-inset-bottom))] lg:pb-7">
+      <main suppressHydrationWarning className="min-w-0 flex-1 flex flex-col gap-4 px-5 pt-5 md:px-7 md:pt-7 pb-[calc(76px_+_env(safe-area-inset-bottom))] lg:pb-7">
         {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b" style={{ borderColor: 'var(--line)' }}>
+        <header suppressHydrationWarning className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b" style={{ borderColor: 'var(--line)' }}>
           <div className="flex items-center gap-3 min-w-0">
             {/* Mobile: open the slide-out drawer (full menu) */}
             <button
@@ -2325,7 +2325,7 @@ export default function DashboardClient({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div suppressHydrationWarning className="flex items-center gap-2 flex-wrap justify-end">
             <BusinessDayHeaderBadge />
             {/* T-Billing Button */}
             <button

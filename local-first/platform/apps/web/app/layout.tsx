@@ -16,6 +16,9 @@ export const metadata: Metadata = {
   applicationName: 'ChayaOne',
   // installable PWA: iOS standalone + home-screen icons (icons are generated PNGs)
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'ChayaOne' },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
   icons: { icon: '/app.png?v=4', shortcut: '/favicon.ico', apple: '/app.png?v=4' },
 };
 
@@ -53,6 +56,9 @@ const initScript = `(function(){
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <meta name="mobile-web-app-capable" content="yes" />
+      </head>
       <body suppressHydrationWarning>
         <script dangerouslySetInnerHTML={{ __html: initScript }} />
         <PwaRegistration />
