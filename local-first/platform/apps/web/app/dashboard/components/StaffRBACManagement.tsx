@@ -461,6 +461,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           joiningDate: newStaffJoiningDate || null,
           permissions: {
             assignedRoles: isCustom ? [newStaffRole, baseRole] : [newStaffRole],
+            baseRole,
             branchAccess: ['main-branch'],
             overrides: {},
             dataRestrictions: []
@@ -1247,6 +1248,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                           onChange={(e) => setNewRoleBase(e.target.value)}
                           className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink focus:outline-none focus:border-turmeric cursor-pointer"
                         >
+                          <option value="none">None (No System Access)</option>
                           <option value="waiter">Waiter (POS & Floor Orders)</option>
                           <option value="cashier">Cashier (Billing & Till)</option>
                           <option value="kitchen">Kitchen (KDS & Station)</option>

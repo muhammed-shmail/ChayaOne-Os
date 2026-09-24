@@ -27,10 +27,12 @@ export const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
 };
 
 export function getRoleLabel(role: string): string {
+  if (role === 'none') return 'None (No System Access)';
   return (ROLE_LABELS as Record<string, string>)[role] || role;
 }
 
 export function getRoleDescription(role: string): string {
+  if (role === 'none') return 'No system access (general / support staff).';
   return (ROLE_DESCRIPTIONS as Record<string, string>)[role] || 'Custom role with tailored permissions.';
 }
 
@@ -280,6 +282,7 @@ export const PERMISSION_MODULES: { category: string; permissions: PermissionItem
 ];
 
 export const PRESETS: Record<string, string[]> = {
+  none: [],
   owner: PERMISSION_MODULES.flatMap((cat) => cat.permissions.flatMap((p) => p.actions.map((act) => `${p.key}:${act}`))),
   admin: PERMISSION_MODULES.flatMap((cat) =>
     cat.permissions.flatMap((p) => {
@@ -519,7 +522,15 @@ export function hasPermission(subject: StaffSubject, permissionKey: string): boo
 export function canAccess(subject: StaffSubject, surface: Surface): boolean {
   if (!subject) return false;
   if (typeof subject === 'string') {
+    if (subject === 'none') return false;
     return (ACCESS[surface] as string[]).includes(subject);
+  }
+
+  // Explicit check for baseRole: 'none'
+  const perms = subject.permissions;
+  if (perms) {
+    const base = typeof perms === 'object' ? perms.baseRole : undefined;
+    if (base === 'none') return false;
   }
 
   const roles = getEffectiveRoles(subject);

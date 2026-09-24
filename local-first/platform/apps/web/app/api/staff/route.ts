@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     const { name, baseRole, permissions } = body;
     if (!name?.trim()) return NextResponse.json({ error: 'name_required' }, { status: 400 });
     const trimmedName = String(name).trim();
-    const validBaseRole = isRole(baseRole) ? baseRole : 'waiter';
+    const validBaseRole = isRole(baseRole) ? baseRole : (baseRole === 'none' ? 'none' : 'waiter');
 
     const roleData = {
       tenantId: session.tenantId,
@@ -93,7 +93,8 @@ export async function POST(req: NextRequest) {
     const rawAssignedRoles: string[] = Array.isArray(body.permissions?.assignedRoles) && body.permissions.assignedRoles.length > 0
       ? body.permissions.assignedRoles
       : [role || 'waiter'];
-    const resolvedRole = resolvePrimaryRole(rawAssignedRoles, role);
+    const isNone = body.baseRole === 'none' || rawAssignedRoles.includes('none');
+    const resolvedRole = isNone ? 'waiter' : resolvePrimaryRole(rawAssignedRoles, isRole(role) ? role : 'waiter');
 
     if (!isRole(resolvedRole) || !assignableRoles(session).includes(resolvedRole)) {
       return NextResponse.json({ error: 'role_not_allowed' }, { status: 403 });
@@ -144,6 +145,9 @@ export async function POST(req: NextRequest) {
     }
     if (body.joiningDate) {
       permissionsData.joiningDate = body.joiningDate;
+    }
+    if (isNone) {
+      permissionsData.baseRole = 'none';
     }
 
     const created = await prisma.staffUser.create({
