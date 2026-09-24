@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { Kitchen } from '@/lib/kitchens';
 import type { Device } from '@/lib/devices';
+import { readWaiterStations, DEFAULT_WAITER_STATIONS, type WaiterStation } from '@/lib/waiter-stations';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
 import { DEFAULT_PWA, type PwaConfig } from '@/lib/pwa';
 import type { ModuleSystemConfig } from '@cafeos/types';
@@ -210,7 +211,7 @@ const ENTERPRISE_SECTIONS: SettingSection[] = [
 
 
 interface SettingsCenterProps {
-  outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: any; gstConfig?: any; upiConfig?: any };
+  outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: any; gstConfig?: any; upiConfig?: any; settings?: any };
   staff: { name: string; role: string };
   features: Record<string, boolean>;
   moduleConfig?: ModuleSystemConfig;
@@ -368,6 +369,7 @@ export default function SettingsCenter({
   const [customerPort, setCustomerPort] = useState<string>('3003');
   const [customerTableToken, setCustomerTableToken] = useState<string>('demo');
   const [deletingStationId, setDeletingStationId] = useState<string | null>(null);
+  const waiterStations = useMemo(() => readWaiterStations(outlet?.settings), [outlet?.settings]);
 
   // ── Floor, Section & Table Management States ──
   const [floorList, setFloorList] = useState<any[]>(floors || []);
@@ -4784,11 +4786,17 @@ export default function SettingsCenter({
                         { id: 'bar', name: 'Bar', icon: '☕', desc: 'Drinks & beverages' },
                         { id: 'bakery', name: 'Bakery', icon: '🥐', desc: 'Bakery items' },
                         { id: 'dessert', name: 'Dessert', icon: '🍰', desc: 'Desserts & sweets' },
+                        ...waiterStations.map((ws: any) => ({
+                          id: ws.id,
+                          name: `${ws.code} (${ws.name})`,
+                          icon: '📍',
+                          desc: `Waiter station (${ws.code})`
+                        })),
                         ...kitchens
-                          .filter(k => !['kitchen', 'bar', 'bakery', 'dessert'].includes(k.id))
+                          .filter(k => !['kitchen', 'bar', 'bakery', 'dessert'].includes(k.id) && !waiterStations.some((ws: any) => ws.id === k.id))
                           .map(k => ({ id: k.id, name: k.name, icon: '⚙️', desc: 'Custom station' }))
                       ].map((st) => {
-                        const stationPrinters = devices.filter(d => d.type === 'kot_printer' && d.station === st.id);
+                        const stationPrinters = devices.filter(d => (d.type === 'kot_printer' || d.type === 'both_printer') && d.station === st.id);
                         const primaryPrinter = stationPrinters.find(d => d.priority === 'primary' || d.isDefault) || stationPrinters[0];
                         const backupPrinter = stationPrinters.find(d => d.id !== primaryPrinter?.id && d.priority === 'backup') || (stationPrinters.length > 1 ? stationPrinters[1] : null);
                         const assignedItemsCount = (menuItems || []).filter(i => (i.station || 'kitchen') === st.id).length;
@@ -4924,8 +4932,15 @@ export default function SettingsCenter({
                                     {d.type === 'both_printer' ? '⚡ Both (Billing & KOT)' : d.type === 'kot_printer' ? '🍳 KOT Printer' : d.type === 'receipt_printer' ? '🧾 Receipt Printer' : d.type === 'display' ? '📺 KDS Display' : '⚙️ Other Device'}
                                   </td>
                                   <td className="p-3 font-mono font-semibold">{targetStr}</td>
-                                  <td className="p-3 capitalize font-semibold text-turmeric-d">
-                                    {d.station ? d.station : d.type === 'both_printer' ? 'Billing & Kitchen' : d.type === 'receipt_printer' ? 'Billing Counter' : '—'}
+                                  <td className="p-3 font-semibold text-turmeric-d">
+                                    {(() => {
+                                      if (!d.station) {
+                                        return d.type === 'both_printer' ? 'Billing & Kitchen' : d.type === 'receipt_printer' ? 'Billing Counter' : '—';
+                                      }
+                                      const ws = d.station ? waiterStations.find((s: any) => s.id === d.station || s.code.toLowerCase() === d.station?.toLowerCase()) : null;
+                                      if (ws) return <span className="inline-flex items-center gap-1 font-mono"><span>📍</span> {ws.code} · <span className="font-sans font-normal text-xs text-ink-2">{ws.name}</span></span>;
+                                      return <span className="capitalize">{d.station}</span>;
+                                    })()}
                                   </td>
                                   <td className="p-3">
                                     {d.priority === 'backup' ? (
@@ -5125,37 +5140,76 @@ export default function SettingsCenter({
                           <>
                             {/* KOT STATION */}
                             <div className="flex flex-col gap-3 border-t pt-4 border-line">
-                              <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">2. KOT Station</h4>
-                              <p className="text-xs text-ink-3">Which station should this printer serve?</p>
+                              <div>
+                                <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">2. KOT Station / Floor Section</h4>
+                                <p className="text-xs text-ink-3">Which kitchen prep station or waiter floor station (P1, P2, P3) should this printer serve?</p>
+                              </div>
 
-                              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                                {[
-                                  { id: 'kitchen', name: 'Kitchen', icon: '🍳', desc: 'Food prep' },
-                                  { id: 'bar', name: 'Bar', icon: '☕', desc: 'Drinks & beverages' },
-                                  { id: 'bakery', name: 'Bakery', icon: '🥐', desc: 'Bakery items' },
-                                  { id: 'dessert', name: 'Dessert', icon: '🍰', desc: 'Desserts & sweets' },
-                                  { id: 'custom', name: 'Custom', icon: '⚙️', desc: 'Custom station' },
-                                ].map((st) => {
-                                  const isSel = (deviceForm.station || 'kitchen') === st.id;
-                                  return (
-                                    <button
-                                      key={st.id}
-                                      type="button"
-                                      onClick={() => setDeviceForm((prev: any) => ({ ...prev, station: st.id }))}
-                                      className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
-                                        isSel
-                                          ? 'bg-amber-500/10 border-turmeric text-ink ring-2 ring-turmeric/30'
-                                          : 'bg-paper-2 border-line hover:border-line-2'
-                                      }`}
-                                    >
-                                      <span className="text-2xl mb-1">{st.icon}</span>
-                                      <div>
-                                        <b className="text-xs block font-bold">{st.name}</b>
-                                        <span className="text-[10px] text-ink-3 block">{st.desc}</span>
-                                      </div>
-                                    </button>
-                                  );
-                                })}
+                              <div>
+                                <div className="text-[11px] font-bold text-ink-3 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                  <span>📍</span>
+                                  <span>Floor / Waiter Stations (P1, P2, P3, Custom)</span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                                  {waiterStations.map((ws: any) => {
+                                    const isSel = (deviceForm.station || '').toLowerCase() === ws.id.toLowerCase() || (deviceForm.station || '').toLowerCase() === ws.code.toLowerCase();
+                                    return (
+                                      <button
+                                        key={ws.id}
+                                        type="button"
+                                        onClick={() => setDeviceForm((prev: any) => ({ ...prev, station: ws.id }))}
+                                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                                          isSel
+                                            ? 'bg-amber-500/15 border-turmeric text-ink ring-2 ring-turmeric/30'
+                                            : 'bg-paper-2 border-line hover:border-line-2'
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-xl">📍</span>
+                                          <span className="font-mono text-xs font-bold text-turmeric-d bg-amber-500/10 px-1.5 py-0.5 rounded">{ws.code}</span>
+                                        </div>
+                                        <div className="mt-1.5">
+                                          <b className="text-xs block font-bold">{ws.name}</b>
+                                          <span className="text-[10px] text-ink-3 block">Orders by {ws.code} waiters</span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="text-[11px] font-bold text-ink-3 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                  <span>🍳</span>
+                                  <span>Kitchen Prep Stations</span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                                  {[
+                                    { id: 'kitchen', name: 'Kitchen', icon: '🍳', desc: 'Food prep' },
+                                    { id: 'bar', name: 'Bar', icon: '☕', desc: 'Drinks & beverages' },
+                                    { id: 'bakery', name: 'Bakery', icon: '🥐', desc: 'Bakery items' },
+                                    { id: 'dessert', name: 'Dessert', icon: '🍰', desc: 'Desserts & sweets' },
+                                    { id: 'custom', name: 'Custom', icon: '⚙️', desc: 'Custom station' },
+                                  ].map((st) => {
+                                    const isSel = (deviceForm.station || 'kitchen') === st.id;
+                                    return (
+                                      <button
+                                        key={st.id}
+                                        type="button"
+                                        onClick={() => setDeviceForm((prev: any) => ({ ...prev, station: st.id }))}
+                                        className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                                          isSel
+                                            ? 'bg-amber-500/15 border-turmeric text-ink ring-2 ring-turmeric/30'
+                                            : 'bg-paper-2 border-line hover:border-line-2'
+                                        }`}
+                                      >
+                                        <span className="text-2xl mb-1">{st.icon}</span>
+                                        <div>
+                                          <b className="text-xs block font-bold">{st.name}</b>
+                                          <span className="text-[10px] text-ink-3 block">{st.desc}</span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             </div>
 

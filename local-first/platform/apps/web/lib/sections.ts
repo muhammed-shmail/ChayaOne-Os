@@ -9,6 +9,7 @@ import { readGstConfig } from './tax';
 import { readOutletLocation, type OutletLocation } from './geo';
 import { readKitchens, type Kitchen } from './kitchens';
 import { readKitchenWorkflow, type KitchenWorkflowConfig } from './kitchenWorkflow';
+import { readWaiterStations, type WaiterStation } from './waiter-stations';
 
 /**
  * Cafe OS — Owner Dashboard section data.
@@ -718,6 +719,7 @@ export interface StaffPayrollItem {
 export interface StaffData {
   members: StaffMember[];
   customRoles?: { id: string; name: string; permissions: any }[];
+  waiterStations?: WaiterStation[];
   sales: { staffId: string | null; name: string; orders: number; grossPaise: number }[];
   attendance: { id: string; name: string; clockIn: string; clockOut: string | null }[];
   // ---- Staff/HR module (Phase F) ----
@@ -749,7 +751,7 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
   const periodStart = new Date(Date.UTC(periodYear, periodMonth - 1, 1, 0, 0, 0));
   const periodEnd = new Date(Date.UTC(periodYear, periodMonth, 1, 0, 0, 0));
 
-  const [memberRows, customRoles, sales, attendance, active, todayWork, attToday, shiftRows, payRows, monthPunches] = await Promise.all([
+  const [memberRows, customRoles, sales, attendance, active, todayWork, attToday, shiftRows, payRows, monthPunches, outletRecord] = await Promise.all([
     prisma.staffUser.findMany({
       where: { tenantId, OR: [{ outletId }, { outletId: null }] },
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
@@ -849,8 +851,13 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
       },
       select: { staffId: true, clockIn: true, clockOut: true },
     }),
+    prisma.outlet.findUnique({
+      where: { id: outletId },
+      select: { settings: true },
+    }).catch(() => null),
   ]);
 
+  const waiterStations = readWaiterStations(outletRecord?.settings);
   const members: StaffMember[] = memberRows.map(({ pinHash, passwordHash, ...m }) => ({ ...m, hasPin: !!pinHash, hasLogin: !!passwordHash }));
   const activeBy = new Map(active.map((a) => [a.staffId, a]));
   const workBy = new Map(todayWork.map((w) => [w.staffId, w]));
@@ -946,6 +953,7 @@ async function getStaff(outletId: string, tenantId: string): Promise<StaffData> 
   return {
     members,
     customRoles,
+    waiterStations,
     sales: sales.map((r) => ({ staffId: r.staffId, name: r.name, orders: r.orders, grossPaise: r.gross })),
     attendance: attendance.map((a) => ({
       id: a.id,

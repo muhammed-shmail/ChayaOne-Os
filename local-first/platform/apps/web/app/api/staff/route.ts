@@ -9,6 +9,8 @@ import { publish } from '@/lib/realtime';
 import { parseRupeesToPaise } from '@cafeos/core';
 
 
+import { readWaiterStations, type WaiterStation } from '@/lib/waiter-stations';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +25,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (!canManageStaff(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
-  const [rows, customRoles] = await Promise.all([
+  const [rows, customRoles, outlet] = await Promise.all([
     prisma.staffUser.findMany({
       where: { tenantId: session.tenantId },
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
@@ -33,9 +35,13 @@ export async function GET() {
       where: { tenantId: session.tenantId },
       orderBy: { name: 'asc' },
     }).catch(() => []),
+    session.outletId
+      ? prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } }).catch(() => null)
+      : null,
   ]);
+  const waiterStations = readWaiterStations(outlet?.settings);
   const members = rows.map(({ pinHash, passwordHash, ...m }) => ({ ...m, hasPin: !!pinHash, hasLogin: !!passwordHash }));
-  return NextResponse.json({ members, assignable: assignableRoles(session), customRoles });
+  return NextResponse.json({ members, assignable: assignableRoles(session), customRoles, waiterStations });
 }
 
 /**
@@ -84,6 +90,54 @@ export async function POST(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
     await prisma.role.deleteMany({ where: { id, tenantId: session.tenantId } }).catch(() => {});
     return NextResponse.json({ ok: true });
+  }
+
+  // ---- Waiter Station Management ----
+  if (action === 'create_waiter_station') {
+    const { code, name, desc } = body;
+    if (!name?.trim()) return NextResponse.json({ error: 'name_required' }, { status: 400 });
+    const outlet = session.outletId
+      ? await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } })
+      : null;
+    const current = readWaiterStations(outlet?.settings);
+    const rawCode = (code || name.slice(0, 4)).trim().toUpperCase();
+    const id = rawCode.toLowerCase();
+    const cleanName = name.trim();
+    const newStation: WaiterStation = {
+      id,
+      code: rawCode,
+      name: cleanName,
+      label: `${rawCode} (${cleanName})`,
+      desc: desc?.trim() || 'Custom Floor Section Station',
+      isCustom: true,
+    };
+    const next = [...current.filter((s) => s.id !== id), newStation];
+    if (session.outletId) {
+      const prevSettings = (outlet?.settings as Record<string, unknown>) || {};
+      await prisma.outlet.update({
+        where: { id: session.outletId },
+        data: { settings: { ...prevSettings, waiterStations: next } as any },
+      });
+    }
+    return NextResponse.json({ ok: true, waiterStations: next, station: newStation });
+  }
+
+  if (action === 'delete_waiter_station') {
+    const { id } = body;
+    if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
+    const outlet = session.outletId
+      ? await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } })
+      : null;
+    const current = readWaiterStations(outlet?.settings);
+    const next = current.filter((s) => s.id !== id);
+    if (session.outletId) {
+      const prevSettings = (outlet?.settings as Record<string, unknown>) || {};
+      await prisma.outlet.update({
+        where: { id: session.outletId },
+        data: { settings: { ...prevSettings, waiterStations: next } as any },
+      });
+    }
+    return NextResponse.json({ ok: true, waiterStations: next });
   }
 
   if (action === 'create') {
@@ -148,6 +202,12 @@ export async function POST(req: NextRequest) {
     }
     if (isNone) {
       permissionsData.baseRole = 'none';
+    }
+    if (body.station) {
+      permissionsData.station = body.station;
+    }
+    if (body.stationName) {
+      permissionsData.stationName = body.stationName;
     }
 
     const created = await prisma.staffUser.create({
@@ -231,6 +291,17 @@ export async function POST(req: NextRequest) {
           data.role = primary;
         }
       }
+    }
+
+    if (body.station !== undefined) {
+      const prevPerms = (typeof (data.permissions || target.permissions) === 'object' && (data.permissions || target.permissions)
+        ? (data.permissions || target.permissions)
+        : {}) as Record<string, any>;
+      data.permissions = {
+        ...prevPerms,
+        station: body.station ? String(body.station).trim() : null,
+        stationName: body.stationName ? String(body.stationName).trim() : null,
+      } as Prisma.InputJsonValue;
     }
 
     if (body.role !== undefined && !data.role) {

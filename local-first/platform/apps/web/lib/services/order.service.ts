@@ -336,6 +336,18 @@ export class OrderService {
 
         // Print routing
         if (kw.autoPrintKot || kw.mode !== 'digital') {
+          let waiterStation: string | null = null;
+          if (sessionStaffId) {
+            const staffUser = await tx.staffUser.findUnique({
+              where: { id: sessionStaffId },
+              select: { permissions: true },
+            }).catch(() => null);
+            if (staffUser?.permissions) {
+              const perms = (typeof staffUser.permissions === 'object' ? staffUser.permissions : {}) as Record<string, any>;
+              waiterStation = perms.station || perms.section || null;
+            }
+          }
+
           const jobs = routeOrderToStations(
             {
               id: createdOrder.id,
@@ -351,7 +363,8 @@ export class OrderService {
                 notes: i.notes,
               })),
             },
-            outletRecord?.settings
+            outletRecord?.settings,
+            waiterStation
           );
 
           for (const job of jobs) {
@@ -567,6 +580,18 @@ export class OrderService {
       // Print routing
       const kw = readKitchenWorkflow(outletRecord?.settings);
       if (kw.autoPrintKot || kw.mode !== 'digital') {
+        let approverStation: string | null = null;
+        if (approverId) {
+          const approverStaff = await tx.staffUser.findUnique({
+            where: { id: approverId },
+            select: { permissions: true },
+          }).catch(() => null);
+          if (approverStaff?.permissions) {
+            const perms = (typeof approverStaff.permissions === 'object' ? approverStaff.permissions : {}) as Record<string, any>;
+            approverStation = perms.station || perms.section || null;
+          }
+        }
+
         const jobs = routeOrderToStations(
           {
             id: updated.id,
@@ -582,7 +607,8 @@ export class OrderService {
               notes: i.notes,
             })),
           },
-          outletRecord?.settings
+          outletRecord?.settings,
+          approverStation
         );
 
         for (const job of jobs) {
