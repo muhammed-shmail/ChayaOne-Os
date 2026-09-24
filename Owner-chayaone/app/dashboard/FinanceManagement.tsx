@@ -180,7 +180,7 @@ function CustomSelect({ value, onChange, options, placeholder = 'Select...', cla
 
 export default function FinanceManagement({ outlet, staff, kpi, formatINR }: FinanceManagementProps) {
   // Navigation
-  const [activeTab, setActiveTab] = useState<'overview' | 'drawer' | 'expenses' | 'vendors' | 'settlements' | 'banks' | 'payroll' | 'accounting' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'drawer' | 'day_book' | 'expenses' | 'vendors' | 'settlements' | 'banks' | 'payroll' | 'accounting' | 'settings'>('overview');
 
   // Modals state
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -391,6 +391,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
       return [
         { key: 'overview', label: '📊 Dashboard' },
         { key: 'drawer', label: '🗄️ Cash Drawer' },
+        { key: 'day_book', label: '📖 Day Book' },
         { key: 'expenses', label: '🧾 Expenses' },
         { key: 'vendors', label: '🤝 Vendors' },
         { key: 'banks', label: '🏦 Bank Accounts' },
@@ -403,6 +404,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
     if (isAccountant) {
       return [
         { key: 'overview', label: '📊 Dashboard' },
+        { key: 'day_book', label: '📖 Day Book' },
         { key: 'expenses', label: '🧾 Expenses' },
         { key: 'vendors', label: '🤝 Vendors' },
         { key: 'banks', label: '🏦 Bank Accounts' },
@@ -1004,7 +1006,63 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
         </div>
       )}
 
+      {/* ── 2b. DAY BOOK REGISTER TAB ── */}
+      {activeTab === 'day_book' && (
+        <div className="flex flex-col gap-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-bold font-display flex items-center gap-2">
+                📖 Restaurant Day Book
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Chronological financial transaction register.
+              </p>
+            </div>
+          </div>
+
+          <div className="card p-0 overflow-hidden" style={{ background: 'var(--paper-2)' }}>
+            <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--line)' }}>
+              <h4 className="font-bold text-xs uppercase tracking-wider text-slate-500">Transaction Register</h4>
+              <span className="text-xs font-mono font-bold">{transactions.length} records</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b" style={{ borderColor: 'var(--line)', background: 'var(--paper-3)', color: 'var(--ink-3)' }}>
+                    <th className="py-2.5 px-3">Time</th>
+                    <th className="py-2.5 px-3">Type</th>
+                    <th className="py-2.5 px-3">Reference / Action</th>
+                    <th className="py-2.5 px-3">Method</th>
+                    <th className="py-2.5 px-3 text-right">Debit (Inflow)</th>
+                    <th className="py-2.5 px-3 text-right">Credit (Outflow)</th>
+                    <th className="py-2.5 px-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y" style={{ borderColor: 'var(--line)' }}>
+                  {transactions.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-50/50">
+                      <td className="py-2.5 px-3 font-mono text-[11px]">{t.time}</td>
+                      <td className="py-2.5 px-3"><span className="pill text-[10px] font-bold">{t.category}</span></td>
+                      <td className="py-2.5 px-3 font-bold">{t.action}</td>
+                      <td className="py-2.5 px-3 uppercase text-[10px] font-bold">{t.method}</td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                        {t.type === 'inflow' ? `+${formatINR(t.amountPaise)}` : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-700">
+                        {t.type === 'outflow' ? `−${formatINR(t.amountPaise)}` : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-500 truncate max-w-[200px]">{t.details}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── 3. EXPENSE MANAGEMENT TAB ── */}
+
       {activeTab === 'expenses' && (
         <div className="flex flex-col gap-4">
           <div className="flex justify-between items-center">

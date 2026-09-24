@@ -3,7 +3,7 @@ import { readOccupancyConfig, syncOccupancyAlerts, type OccupancyConfig, type Lo
 import { checkSalesDrop } from './alerts';
 import { channelStatus } from './notify';
 import { readDevices, type Device } from './devices';
-import { readFloors, readTableFloors, type Floor } from './floors';
+import { readFloors, readTableFloors, readDisabledTables, type Floor } from './floors';
 import { readPwaConfig, type PwaConfig } from './pwa';
 import { readGstConfig } from './tax';
 import { readOutletLocation, type OutletLocation } from './geo';
@@ -539,9 +539,9 @@ export interface TablesData {
     avgSpendPaise: number;
     revenuePerOccupiedHourPaise: number;
   };
-  roster: { id: string; label: string; seats: number; state: string; floorId: string | null }[];
-  floors: { id: string; name: string; sort: number }[];
-  occupancy: { id: string; label: string; sinceMs: number; durationMin: number; billPaise: number; orders: number; lowRevenue: boolean }[];
+  roster: { id: string; label: string; seats: number; state: string; floorId: string | null; active?: boolean }[];
+  floors: { id: string; name: string; description?: string; sort: number; active?: boolean }[];
+  occupancy: { id: string; label: string; sinceMs: number; durationMin: number; billPaise: number; orders: number; status?: string; number?: number; lowRevenue: boolean }[];
   profitability: { id: string; label: string; orders: number; revenuePaise: number; avgStayMin: number }[];
   peakHours: { hour: number; orders: number; revenuePaise: number }[];
   heatmap: { dow: number; hour: number; revenuePaise: number }[];
@@ -553,15 +553,18 @@ async function getTables(outletId: string): Promise<TablesData> {
   // floors + table→floor assignment live in Outlet.settings (no schema change)
   const floors = readFloors(outlet?.settings);
   const tableFloors = readTableFloors(outlet?.settings);
+  const disabledTables = readDisabledTables(outlet?.settings);
 
   const [roster, occupiedRows, profitRows, visitRows, heatRows] = await Promise.all([
     prisma.tableMap.findMany({ where: { outletId }, orderBy: { label: 'asc' }, select: { id: true, label: true, seats: true, state: true } }),
     // live occupancy: active (unsettled) dine-in orders define an occupied table
-    prisma.$queryRaw<{ id: string; label: string; since: Date; bill: number; orders: number }[]>`
+    prisma.$queryRaw<{ id: string; label: string; since: Date; bill: number; orders: number; status: string; number: number }[]>`
       SELECT t.id::text AS id, t.label AS label,
              MIN(o."placedAt") AS since,
              COALESCE(SUM(o."totalPaise"), 0)::int AS bill,
-             COUNT(*)::int AS orders
+             COUNT(*)::int AS orders,
+             (ARRAY_AGG(o."status" ORDER BY o."placedAt" DESC))[1]::text AS status,
+             (ARRAY_AGG(o."number" ORDER BY o."placedAt" DESC))[1]::int AS number
       FROM tables_map t
       JOIN orders o ON o."tableId" = t.id
         AND o."type" = 'dine_in'
@@ -617,7 +620,17 @@ async function getTables(outletId: string): Promise<TablesData> {
     const sinceMs = new Date(r.since).getTime();
     const durationMin = Math.max(0, Math.round((nowMs - sinceMs) / 60000));
     const lowRevenue = durationMin >= config.minutes && r.bill < config.minBillPaise;
-    return { id: r.id, label: r.label, sinceMs, durationMin, billPaise: r.bill, orders: r.orders, lowRevenue };
+    return {
+      id: r.id,
+      label: r.label,
+      sinceMs,
+      durationMin,
+      billPaise: r.bill,
+      orders: r.orders,
+      status: r.status,
+      number: r.number,
+      lowRevenue,
+    };
   }).sort((a, b) => b.durationMin - a.durationMin);
 
   const low: LowRevTable[] = occupancy.filter((o) => o.lowRevenue).map((o) => ({ id: o.id, label: o.label, durationMin: o.durationMin, billPaise: o.billPaise }));
@@ -652,8 +665,21 @@ async function getTables(outletId: string): Promise<TablesData> {
       avgSpendPaise,
       revenuePerOccupiedHourPaise,
     },
-    roster: roster.map((t) => ({ id: t.id, label: t.label, seats: t.seats, state: t.state, floorId: tableFloors[t.id] ?? null })),
-    floors: floors.map((f) => ({ id: f.id, name: f.name, sort: f.sort })),
+    roster: roster.map((t) => ({
+      id: t.id,
+      label: t.label,
+      seats: t.seats,
+      state: t.state,
+      floorId: tableFloors[t.id] ?? null,
+      active: !disabledTables.includes(t.id),
+    })),
+    floors: floors.map((f) => ({
+      id: f.id,
+      name: f.name,
+      description: f.description,
+      sort: f.sort,
+      active: f.active !== false,
+    })),
     occupancy,
     profitability: profitRows.map((r) => ({ id: r.id, label: r.label, orders: r.orders, revenuePaise: r.revenue, avgStayMin: Math.round((r.stay || 0) / 60) })),
     peakHours,
@@ -1101,6 +1127,7 @@ export interface FloorTable {
   floorId: string | null;
   /** active (unsettled) dine-in orders — table is "occupied" while > 0 */
   activeOrders: number;
+  active?: boolean;
 }
 
 export interface SettingsData {
@@ -1138,6 +1165,7 @@ async function getSettings(outletId: string, tenantId: string): Promise<Settings
   const activeBy = new Map(activeOrders.map((r) => [r.tableId, r._count]));
   const floors = readFloors(outlet?.settings);
   const tableFloors = readTableFloors(outlet?.settings);
+  const disabledTables = readDisabledTables(outlet?.settings);
   const floorIds = new Set(floors.map((f) => f.id));
   const tables: FloorTable[] = tableRows.map((t) => {
     const fid = tableFloors[t.id];
@@ -1149,6 +1177,7 @@ async function getSettings(outletId: string, tenantId: string): Promise<Settings
       qrToken: t.qrToken,
       floorId: fid && floorIds.has(fid) ? fid : null,
       activeOrders: activeBy.get(t.id) ?? 0,
+      active: !disabledTables.includes(t.id),
     };
   });
 

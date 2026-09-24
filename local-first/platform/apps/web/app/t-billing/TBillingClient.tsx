@@ -12,7 +12,7 @@ import {
   X, User, Smartphone, CreditCard,
   Lock, DollarSign, History, HelpCircle, CheckCircle2,
   Banknote, SplitSquareVertical, ChevronRight, Clock, ShoppingBag,
-  Zap,
+  Zap, Calendar, ArrowUpDown, Filter,
 } from 'lucide-react';
 import { LocalPrinterClient } from '@/lib/printer-client';
 import { subscribeStaff } from '@/lib/realtime-client';
@@ -88,6 +88,59 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
   const [historyRange, setHistoryRange] = useState('today');
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // ── Date helper functions
+  const getTodayDateString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const getYesterdayDateString = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const formatHumanDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return dateStr;
+    const target = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const todayStr = getTodayDateString();
+    const yestStr = getYesterdayDateString();
+    if (dateStr === todayStr) return 'Today';
+    if (dateStr === yestStr) return 'Yesterday';
+    return target.toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  // ── Completed tab sorting & calendar date state
+  const [completedDate, setCompletedDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [completedRange, setCompletedRange] = useState<'today' | 'yesterday' | '7days' | 'custom' | 'all'>('today');
+  const [completedSort, setCompletedSort] = useState<'desc' | 'asc'>('desc');
+  const [completedMethod, setCompletedMethod] = useState<'all' | 'cash' | 'upi' | 'card'>('all');
+  const [completedOrders, setCompletedOrders] = useState<any[]>([]);
+  const [completedSummary, setCompletedSummary] = useState<{
+    count: number;
+    totalPaise: number;
+    cashPaise: number;
+    upiPaise: number;
+    cardPaise: number;
+  }>({ count: 0, totalPaise: 0, cashPaise: 0, upiPaise: 0, cardPaise: 0 });
+  const [completedLoading, setCompletedLoading] = useState(false);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [selectedOrderIndex, setSelectedOrderIndex] = useState<number>(0);
   const orderCardRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -134,10 +187,44 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     }
   }, []);
 
+  const loadCompletedOrders = useCallback(async () => {
+    setCompletedLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (search.trim()) params.set('q', search.trim());
+      if (completedRange === 'custom') {
+        if (completedDate) params.set('date', completedDate);
+      } else {
+        params.set('range', completedRange);
+      }
+      params.set('sort', completedSort);
+      if (completedMethod !== 'all') params.set('method', completedMethod);
+
+      const res = await fetch(`/api/t-billing/history?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCompletedOrders(data.items || []);
+        if (data.summary) setCompletedSummary(data.summary);
+      }
+    } catch (err) {
+      console.error('Failed to load completed orders:', err);
+    } finally {
+      setCompletedLoading(false);
+    }
+  }, [search, completedRange, completedDate, completedSort, completedMethod]);
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const res = await fetch(`/api/t-billing/history?q=${encodeURIComponent(historySearch)}&range=${historyRange}`);
+      const params = new URLSearchParams();
+      if (historySearch.trim()) params.set('q', historySearch.trim());
+      if (historyRange === 'custom') {
+        if (completedDate) params.set('date', completedDate);
+      } else {
+        params.set('range', historyRange);
+      }
+      params.set('sort', completedSort);
+      const res = await fetch(`/api/t-billing/history?${params.toString()}`);
       if (res.ok) {
         const d = await res.json();
         setHistoryList(d.items || []);
@@ -147,13 +234,63 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     } finally {
       setHistoryLoading(false);
     }
-  }, [historySearch, historyRange]);
+  }, [historySearch, historyRange, completedDate, completedSort]);
+
+  const openReprintModal = useCallback((order: any) => {
+    if (!order) return;
+    const year = new Date(order.settledAt || order.placedAt || new Date()).getFullYear();
+    const invoiceNo =
+      order.invoiceNo ||
+      (order.payments?.[0]?.meta as any)?.invoiceNo ||
+      `INV-${year}-${String(order.number).padStart(6, '0')}`;
+    const paymentMethod =
+      order.paymentMethods ||
+      Array.from(new Set((order.payments || []).map((p: any) => String(p.method).toUpperCase()))).join(' + ') ||
+      'CASH';
+
+    const reprintData = {
+      orderId: order.id,
+      storeName: outlet.name,
+      logoUrl: outlet.receipt.logoUrl,
+      address: outlet.address,
+      phone: outlet.receipt.phone,
+      gstin: outlet.gstin,
+      timezone: outlet.timezone || 'Asia/Kolkata',
+      orderNumber: order.number,
+      tableLabel: order.tableLabel ?? order.tableName ?? order.table?.label ?? null,
+      orderType: order.type || 'dine_in',
+      placedAt: order.placedAt || new Date(),
+      settledAt: order.settledAt || new Date(),
+      items: (order.items || []).map((i: any) => ({
+        name: i.nameSnapshot || i.name,
+        qty: i.qty,
+        unitPricePaise: i.unitPricePaise || 0,
+        totalPaise: i.linePaise || ((i.unitPricePaise || 0) * i.qty),
+        modifiers: Array.isArray(i.modifiers) ? i.modifiers : [],
+        notes: i.notes ?? null,
+      })),
+      subtotalPaise: order.subtotalPaise || order.totalPaise,
+      discountPaise: order.discountPaise || 0,
+      cgstPaise: order.cgstPaise || 0,
+      sgstPaise: order.sgstPaise || 0,
+      roundOffPaise: order.roundOffPaise || 0,
+      totalPaise: order.totalPaise,
+      paymentMethod,
+      invoiceNo,
+      isReprint: true,
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig,
+    };
+    setPreviewOrderOverride(reprintData as any);
+    setReceiptModalOpen(true);
+  }, [outlet]);
 
   useEffect(() => {
     loadOrders();
     return subscribeStaff((msg) => {
       if (msg.type === 'order.new' || msg.type === 'order.updated' || msg.type === 'order.pending' || msg.type === 'table.transferred') {
         loadOrders();
+        if (filter === 'completed') loadCompletedOrders();
       }
       if (msg.type === 'staff.updated' && (!currentStaff.id || msg.staffId === currentStaff.id)) {
         fetch('/api/auth/me')
@@ -166,11 +303,17 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
           .catch(() => {});
       }
     });
-  }, [loadOrders, currentStaff.id]);
+  }, [loadOrders, loadCompletedOrders, filter, currentStaff.id]);
 
   useEffect(() => {
     if (view === 'history') loadHistory();
   }, [view, loadHistory]);
+
+  useEffect(() => {
+    if (view === 'queue' && filter === 'completed') {
+      loadCompletedOrders();
+    }
+  }, [view, filter, loadCompletedOrders]);
 
   const filteredOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -195,9 +338,18 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     });
   }, [orders, search, filter]);
 
+  const displayOrders = useMemo(() => {
+    if (filter === 'completed') return completedOrders;
+    return filteredOrders;
+  }, [filter, completedOrders, filteredOrders]);
+
   const startBilling = (order: any) => {
     if (order.status === 'cancelled') {
       flash('Cancelled orders cannot be billed.');
+      return;
+    }
+    if (order.status === 'settled') {
+      openReprintModal(order);
       return;
     }
     setSelectedOrder(order);
@@ -217,12 +369,12 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
   };
 
   useEffect(() => {
-    if (filteredOrders.length === 0) {
+    if (displayOrders.length === 0) {
       setSelectedOrderIndex(-1);
-    } else if (selectedOrderIndex < 0 || selectedOrderIndex >= filteredOrders.length) {
+    } else if (selectedOrderIndex < 0 || selectedOrderIndex >= displayOrders.length) {
       setSelectedOrderIndex(0);
     }
-  }, [filteredOrders.length, selectedOrderIndex]);
+  }, [displayOrders.length, selectedOrderIndex]);
 
   useEffect(() => {
     if (view === 'queue' && selectedOrderIndex >= 0 && orderCardRefs.current[selectedOrderIndex]) {
@@ -292,16 +444,21 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
           if (e.key === 'ArrowDown') {
             e.preventDefault();
             searchInputRef.current?.blur();
-            if (filteredOrders.length > 0) {
+            if (displayOrders.length > 0) {
               setSelectedOrderIndex(0);
               orderCardRefs.current[0]?.focus();
             }
             return;
           }
           if (e.key === 'Enter') {
-            if (filteredOrders.length > 0 && selectedOrderIndex >= 0 && selectedOrderIndex < filteredOrders.length) {
+            if (displayOrders.length > 0 && selectedOrderIndex >= 0 && selectedOrderIndex < displayOrders.length) {
               e.preventDefault();
-              startBilling(filteredOrders[selectedOrderIndex]);
+              const target = displayOrders[selectedOrderIndex];
+              if (filter === 'completed' || target.status === 'settled') {
+                openReprintModal(target);
+              } else {
+                startBilling(target);
+              }
             }
             return;
           }
@@ -309,10 +466,10 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         }
 
         if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-          if (filteredOrders.length > 0) {
+          if (displayOrders.length > 0) {
             e.preventDefault();
             setSelectedOrderIndex((prev) => {
-              const next = prev < 0 ? 0 : Math.min(prev + 1, filteredOrders.length - 1);
+              const next = prev < 0 ? 0 : Math.min(prev + 1, displayOrders.length - 1);
               orderCardRefs.current[next]?.focus();
               return next;
             });
@@ -321,7 +478,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         }
 
         if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-          if (filteredOrders.length > 0) {
+          if (displayOrders.length > 0) {
             e.preventDefault();
             setSelectedOrderIndex((prev) => {
               const next = Math.max((prev < 0 ? 0 : prev) - 1, 0);
@@ -333,9 +490,14 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         }
 
         if (e.key === 'Enter') {
-          if (filteredOrders.length > 0 && selectedOrderIndex >= 0 && selectedOrderIndex < filteredOrders.length) {
+          if (displayOrders.length > 0 && selectedOrderIndex >= 0 && selectedOrderIndex < displayOrders.length) {
             e.preventDefault();
-            startBilling(filteredOrders[selectedOrderIndex]);
+            const target = displayOrders[selectedOrderIndex];
+            if (filter === 'completed' || target.status === 'settled') {
+              openReprintModal(target);
+            } else {
+              startBilling(target);
+            }
           }
           return;
         }
@@ -344,7 +506,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [view, receiptModalOpen, shortcutsOpen, selectedOrder, settleBusy, filteredOrders, selectedOrderIndex, handleExit]);
+  }, [view, receiptModalOpen, shortcutsOpen, selectedOrder, settleBusy, displayOrders, selectedOrderIndex, filter, openReprintModal, handleExit]);
 
   const calculatedBill = useMemo(() => {
     if (!selectedOrder) return { subtotalPaise: 0, discountPaise: 0, taxablePaise: 0, cgstPaise: 0, sgstPaise: 0, igstPaise: 0, roundOffPaise: 0, totalPaise: 0 };
@@ -427,6 +589,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       flash('Bill completed & invoice generated! 🎉');
       setView('completed');
       loadOrders();
+      loadCompletedOrders();
     } catch (err) {
       console.error(err);
       flash('Network error settling bill.');
@@ -619,13 +782,16 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
             </button>
           )}
           <button
-            onClick={loadOrders}
-            disabled={ordersLoading}
+            onClick={() => {
+              if (filter === 'completed') loadCompletedOrders();
+              else loadOrders();
+            }}
+            disabled={filter === 'completed' ? completedLoading : ordersLoading}
             className="w-8 h-8 rounded-xl grid place-items-center transition hover:opacity-80 active:scale-95"
             style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
             title="Refresh orders"
           >
-            <RefreshCw size={14} className={ordersLoading ? 'animate-spin' : ''} style={{ color: 'var(--ink-2)' }} />
+            <RefreshCw size={14} className={(filter === 'completed' ? completedLoading : ordersLoading) ? 'animate-spin' : ''} style={{ color: 'var(--ink-2)' }} />
           </button>
           <button
             onClick={() => setShortcutsOpen(true)}
@@ -719,24 +885,205 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
               </div>
             </div>
 
+            {/* ── Completed Tab: Calendar Date Picker & Sorting Controls Bar ── */}
+            {filter === 'completed' && (
+              <div
+                className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 p-3.5 rounded-2xl border"
+                style={{
+                  background: 'var(--paper-2)',
+                  borderColor: 'color-mix(in srgb, var(--gold) 25%, var(--line))',
+                  boxShadow: '0 2px 12px color-mix(in srgb, var(--gold) 6%, transparent)',
+                }}
+              >
+                {/* Left: Calendar Picker & Date presets */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Calendar Date Picker Input */}
+                  <label
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition hover:opacity-90 relative cursor-pointer"
+                    style={{
+                      background: completedRange === 'custom' ? 'color-mix(in srgb, var(--gold) 15%, var(--paper-3))' : 'var(--paper-3)',
+                      borderColor: completedRange === 'custom' ? 'var(--gold)' : 'var(--line)',
+                      color: 'var(--ink)',
+                    }}
+                    title="Click to select a date from calendar"
+                  >
+                    <Calendar size={14} style={{ color: 'var(--gold-d)' }} />
+                    <span className="font-semibold">
+                      {completedRange === 'custom'
+                        ? formatHumanDate(completedDate)
+                        : completedRange === 'today'
+                        ? 'Today'
+                        : completedRange === 'yesterday'
+                        ? 'Yesterday'
+                        : completedRange === '7days'
+                        ? 'Last 7 Days'
+                        : 'All Time'}
+                    </span>
+                    <input
+                      type="date"
+                      value={completedDate}
+                      max={getTodayDateString()}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setCompletedDate(e.target.value);
+                          setCompletedRange('custom');
+                        }
+                      }}
+                      className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                    />
+                  </label>
+
+                  {/* Date Quick Presets */}
+                  <div
+                    className="flex items-center gap-1 p-1 rounded-xl border"
+                    style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                  >
+                    {[
+                      { key: 'today', label: 'Today', onClick: () => { setCompletedRange('today'); setCompletedDate(getTodayDateString()); } },
+                      { key: 'yesterday', label: 'Yesterday', onClick: () => { setCompletedRange('yesterday'); setCompletedDate(getYesterdayDateString()); } },
+                      { key: '7days', label: '7 Days', onClick: () => { setCompletedRange('7days'); } },
+                      { key: 'all', label: 'All Time', onClick: () => { setCompletedRange('all'); } },
+                    ].map((p) => {
+                      const isActive = completedRange === p.key;
+                      return (
+                        <button
+                          key={p.key}
+                          onClick={p.onClick}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold transition active:scale-95"
+                          style={
+                            isActive
+                              ? {
+                                  background: 'var(--gold)',
+                                  color: '#2A1607',
+                                  boxShadow: '0 1px 4px color-mix(in srgb, var(--gold) 30%, transparent)',
+                                }
+                              : {
+                                  background: 'transparent',
+                                  color: 'var(--ink-2)',
+                                }
+                          }
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Sort Order Toggle */}
+                  <button
+                    onClick={() => setCompletedSort((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition hover:opacity-80 active:scale-95"
+                    style={{
+                      background: 'var(--paper-3)',
+                      borderColor: 'var(--line)',
+                      color: 'var(--ink-2)',
+                    }}
+                    title="Toggle sort order (Newest first / Oldest first)"
+                  >
+                    <ArrowUpDown size={13} style={{ color: 'var(--gold-d)' }} />
+                    <span style={{ color: 'var(--ink-3)' }}>Sort:</span>
+                    <span style={{ color: 'var(--ink)' }}>
+                      {completedSort === 'desc' ? 'Newest First ↓' : 'Oldest First ↑'}
+                    </span>
+                  </button>
+
+                  {/* Payment Method Filter Pills */}
+                  <div className="hidden sm:flex items-center gap-1">
+                    {[
+                      { key: 'all', label: 'All' },
+                      { key: 'cash', label: 'Cash' },
+                      { key: 'upi', label: 'UPI' },
+                      { key: 'card', label: 'Card' },
+                    ].map((m) => {
+                      const isActive = completedMethod === m.key;
+                      return (
+                        <button
+                          key={m.key}
+                          onClick={() => setCompletedMethod(m.key as any)}
+                          className="px-2 py-1 rounded-lg text-xs font-bold transition active:scale-95"
+                          style={
+                            isActive
+                              ? {
+                                  background: 'color-mix(in srgb, var(--gold) 18%, var(--paper-3))',
+                                  color: 'var(--gold-d)',
+                                  border: '1px solid color-mix(in srgb, var(--gold) 35%, transparent)',
+                                }
+                              : {
+                                  background: 'var(--paper-3)',
+                                  color: 'var(--ink-3)',
+                                  border: '1px solid var(--line)',
+                                }
+                          }
+                        >
+                          {m.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Right: Summary Metrics for the date */}
+                <div className="flex items-center gap-2 shrink-0 text-xs">
+                  <div
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl border"
+                    style={{
+                      background: 'color-mix(in srgb, var(--cardamom) 10%, var(--paper-3))',
+                      borderColor: 'color-mix(in srgb, var(--cardamom) 25%, transparent)',
+                    }}
+                  >
+                    <CheckCircle2 size={14} style={{ color: 'var(--cardamom-d, #34d399)' }} />
+                    <span className="font-semibold" style={{ color: 'var(--ink-2)' }}>Settled:</span>
+                    <span className="font-extrabold font-mono" style={{ color: 'var(--ink)' }}>
+                      {completedSummary.count} bills
+                    </span>
+                    <span style={{ color: 'var(--line)' }}>|</span>
+                    <span className="font-extrabold font-mono" style={{ color: 'var(--cardamom-d, #34d399)' }}>
+                      {formatINR(completedSummary.totalPaise)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Queue Header */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="font-bold text-base" style={{ color: 'var(--ink)' }}>
-                  Ready to Bill
+                  {filter === 'completed'
+                    ? 'Completed Bills'
+                    : filter === 'takeaway'
+                    ? 'Takeaway Orders'
+                    : filter === 'all'
+                    ? 'All Open Orders'
+                    : 'Ready to Bill'}
                 </h2>
                 <span
                   className="px-2.5 py-0.5 rounded-full text-xs font-extrabold"
                   style={{
-                    background: filteredOrders.length > 0
+                    background: displayOrders.length > 0
                       ? 'color-mix(in srgb, var(--gold) 18%, var(--paper-3))'
                       : 'var(--paper-3)',
-                    color: filteredOrders.length > 0 ? 'var(--gold-d)' : 'var(--ink-3)',
+                    color: displayOrders.length > 0 ? 'var(--gold-d)' : 'var(--ink-3)',
                     border: '1px solid color-mix(in srgb, var(--gold) 25%, transparent)',
                   }}
                 >
-                  {filteredOrders.length} orders
+                  {displayOrders.length} {filter === 'completed' ? 'bills' : 'orders'}
                 </span>
+
+                {filter === 'completed' && (
+                  <span
+                    className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                    style={{
+                      background: 'var(--paper-3)',
+                      color: 'var(--ink-2)',
+                      border: '1px solid var(--line)',
+                    }}
+                  >
+                    📅 {completedRange === 'custom' ? formatHumanDate(completedDate) : completedRange === 'today' ? 'Today' : completedRange === 'yesterday' ? 'Yesterday' : completedRange === '7days' ? 'Last 7 Days' : 'All Time'}
+                    {' · '}
+                    {completedSort === 'desc' ? 'Latest first ↓' : 'Earliest first ↑'}
+                  </span>
+                )}
               </div>
               <span className="text-xs hidden sm:flex items-center gap-1.5 font-medium" style={{ color: 'var(--ink-3)' }}>
                 <kbd
@@ -750,12 +1097,12 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                 >
                   Enter
                 </kbd>
-                to bill
+                {filter === 'completed' ? 'to reprint / view' : 'to bill'}
               </span>
             </div>
 
             {/* Order Cards Grid */}
-            {filteredOrders.length === 0 ? (
+            {displayOrders.length === 0 ? (
               <div
                 className="flex-1 rounded-2xl border flex flex-col items-center justify-center py-20 gap-4"
                 style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
@@ -764,25 +1111,52 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                   className="w-16 h-16 rounded-2xl grid place-items-center"
                   style={{ background: 'color-mix(in srgb, var(--gold) 10%, var(--paper-3))' }}
                 >
-                  <Receipt size={30} style={{ color: 'var(--gold-d)', opacity: 0.6 }} />
+                  {filter === 'completed' ? (
+                    <Calendar size={30} style={{ color: 'var(--gold-d)', opacity: 0.6 }} />
+                  ) : (
+                    <Receipt size={30} style={{ color: 'var(--gold-d)', opacity: 0.6 }} />
+                  )}
                 </div>
                 <div className="text-center">
                   <p className="font-bold text-base" style={{ color: 'var(--ink-2)' }}>
-                    No orders ready for billing
+                    {filter === 'completed'
+                      ? `No completed bills found for ${completedRange === 'custom' ? formatHumanDate(completedDate) : completedRange}`
+                      : 'No orders ready for billing'}
                   </p>
                   <p className="text-xs mt-1 max-w-xs" style={{ color: 'var(--ink-3)' }}>
-                    Orders from POS and waiter app appear here instantly for billing.
+                    {filter === 'completed'
+                      ? 'Try selecting a different date from the calendar or choose "Today" or "7 Days".'
+                      : 'Orders from POS and waiter app appear here instantly for billing.'}
                   </p>
+                  {filter === 'completed' && completedRange !== 'today' && (
+                    <button
+                      onClick={() => {
+                        setCompletedRange('today');
+                        setCompletedDate(getTodayDateString());
+                      }}
+                      className="mt-3 px-4 py-2 rounded-xl text-xs font-bold transition active:scale-95"
+                      style={{
+                        background: 'var(--gold)',
+                        color: '#2A1607',
+                        boxShadow: '0 2px 8px color-mix(in srgb, var(--gold) 30%, transparent)',
+                      }}
+                    >
+                      View Today's Bills
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {filteredOrders.map((o, index) => {
+                {displayOrders.map((o, index) => {
                   const isSelected = selectedOrderIndex === index;
                   const isCancelled = o.status === 'cancelled';
-                  const isSettled = o.status === 'settled';
-                  const itemCount = (o.items || []).reduce((sum: number, i: any) => sum + i.qty, 0);
+                  const isSettled = o.status === 'settled' || filter === 'completed';
+                  const itemCount = (o.items || []).reduce((sum: number, i: any) => sum + (i.qty || 1), 0);
                   const isTakeaway = o.type === 'takeaway';
+                  const year = new Date(o.settledAt || o.placedAt || new Date()).getFullYear();
+                  const invoiceNo = o.invoiceNo || (o.payments?.[0]?.meta as any)?.invoiceNo || `INV-${year}-${String(o.number).padStart(6, '0')}`;
+                  const methods = o.paymentMethods || Array.from(new Set((o.payments || []).map((p: any) => String(p.method).toUpperCase()))).join(' + ') || 'CASH';
 
                   return (
                     <div
@@ -792,12 +1166,16 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                       role="button"
                       aria-pressed={isSelected}
                       onClick={() => setSelectedOrderIndex(index)}
-                      onDoubleClick={() => startBilling(o)}
+                      onDoubleClick={() => {
+                        if (filter === 'completed' || isSettled) openReprintModal(o);
+                        else startBilling(o);
+                      }}
                       onFocus={() => setSelectedOrderIndex(index)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          startBilling(o);
+                          if (filter === 'completed' || isSettled) openReprintModal(o);
+                          else startBilling(o);
                         }
                       }}
                       className="flex flex-col justify-between outline-none cursor-pointer transition-all duration-150 rounded-2xl border"
@@ -820,7 +1198,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                       {/* Card Top: Order meta */}
                       <div className="p-4">
                         {/* Header row */}
-                        <div className="flex items-start justify-between gap-2 mb-3">
+                        <div className="flex items-start justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="font-display font-extrabold text-2xl leading-none" style={{ color: 'var(--ink)' }}>
                               #{o.number}
@@ -849,12 +1227,28 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                           </span>
                         </div>
 
+                        {/* Invoice pill if settled */}
+                        {isSettled && (
+                          <div className="mb-2">
+                            <span
+                              className="text-[10px] font-mono px-2 py-0.5 rounded-md font-bold"
+                              style={{
+                                background: 'var(--paper-3)',
+                                color: 'var(--gold-d)',
+                                border: '1px solid var(--line)',
+                              }}
+                            >
+                              {invoiceNo}
+                            </span>
+                          </div>
+                        )}
+
                         {/* Table / Type label */}
-                        <p className="text-xs font-extrabold mb-3 flex items-center gap-1.5" style={{ color: 'var(--gold-d)' }}>
+                        <p className="text-xs font-extrabold mb-2.5 flex items-center gap-1.5" style={{ color: 'var(--gold-d)' }}>
                           {isTakeaway
                             ? <><ShoppingBag size={12} /> Takeaway</>
-                            : o.table?.label
-                            ? <><Table2 size={12} /> Table {o.table.label}</>
+                            : (o.table?.label || o.tableLabel || o.tableName)
+                            ? <><Table2 size={12} /> Table {o.table?.label || o.tableLabel || o.tableName}</>
                             : '📍 Direct'}
                         </p>
 
@@ -862,7 +1256,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--ink-2)' }}>
                             <User size={11} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
-                            <span className="truncate font-medium">{o.customer?.name || 'Walk-in Customer'}</span>
+                            <span className="truncate font-medium">{o.customer?.name || o.customerName || 'Walk-in Customer'}</span>
                           </div>
                           <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--ink-2)' }}>
                             <Receipt size={11} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
@@ -870,8 +1264,29 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                           </div>
                           <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--ink-3)' }} suppressHydrationWarning>
                             <Clock size={11} style={{ flexShrink: 0 }} />
-                            <span>{new Date(o.placedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>
+                              {isSettled && o.settledAt
+                                ? `Settled ${new Date(o.settledAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+                                : new Date(o.placedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                              {filter === 'completed' && completedRange !== 'today' && o.settledAt && (
+                                ` · ${new Date(o.settledAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+                              )}
+                            </span>
                           </div>
+                          {isSettled && (
+                            <div className="pt-0.5">
+                              <span
+                                className="inline-block px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wide"
+                                style={{
+                                  background: 'color-mix(in srgb, var(--gold) 12%, var(--paper-3))',
+                                  color: 'var(--gold-d)',
+                                  border: '1px solid color-mix(in srgb, var(--gold) 20%, transparent)',
+                                }}
+                              >
+                                {methods}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -890,30 +1305,63 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         <span className="font-display font-extrabold text-lg tnum" style={{ color: 'var(--ink)' }}>
                           {formatINR(o.totalPaise)}
                         </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startBilling(o);
-                          }}
-                          disabled={isCancelled}
-                          className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition active:scale-95 disabled:opacity-40"
-                          style={
-                            isSelected
-                              ? {
-                                  background: 'var(--gold)',
-                                  color: '#2A1607',
-                                  boxShadow: '0 2px 8px color-mix(in srgb, var(--gold) 40%, transparent)',
-                                }
-                              : {
-                                  background: 'color-mix(in srgb, var(--gold) 18%, var(--paper-2))',
-                                  color: 'var(--gold-d)',
-                                  border: '1px solid color-mix(in srgb, var(--gold) 30%, var(--line))',
-                                }
-                          }
-                        >
-                          {isSettled ? 'View' : 'Bill Now'}
-                          <ChevronRight size={12} />
-                        </button>
+                        {isSettled ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openReprintModal(o);
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition hover:opacity-85 active:scale-95"
+                              style={{
+                                background: 'var(--paper-2)',
+                                border: '1px solid var(--line)',
+                                color: 'var(--ink-2)',
+                              }}
+                              title="Reprint receipt"
+                            >
+                              <Printer size={12} /> Reprint
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openReprintModal(o);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition active:scale-95"
+                              style={{
+                                background: 'color-mix(in srgb, var(--gold) 18%, var(--paper-2))',
+                                color: 'var(--gold-d)',
+                                border: '1px solid color-mix(in srgb, var(--gold) 30%, var(--line))',
+                              }}
+                            >
+                              Details <ChevronRight size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startBilling(o);
+                            }}
+                            disabled={isCancelled}
+                            className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition active:scale-95 disabled:opacity-40"
+                            style={
+                              isSelected
+                                ? {
+                                    background: 'var(--gold)',
+                                    color: '#2A1607',
+                                    boxShadow: '0 2px 8px color-mix(in srgb, var(--gold) 40%, transparent)',
+                                  }
+                                : {
+                                    background: 'color-mix(in srgb, var(--gold) 18%, var(--paper-2))',
+                                    color: 'var(--gold-d)',
+                                    border: '1px solid color-mix(in srgb, var(--gold) 30%, var(--line))',
+                                  }
+                            }
+                          >
+                            Bill Now <ChevronRight size={12} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -1433,11 +1881,73 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
             }}
           >
             {/* History Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-5 border-b" style={{ borderColor: 'var(--line)' }}>
-              <h2 className="font-display font-bold text-xl flex items-center gap-2" style={{ color: 'var(--ink)' }}>
-                <History size={20} style={{ color: 'var(--gold-d)' }} />
-                Billing History
-              </h2>
+            <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b" style={{ borderColor: 'var(--line)' }}>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="font-display font-bold text-xl flex items-center gap-2 mr-1" style={{ color: 'var(--ink)' }}>
+                  <History size={20} style={{ color: 'var(--gold-d)' }} />
+                  Billing History
+                </h2>
+                {/* Calendar Date Picker */}
+                <label
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer relative"
+                  style={{
+                    background: historyRange === 'custom' ? 'color-mix(in srgb, var(--gold) 15%, var(--paper-3))' : 'var(--paper-3)',
+                    borderColor: historyRange === 'custom' ? 'var(--gold)' : 'var(--line)',
+                    color: 'var(--ink)',
+                  }}
+                  title="Filter by calendar date"
+                >
+                  <Calendar size={13} style={{ color: 'var(--gold-d)' }} />
+                  <span>
+                    {historyRange === 'custom' ? formatHumanDate(completedDate) : historyRange === 'today' ? 'Today' : historyRange === 'yesterday' ? 'Yesterday' : historyRange === '7days' ? '7 Days' : 'All Time'}
+                  </span>
+                  <input
+                    type="date"
+                    value={completedDate}
+                    max={getTodayDateString()}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setCompletedDate(e.target.value);
+                        setHistoryRange('custom');
+                      }
+                    }}
+                    className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+                  />
+                </label>
+                {/* Range presets */}
+                <div className="hidden sm:flex items-center gap-1 p-0.5 rounded-xl border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                  {[
+                    { key: 'today', label: 'Today', onClick: () => { setHistoryRange('today'); setCompletedDate(getTodayDateString()); } },
+                    { key: 'yesterday', label: 'Yesterday', onClick: () => { setHistoryRange('yesterday'); setCompletedDate(getYesterdayDateString()); } },
+                    { key: '7days', label: '7 Days', onClick: () => { setHistoryRange('7days'); } },
+                    { key: 'all', label: 'All', onClick: () => { setHistoryRange('all'); } },
+                  ].map((p) => (
+                    <button
+                      key={p.key}
+                      onClick={p.onClick}
+                      className="px-2 py-1 rounded-lg text-[11px] font-bold transition active:scale-95"
+                      style={
+                        historyRange === p.key
+                          ? { background: 'var(--gold)', color: '#2A1607' }
+                          : { background: 'transparent', color: 'var(--ink-2)' }
+                      }
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                {/* Sort toggle */}
+                <button
+                  onClick={() => setCompletedSort((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition active:scale-95"
+                  style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}
+                  title="Toggle sort order"
+                >
+                  <ArrowUpDown size={12} style={{ color: 'var(--gold-d)' }} />
+                  <span>{completedSort === 'desc' ? 'Latest ↓' : 'Earliest ↑'}</span>
+                </button>
+              </div>
+
               <div className="flex items-center gap-2">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={13} style={{ color: 'var(--ink-3)' }} />

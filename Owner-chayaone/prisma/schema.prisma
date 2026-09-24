@@ -217,6 +217,7 @@ model Tenant {
   badges     Badge[]
   segments   Segment[]
   campaigns  Campaign[]
+  financialYears FinancialYear[]
 
   // Control plane (Phase G) — all optional/additive back-relations.
   subscription Subscription?
@@ -265,6 +266,7 @@ model Outlet {
   notifications Notification[]
   registeredDevices Device[]
   tableTransfers TableTransfer[]
+  financialYears FinancialYear[]
 
   @@index([tenantId])
   @@map("outlets")
@@ -1544,3 +1546,30 @@ model License {
   @@index([installationId])
   @@map("licenses")
 }
+
+model FinancialYear {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @db.Uuid
+  outletId     String?   @db.Uuid
+  name         String    // e.g. "FY 2026-27"
+  startDate    String    // YYYY-MM-DD
+  endDate      String    // YYYY-MM-DD
+  status       String    @default("active") // "active" | "closed"
+  isDefault    Boolean   @default(false)
+  closedAt     DateTime? @db.Timestamptz(6)
+  closedById   String?   @db.Uuid
+  closedByName String?
+  notes        String?
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  outlet       Outlet?   @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@index([outletId, status])
+  @@index([startDate, endDate])
+  @@map("financial_years")
+}
+

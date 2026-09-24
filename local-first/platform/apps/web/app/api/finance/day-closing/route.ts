@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import { prisma, Prisma } from '@cafeos/db';
 import { getSession } from '@/lib/auth';
 import { canManageDayClosing, canCloseDay } from '@/lib/rbac';
-import { DayClosingService } from '@/lib/services';
+import { DayClosingService, FinancialYearService } from '@/lib/services';
 import {
   DayClosingCommitSchema,
   DayClosingVerifyCashSchema,
@@ -138,6 +138,8 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      await FinancialYearService.assertDateNotLocked(session.tenantId, session.outletId, parsed.data.businessDate);
+
       const actingStaff = auth.staff;
       const closed = await DayClosingService.closeBusinessDay({
         outletId: session.outletId,
@@ -167,6 +169,8 @@ export async function POST(req: NextRequest) {
           { status: 403 }
         );
       }
+
+      await FinancialYearService.assertDateNotLocked(session.tenantId, session.outletId, parsed.data.businessDate);
 
       const actingStaff = auth.staff;
       const reopened = await DayClosingService.reopenBusinessDay({

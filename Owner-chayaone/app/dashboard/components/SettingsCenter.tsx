@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Store, Clock, Percent, BookOpen, ChefHat, Package, Receipt, CreditCard, Printer,
   Users, Smartphone, Truck, Bell, Shield, BarChart3, ClipboardList, Blocks, Zap,
   Lock, Database, Sparkles, Cpu, Sliders, Calendar, DollarSign, UserCheck, RefreshCw,
   AlertCircle, Trash2, Plus, Check, Search, ChevronRight, ChevronLeft, Info, X, Key,
   Heart, AlertTriangle, Play, HelpCircle, Megaphone, Download, Layers, QrCode,
-  Wifi, Copy, ExternalLink, User, Server, CheckCircle2, Monitor, Moon
+  Wifi, Copy, ExternalLink, User, Server, CheckCircle2, Monitor, Moon, Edit2
 } from 'lucide-react';
 import type { Kitchen } from '@/lib/kitchens';
 import type { Device } from '@/lib/devices';
@@ -17,6 +17,8 @@ import type { ModuleSystemConfig } from '@cafeos/types';
 import SystemManagement from './SystemManagement';
 import ModuleManagement from './ModuleManagement';
 import ServerDashboardClient from '../server/ServerDashboardClient';
+import { tableOrderUrl, tableQrImageUrl } from '@/lib/qr';
+
 
 // Category groups & metadata
 export interface SettingItem {
@@ -253,6 +255,7 @@ interface SettingsCenterProps {
 
   floors: any[];
   floorTables: any[];
+  onFloorUpdated?: () => Promise<void>;
   kitchens: Kitchen[];
   setKitchens: React.Dispatch<React.SetStateAction<Kitchen[]>>;
   kitchenApi: (payload: Record<string, unknown>, okMsg: string) => Promise<boolean>;
@@ -318,6 +321,7 @@ export default function SettingsCenter({
   openDeviceForm,
   floors,
   floorTables,
+  onFloorUpdated,
   kitchens,
   setKitchens,
   kitchenApi,
@@ -357,6 +361,412 @@ export default function SettingsCenter({
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [customerPort, setCustomerPort] = useState<string>('3003');
   const [customerTableToken, setCustomerTableToken] = useState<string>('demo');
+
+  // ── Floor, Section & Table Management States ──
+  const [floorList, setFloorList] = useState<any[]>(floors || []);
+  const [tableList, setTableList] = useState<any[]>(floorTables || []);
+  const [floorBusy, setFloorBusy] = useState<boolean>(false);
+  const [floorError, setFloorError] = useState<string | null>(null);
+
+  // Section Modal
+  const [showSectionModal, setShowSectionModal] = useState<boolean>(false);
+  const [editingSection, setEditingSection] = useState<any | null>(null);
+  const [sectionForm, setSectionForm] = useState<{ name: string; description: string }>({ name: '', description: '' });
+  const [sectionSaving, setSectionSaving] = useState<boolean>(false);
+
+  // Table Modal
+  const [showTableModal, setShowTableModal] = useState<boolean>(false);
+  const [editingTable, setEditingTable] = useState<any | null>(null);
+  const [tableForm, setTableForm] = useState<{ label: string; seats: number; floorId: string; active: boolean }>({
+    label: '',
+    seats: 4,
+    floorId: '',
+    active: true,
+  });
+  const [tableSaving, setTableSaving] = useState<boolean>(false);
+
+  // Table QR Modal
+  const [qrModalTable, setQrModalTable] = useState<any | null>(null);
+  const [qrCopied, setQrCopied] = useState<boolean>(false);
+  const [qrRegenerating, setQrRegenerating] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (floors && Array.isArray(floors)) setFloorList(floors);
+  }, [floors]);
+
+  useEffect(() => {
+    if (floorTables && Array.isArray(floorTables)) setTableList(floorTables);
+  }, [floorTables]);
+
+  const refreshFloorData = useCallback(async () => {
+    try {
+      setFloorBusy(true);
+      setFloorError(null);
+      const res = await fetch(`/api/dashboard/floor?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to load floor data');
+      const data = await res.json();
+      if (data.ok) {
+        if (Array.isArray(data.floors)) setFloorList(data.floors);
+        if (Array.isArray(data.tables)) setTableList(data.tables);
+        if (onFloorUpdated) {
+          await onFloorUpdated();
+        }
+      }
+    } catch (err: any) {
+      setFloorError(err?.message || 'Error loading sections and tables');
+    } finally {
+      setFloorBusy(false);
+    }
+  }, [onFloorUpdated]);
+
+  const handleOpenAddSection = () => {
+    setEditingSection(null);
+    setSectionForm({ name: '', description: '' });
+    setShowSectionModal(true);
+  };
+
+  const handleOpenEditSection = (s: any) => {
+    setEditingSection(s);
+    setSectionForm({ name: s.name || '', description: s.description || '' });
+    setShowSectionModal(true);
+  };
+
+  const handleSaveSection = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const name = sectionForm.name.trim();
+    if (!name) {
+      alert('Please enter a section name.');
+      return;
+    }
+    setSectionSaving(true);
+    try {
+      const payload = editingSection
+        ? { action: 'floor_update', floorId: editingSection.id, name, description: sectionForm.description.trim() }
+        : { action: 'floor_add', name, description: sectionForm.description.trim() };
+
+      const res = await fetch('/api/dashboard/floor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.message || data.error || 'Failed to save section');
+      }
+      flashMessage(editingSection ? `Section "${name}" updated` : `Section "${name}" created`);
+      setShowSectionModal(false);
+      await refreshFloorData();
+    } catch (err: any) {
+      alert(err.message || 'Error saving section');
+    } finally {
+      setSectionSaving(false);
+    }
+  };
+
+  const handleDeleteSection = (s: any) => {
+    const matching = tableList.filter((t) => t.floorId === s.id);
+    const msg = matching.length > 0
+      ? `Section "${s.name}" contains ${matching.length} table(s). Deleting this section will unassign these tables (they will not be deleted). Are you sure?`
+      : `Are you sure you want to delete section "${s.name}"?`;
+
+    setShowConfirmModal({
+      show: true,
+      title: `Delete Section "${s.name}"`,
+      message: msg,
+      onConfirm: async () => {
+        try {
+          const res = await fetch('/api/dashboard/floor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'floor_delete', floorId: s.id }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.message || data.error || 'Failed to delete section');
+          }
+          flashMessage(`Section "${s.name}" deleted`);
+          await refreshFloorData();
+        } catch (err: any) {
+          alert(err.message || 'Error deleting section');
+        }
+      },
+    });
+  };
+
+  const handleOpenAddTable = (defaultFloorId?: string) => {
+    setEditingTable(null);
+    setTableForm({
+      label: `T${tableList.length + 1}`,
+      seats: 4,
+      floorId: defaultFloorId || (floorList[0]?.id ?? ''),
+      active: true,
+    });
+    setShowTableModal(true);
+  };
+
+  const handleOpenEditTable = (t: any) => {
+    setEditingTable(t);
+    setTableForm({
+      label: t.label || '',
+      seats: t.seats || 4,
+      floorId: t.floorId || '',
+      active: t.active !== false,
+    });
+    setShowTableModal(true);
+  };
+
+  const handleSaveTable = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const label = tableForm.label.trim();
+    if (!label) {
+      alert('Please enter a table label/number.');
+      return;
+    }
+    const seats = Number(tableForm.seats) || 2;
+    setTableSaving(true);
+    try {
+      const payload = editingTable
+        ? {
+            action: 'update',
+            id: editingTable.id,
+            label,
+            seats,
+            floorId: tableForm.floorId || null,
+            active: tableForm.active,
+          }
+        : {
+            action: 'create',
+            label,
+            seats,
+            floorId: tableForm.floorId || null,
+            active: tableForm.active,
+          };
+
+      const res = await fetch('/api/dashboard/floor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.message || data.error || 'Failed to save table');
+      }
+      flashMessage(editingTable ? `Table "${label}" updated` : `Table "${label}" created`);
+      setShowTableModal(false);
+      await refreshFloorData();
+    } catch (err: any) {
+      alert(err.message || 'Error saving table');
+    } finally {
+      setTableSaving(false);
+    }
+  };
+
+  const handleDeleteTable = (t: any) => {
+    setShowConfirmModal({
+      show: true,
+      title: `Delete Table "${t.label}"`,
+      message: `Are you sure you want to delete table "${t.label}"? If historical orders exist, it will be safely deactivated to preserve sales history.`,
+      onConfirm: async () => {
+        try {
+          const res = await fetch('/api/dashboard/floor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'delete', id: t.id }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.message || data.error || 'Failed to delete table');
+          }
+          flashMessage(data.deactivated ? `Table "${t.label}" deactivated (orders preserved)` : `Table "${t.label}" removed`);
+          await refreshFloorData();
+        } catch (err: any) {
+          alert(err.message || 'Error deleting table');
+        }
+      },
+    });
+  };
+
+  const handleMoveTable = async (tableId: string, newFloorId: string) => {
+    try {
+      const res = await fetch('/api/dashboard/floor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'assign', id: tableId, floorId: newFloorId || null }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.message || data.error || 'Failed to move table');
+      }
+      flashMessage('Table section updated');
+      await refreshFloorData();
+    } catch (err: any) {
+      alert(err.message || 'Error moving table');
+    }
+  };
+
+  const handleRegenerateQr = async (t: any) => {
+    if (!confirm(`Regenerate QR token for table "${t.label}"? Any previously printed QR code for this table will stop working.`)) {
+      return;
+    }
+    setQrRegenerating(true);
+    try {
+      const res = await fetch('/api/dashboard/floor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'regenerate', id: t.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.message || data.error || 'Failed to regenerate QR');
+      }
+      flashMessage(`QR token regenerated for ${t.label}`);
+      if (qrModalTable && qrModalTable.id === t.id && data.table) {
+        setQrModalTable({ ...qrModalTable, qrToken: data.table.qrToken });
+      }
+      await refreshFloorData();
+    } catch (err: any) {
+      alert(err.message || 'Error regenerating QR');
+    } finally {
+      setQrRegenerating(false);
+    }
+  };
+
+  const handlePrintTableQr = (table: any, sectionName?: string) => {
+    const printWin = window.open('', '_blank', 'width=650,height=800');
+    if (!printWin) {
+      alert('Pop-up blocked. Please allow pop-ups for printing.');
+      return;
+    }
+    const storeName = outlet?.name || 'Restaurant POS';
+    const qrUrl = tableQrImageUrl(table.qrToken, 600);
+    const orderUrl = tableOrderUrl(table.qrToken);
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Table QR - ${table.label}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #fdfaf5;
+            color: #1a1612;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 30px;
+          }
+          .standee-card {
+            background: #ffffff;
+            border: 3px solid #f59e0b;
+            border-radius: 28px;
+            padding: 40px 32px;
+            max-width: 440px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.08);
+          }
+          .brand {
+            font-size: 22px;
+            font-weight: 800;
+            color: #d97706;
+            letter-spacing: -0.5px;
+            margin-bottom: 4px;
+          }
+          .tagline {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #92400e;
+            margin-bottom: 24px;
+          }
+          .table-badge {
+            display: inline-block;
+            background: #fef3c7;
+            color: #92400e;
+            padding: 8px 24px;
+            border-radius: 9999px;
+            font-size: 26px;
+            font-weight: 900;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
+            border: 1px solid #fde68a;
+          }
+          .section-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #78716c;
+            margin-bottom: 24px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+          }
+          .qr-wrapper {
+            background: #ffffff;
+            border: 2px dashed #e5e7eb;
+            border-radius: 20px;
+            padding: 16px;
+            display: inline-block;
+            margin-bottom: 24px;
+            box-shadow: inset 0 2px 6px rgba(0,0,0,0.02);
+          }
+          .qr-wrapper img {
+            width: 250px;
+            height: 250px;
+            display: block;
+          }
+          .scan-prompt {
+            font-size: 18px;
+            font-weight: 800;
+            color: #111827;
+            margin-bottom: 6px;
+          }
+          .scan-subtext {
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.4;
+          }
+          .footer-url {
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid #f3f4f6;
+            font-size: 10px;
+            font-family: monospace;
+            color: #9ca3af;
+            word-break: break-all;
+          }
+          @media print {
+            body { background: transparent; padding: 0; }
+            .standee-card { box-shadow: none; border: 2px solid #000; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="standee-card">
+          <div class="brand">${storeName}</div>
+          <div class="tagline">Contactless Dining</div>
+          <div class="table-badge">Table ${table.label}</div>
+          <div class="section-label">${sectionName ? `${sectionName} Section` : 'Dine-In Area'} · ${table.seats} Seats</div>
+          <div class="qr-wrapper">
+            <img src="${qrUrl}" alt="Scan to Order - Table ${table.label}" />
+          </div>
+          <div class="scan-prompt">Scan with Camera to Order</div>
+          <div class="scan-subtext">Browse our digital menu, customize items, and place your order instantly.</div>
+          <div class="footer-url">${orderUrl}</div>
+        </div>
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 300);
+          };
+        </script>
+      </body>
+      </html>
+    `);
+    printWin.document.close();
+  };
 
   // ── Developer Mode & Multi-Step Gate States ──
   const [isDeveloperUnlocked, setIsDeveloperUnlocked] = useState<boolean>(false);
@@ -3272,29 +3682,41 @@ export default function SettingsCenter({
               {/* ── 5. FLOOR & QR CODES ── */}
               {activePanel === 'floor' && (
                 <div className="card p-5 sm:p-6 flex flex-col gap-6 bg-paper-2">
-                  <div className="border-b pb-3 border-line flex items-center gap-3">
-                    <Sparkles className="text-turmeric" size={24} />
-                    <div>
-                      <h2 className="text-xl font-bold font-display">Floor &amp; QR Branding</h2>
-                      <p className="text-xs text-ink-3">Manage physical table layouts, print QR labels, and configure dining sections.</p>
+                  <div className="border-b pb-3 border-line flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <Sparkles className="text-turmeric" size={24} />
+                      <div>
+                        <h2 className="text-xl font-bold font-display">Floor &amp; QR Branding</h2>
+                        <p className="text-xs text-ink-3">Manage physical table layouts, print QR labels, and configure dining sections.</p>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={refreshFloorData}
+                      disabled={floorBusy}
+                      title="Refresh sections and tables"
+                      className="btn py-1.5 px-3 bg-paper-3 border border-line text-xs font-semibold inline-flex items-center gap-1.5 text-ink-2 hover:text-ink cursor-pointer"
+                    >
+                      <RefreshCw size={13} className={floorBusy ? 'animate-spin' : ''} />
+                      <span>Sync</span>
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="card p-4 text-center bg-paper-3 flex flex-col justify-between">
                       <div>
-                        <h4 className="font-bold text-2xl font-mono text-turmeric-d">{floors.length}</h4>
+                        <h4 className="font-bold text-2xl font-mono text-turmeric-d">{floorList.length}</h4>
                         <b className="text-xs uppercase text-ink-3 mt-1 block">Sections</b>
                       </div>
-                      <span className="text-[10px] text-ink-3 mt-2 block border-t pt-2">e.g. Ground Floor, Rooftop</span>
+                      <span className="text-[10px] text-ink-3 mt-2 block border-t pt-2">e.g. TOP, Middle, Lower, Rooftop</span>
                     </div>
 
                     <div className="card p-4 text-center bg-paper-3 flex flex-col justify-between">
                       <div>
-                        <h4 className="font-bold text-2xl font-mono text-turmeric-d">{floorTables.length}</h4>
+                        <h4 className="font-bold text-2xl font-mono text-turmeric-d">{tableList.filter((t) => t.active !== false).length}</h4>
                         <b className="text-xs uppercase text-ink-3 mt-1 block">Active Tables</b>
                       </div>
-                      <span className="text-[10px] text-ink-3 mt-2 block border-t pt-2">Capacity tracking active</span>
+                      <span className="text-[10px] text-ink-3 mt-2 block border-t pt-2">Total configured: {tableList.length}</span>
                     </div>
 
                     <div className="card p-4 text-center bg-paper-3 flex flex-col justify-between">
@@ -3306,23 +3728,308 @@ export default function SettingsCenter({
                     </div>
                   </div>
 
-                  {/* Tables mapping and Floor assignments */}
-                  <div>
-                    <h3 className="font-bold text-sm mb-3">Sections &amp; Floor Setup</h3>
-                    <div className="divide-y divide-line border rounded-xl overflow-hidden bg-paper-3">
-                      {floors.map((f) => {
-                        const matchingTables = floorTables.filter(t => t.floorId === f.id);
-                        return (
-                          <div key={f.id} className="p-3.5 flex items-center justify-between text-xs">
-                            <div>
-                              <b className="text-sm block">{f.name}</b>
-                              <span className="text-ink-3">{matchingTables.length} Tables configured</span>
-                            </div>
-                            <span className="pill text-[10px] font-bold">Sort Index: {f.sort}</span>
-                          </div>
-                        );
-                      })}
+                  {floorError && (
+                    <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle size={15} className="shrink-0" />
+                        <span>{floorError}</span>
+                      </div>
+                      <button type="button" onClick={refreshFloorData} className="underline font-bold">
+                        Retry
+                      </button>
                     </div>
+                  )}
+
+                  {/* Sections & Floor Setup */}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-bold text-base font-display">Sections &amp; Floor Setup</h3>
+                        <p className="text-xs text-ink-3">Organize dining zones, assign tables, and generate QR identities.</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddTable()}
+                          className="btn py-2 px-3 bg-paper-3 border border-line text-ink font-bold text-xs rounded-xl shadow-xs hover:border-turmeric/50 inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus size={14} className="text-turmeric" />
+                          <span>Add Table</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleOpenAddSection}
+                          className="btn py-2 px-3 bg-turmeric text-[#2A1607] font-bold text-xs rounded-xl shadow-sm hover:brightness-105 inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus size={14} />
+                          <span>Add Section</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {floorBusy && floorList.length === 0 ? (
+                      <div className="p-10 text-center bg-paper-3 rounded-2xl border border-line">
+                        <RefreshCw size={24} className="animate-spin text-turmeric mx-auto mb-2" />
+                        <p className="text-xs text-ink-3">Loading sections &amp; tables…</p>
+                      </div>
+                    ) : floorList.length === 0 && tableList.length === 0 ? (
+                      <div className="p-10 text-center bg-paper-3 rounded-2xl border border-dashed border-line flex flex-col items-center gap-3">
+                        <Sparkles size={32} className="text-turmeric/60" />
+                        <div>
+                          <h4 className="font-bold text-sm text-ink">No dining sections configured yet</h4>
+                          <p className="text-xs text-ink-3 mt-1 max-w-md">
+                            Create your first dining section (e.g. TOP, Middle, Lower, Rooftop) to organize your tables and generate customer QR codes.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleOpenAddSection}
+                          className="btn py-2 px-4 bg-turmeric text-[#2A1607] font-bold text-xs rounded-xl shadow-sm mt-1"
+                        >
+                          + Create First Section
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-5">
+                        {floorList.map((f) => {
+                          const sectionTables = tableList.filter((t) => t.floorId === f.id);
+                          return (
+                            <div key={f.id} className="card p-5 bg-paper-3 border border-line rounded-2xl flex flex-col gap-4 shadow-xs">
+                              {/* Section Header */}
+                              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
+                                <div className="flex items-center gap-2.5">
+                                  <span className="w-3 h-3 rounded-full bg-turmeric/80" />
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-bold text-base font-display text-ink">{f.name}</h4>
+                                      <span className="pill text-[10px] font-bold">
+                                        {sectionTables.length} Table{sectionTables.length === 1 ? '' : 's'}
+                                      </span>
+                                    </div>
+                                    {f.description && (
+                                      <p className="text-xs text-ink-3 mt-0.5">{f.description}</p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAddTable(f.id)}
+                                    className="btn py-1 px-2.5 bg-paper-2 border border-line text-xs font-semibold rounded-lg inline-flex items-center gap-1 hover:border-turmeric/50"
+                                    title="Add table directly into this section"
+                                  >
+                                    <Plus size={12} className="text-turmeric" />
+                                    <span>Add Table</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditSection(f)}
+                                    className="btn py-1 px-2.5 bg-paper-2 border border-line text-xs font-semibold rounded-lg inline-flex items-center gap-1 hover:border-line-2"
+                                    title="Edit section details"
+                                  >
+                                    <Edit2 size={12} />
+                                    <span>Edit</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSection(f)}
+                                    className="btn py-1 px-2.5 bg-paper-2 border border-line text-xs font-semibold text-red-600 hover:bg-red-500/10 rounded-lg inline-flex items-center gap-1"
+                                    title="Delete section"
+                                  >
+                                    <Trash2 size={12} />
+                                    <span>Delete</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Tables in this Section */}
+                              {sectionTables.length === 0 ? (
+                                <div className="p-6 border border-dashed border-line rounded-xl text-center flex flex-col items-center justify-center gap-2 bg-paper-2/50">
+                                  <p className="text-xs text-ink-3">No tables in this section yet.</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAddTable(f.id)}
+                                    className="btn py-1 px-3 bg-paper-2 border border-line text-xs font-semibold rounded-lg inline-flex items-center gap-1 text-ink-2 hover:text-ink"
+                                  >
+                                    <Plus size={12} className="text-turmeric" />
+                                    <span>Add Table to {f.name}</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                  {sectionTables.map((t) => (
+                                    <div
+                                      key={t.id}
+                                      className="bg-paper-2 border border-line rounded-xl p-3.5 flex flex-col justify-between gap-3 shadow-xs hover:border-turmeric/50 transition-colors"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-display font-bold text-lg text-ink">{t.label}</span>
+                                        </div>
+                                        {t.active !== false ? (
+                                          <span className="pill text-[10px] font-bold bg-green-500/15 text-green-700 dark:text-green-300 border border-green-500/30">
+                                            Active
+                                          </span>
+                                        ) : (
+                                          <span className="pill text-[10px] font-bold bg-gray-500/15 text-gray-500 border border-gray-500/30">
+                                            Disabled
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex flex-col gap-2 text-xs text-ink-2">
+                                        <div className="flex items-center gap-1.5">
+                                          <Users size={13} className="text-ink-3 shrink-0" />
+                                          <span>Capacity: <strong className="text-ink">{t.seats}</strong></span>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-[10px] font-bold uppercase text-ink-3">Move:</span>
+                                          <select
+                                            value={t.floorId || ''}
+                                            onChange={(e) => handleMoveTable(t.id, e.target.value)}
+                                            className="bg-paper-3 border border-line rounded-lg px-2 py-1 text-xs outline-none flex-1 font-medium text-ink cursor-pointer hover:border-line-2"
+                                            title="Quickly move table to another section"
+                                          >
+                                            {floorList.map((fl) => (
+                                              <option key={fl.id} value={fl.id}>{fl.name}</option>
+                                            ))}
+                                            <option value="">Unassigned</option>
+                                          </select>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center justify-end gap-1.5 border-t border-line/60 pt-2.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => setQrModalTable(t)}
+                                          className="btn btn-sm py-1 px-2 bg-paper-3 border border-line text-xs font-semibold rounded-lg inline-flex items-center gap-1 hover:border-turmeric/50"
+                                          title="View QR Code, print standee, or copy customer link"
+                                        >
+                                          <QrCode size={12} className="text-turmeric" />
+                                          <span>QR</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenEditTable(t)}
+                                          className="btn btn-sm py-1 px-2 bg-paper-3 border border-line text-xs font-semibold rounded-lg inline-flex items-center gap-1 hover:border-line-2"
+                                          title="Edit table"
+                                        >
+                                          <Edit2 size={12} />
+                                          <span>Edit</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteTable(t)}
+                                          className="btn btn-sm py-1 px-2 bg-paper-3 border border-line text-xs font-semibold text-red-600 hover:bg-red-500/10 rounded-lg inline-flex items-center gap-1"
+                                          title="Delete table"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Unassigned Tables Group */}
+                        {(() => {
+                          const floorIds = new Set(floorList.map((fl) => fl.id));
+                          const unassigned = tableList.filter((t) => !t.floorId || !floorIds.has(t.floorId));
+                          if (unassigned.length === 0) return null;
+                          return (
+                            <div className="card p-5 bg-paper-3 border border-line rounded-2xl flex flex-col gap-4 shadow-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
+                                <div className="flex items-center gap-2.5">
+                                  <span className="w-3 h-3 rounded-full bg-gray-400" />
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-bold text-base font-display text-ink">Unassigned Tables</h4>
+                                      <span className="pill text-[10px] font-bold">
+                                        {unassigned.length} Table{unassigned.length === 1 ? '' : 's'}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-ink-3 mt-0.5">Tables not assigned to any specific section.</p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                {unassigned.map((t) => (
+                                  <div
+                                    key={t.id}
+                                    className="bg-paper-2 border border-line rounded-xl p-3.5 flex flex-col justify-between gap-3 shadow-xs hover:border-turmeric/50 transition-colors"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-display font-bold text-lg text-ink">{t.label}</span>
+                                      {t.active !== false ? (
+                                        <span className="pill text-[10px] font-bold bg-green-500/15 text-green-700 dark:text-green-300 border border-green-500/30">
+                                          Active
+                                        </span>
+                                      ) : (
+                                        <span className="pill text-[10px] font-bold bg-gray-500/15 text-gray-500 border border-gray-500/30">
+                                          Disabled
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="flex flex-col gap-2 text-xs text-ink-2">
+                                      <div className="flex items-center gap-1.5">
+                                        <Users size={13} className="text-ink-3 shrink-0" />
+                                        <span>Capacity: <strong className="text-ink">{t.seats}</strong></span>
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] font-bold uppercase text-ink-3">Assign:</span>
+                                        <select
+                                          value={t.floorId || ''}
+                                          onChange={(e) => handleMoveTable(t.id, e.target.value)}
+                                          className="bg-paper-3 border border-line rounded-lg px-2 py-1 text-xs outline-none flex-1 font-medium text-ink cursor-pointer hover:border-line-2"
+                                        >
+                                          <option value="">Unassigned</option>
+                                          {floorList.map((fl) => (
+                                            <option key={fl.id} value={fl.id}>{fl.name}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-1.5 border-t border-line/60 pt-2.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setQrModalTable(t)}
+                                        className="btn btn-sm py-1 px-2 bg-paper-3 border border-line text-xs font-semibold rounded-lg inline-flex items-center gap-1 hover:border-turmeric/50"
+                                      >
+                                        <QrCode size={12} className="text-turmeric" />
+                                        <span>QR</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditTable(t)}
+                                        className="btn btn-sm py-1 px-2 bg-paper-3 border border-line text-xs font-semibold rounded-lg inline-flex items-center gap-1 hover:border-line-2"
+                                      >
+                                        <Edit2 size={12} />
+                                        <span>Edit</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteTable(t)}
+                                        className="btn btn-sm py-1 px-2 bg-paper-3 border border-line text-xs font-semibold text-red-600 hover:bg-red-500/10 rounded-lg inline-flex items-center gap-1"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -7655,6 +8362,277 @@ export default function SettingsCenter({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── SECTION MODAL (ADD / EDIT) ── */}
+      {showSectionModal && (
+        <div className="fixed inset-0 scrim z-[9920] flex items-center justify-center p-4">
+          <div className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-md w-full p-6 animate-pop flex flex-col gap-4">
+            <div className="flex items-center justify-between pb-3 border-b border-line">
+              <h3 className="font-bold text-base flex items-center gap-2 text-ink">
+                <Sparkles className="text-turmeric shrink-0" size={18} />
+                {editingSection ? 'Edit Dining Section' : 'Add Dining Section'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowSectionModal(false)}
+                className="text-ink-3 hover:text-ink p-1 rounded-lg cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSection} className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-semibold text-ink-2 block mb-1.5">
+                  Section Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={sectionForm.name}
+                  onChange={(e) => setSectionForm({ ...sectionForm, name: e.target.value })}
+                  placeholder="e.g. TOP, Middle, Lower, Rooftop, Indoor AC"
+                  required
+                  autoFocus
+                  maxLength={30}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-line bg-paper-2 text-ink text-xs outline-none focus:border-turmeric"
+                />
+                <span className="text-[10px] text-ink-3 mt-1 block">Visible to staff and in floor map filters.</span>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-ink-2 block mb-1.5">
+                  Description <span className="text-ink-3 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={sectionForm.description}
+                  onChange={(e) => setSectionForm({ ...sectionForm, description: e.target.value })}
+                  placeholder="e.g. Rooftop dining area with scenic view"
+                  maxLength={100}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-line bg-paper-2 text-ink text-xs outline-none focus:border-turmeric"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-line">
+                <button
+                  type="button"
+                  onClick={() => setShowSectionModal(false)}
+                  disabled={sectionSaving}
+                  className="px-3.5 py-2 border border-line bg-paper-2 hover:bg-paper rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={sectionSaving}
+                  className="px-4 py-2 bg-turmeric text-[#2A1607] font-bold text-xs rounded-xl shadow-sm hover:brightness-105 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  {sectionSaving ? 'Saving…' : editingSection ? 'Update Section' : 'Create Section'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── TABLE MODAL (ADD / EDIT) ── */}
+      {showTableModal && (
+        <div className="fixed inset-0 scrim z-[9920] flex items-center justify-center p-4">
+          <div className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-md w-full p-6 animate-pop flex flex-col gap-4">
+            <div className="flex items-center justify-between pb-3 border-b border-line">
+              <h3 className="font-bold text-base flex items-center gap-2 text-ink">
+                <Sparkles className="text-turmeric shrink-0" size={18} />
+                {editingTable ? `Edit Table ${editingTable.label}` : 'Add Table'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowTableModal(false)}
+                className="text-ink-3 hover:text-ink p-1 rounded-lg cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTable} className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-semibold text-ink-2 block mb-1.5">
+                  Table Name / Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={tableForm.label}
+                  onChange={(e) => setTableForm({ ...tableForm, label: e.target.value })}
+                  placeholder="e.g. T1, T2, Table 5, Rooftop 1"
+                  required
+                  autoFocus
+                  maxLength={20}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-line bg-paper-2 text-ink text-xs outline-none focus:border-turmeric font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-ink-2 block mb-1.5">
+                  Assigned Section
+                </label>
+                <select
+                  value={tableForm.floorId}
+                  onChange={(e) => setTableForm({ ...tableForm, floorId: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-line bg-paper-2 text-ink text-xs outline-none focus:border-turmeric cursor-pointer"
+                >
+                  <option value="">Unassigned (No specific section)</option>
+                  {floorList.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-ink-3 mt-1 block">Grouped in floor map under this section.</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-ink-2 block mb-1.5">
+                    Capacity (Seats) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={tableForm.seats}
+                    onChange={(e) => setTableForm({ ...tableForm, seats: Math.max(1, parseInt(e.target.value) || 1) })}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-line bg-paper-2 text-ink text-xs outline-none focus:border-turmeric font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-ink-2 block mb-1.5">
+                    Table Status
+                  </label>
+                  <select
+                    value={tableForm.active ? 'active' : 'disabled'}
+                    onChange={(e) => setTableForm({ ...tableForm, active: e.target.value === 'active' })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-line bg-paper-2 text-ink text-xs outline-none focus:border-turmeric cursor-pointer"
+                  >
+                    <option value="active">Active (Available)</option>
+                    <option value="disabled">Disabled (Hidden)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-line">
+                <button
+                  type="button"
+                  onClick={() => setShowTableModal(false)}
+                  disabled={tableSaving}
+                  className="px-3.5 py-2 border border-line bg-paper-2 hover:bg-paper rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={tableSaving}
+                  className="px-4 py-2 bg-turmeric text-[#2A1607] font-bold text-xs rounded-xl shadow-sm hover:brightness-105 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  {tableSaving ? 'Saving…' : editingTable ? 'Save Table' : 'Create Table'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── TABLE QR MODAL (VIEW / DOWNLOAD / PRINT / REGENERATE) ── */}
+      {qrModalTable && (
+        <div className="fixed inset-0 scrim z-[9920] flex items-center justify-center p-4">
+          <div className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-md w-full p-6 animate-pop flex flex-col gap-4">
+            <div className="flex items-center justify-between pb-3 border-b border-line">
+              <div>
+                <h3 className="font-bold text-base flex items-center gap-2 text-ink font-display">
+                  <QrCode className="text-turmeric shrink-0" size={20} />
+                  Table {qrModalTable.label} QR Code
+                </h3>
+                <span className="text-[11px] text-ink-3">
+                  {floorList.find((f) => f.id === qrModalTable.floorId)?.name || 'Dine-In Area'} · {qrModalTable.seats} Seats · {qrModalTable.active !== false ? 'Active' : 'Disabled'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setQrModalTable(null); setQrCopied(false); }}
+                className="text-ink-3 hover:text-ink p-1 rounded-lg cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="flex flex-col items-center gap-3 py-2">
+              <div className="p-3 bg-white rounded-2xl border border-line shadow-inner">
+                <img
+                  src={tableQrImageUrl(qrModalTable.qrToken, 360)}
+                  alt={`QR code for Table ${qrModalTable.label}`}
+                  width={200}
+                  height={200}
+                  className="block rounded-lg"
+                />
+              </div>
+
+              <div className="w-full bg-paper-2 border border-line rounded-xl p-2.5 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-mono text-ink-2 truncate select-all flex-1">
+                  {tableOrderUrl(qrModalTable.qrToken)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(tableOrderUrl(qrModalTable.qrToken));
+                    setQrCopied(true);
+                    setTimeout(() => setQrCopied(false), 2000);
+                  }}
+                  className="btn btn-sm py-1 px-2.5 bg-paper-3 border border-line text-xs font-semibold rounded-lg inline-flex items-center gap-1 hover:border-turmeric/50 shrink-0 cursor-pointer"
+                >
+                  {qrCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} />}
+                  <span>{qrCopied ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-line">
+              <button
+                type="button"
+                disabled={qrRegenerating}
+                onClick={() => handleRegenerateQr(qrModalTable)}
+                className="btn py-2 px-3 border border-line bg-paper-2 hover:bg-paper rounded-xl text-xs font-semibold text-ink-3 hover:text-ink inline-flex items-center gap-1 cursor-pointer"
+                title="Regenerate QR token (will invalidate previously printed QR codes)"
+              >
+                <RefreshCw size={12} className={qrRegenerating ? 'animate-spin' : ''} />
+                <span>Regenerate Token</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href={tableQrImageUrl(qrModalTable.qrToken, 800)}
+                  download={`qr-table-${qrModalTable.label}.png`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn py-2 px-3 bg-paper-2 border border-line hover:border-turmeric/50 text-ink font-semibold rounded-xl text-xs inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Download size={13} />
+                  <span>Download PNG</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sec = floorList.find((f) => f.id === qrModalTable.floorId);
+                    handlePrintTableQr(qrModalTable, sec?.name);
+                  }}
+                  className="btn py-2 px-3.5 bg-turmeric text-[#2A1607] font-bold text-xs rounded-xl shadow-sm hover:brightness-105 inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer size={13} />
+                  <span>Print Standee</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

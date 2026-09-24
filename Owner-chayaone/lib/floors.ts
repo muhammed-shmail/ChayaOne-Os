@@ -15,7 +15,9 @@
 export interface Floor {
   id: string;
   name: string;
+  description?: string;
   sort: number;
+  active?: boolean;
 }
 
 /** Read & normalize the floor list from Outlet.settings.floors. Never throws. */
@@ -27,7 +29,15 @@ export function readFloors(settings: unknown): Floor[] {
       const o = f as Record<string, unknown>;
       if (!o || typeof o.id !== 'string' || typeof o.name !== 'string') return null;
       const sort = Number(o.sort);
-      return { id: o.id, name: o.name, sort: Number.isFinite(sort) ? sort : i };
+      const description = typeof o.description === 'string' ? o.description.trim() : undefined;
+      const active = typeof o.active === 'boolean' ? o.active : true;
+      return {
+        id: o.id,
+        name: o.name,
+        description,
+        sort: Number.isFinite(sort) ? sort : i,
+        active,
+      };
     })
     .filter((f): f is Floor => f !== null)
     .sort((a, b) => a.sort - b.sort);
@@ -42,4 +52,11 @@ export function readTableFloors(settings: unknown): Record<string, string> {
     if (typeof v === 'string' && v) out[k] = v;
   }
   return out;
+}
+
+/** Read the list of disabled/inactive table IDs from Outlet.settings. Never throws. */
+export function readDisabledTables(settings: unknown): string[] {
+  const raw = (settings as { disabledTables?: unknown } | null)?.disabledTables;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((id): id is string => typeof id === 'string' && id.length > 0);
 }

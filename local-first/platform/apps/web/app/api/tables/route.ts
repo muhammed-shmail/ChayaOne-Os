@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
 import { getActiveOutlet } from '@/lib/context';
+import { readFloors, readTableFloors, readDisabledTables } from '@/lib/floors';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/tables — floor map for the active outlet, with live occupancy.
+ * GET /api/tables — floor map for the active outlet, with live occupancy and sections.
  * A table is "occupied" while it has an active dine-in order that hasn't been
  * settled or cancelled (i.e. right up until the bill is paid).
  */
@@ -15,16 +16,25 @@ export async function GET() {
     prisma.tableMap.findMany({
       where: { outletId: outlet.id },
       orderBy: { label: 'asc' },
-      select: { id: true, label: true, seats: true, state: true },
+      select: { id: true, label: true, seats: true, state: true, qrToken: true },
     }),
     prisma.order.findMany({
-      // occupied = active dine-in order that hasn't been paid: not settled by the
-      // dashboard (status) nor charged at the till (settledAt), and not cancelled.
-      where: { outletId: outlet.id, tableId: { not: null }, type: 'dine_in', status: { in: ['open', 'in_kitchen', 'ready', 'served'] }, settledAt: null },
+      where: {
+        outletId: outlet.id,
+        tableId: { not: null },
+        type: 'dine_in',
+        status: { in: ['open', 'in_kitchen', 'ready', 'served'] },
+        settledAt: null,
+      },
       orderBy: { placedAt: 'asc' },
       select: { id: true, tableId: true, number: true, placedAt: true, totalPaise: true, status: true },
     }),
   ]);
+
+  const settings = (outlet.settings as Record<string, unknown>) ?? {};
+  const floors = readFloors(settings);
+  const tableFloors = readTableFloors(settings);
+  const disabledTables = readDisabledTables(settings);
 
   // fold the active orders into a per-table occupancy summary
   const occMap = new Map<string, { id: string; orderId: string; number: number; sinceMs: number; billPaise: number; orders: number; status: string }>();
@@ -34,7 +44,7 @@ export async function GET() {
     if (cur) {
       cur.billPaise += o.totalPaise;
       cur.orders += 1;
-      cur.status = o.status; // latest (orders are asc, so this ends on the newest)
+      cur.status = o.status;
       cur.id = o.id;
       cur.orderId = o.id;
     } else {
@@ -43,5 +53,15 @@ export async function GET() {
   }
 
   const occupied = Object.fromEntries(occMap);
-  return NextResponse.json({ tables, occupied });
+  const tableDtos = tables.map((t) => ({
+    id: t.id,
+    label: t.label,
+    seats: t.seats,
+    state: t.state,
+    qrToken: t.qrToken,
+    floorId: tableFloors[t.id] ?? null,
+    active: !disabledTables.includes(t.id),
+  }));
+
+  return NextResponse.json({ tables: tableDtos, floors, occupied });
 }
