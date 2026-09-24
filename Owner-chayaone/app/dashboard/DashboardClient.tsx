@@ -1592,7 +1592,7 @@ export default function DashboardClient({
         body: JSON.stringify(payload),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok && Array.isArray(d.kitchens)) { setKitchens(d.kitchens); flashMessage(okMsg); return true; }
+      if (res.ok && Array.isArray(d.kitchens)) { setKitchens(d.kitchens); flashMessage(okMsg); router.refresh(); return true; }
       flashMessage(KITCHEN_ERR[d.error as string] ?? `Could not save (${d.error ?? 'error'})`);
       return false;
     } catch (err) { console.error(err); flashMessage('Network error'); return false; }
@@ -1608,6 +1608,7 @@ export default function DashboardClient({
     if (await kitchenApi({ action: 'kitchen_rename', id, name: editKitchenName.trim() }, 'Kitchen renamed')) setEditKitchenId(null);
   };
   const handleDeleteKitchen = (k: Kitchen) => {
+    if (kitchenBusy) return;
     if (!window.confirm(`Delete kitchen “${k.name}”? Items routed here keep their tag until you reassign them.`)) return;
     kitchenApi({ action: 'kitchen_delete', id: k.id }, `Kitchen “${k.name}” deleted`);
   };
@@ -1739,15 +1740,15 @@ export default function DashboardClient({
     } catch (err) { console.error(err); }
   };
 
-  const handleDeleteDevice = async (id: string, name: string) => {
-    if (!window.confirm(`Remove “${name}”?`)) return;
+  const handleDeleteDevice = async (id: string, name: string, skipConfirm = false) => {
+    if (!skipConfirm && !window.confirm(`Remove “${name}”?`)) return;
     try {
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'device_delete', id }),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok) { flashMessage('Device removed'); setDevices(d.devices ?? []); }
+      if (res.ok) { flashMessage('Device removed'); setDevices(d.devices ?? []); router.refresh(); }
       else flashMessage('Could not remove device');
     } catch (err) { console.error(err); }
   };
@@ -4198,7 +4199,7 @@ export default function DashboardClient({
                             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: k.color ?? 'var(--turmeric)' }} />
                             {k.name}
                             <button onClick={() => { setEditKitchenId(k.id); setEditKitchenName(k.name); }} className="text-xs text-ink-3 hover:text-ink" title="Rename" aria-label={`Rename ${k.name}`}>✎</button>
-                            <button onClick={() => handleDeleteKitchen(k)} className="text-xs" style={{ color: 'var(--clay)' }} title="Delete" aria-label={`Delete ${k.name}`}>🗑</button>
+                            <button onClick={() => handleDeleteKitchen(k)} disabled={kitchenBusy} className="text-xs disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: 'var(--clay)' }} title="Delete" aria-label={`Delete ${k.name}`}>🗑</button>
                           </span>
                         ))}
                       </div>
