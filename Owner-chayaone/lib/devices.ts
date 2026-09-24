@@ -42,6 +42,11 @@ export interface Device {
   copies: number;
   /** the default device for its type */
   isDefault: boolean;
+  /** Live / persisted health status tracking */
+  lastKnownStatus?: 'ONLINE' | 'UNREACHABLE' | 'CHECKING' | 'DISABLED' | 'NOT_CONFIGURED' | 'ERROR';
+  lastCheckedAt?: string | null;
+  lastLatencyMs?: number | null;
+  lastError?: string | null;
 }
 
 const TYPE_VALUES = DEVICE_TYPES.map((t) => t.value) as readonly string[];
@@ -63,6 +68,11 @@ export function readDevices(settings: unknown): Device[] {
       const port = o.port ? String(o.port) : (target.split(':')[1] || '9100');
       const priority = o.priority === 'backup' ? 'backup' : 'primary';
       const kotRule = o.kotRule === 'all_items' ? 'all_items' : o.kotRule === 'custom' ? 'custom' : 'station_only';
+      const lastKnownStatus = typeof o.lastKnownStatus === 'string' ? (o.lastKnownStatus as Device['lastKnownStatus']) : undefined;
+      const lastCheckedAt = typeof o.lastCheckedAt === 'string' ? o.lastCheckedAt : null;
+      const lastLatencyMs = typeof o.lastLatencyMs === 'number' ? o.lastLatencyMs : null;
+      const lastError = typeof o.lastError === 'string' ? o.lastError : null;
+
       return {
         id: o.id,
         name: o.name,
@@ -76,6 +86,10 @@ export function readDevices(settings: unknown): Device[] {
         kotRule,
         copies: Number.isFinite(copies) && copies >= 1 ? Math.min(5, Math.round(copies)) : 1,
         isDefault: !!o.isDefault,
+        lastKnownStatus,
+        lastCheckedAt,
+        lastLatencyMs,
+        lastError,
       };
     })
     .filter((d): d is Device => d !== null);

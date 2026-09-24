@@ -10,6 +10,7 @@ import { normalizeLocationInput } from '@/lib/geo';
 import { readKitchens, kitchenSlug, KITCHEN_NAME_MAX, KITCHEN_PALETTE, type Kitchen } from '@/lib/kitchens';
 import { readKitchenWorkflow, normalizeKitchenWorkflowInput } from '@/lib/kitchenWorkflow';
 import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
+import { printerHealthCheck, checkAllPrintersHealth, parsePrinterEndpoint } from '@/lib/print/health';
 import { getModuleStatePayload, setModuleConfig, getModuleConfig } from '@/lib/modules';
 import { publishLocalRealtimeEvent } from '@/lib/realtime';
 
@@ -268,9 +269,27 @@ export async function POST(req: NextRequest) {
     const type = TYPE_VALUES.includes(d.type) ? d.type : 'receipt_printer';
     const connection = CONN_VALUES.includes(d.connection) ? d.connection : 'network';
     const copies = Number(d.copies);
-    const ip = typeof d.ip === 'string' && d.ip ? d.ip.trim() : String(d.target ?? '').split(':')[0]?.trim() || '';
-    const port = d.port ? String(d.port).trim() : (String(d.target ?? '').split(':')[1] || '9100');
-    const target = String(d.target ?? '').trim() || (ip ? `${ip}:${port}` : '');
+
+    // Robust parsing of IP and Port
+    let rawIp = typeof d.ip === 'string' && d.ip ? d.ip.trim() : '';
+    let rawPort = d.port !== undefined && d.port !== null ? String(d.port).trim() : '';
+    let rawTarget = String(d.target ?? '').trim();
+
+    // If IP contains a port delimiter (e.g. user entered 192.168.220.53:9100 in the IP box)
+    if (rawIp.includes(':')) {
+      const parts = rawIp.split(':');
+      rawIp = parts[0]?.trim() || '';
+      if (!rawPort && parts[1]) rawPort = parts[1].trim();
+    }
+    if (!rawIp && rawTarget) {
+      const parts = rawTarget.split(':');
+      rawIp = parts[0]?.trim() || '';
+      if (!rawPort && parts[1]) rawPort = parts[1].trim();
+    }
+
+    const portNum = parseInt(rawPort || '9100', 10);
+    const validPort = !isNaN(portNum) && portNum >= 1 && portNum <= 65535 ? String(portNum) : '9100';
+    const target = rawIp ? `${rawIp}:${validPort}` : rawTarget;
     const priority = d.priority === 'backup' ? 'backup' : 'primary';
     const kotRule = d.kotRule === 'all_items' ? 'all_items' : d.kotRule === 'custom' ? 'custom' : 'station_only';
 
@@ -280,14 +299,28 @@ export async function POST(req: NextRequest) {
       type,
       connection,
       target,
-      ip: ip || null,
-      port: port || '9100',
+      ip: rawIp || null,
+      port: validPort,
       station: (type === 'kot_printer' || type === 'display') && d.station ? String(d.station).trim() : null,
       priority,
       kotRule,
       copies: Number.isFinite(copies) && copies >= 1 ? Math.min(5, Math.round(copies)) : 1,
       isDefault: !!d.isDefault,
+      lastKnownStatus: typeof d.lastKnownStatus === 'string' ? d.lastKnownStatus : undefined,
+      lastCheckedAt: typeof d.lastCheckedAt === 'string' ? d.lastCheckedAt : null,
+      lastLatencyMs: typeof d.lastLatencyMs === 'number' ? d.lastLatencyMs : null,
+      lastError: typeof d.lastError === 'string' ? d.lastError : null,
     };
+
+    console.log('[PRINTER:API] Saving device registry entry', {
+      id: entry.id,
+      name: entry.name,
+      target: entry.target,
+      ip: entry.ip,
+      port: entry.port,
+      connection: entry.connection,
+      station: entry.station,
+    });
 
     const current = readDevices((await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } }))?.settings);
     const idx = current.findIndex((x) => x.id === entry.id);
@@ -320,38 +353,87 @@ export async function POST(req: NextRequest) {
 
   if (body.action === 'device_test_connection') {
     const rawTarget = String(body.target || '').trim();
-    const rawIp = String(body.ip || '').trim();
-    const ip = rawIp || rawTarget.split(':')[0]?.trim() || '';
-    const port = parseInt(String(body.port || rawTarget.split(':')[1] || '9100').trim(), 10) || 9100;
+    const rawIp = String(body.ip || body.host || '').trim();
+    const rawPort = body.port !== undefined ? body.port : undefined;
+    const printerId = body.id || body.printerId || null;
+    const name = body.name || 'Printer';
 
-    if (!ip) return NextResponse.json({ error: 'missing_ip', reachable: false, message: 'IP address is required.' }, { status: 400 });
-
-    const reachable = await new Promise<boolean>((resolve) => {
-      const socket = new net.Socket();
-      socket.setTimeout(2500);
-      socket.on('connect', () => {
-        socket.destroy();
-        resolve(true);
-      });
-      socket.on('error', () => {
-        socket.destroy();
-        resolve(false);
-      });
-      socket.on('timeout', () => {
-        socket.destroy();
-        resolve(false);
-      });
-      socket.connect(port, ip);
+    console.log('[PRINTER:API] Received printer test request', {
+      printerId,
+      name,
+      ip: rawIp,
+      port: rawPort,
+      target: rawTarget,
     });
+
+    const result = await printerHealthCheck({
+      host: rawIp,
+      port: rawPort,
+      target: rawTarget,
+      printerId,
+      name,
+      timeoutMs: 2500,
+    });
+
+    console.log('[PRINTER:API] Responding to test request', {
+      status: result.status,
+      reachable: result.success,
+      latencyMs: result.latencyMs,
+      errorCode: result.errorCode,
+    });
+
+    // Optionally update device's lastKnownStatus in database if registered printerId is supplied
+    if (result.printerId) {
+      try {
+        const current = readDevices((await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } }))?.settings);
+        const idx = current.findIndex((x) => x.id === result.printerId);
+        const targetDev = current[idx];
+        if (targetDev) {
+          targetDev.lastKnownStatus = result.status;
+          targetDev.lastCheckedAt = result.checkedAt;
+          targetDev.lastLatencyMs = result.latencyMs;
+          targetDev.lastError = result.errorCode;
+          await saveDevices(session.outletId, current);
+        }
+      } catch (err) {
+        console.warn('[PRINTER:API] Could not persist device lastKnownStatus:', err);
+      }
+    }
 
     return NextResponse.json({
       ok: true,
-      reachable,
-      ip,
-      port,
-      message: reachable
-        ? `✓ Printer reachable at ${ip}:${port} (TCP 9100 active)`
-        : `✕ Printer unreachable at ${ip}:${port} (Connection timed out / refused)`
+      reachable: result.success,
+      ...result,
+    });
+  }
+
+  if (body.action === 'device_health_check_all') {
+    console.log('[PRINTER:API] Received batch health check request for outlet', session.outletId);
+    const current = readDevices((await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } }))?.settings);
+    const results = await checkAllPrintersHealth(current);
+
+    // Persist live statuses back into DB
+    let changed = false;
+    for (const r of results) {
+      if (r.printerId) {
+        const dev = current.find((d) => d.id === r.printerId);
+        if (dev) {
+          dev.lastKnownStatus = r.status;
+          dev.lastCheckedAt = r.checkedAt;
+          dev.lastLatencyMs = r.latencyMs;
+          dev.lastError = r.errorCode;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      await saveDevices(session.outletId, current).catch(() => {});
+    }
+
+    return NextResponse.json({
+      ok: true,
+      devices: current,
+      results,
     });
   }
 
@@ -360,6 +442,49 @@ export async function POST(req: NextRequest) {
     const stationName = String(d.station || body.station || 'kitchen').trim();
     const printerName = String(d.name || body.name || 'Kitchen Printer 01').trim();
     const printerId = typeof d.id === 'string' ? d.id : null;
+
+    console.log('[PRINTER:API] Received Print Test request', {
+      printerId,
+      printerName,
+      stationName,
+      target: d.target,
+      ip: d.ip,
+      port: d.port,
+    });
+
+    // 1. Resolve printer target host & port
+    const endpoint = parsePrinterEndpoint({
+      host: d.ip,
+      port: d.port,
+      target: d.target,
+    });
+
+    // 2. Preflight TCP connection test before queuing print!
+    if (endpoint.isValid) {
+      const preflight = await printerHealthCheck({
+        host: endpoint.host,
+        port: endpoint.port,
+        printerId,
+        name: printerName,
+        timeoutMs: 2500,
+      });
+
+      if (!preflight.success) {
+        console.error('[PRINTER:PRINT_TEST] Preflight check failed! Printer is unreachable:', preflight);
+        return NextResponse.json(
+          {
+            ok: false,
+            reachable: false,
+            status: preflight.status,
+            errorCode: preflight.errorCode,
+            message: `Print Test aborted: Printer "${printerName}" is unreachable at ${preflight.host}:${preflight.port} (${preflight.errorMessage || preflight.message})`,
+            error: preflight.errorMessage,
+          },
+          { status: 503 }
+        );
+      }
+      console.log(`[PRINTER:PRINT_TEST] Preflight check passed for ${printerName} (${preflight.latencyMs}ms). Proceeding to print.`);
+    }
 
     const job = await prisma.$transaction(async (tx) => {
       return await createPrintJob(tx, {
@@ -378,12 +503,28 @@ export async function POST(req: NextRequest) {
           items: [
             { name: `[TEST KOT] ${printerName}`, qty: 1, notes: 'ChayaOne Diagnostic Test Print' }
           ]
-        }
+        },
+        priority: 100,
       });
     });
 
-    processPrintQueueBatch().catch(() => {});
-    return NextResponse.json({ ok: true, job, message: `Test KOT dispatched to queue for ${printerName} (${stationName}).` });
+    const queueRes = await processPrintQueueBatch().catch((err) => {
+      console.error('[PRINTER:PRINT_TEST] Error processing print queue batch:', err);
+      return { processed: 0, printed: 0, failed: 1 };
+    });
+
+    const success = queueRes.printed > 0 || (queueRes.processed > 0 && queueRes.failed === 0);
+
+    return NextResponse.json({
+      ok: success,
+      reachable: true,
+      status: success ? 'ONLINE' : 'ERROR',
+      jobId: job.id,
+      message: success
+        ? `✓ Test KOT successfully printed to ${printerName} (${endpoint.host || 'LAN'}:${endpoint.port || 9100}).`
+        : `✕ Test KOT dispatched but print processing failed. Check printer paper and spooler.`,
+      queueRes,
+    });
   }
 
   // ---- kitchens / prep stations (stored in Outlet.settings.kitchens) ----

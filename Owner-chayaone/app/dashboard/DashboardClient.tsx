@@ -1370,7 +1370,7 @@ export default function DashboardClient({
 
   // Devices & printers (Settings → Devices)
   const [devices, setDevices] = useState<Device[]>([]);
-  const blankDevice = { id: '', name: '', type: 'receipt_printer', connection: 'network', target: '', station: 'kitchen', copies: '1', isDefault: false };
+  const blankDevice = { id: '', name: '', type: 'receipt_printer', connection: 'network', target: '', ip: '', port: '9100', station: 'kitchen', copies: '1', isDefault: false };
   const [deviceForm, setDeviceForm] = useState<typeof blankDevice>({ ...blankDevice });
   const [showDeviceForm, setShowDeviceForm] = useState(false);
 
@@ -1707,7 +1707,19 @@ export default function DashboardClient({
 
   const openDeviceForm = (dev?: Device) => {
     if (dev) {
-      setDeviceForm({ id: dev.id, name: dev.name, type: dev.type, connection: dev.connection, target: dev.target, station: dev.station ?? 'kitchen', copies: String(dev.copies), isDefault: dev.isDefault });
+      const parts = (dev.target || '').split(':');
+      setDeviceForm({
+        id: dev.id,
+        name: dev.name,
+        type: dev.type,
+        connection: dev.connection,
+        target: dev.target,
+        ip: dev.ip || parts[0] || '',
+        port: dev.port ? String(dev.port) : parts[1] || '9100',
+        station: dev.station ?? 'kitchen',
+        copies: String(dev.copies),
+        isDefault: dev.isDefault,
+      });
     } else {
       setDeviceForm({ ...blankDevice });
     }
@@ -1718,6 +1730,11 @@ export default function DashboardClient({
     e.preventDefault();
     if (!deviceForm.name.trim()) { flashMessage('Enter a device name'); return; }
     try {
+      const parts = (deviceForm.target || '').split(':');
+      const ip = (deviceForm as any).ip || parts[0] || '';
+      const port = (deviceForm as any).port || parts[1] || '9100';
+      const target = ip ? `${ip}:${port}` : deviceForm.target.trim();
+
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -1727,7 +1744,9 @@ export default function DashboardClient({
             name: deviceForm.name.trim(),
             type: deviceForm.type,
             connection: deviceForm.connection,
-            target: deviceForm.target.trim(),
+            target,
+            ip: ip || null,
+            port,
             station: deviceForm.station,
             copies: Number(deviceForm.copies) || 1,
             isDefault: deviceForm.isDefault,

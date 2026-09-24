@@ -8,6 +8,19 @@ import { readReceiptConfig, RECEIPT_FIELD_MAX } from '@/lib/receipt';
 import { readUpiConfig } from '@/lib/print/upi';
 import { normalizeLocationInput } from '@/lib/geo';
 
+import { readDevices, normalizeDefaults, type Device } from '@/lib/devices';
+import { printerHealthCheck, checkAllPrintersHealth } from '@/lib/print/health';
+import crypto from 'crypto';
+
+const TYPE_VALUES = ['receipt_printer', 'kot_printer', 'both_printer', 'label_printer', 'cash_drawer', 'display', 'other'];
+const CONN_VALUES = ['network', 'usb', 'bluetooth'];
+
+async function saveDevices(outletId: string, devices: Device[]) {
+  const outlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
+  const merged = { ...((outlet?.settings as Record<string, unknown>) ?? {}), devices };
+  await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+}
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -39,17 +52,46 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
 
+<<<<<<< Updated upstream
   // ---- Hardware & Printers ----
   if (body.action === 'device_save') {
     const d = body.device ?? {};
     const name = String(d.name ?? '').trim().slice(0, 40);
+=======
+  // ---- device registry & printer actions ----
+  if (body.action === 'device_save') {
+    const d = body.device ?? {};
+    const name = String(d.name ?? '').trim();
+>>>>>>> Stashed changes
     if (!name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
     const type = TYPE_VALUES.includes(d.type) ? d.type : 'receipt_printer';
     const connection = CONN_VALUES.includes(d.connection) ? d.connection : 'network';
     const copies = Number(d.copies);
+<<<<<<< Updated upstream
     const ip = typeof d.ip === 'string' && d.ip ? d.ip.trim() : String(d.target ?? '').split(':')[0]?.trim() || '';
     const port = d.port ? String(d.port).trim() : (String(d.target ?? '').split(':')[1] || '9100');
     const target = String(d.target ?? '').trim() || (ip ? `${ip}:${port}` : '');
+=======
+
+    let rawIp = typeof d.ip === 'string' && d.ip ? d.ip.trim() : '';
+    let rawPort = d.port !== undefined && d.port !== null ? String(d.port).trim() : '';
+    let rawTarget = String(d.target ?? '').trim();
+
+    if (rawIp.includes(':')) {
+      const parts = rawIp.split(':');
+      rawIp = parts[0]?.trim() || '';
+      if (!rawPort && parts[1]) rawPort = parts[1].trim();
+    }
+    if (!rawIp && rawTarget) {
+      const parts = rawTarget.split(':');
+      rawIp = parts[0]?.trim() || '';
+      if (!rawPort && parts[1]) rawPort = parts[1].trim();
+    }
+
+    const portNum = parseInt(rawPort || '9100', 10);
+    const validPort = !isNaN(portNum) && portNum >= 1 && portNum <= 65535 ? String(portNum) : '9100';
+    const target = rawIp ? `${rawIp}:${validPort}` : rawTarget;
+>>>>>>> Stashed changes
     const priority = d.priority === 'backup' ? 'backup' : 'primary';
     const kotRule = d.kotRule === 'all_items' ? 'all_items' : d.kotRule === 'custom' ? 'custom' : 'station_only';
 
@@ -59,15 +101,30 @@ export async function POST(req: NextRequest) {
       type,
       connection,
       target,
+<<<<<<< Updated upstream
       ip: ip || null,
       port: port || '9100',
+=======
+      ip: rawIp || null,
+      port: validPort,
+>>>>>>> Stashed changes
       station: (type === 'kot_printer' || type === 'display') && d.station ? String(d.station).trim() : null,
       priority,
       kotRule,
       copies: Number.isFinite(copies) && copies >= 1 ? Math.min(5, Math.round(copies)) : 1,
       isDefault: !!d.isDefault,
+<<<<<<< Updated upstream
     };
 
+=======
+      lastKnownStatus: typeof d.lastKnownStatus === 'string' ? d.lastKnownStatus : undefined,
+      lastCheckedAt: typeof d.lastCheckedAt === 'string' ? d.lastCheckedAt : null,
+      lastLatencyMs: typeof d.lastLatencyMs === 'number' ? d.lastLatencyMs : null,
+      lastError: typeof d.lastError === 'string' ? d.lastError : null,
+    };
+
+    console.log('[PRINTER:API:OWNER] Saving device registry entry', { id: entry.id, name: entry.name, target: entry.target });
+>>>>>>> Stashed changes
     const current = readDevices((await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }))?.settings);
     const idx = current.findIndex((x) => x.id === entry.id);
     if (idx >= 0) current[idx] = entry; else current.push(entry);
@@ -93,6 +150,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, devices: next });
   }
 
+<<<<<<< Updated upstream
   // ---- kitchens / prep stations (stored in Outlet.settings.kitchens) ----
   if (body.action === 'kitchen_add' || body.action === 'kitchen_rename' || body.action === 'kitchen_delete') {
     const outlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
@@ -203,6 +261,72 @@ export async function POST(req: NextRequest) {
     const merged = { ...settings, location };
     await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
     return NextResponse.json({ ok: true, location });
+=======
+  if (body.action === 'device_test_connection') {
+    const rawTarget = String(body.target || '').trim();
+    const rawIp = String(body.ip || body.host || '').trim();
+    const rawPort = body.port !== undefined ? body.port : undefined;
+    const printerId = body.id || body.printerId || null;
+    const name = body.name || 'Printer';
+
+    console.log('[PRINTER:API:OWNER] Received printer test request', { printerId, name, ip: rawIp, port: rawPort, target: rawTarget });
+    const result = await printerHealthCheck({
+      host: rawIp,
+      port: rawPort,
+      target: rawTarget,
+      printerId,
+      name,
+      timeoutMs: 2500,
+    });
+
+    if (result.printerId) {
+      try {
+        const current = readDevices((await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }))?.settings);
+        const idx = current.findIndex((x) => x.id === result.printerId);
+        const targetDev = current[idx];
+        if (targetDev) {
+          targetDev.lastKnownStatus = result.status;
+          targetDev.lastCheckedAt = result.checkedAt;
+          targetDev.lastLatencyMs = result.latencyMs;
+          targetDev.lastError = result.errorCode;
+          await saveDevices(outletId, current);
+        }
+      } catch (err) {
+        console.warn('[PRINTER:API:OWNER] Could not persist device lastKnownStatus:', err);
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      reachable: result.success,
+      ...result,
+    });
+  }
+
+  if (body.action === 'device_health_check_all') {
+    console.log('[PRINTER:API:OWNER] Received batch health check request');
+    const current = readDevices((await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }))?.settings);
+    const results = await checkAllPrintersHealth(current);
+
+    let changed = false;
+    for (const r of results) {
+      if (r.printerId) {
+        const dev = current.find((d) => d.id === r.printerId);
+        if (dev) {
+          dev.lastKnownStatus = r.status;
+          dev.lastCheckedAt = r.checkedAt;
+          dev.lastLatencyMs = r.latencyMs;
+          dev.lastError = r.errorCode;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      await saveDevices(outletId, current).catch(() => {});
+    }
+
+    return NextResponse.json({ ok: true, devices: current, results });
+>>>>>>> Stashed changes
   }
 
   if (body.action !== 'outlet') {

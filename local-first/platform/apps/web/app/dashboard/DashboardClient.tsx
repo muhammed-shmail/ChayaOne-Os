@@ -48,6 +48,10 @@ const SettingsCenter = dynamic(() => import('./components/SettingsCenter'), {
   loading: () => <div className="p-8 text-center text-xs text-gray-500">Loading Settings...</div>,
   ssr: false,
 });
+const ReportsView = dynamic(() => import('./components/reports/ReportsView').then((m) => m.ReportsView), {
+  loading: () => <div className="p-8 text-center text-xs text-gray-500">Loading Reports...</div>,
+  ssr: false,
+});
 
 
 type FloorTable = { id: string; label: string; seats: number; state: string; qrToken: string; floorId: string | null; activeOrders: number };
@@ -1529,7 +1533,7 @@ export default function DashboardClient({
 
   // Devices & printers (Settings → Devices)
   const [devices, setDevices] = useState<Device[]>([]);
-  const blankDevice = { id: '', name: '', type: 'receipt_printer', connection: 'network', target: '', station: 'kitchen', copies: '1', isDefault: false };
+  const blankDevice = { id: '', name: '', type: 'receipt_printer', connection: 'network', target: '', ip: '', port: '9100', station: 'kitchen', copies: '1', isDefault: false };
   const [deviceForm, setDeviceForm] = useState<typeof blankDevice>({ ...blankDevice });
   const [showDeviceForm, setShowDeviceForm] = useState(false);
 
@@ -1866,7 +1870,19 @@ export default function DashboardClient({
 
   const openDeviceForm = (dev?: Device) => {
     if (dev) {
-      setDeviceForm({ id: dev.id, name: dev.name, type: dev.type, connection: dev.connection, target: dev.target, station: dev.station ?? 'kitchen', copies: String(dev.copies), isDefault: dev.isDefault });
+      const parts = (dev.target || '').split(':');
+      setDeviceForm({
+        id: dev.id,
+        name: dev.name,
+        type: dev.type,
+        connection: dev.connection,
+        target: dev.target,
+        ip: dev.ip || parts[0] || '',
+        port: dev.port ? String(dev.port) : parts[1] || '9100',
+        station: dev.station ?? 'kitchen',
+        copies: String(dev.copies),
+        isDefault: dev.isDefault,
+      });
     } else {
       setDeviceForm({ ...blankDevice });
     }
@@ -1877,6 +1893,11 @@ export default function DashboardClient({
     e.preventDefault();
     if (!deviceForm.name.trim()) { flashMessage('Enter a device name'); return; }
     try {
+      const parts = (deviceForm.target || '').split(':');
+      const ip = (deviceForm as any).ip || parts[0] || '';
+      const port = (deviceForm as any).port || parts[1] || '9100';
+      const target = ip ? `${ip}:${port}` : deviceForm.target.trim();
+
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -1886,7 +1907,9 @@ export default function DashboardClient({
             name: deviceForm.name.trim(),
             type: deviceForm.type,
             connection: deviceForm.connection,
-            target: deviceForm.target.trim(),
+            target,
+            ip: ip || null,
+            port,
             station: deviceForm.station,
             copies: Number(deviceForm.copies) || 1,
             isDefault: deviceForm.isDefault,
@@ -3973,229 +3996,14 @@ export default function DashboardClient({
 
         {/* ── 4. Reports View ── */}
         {activeMenu === 'reports' && (
-          <div className="flex flex-col gap-4">
-            {/* Tabs */}
-            <div className="flex justify-start md:justify-center pb-2 overflow-x-auto no-scrollbar w-full">
-              <div className="flex flex-nowrap gap-1 p-1 rounded-full border w-fit" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }} role="tablist">
-                {[
-                  { key: 'daily', label: 'Daily Sales' },
-                  { key: 'best', label: 'Top Items' },
-                  { key: 'gst', label: 'GST Report' },
-                  ...(isAdvanced ? [
-                    { key: 'analytics', label: 'Advanced Analytics 📊' },
-                    { key: 'forecast', label: 'Demand Forecast' }
-                  ] : [])
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    role="tab"
-                    aria-selected={activeSubTab === tab.key}
-                    onClick={() => setActiveSubTab(tab.key)}
-                    className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
-                    style={activeSubTab === tab.key
-                      ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
-                      : { color: 'var(--ink-2)', background: 'transparent' }}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {activeSubTab === 'daily' && (
-              <section className="card p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                  <h4 className="font-bold">Daily Sales Ledger</h4>
-                  <ExportBar name="daily-sales" title="Daily Sales Ledger" headers={['Date', 'Orders', 'Revenue', 'Discount', 'Tax']} rows={trend.map((t) => [`${t.date} (${t.label})`, t.orders, formatINR(t.grossPaise), formatINR(0), formatINR(Math.round(t.grossPaise * 0.05))])} />
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="rtable w-full text-sm border-collapse text-left">
-                    <thead>
-                      <tr className="border-b" style={{ borderColor: 'var(--line)' }}>
-                        <th className="pb-2">Date</th>
-                        <th className="pb-2">Orders</th>
-                        <th className="pb-2">Revenue</th>
-                        <th className="pb-2">Discount</th>
-                        <th className="pb-2">Tax</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {trend.map((t, idx) => (
-                        <tr key={idx} className="border-b" style={{ borderColor: 'var(--line-2)' }}>
-                          <td className="py-2" data-label="Date">{t.date} ({t.label})</td>
-                          <td className="py-2 font-mono" data-label="Orders">{t.orders}</td>
-                          <td className="py-2 font-mono" data-label="Revenue">{formatINR(t.grossPaise)}</td>
-                          <td className="py-2 font-mono" data-label="Discount">{formatINR(0)}</td>
-                          <td className="py-2 font-mono" data-label="Tax">{formatINR(Math.round(t.grossPaise * 0.05))}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
-
-            {activeSubTab === 'best' && (
-              <section className="card p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                  <h4 className="font-bold">Top Selling Products</h4>
-                  <ExportBar name="top-items" title="Top Selling Products" headers={['Product', 'Qty sold', 'Gross revenue']} rows={topItems.map((i) => [i.name, i.qty, formatINR(i.revenuePaise)])} />
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="rtable w-full text-sm border-collapse text-left">
-                    <thead>
-                      <tr className="border-b" style={{ borderColor: 'var(--line)' }}>
-                        <th className="pb-2">Product Name</th>
-                        <th className="pb-2">Quantity Sold</th>
-                        <th className="pb-2">Gross Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topItems.map((item, idx) => (
-                        <tr key={idx} className="border-b" style={{ borderColor: 'var(--line-2)' }}>
-                          <td className="py-2 font-bold" data-label="Product">{item.name}</td>
-                          <td className="py-2 font-mono" data-label="Qty sold">{item.qty}</td>
-                          <td className="py-2 font-mono" data-label="Gross revenue">{formatINR(item.revenuePaise)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
-
-            {activeSubTab === 'gst' && (
-              <div className="flex flex-col gap-4">
-                {!salesGst ? (
-                  <section className="card p-5"><p className="text-sm text-ink-3">Loading GST summary…</p></section>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                      <section className="card p-4">
-                        <span className="block text-xs mb-2" style={{ color: 'var(--ink-3)' }}>Tax collected · 30d</span>
-                        <span className="block text-2xl font-bold font-mono">{formatINR(salesGst.gst.taxCollectedPaise)}</span>
-                      </section>
-                      <section className="card p-4">
-                        <span className="block text-xs mb-2" style={{ color: 'var(--ink-3)' }}>Taxable sales</span>
-                        <span className="block text-2xl font-bold font-mono">{formatINR(salesGst.gst.taxableSalesPaise)}</span>
-                      </section>
-                      <section className="card p-4">
-                        <span className="block text-xs mb-2" style={{ color: 'var(--ink-3)' }}>Non-taxable sales</span>
-                        <span className="block text-2xl font-bold font-mono">{formatINR(salesGst.gst.nonTaxableSalesPaise)}</span>
-                      </section>
-                      <section className="card p-4">
-                        <span className="block text-xs mb-2" style={{ color: 'var(--ink-3)' }}>Net tax rate</span>
-                        <span className="block text-2xl font-bold font-mono">
-                          {salesGst.gst.taxableSalesPaise > 0 ? `${((salesGst.gst.taxCollectedPaise / salesGst.gst.taxableSalesPaise) * 100).toFixed(1)}%` : '—'}
-                        </span>
-                      </section>
-                    </div>
-
-                    <section className="card p-5">
-                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                        <h4 className="font-bold">GST by rate</h4>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-ink-3">last 30 days · by item slab</span>
-                          <ExportBar name="gst-report" title="GST by rate" headers={['GST slab', 'Revenue', 'Est. tax']} rows={salesGst.gst.byRate.map((r: any) => [r.rate === 0 ? 'Tax-free (0%)' : `${r.rate}%`, formatINR(r.revenuePaise), r.rate === 0 ? '—' : formatINR(r.estTaxPaise)])} />
-                        </div>
-                      </div>
-                      {salesGst.gst.byRate.length === 0 ? (
-                        <p className="text-sm text-ink-3 py-4 text-center">No sales in this window yet.</p>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="rtable w-full text-sm border-collapse text-left">
-                            <thead>
-                              <tr className="border-b" style={{ borderColor: 'var(--line)' }}>
-                                <th className="pb-2">GST slab</th>
-                                <th className="pb-2 text-right">Revenue</th>
-                                <th className="pb-2 text-right">Est. tax</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {salesGst.gst.byRate.map((r: any) => (
-                                <tr key={r.rate} className="border-b" style={{ borderColor: 'var(--line-2)' }}>
-                                  <td className="py-2 font-bold" data-label="GST slab">{r.rate === 0 ? 'Tax-free (0%)' : `${r.rate}%`}</td>
-                                  <td className="py-2 font-mono text-right" data-label="Revenue">{formatINR(r.revenuePaise)}</td>
-                                  <td className="py-2 font-mono text-right" data-label="Est. tax">{r.rate === 0 ? '—' : formatINR(r.estTaxPaise)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                      <p className="text-[11px] mt-3" style={{ color: 'var(--ink-3)' }}>
-                        “Tax collected” above is the exact amount billed (CGST+SGST+IGST). “Est. tax” per slab is a revenue×rate estimate for reconciliation.
-                      </p>
-                    </section>
-                  </>
-                )}
-              </div>
-            )}
-
-            {isAdvanced && activeSubTab === 'analytics' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 7-day trend bar chart */}
-                <section className="card p-5">
-                  <h4 className="font-bold mb-3">7-Day Sales Trend</h4>
-                  <div className="flex items-end justify-between gap-2 h-40 mt-6">
-                    {trend.map((t, i) => (
-                      <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-1.5">
-                        <div
-                          className="w-full max-w-[28px] rounded-t-md relative"
-                          style={{ height: `${(t.orders / Math.max(...trend.map((x) => x.orders), 1)) * 100}%`, minHeight: t.orders > 0 ? 6 : 2, background: 'var(--turmeric)' }}
-                        />
-                        <span className="text-[10px]">{t.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* hour-of-day heatmap */}
-                <section className="card p-5">
-                  <h4 className="font-bold mb-3">Hour-of-day Heatmap</h4>
-                  <div className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-0.5 h-10 mt-6">
-                    {hourly.map((v, idx) => (
-                      <div
-                        key={idx}
-                        className="h-full rounded-sm"
-                        style={{ background: v > 0 ? `rgba(232,144,42, ${v / Math.max(...hourly, 1)})` : 'var(--paper-3)', border: '1px solid var(--line-2)' }}
-                        title={`${v} orders`}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex justify-between mt-2 text-[10px]" style={{ color: 'var(--ink-3)' }}>
-                    <span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span>
-                  </div>
-                </section>
-
-                {/* menu engineering quadrant */}
-                <section className="card p-5 md:col-span-2">
-                  <h4 className="font-bold mb-3">Menu Engineering Quadrant</h4>
-                  <div className="relative h-40 sm:h-48 lg:h-56 border rounded-xl mt-2" style={{ background: 'var(--paper-3)' }}>
-                    {menuQuadrant.map((d) => (
-                      <span
-                        key={d.itemId}
-                        className="absolute w-2.5 h-2.5 rounded-full ring-2 ring-white"
-                        style={{ left: `${d.pop}%`, bottom: `${d.profit}%`, background: d.quad === 'star' ? 'var(--cardamom)' : 'var(--turmeric)' }}
-                        title={d.name}
-                      />
-                    ))}
-                    <div className="absolute top-1 left-2 text-[10px] text-ink-3">High Margin / Low Vol (Puzzles)</div>
-                    <div className="absolute top-1 right-2 text-[10px] text-cardamom-d">High Margin / High Vol (Stars)</div>
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {isAdvanced && activeSubTab === 'forecast' && (
-              <section className="card p-5">
-                <h4 className="font-bold mb-3">AI Demand Forecasting</h4>
-                <div className="p-4 rounded-xl" style={{ background: 'var(--paper-3)' }}>
-                  <p className="text-sm">Based on recent sales ledger trends, Milk is expected to reach critical levels in <b>2 days</b>. Suggest raising PO today.</p>
-                </div>
-              </section>
-            )}
-          </div>
+          <ReportsView
+            outlet={outlet}
+            currentStaff={currentStaff}
+            isAdvanced={isAdvanced}
+            initialTrend={trend}
+            initialTopItems={topItems}
+            initialSalesGst={salesGst}
+          />
         )}
 
         {/* ── 5. Settings View (also hosts the top-level Menu Items page) ── */}

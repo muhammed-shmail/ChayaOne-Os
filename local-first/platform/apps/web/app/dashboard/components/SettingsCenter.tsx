@@ -1012,68 +1012,225 @@ export default function SettingsCenter({
   };
 
   // Device Test & Station Routing state
-  const [testConnectionStatus, setTestConnectionStatus] = useState<Record<string, { loading: boolean; ok?: boolean; message?: string }>>({});
+  const [testConnectionStatus, setTestConnectionStatus] = useState<Record<string, {
+    loading: boolean;
+    ok?: boolean;
+    status?: 'CHECKING' | 'ONLINE' | 'UNREACHABLE' | 'NOT_CONFIGURED' | 'DISABLED' | 'ERROR';
+    message?: string;
+    latencyMs?: number | null;
+    errorCode?: string | null;
+    checkedAt?: string | null;
+  }>>({});
   const [testKotStatus, setTestKotStatus] = useState<Record<string, { loading: boolean; ok?: boolean; message?: string }>>({});
   const [showStationRoutingModal, setShowStationRoutingModal] = useState<boolean>(false);
   const [routingSearch, setRoutingSearch] = useState<string>('');
   const [routingStationFilter, setRoutingStationFilter] = useState<string>('all');
   const [savingMenuItemId, setSavingMenuItemId] = useState<string | null>(null);
 
-  const handleTestConnection = async (targetOrIp?: string, portVal?: string | number) => {
-    const key = targetOrIp || deviceForm.target || deviceForm.ip || 'form';
-    setTestConnectionStatus((prev) => ({ ...prev, [key]: { loading: true } }));
+  // Auto health check on mount / when devices change:
+  // Render printer as CHECKING... then run real health check. NEVER assume ONLINE on load.
+  useEffect(() => {
+    const networkPrinters = devices.filter((d) => d.connection === 'network' || d.target || d.ip);
+    if (networkPrinters.length === 0) return;
+
+    // Immediately mark them as CHECKING in UI state so they never flash "ONLINE"
+    setTestConnectionStatus((prev) => {
+      const next = { ...prev };
+      for (const d of networkPrinters) {
+        const key = d.id;
+        if (!next[key] || !next[key].checkedAt) {
+          next[key] = {
+            loading: true,
+            status: 'CHECKING',
+            message: 'Checking printer connection...',
+          };
+        }
+      }
+      return next;
+    });
+
+    console.log('[PRINTER:UI] Auto health check triggered for', networkPrinters.length, 'device(s)');
+
+    fetch('/api/dashboard/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'device_health_check_all' }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.results && Array.isArray(data.results)) {
+          setTestConnectionStatus((prev) => {
+            const next = { ...prev };
+            for (const r of data.results) {
+              const key = r.printerId || r.host;
+              next[key] = {
+                loading: false,
+                ok: r.success,
+                status: r.status,
+                message: r.message,
+                latencyMs: r.latencyMs,
+                errorCode: r.errorCode,
+                checkedAt: r.checkedAt,
+              };
+              if (r.success) {
+                console.log(`[PRINTER:UI] Auto-check result: ${r.name || key} is ONLINE (${r.latencyMs}ms)`, r);
+              } else {
+                console.warn(`[PRINTER:UI] Auto-check result: ${r.name || key} is UNREACHABLE (${r.errorCode})`, r);
+              }
+            }
+            return next;
+          });
+        }
+      })
+      .catch((err) => {
+        console.error('[PRINTER:UI] Auto health check batch request failed:', err);
+      });
+  }, [devices.length]);
+
+  const handleTestConnection = async (devOrTarget?: Device | string, portVal?: string | number) => {
+    let key = 'form';
+    let ip = '';
+    let port = portVal;
+    let target = '';
+    let printerId: string | undefined = undefined;
+    let printerName = 'Printer';
+
+    if (typeof devOrTarget === 'object' && devOrTarget !== null) {
+      key = devOrTarget.id || devOrTarget.target || 'form';
+      printerId = devOrTarget.id;
+      printerName = devOrTarget.name;
+      ip = devOrTarget.ip || '';
+      port = devOrTarget.port || portVal;
+      target = devOrTarget.target;
+      if (!ip && target) {
+        const parts = target.split(':');
+        ip = parts[0] || '';
+        if (!port && parts[1]) port = parts[1];
+      }
+    } else if (typeof devOrTarget === 'string' && devOrTarget.trim()) {
+      key = devOrTarget.trim();
+      target = devOrTarget.trim();
+      const parts = target.split(':');
+      ip = parts[0] || '';
+      port = portVal || parts[1] || '9100';
+    } else {
+      key = 'form';
+      printerId = deviceForm.id;
+      printerName = deviceForm.name || 'Printer';
+      ip = (deviceForm as any).ip || '';
+      port = portVal || (deviceForm as any).port || '9100';
+      target = deviceForm.target;
+      if (!ip && target) {
+        const parts = target.split(':');
+        ip = parts[0] || '';
+        if (!port && parts[1]) port = parts[1];
+      }
+    }
+
+    console.log('[PRINTER:UI] Test button clicked', { printerId, name: printerName, ip, port, target });
+
+    setTestConnectionStatus((prev) => ({
+      ...prev,
+      [key]: { loading: true, status: 'CHECKING', message: 'Testing TCP connection...' },
+    }));
+
     try {
+      console.log('[PRINTER:UI] Calling /api/dashboard/settings action=device_test_connection', { id: printerId, ip, port, target, name: printerName });
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           action: 'device_test_connection',
-          target: targetOrIp || deviceForm.target,
-          ip: deviceForm.ip,
-          port: portVal || deviceForm.port,
+          id: printerId,
+          name: printerName,
+          target,
+          ip,
+          port,
         }),
       });
       const data = await res.json();
+      console.log('[PRINTER:UI] Test response received:', data);
+
+      const status = data.reachable ? 'ONLINE' : 'UNREACHABLE';
       setTestConnectionStatus((prev) => ({
         ...prev,
-        [key]: { loading: false, ok: data.reachable, message: data.message },
+        [key]: {
+          loading: false,
+          ok: data.reachable,
+          status,
+          message: data.message,
+          latencyMs: data.latencyMs,
+          errorCode: data.errorCode,
+          checkedAt: data.checkedAt || new Date().toISOString(),
+        },
       }));
-      flashMessage(data.message || (data.reachable ? 'Printer reachable' : 'Printer unreachable'));
-    } catch {
+
+      flashMessage(data.message || (data.reachable ? `✓ Printer reachable (${data.latencyMs || 0}ms)` : '✕ Printer unreachable'));
+    } catch (err: any) {
+      console.error('[PRINTER:UI] Test connection request failed:', err);
       setTestConnectionStatus((prev) => ({
         ...prev,
-        [key]: { loading: false, ok: false, message: 'Connection test failed' },
+        [key]: {
+          loading: false,
+          ok: false,
+          status: 'UNREACHABLE',
+          errorCode: 'FETCH_ERROR',
+          message: err?.message || 'Connection test failed',
+          checkedAt: new Date().toISOString(),
+        },
       }));
-      flashMessage('Connection test failed');
+      flashMessage(`Connection test failed: ${err?.message || 'Network error'}`);
     }
   };
 
   const handlePrintTestKot = async (dev?: Device) => {
     const key = dev?.id || 'form';
+    const targetDev = dev || deviceForm;
+    console.log('[PRINTER:UI] Print Test clicked for', targetDev.name || 'Printer', targetDev);
+
     setTestKotStatus((prev) => ({ ...prev, [key]: { loading: true } }));
     try {
+      console.log('[PRINTER:UI] Calling /api/dashboard/settings action=device_test_kot');
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           action: 'device_test_kot',
-          device: dev || deviceForm,
-          station: dev?.station || deviceForm.station || 'kitchen',
-          name: dev?.name || deviceForm.name || 'Kitchen Printer 01',
+          device: targetDev,
+          station: targetDev?.station || 'kitchen',
+          name: targetDev?.name || 'Kitchen Printer 01',
         }),
       });
       const data = await res.json();
+      console.log('[PRINTER:UI] Print Test response received:', data);
+
       setTestKotStatus((prev) => ({
         ...prev,
-        [key]: { loading: false, ok: res.ok, message: data.message },
+        [key]: { loading: false, ok: res.ok && data.ok, message: data.message },
       }));
-      flashMessage(data.message || 'Test KOT dispatched');
-    } catch {
+
+      if (!data.reachable && data.status) {
+        setTestConnectionStatus((prev) => ({
+          ...prev,
+          [key]: {
+            loading: false,
+            ok: false,
+            status: data.status,
+            errorCode: data.errorCode,
+            message: data.message,
+            checkedAt: new Date().toISOString(),
+          },
+        }));
+      }
+
+      flashMessage(data.message || (res.ok ? '✓ Test print sent' : '✕ Test print failed'));
+    } catch (err: any) {
+      console.error('[PRINTER:UI] Print Test request failed:', err);
       setTestKotStatus((prev) => ({
         ...prev,
-        [key]: { loading: false, ok: false, message: 'Test KOT dispatch failed' },
+        [key]: { loading: false, ok: false, message: 'Print Test failed: Network error' },
       }));
-      flashMessage('Test KOT dispatch failed');
+      flashMessage('Print Test failed');
     }
   };
 
@@ -4931,6 +5088,7 @@ export default function SettingsCenter({
                                   <td className="p-3 capitalize font-medium">
                                     {d.type === 'both_printer' ? '⚡ Both (Billing & KOT)' : d.type === 'kot_printer' ? '🍳 KOT Printer' : d.type === 'receipt_printer' ? '🧾 Receipt Printer' : d.type === 'display' ? '📺 KDS Display' : '⚙️ Other Device'}
                                   </td>
+<<<<<<< Updated upstream
                                   <td className="p-3 font-mono font-semibold">{targetStr}</td>
                                   <td className="p-3 font-semibold text-turmeric-d">
                                     {(() => {
@@ -4941,6 +5099,24 @@ export default function SettingsCenter({
                                       if (ws) return <span className="inline-flex items-center gap-1 font-mono"><span>📍</span> {ws.code} · <span className="font-sans font-normal text-xs text-ink-2">{ws.name}</span></span>;
                                       return <span className="capitalize">{d.station}</span>;
                                     })()}
+=======
+                                  <td className="p-3 font-mono font-semibold">
+                                    <div>{targetStr}</div>
+                                    {(() => {
+                                      const port = d.port || (d.target ? d.target.split(':')[1] : null);
+                                      if (String(port).trim() === '9') {
+                                        return (
+                                          <span className="text-[9px] font-bold text-amber-600 block mt-0.5" title="Port 9 is Discard protocol; standard ESC/POS is 9100">
+                                            ⚠ Port 9 (Non-standard)
+                                          </span>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
+                                  </td>
+                                  <td className="p-3 capitalize font-semibold text-turmeric-d">
+                                    {d.station ? d.station : d.type === 'both_printer' ? 'Billing & Kitchen' : d.type === 'receipt_printer' ? 'Billing Counter' : '—'}
+>>>>>>> Stashed changes
                                   </td>
                                   <td className="p-3">
                                     {d.priority === 'backup' ? (
@@ -4954,22 +5130,55 @@ export default function SettingsCenter({
                                   </td>
                                   <td className="p-3">
                                     {testRes?.loading ? (
-                                      <span className="text-ink-3 text-[10px]">Testing…</span>
-                                    ) : testRes?.ok === true ? (
-                                      <span className="pill text-[10px] font-bold text-green-700 bg-green-50 border-green-200">✓ ONLINE</span>
-                                    ) : testRes?.ok === false ? (
-                                      <span className="pill text-[10px] font-bold text-red-700 bg-red-50 border-red-200">✕ UNREACHABLE</span>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-700 border border-amber-300 animate-pulse">
+                                          ⏳ CHECKING…
+                                        </span>
+                                      </div>
+                                    ) : testRes?.status === 'ONLINE' || testRes?.ok === true ? (
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="pill text-[10px] font-bold text-green-700 bg-green-50 border-green-200">
+                                          ● ONLINE
+                                        </span>
+                                        {typeof testRes?.latencyMs === 'number' && (
+                                          <span className="text-[9px] text-green-700/80 font-mono font-medium">
+                                            {testRes.latencyMs}ms latency
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : testRes?.status === 'UNREACHABLE' || testRes?.ok === false ? (
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="pill text-[10px] font-bold text-red-700 bg-red-50 border-red-200" title={testRes?.message || 'Printer unreachable'}>
+                                          ✕ UNREACHABLE
+                                        </span>
+                                        {testRes?.errorCode && (
+                                          <span className="text-[9px] text-red-600 font-mono font-medium truncate max-w-[120px]" title={testRes?.message}>
+                                            {testRes.errorCode}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : d.lastKnownStatus ? (
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className={`pill text-[10px] font-medium ${d.lastKnownStatus === 'ONLINE' ? 'text-green-700/70 bg-green-50/50' : 'text-red-700/70 bg-red-50/50'}`}>
+                                          {d.lastKnownStatus === 'ONLINE' ? '● ONLINE (Last)' : '✕ UNREACHABLE (Last)'}
+                                        </span>
+                                        {d.lastLatencyMs && <span className="text-[9px] text-ink-3 font-mono">{d.lastLatencyMs}ms</span>}
+                                      </div>
+                                    ) : !d.ip && !d.target ? (
+                                      <span className="pill text-[10px] text-gray-500 bg-gray-100">NOT CONFIGURED</span>
                                     ) : (
-                                      <span className="pill text-[10px] text-gray-600 bg-gray-100">ONLINE</span>
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-700 border border-amber-300 animate-pulse">
+                                        ⏳ CHECKING…
+                                      </span>
                                     )}
                                   </td>
                                   <td className="p-3 text-right">
                                     <div className="flex items-center justify-end gap-1.5">
                                       <button
-                                        onClick={() => handleTestConnection(targetStr)}
+                                        onClick={() => handleTestConnection(d)}
                                         disabled={testRes?.loading}
                                         className="btn btn-xs bg-paper-2 border hover:bg-paper"
-                                        title="Test TCP 9100 network socket reachability"
+                                        title="Test TCP network socket reachability"
                                       >
                                         {testRes?.loading ? '…' : 'Test'}
                                       </button>
@@ -4988,14 +5197,16 @@ export default function SettingsCenter({
                                       <button
                                         onClick={() => {
                                           const parts = (d.target || '').split(':');
+                                          const cleanIp = d.ip || parts[0] || '192.168.1.201';
+                                          const cleanPort = d.port ? String(d.port) : parts[1] || '9100';
                                           setDeviceForm({
                                             id: d.id,
                                             name: d.name,
                                             type: d.type,
                                             connection: d.connection || 'network',
-                                            target: d.target,
-                                            ip: d.ip || parts[0] || '192.168.1.201',
-                                            port: d.port || parts[1] || '9100',
+                                            target: d.target || `${cleanIp}:${cleanPort}`,
+                                            ip: cleanIp,
+                                            port: cleanPort,
                                             station: d.station || 'kitchen',
                                             priority: d.priority || 'primary',
                                             kotRule: d.kotRule || 'station_only',
@@ -5098,33 +5309,49 @@ export default function SettingsCenter({
                             </div>
 
                             <div>
-                              <label className="lbl">IP Address</label>
+                              <label className="lbl">IP Address / Hostname</label>
                               <input
                                 value={deviceForm.ip || ''}
                                 onChange={(e) => {
-                                  const val = e.target.value;
+                                  let val = e.target.value.trim();
+                                  let detectedPort = deviceForm.port || '9100';
+                                  if (val.includes(':')) {
+                                    const parts = val.split(':');
+                                    val = parts[0]?.trim() || '';
+                                    if (parts[1] && parts[1].trim()) {
+                                      detectedPort = parts[1].trim();
+                                    }
+                                  }
                                   setDeviceForm((prev: any) => ({
                                     ...prev,
                                     ip: val,
-                                    target: `${val}:${prev.port || '9100'}`
+                                    port: detectedPort,
+                                    target: val ? `${val}:${detectedPort}` : ''
                                   }));
                                 }}
-                                placeholder="e.g. 192.168.1.201"
+                                placeholder="e.g. 192.168.220.53"
                                 required
                                 className="inp bg-paper-2 font-mono font-semibold"
                               />
                             </div>
 
                             <div>
-                              <label className="lbl">Port (Default 9100)</label>
+                              <div className="flex items-center justify-between">
+                                <label className="lbl">Port (ESC/POS: 9100)</label>
+                                {String(deviceForm.port).trim() === '9' && (
+                                  <span className="text-[10px] text-amber-600 font-bold" title="Port 9 is Discard; typical ESC/POS is 9100">
+                                    ⚠ Port 9 is non-standard
+                                  </span>
+                                )}
+                              </div>
                               <input
-                                value={deviceForm.port || '9100'}
+                                value={deviceForm.port !== undefined && deviceForm.port !== null ? deviceForm.port : '9100'}
                                 onChange={(e) => {
-                                  const val = e.target.value;
+                                  const val = e.target.value.trim();
                                   setDeviceForm((prev: any) => ({
                                     ...prev,
                                     port: val,
-                                    target: `${prev.ip || '192.168.1.201'}:${val}`
+                                    target: `${prev.ip || '192.168.1.201'}:${val || '9100'}`
                                   }));
                                 }}
                                 placeholder="9100"
@@ -5365,23 +5592,37 @@ export default function SettingsCenter({
                               <div className="flex gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => handleTestConnection(deviceForm.target, deviceForm.port)}
-                                  className="btn btn-sm bg-paper-2 border"
+                                  onClick={() => handleTestConnection({
+                                    id: deviceForm.id,
+                                    name: deviceForm.name || 'Printer',
+                                    type: deviceForm.type,
+                                    connection: deviceForm.connection,
+                                    ip: deviceForm.ip,
+                                    port: deviceForm.port,
+                                    target: deviceForm.target,
+                                    station: deviceForm.station,
+                                    copies: 1,
+                                    isDefault: false
+                                  })}
+                                  disabled={testConnectionStatus['form']?.loading}
+                                  className="btn btn-sm bg-paper-2 border hover:bg-paper"
                                 >
-                                  🔌 Test Connection
+                                  {testConnectionStatus['form']?.loading ? '🔌 Testing TCP…' : '🔌 Test Connection'}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handlePrintTestKot()}
-                                  className="btn btn-sm bg-paper-2 border"
+                                  disabled={testKotStatus['form']?.loading}
+                                  className="btn btn-sm bg-paper-2 border hover:bg-paper"
                                 >
-                                  🖨 Print Test KOT
+                                  {testKotStatus['form']?.loading ? '🖨 Sending…' : '🖨 Print Test KOT'}
                                 </button>
                               </div>
 
                               {testConnectionStatus['form'] && (
                                 <span className={`text-xs font-bold ${testConnectionStatus['form'].ok ? 'text-green-600' : 'text-red-500'}`}>
                                   {testConnectionStatus['form'].message}
+                                  {typeof testConnectionStatus['form'].latencyMs === 'number' ? ` (${testConnectionStatus['form'].latencyMs}ms)` : ''}
                                 </span>
                               )}
                             </div>

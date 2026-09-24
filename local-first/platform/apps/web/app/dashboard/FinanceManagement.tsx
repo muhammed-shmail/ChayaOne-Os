@@ -392,35 +392,35 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   const allowedTabs = useMemo(() => {
     if (isOwner || isManager) {
       return [
-        { key: 'overview', label: '📊 Finance Dashboard' },
-        { key: 'drawer', label: '🗄️ Cash Drawer' },
-        { key: 'day_closing', label: '📅 Day Closing' },
-        { key: 'day_book', label: '📖 Day Book' },
-        { key: 'expenses', label: '🧾 Expenses' },
-        { key: 'vendors', label: '🤝 Vendors' },
-        { key: 'banks', label: '🏦 Bank Accounts' },
-        { key: 'settlements', label: '⌛ Settlements' },
-        { key: 'payroll', label: '👥 Payroll' },
-        { key: 'accounting', label: '📓 Accounting' },
-        { key: 'settings', label: '⚙️ Settings' }
+        { key: 'overview', label: 'Dashboard' },
+        { key: 'drawer', label: 'Cash Drawer' },
+        { key: 'day_closing', label: 'Day Closing' },
+        { key: 'day_book', label: 'Day Book' },
+        { key: 'expenses', label: 'Expenses' },
+        { key: 'vendors', label: 'Vendors' },
+        { key: 'banks', label: 'Bank Accounts' },
+        { key: 'settlements', label: 'Settlements' },
+        { key: 'payroll', label: 'Payroll' },
+        { key: 'accounting', label: 'Accounting' },
+        { key: 'settings', label: 'Settings' }
       ] as const;
     }
     if (isAccountant) {
       return [
-        { key: 'overview', label: '📊 Finance Dashboard' },
-        { key: 'day_closing', label: '📅 Day Closing' },
-        { key: 'day_book', label: '📖 Day Book' },
-        { key: 'expenses', label: '🧾 Expenses' },
-        { key: 'vendors', label: '🤝 Vendors' },
-        { key: 'banks', label: '🏦 Bank Accounts' },
-        { key: 'settlements', label: '⌛ Settlements' },
-        { key: 'accounting', label: '📓 Accounting' }
+        { key: 'overview', label: 'Dashboard' },
+        { key: 'day_closing', label: 'Day Closing' },
+        { key: 'day_book', label: 'Day Book' },
+        { key: 'expenses', label: 'Expenses' },
+        { key: 'vendors', label: 'Vendors' },
+        { key: 'banks', label: 'Bank Accounts' },
+        { key: 'settlements', label: 'Settlements' },
+        { key: 'accounting', label: 'Accounting' }
       ] as const;
     }
     // Cashier
     return [
-      { key: 'overview', label: '📊 Finance Dashboard' },
-      { key: 'drawer', label: '🗄️ Cash Drawer' }
+      { key: 'overview', label: 'Dashboard' },
+      { key: 'drawer', label: 'Cash Drawer' }
     ] as const;
   }, [isOwner, isManager, isAccountant]);
 
@@ -670,27 +670,42 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
 
   return (
     <div className="flex flex-col gap-5 min-h-[80vh]">
-      {/* Redesigned Premium Top Tab Navigation */}
-      <div className="flex justify-start md:justify-center sticky top-0 bg-background z-20 pb-3 overflow-x-auto no-scrollbar w-full">
-        <div 
-          className="inline-flex flex-nowrap p-1 rounded-full border shadow-sm"
-          style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
-          role="tablist"
-        >
-          {allowedTabs.map((t) => (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={activeTab === t.key}
-              onClick={() => setActiveTab(t.key)}
-              className="px-5 py-2.5 rounded-full text-xs font-extrabold transition-all duration-200 flex items-center gap-2 cursor-pointer whitespace-nowrap"
-              style={activeTab === t.key
-                ? { background: 'var(--turmeric)', color: '#2A1607' }
-                : { background: 'transparent', color: 'var(--ink-2)' }}
-            >
-              {t.label}
-            </button>
-          ))}
+      {/* Finance Tab Navigation — scrollable underline style */}
+      <div
+        className="sticky top-0 z-20 w-full"
+        style={{ background: 'var(--background)' }}
+      >
+        <div className="overflow-x-auto no-scrollbar">
+          <div
+            className="flex flex-nowrap gap-0 border-b min-w-max"
+            style={{ borderColor: 'var(--line)' }}
+            role="tablist"
+          >
+            {allowedTabs.map((t) => (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={activeTab === t.key}
+                onClick={() => setActiveTab(t.key)}
+                className="relative flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer shrink-0 border-b-2"
+                style={
+                  activeTab === t.key
+                    ? {
+                        color: 'var(--turmeric-d)',
+                        borderBottomColor: 'var(--turmeric)',
+                        background: 'var(--paper-2)',
+                      }
+                    : {
+                        color: 'var(--ink-3)',
+                        borderBottomColor: 'transparent',
+                        background: 'transparent',
+                      }
+                }
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
