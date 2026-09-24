@@ -26,6 +26,14 @@ export const ROLE_DESCRIPTIONS: Record<StaffRole, string> = {
   accountant: 'Financial reports, invoices, taxes, ledger and supplier payments.',
 };
 
+export function getRoleLabel(role: string): string {
+  return (ROLE_LABELS as Record<string, string>)[role] || role;
+}
+
+export function getRoleDescription(role: string): string {
+  return (ROLE_DESCRIPTIONS as Record<string, string>)[role] || 'Custom role with tailored permissions.';
+}
+
 /** Surface access mapping by base role */
 export const ACCESS: Record<Surface, StaffRole[]> = {
   dashboard: ['owner', 'manager', 'cashier', 'accountant'],

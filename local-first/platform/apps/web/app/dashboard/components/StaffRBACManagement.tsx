@@ -129,15 +129,32 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffCode, setNewStaffCode] = useState('');
   const [newStaffPassword, setNewStaffPassword] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState<StaffRole>('waiter');
+  const [newStaffRole, setNewStaffRole] = useState<string>('waiter');
   const [newStaffPin, setNewStaffPin] = useState('');
   const [newStaffPayType, setNewStaffPayType] = useState<'monthly' | 'hourly' | ''>('');
   const [newStaffPayRate, setNewStaffPayRate] = useState('');
   const [newStaffDesignation, setNewStaffDesignation] = useState('');
   const [newStaffJoiningDate, setNewStaffJoiningDate] = useState('');
 
+  // Re-usable custom roles
+  const [customRoles, setCustomRoles] = useState<{ id: string; name: string; baseRole?: string }[]>([]);
+  const [showNewRoleInput, setShowNewRoleInput] = useState(false);
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newRoleBase, setNewRoleBase] = useState<string>('waiter');
+  const [isCreatingRole, setIsCreatingRole] = useState(false);
+
   // Local copy of members with nested metadata parsing
   const [membersList, setMembersList] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (d?.customRoles && Array.isArray(d.customRoles)) {
+      setCustomRoles(d.customRoles.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        baseRole: (typeof r.permissions === 'object' && r.permissions?.baseRole) || 'waiter',
+      })));
+    }
+  }, [d?.customRoles]);
 
   useEffect(() => {
     if (d?.members) {
@@ -367,6 +384,44 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     }
   };
 
+  // Create Re-usable Custom Role Action
+  const handleCreateCustomRole = async () => {
+    if (!newRoleName.trim()) {
+      setErrorMessage('Custom role name cannot be empty');
+      return;
+    }
+    setIsCreatingRole(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_custom_role',
+          name: newRoleName.trim(),
+          baseRole: newRoleBase,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || 'Failed to create custom role');
+      const created = data.role;
+      const roleItem = {
+        id: created.id,
+        name: created.name,
+        baseRole: newRoleBase,
+      };
+      setCustomRoles(prev => [...prev.filter(r => r.name.toLowerCase() !== created.name.toLowerCase()), roleItem]);
+      setNewStaffRole(created.name);
+      setNewRoleName('');
+      setShowNewRoleInput(false);
+      refresh();
+    } catch (e: any) {
+      setErrorMessage(e.message || 'Error occurred while saving role');
+    } finally {
+      setIsCreatingRole(false);
+    }
+  };
+
   // Create Staff Action
   const handleCreateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -381,6 +436,10 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       ? Math.round(parseFloat(newStaffPayRate) * 100)
       : null;
 
+    const isCustom = !ALL_ROLES.includes(newStaffRole as StaffRole);
+    const customRoleObj = customRoles.find(r => r.name.toLowerCase() === newStaffRole.toLowerCase());
+    const baseRole = isCustom ? (customRoleObj?.baseRole || 'waiter') : newStaffRole;
+
     try {
       const res = await fetch('/api/staff', {
         method: 'POST',
@@ -389,6 +448,8 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           action: 'create',
           name: newStaffName,
           role: newStaffRole,
+          baseRole: baseRole,
+          customRole: isCustom ? newStaffRole : undefined,
           phone: newStaffPhone || null,
           employeeCode: newStaffCode || null,
           username: newStaffEmail.trim(),
@@ -399,7 +460,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           designation: newStaffDesignation || null,
           joiningDate: newStaffJoiningDate || null,
           permissions: {
-            assignedRoles: [newStaffRole],
+            assignedRoles: isCustom ? [newStaffRole, baseRole] : [newStaffRole],
             branchAccess: ['main-branch'],
             overrides: {},
             dataRestrictions: []
@@ -565,7 +626,8 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                   { value: 'all', label: 'All Roles' },
                   ...ALL_ROLES.map(r => ({ value: r, label: ROLE_LABELS[r as StaffRole] || r })),
                   { value: 'delivery', label: 'Delivery Staff' },
-                  { value: 'inventory', label: 'Inventory Manager' }
+                  { value: 'inventory', label: 'Inventory Manager' },
+                  ...customRoles.map(cr => ({ value: cr.name, label: cr.name }))
                 ]}
                 label="Filter Role"
               />
@@ -1143,28 +1205,98 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
               {/* ── SECTION 2: Role ── */}
               <div className="border-t border-line/50 pt-4">
-                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-3">Role *</span>
+                <div className="flex justify-between items-center mb-3">
+                  <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest">Role *</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewRoleInput(!showNewRoleInput)}
+                    className="text-xs font-semibold text-turmeric hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>+ Add Custom Role</span>
+                  </button>
+                </div>
+
+                {/* Inline Add Custom Role Form */}
+                {showNewRoleInput && (
+                  <div className="p-3 mb-3 rounded-xl border border-turmeric/40 bg-turmeric-l/5 space-y-2.5 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-ink">Create Re-usable Custom Role</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowNewRoleInput(false)}
+                        className="text-ink-3 hover:text-ink text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-ink-3 mb-1">Custom Role Name *</label>
+                        <input
+                          type="text"
+                          value={newRoleName}
+                          onChange={(e) => setNewRoleName(e.target.value)}
+                          placeholder="e.g. Floor Captain"
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink focus:outline-none focus:border-turmeric"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-ink-3 mb-1">Base System Access</label>
+                        <select
+                          value={newRoleBase}
+                          onChange={(e) => setNewRoleBase(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink focus:outline-none focus:border-turmeric cursor-pointer"
+                        >
+                          <option value="waiter">Waiter (POS & Floor Orders)</option>
+                          <option value="cashier">Cashier (Billing & Till)</option>
+                          <option value="kitchen">Kitchen (KDS & Station)</option>
+                          <option value="manager">Administrator (Manager)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        disabled={isCreatingRole || !newRoleName.trim()}
+                        onClick={handleCreateCustomRole}
+                        className="px-3 py-1.5 rounded-lg bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isCreatingRole ? 'Saving...' : 'Save & Select Role'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-3 gap-2">
-                  {ALL_ROLES.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setNewStaffRole(r)}
-                      className={`relative px-3 py-2.5 rounded-lg border text-xs font-semibold text-left transition-all ${
-                        newStaffRole === r
-                          ? 'border-turmeric bg-turmeric/10 text-turmeric'
-                          : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
-                      }`}
-                    >
-                      <span className="block capitalize">{ROLE_LABELS[r]}</span>
-                      {newStaffRole === r && (
-                        <span className="absolute top-1.5 right-2 text-[9px] text-turmeric">✓</span>
-                      )}
-                    </button>
-                  ))}
+                  {[
+                    ...ALL_ROLES.map(r => ({ id: r, label: ROLE_LABELS[r] })),
+                    ...customRoles.map(cr => ({ id: cr.name, label: cr.name, isCustom: true }))
+                  ].map((r) => {
+                    const isSelected = newStaffRole.toLowerCase() === r.id.toLowerCase();
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setNewStaffRole(r.id)}
+                        className={`relative px-3 py-2.5 rounded-lg border text-xs font-semibold text-left transition-all ${
+                          isSelected
+                            ? 'border-turmeric bg-turmeric/10 text-turmeric'
+                            : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
+                        }`}
+                      >
+                        <span className="block capitalize truncate">{r.label}</span>
+                        {isSelected && (
+                          <span className="absolute top-1.5 right-2 text-[9px] text-turmeric">✓</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
                 <p className="text-[10px] text-ink-3 mt-2">
-                  {ROLE_DESCRIPTIONS[newStaffRole]}
+                  {ROLE_DESCRIPTIONS[newStaffRole as StaffRole] || 
+                   (customRoles.find(cr => cr.name.toLowerCase() === newStaffRole.toLowerCase())
+                     ? `Custom role based on ${customRoles.find(cr => cr.name.toLowerCase() === newStaffRole.toLowerCase())?.baseRole || 'waiter'}. Reusable across your team.`
+                     : 'Point of sale and QR order approvals.')}
                 </p>
               </div>
 
