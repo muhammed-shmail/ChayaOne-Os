@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld(
     getNetworkInfo: () => ipcRenderer.invoke('get-network-info'),
     getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+    quitAndInstall: () => ipcRenderer.invoke('quit-and-install'),
     print: (payload: any) => ipcRenderer.invoke('print-job', payload),
     getLicenseStatus: () => ipcRenderer.invoke('get-license-status'),
     getInstallationId: () => ipcRenderer.invoke('get-installation-id'),

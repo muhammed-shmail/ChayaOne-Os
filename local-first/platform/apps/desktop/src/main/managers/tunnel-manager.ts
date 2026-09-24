@@ -13,8 +13,11 @@ function getPlatformDir(): string {
     }
     cur = path.dirname(cur);
   }
+  const cwd = process.cwd();
   const knownLocations = [
-    'c:\\nuro 7\\CHAYAONE\\CHAYAONE OS\\local-first\\platform',
+    cwd,
+    path.join(cwd, 'local-first', 'platform'),
+    path.resolve(cwd, '..', '..'),
     path.resolve(__dirname, '../../../../..'),
   ];
   for (const loc of knownLocations) {
@@ -48,8 +51,8 @@ export class TunnelManager {
       path.join(process.resourcesPath || '', 'bin', 'cloudflared.exe'),
       path.resolve(__dirname, '../../resources/bin/cloudflared.exe'),
       path.resolve(getPlatformDir(), 'apps/desktop/resources/bin/cloudflared.exe'),
-      path.resolve(getPlatformDir(), '../../bin/cloudflared.exe'),
-      'C:\\nuro 7\\CHAYAONE\\CHAYAONE OS\\bin\\cloudflared.exe',
+      path.resolve(process.cwd(), 'bin/cloudflared.exe'),
+      path.resolve(process.cwd(), '../../bin/cloudflared.exe'),
     ];
 
     for (const p of candidates) {

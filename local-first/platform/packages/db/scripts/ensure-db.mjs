@@ -26,12 +26,24 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import net from 'node:net';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPkgDir = join(__dirname, '..');
-const dataDir = join(dbPkgDir, '.localdb');
+
+function readEnvKey(key) {
+  const envPath = join(dbPkgDir, '..', '..', '.env');
+  try {
+    const m = readFileSync(envPath, 'utf8').match(new RegExp(`^\\s*${key}\\s*=\\s*["']?([^"'\\r\\n]+)`, 'm'));
+    return m ? m[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+const customDataDir = process.env.CHAYAONE_DB_DATA_DIR || readEnvKey('CHAYAONE_DB_DATA_DIR');
+const dataDir = customDataDir ? resolve(customDataDir) : join(dbPkgDir, '.localdb');
 const logFile = join(dataDir, 'pg.log');
 
 const EXE = process.platform === 'win32' ? '.exe' : '';

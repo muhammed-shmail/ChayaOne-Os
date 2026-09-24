@@ -34,16 +34,22 @@ if %ERRORLEVEL% NEQ 0 (
 :: Copy to release-main-pc folder in root
 cd /d "%~dp0"
 if not exist "release-main-pc" mkdir "release-main-pc"
-copy /y "local-first\platform\apps\desktop\dist-installers-v6\ChayaOne App Setup 0.1.0.exe" "release-main-pc\ChayaOne-MainPC-Setup.exe" >nul
+for %%F in ("local-first\platform\apps\desktop\dist-installers-v6\ChayaOne App Setup *.exe") do (
+    copy /y "%%F" "release-main-pc\ChayaOne-MainPC-Setup.exe" >nul
+)
+if exist "local-first\platform\apps\desktop\dist-installers-v6\latest.yml" (
+    copy /y "local-first\platform\apps\desktop\dist-installers-v6\latest.yml" "release-main-pc\latest.yml" >nul
+)
 
 echo.
 echo =================================================================
 echo [SUCCESS] ChayaOne Main PC Desktop Installer built successfully!
 echo.
 echo Installer file: release-main-pc\ChayaOne-MainPC-Setup.exe
+echo Update manifest: release-main-pc\latest.yml
 echo.
-echo Double-click ChayaOne-MainPC-Setup.exe to install and run the
-echo ChayaOne Main PC Desktop Application on any Windows 10/11 PC.
+echo Double-click ChayaOne-MainPC-Setup.exe to install locally.
+echo To publish an online update, upload both files to GitHub Releases!
 echo =================================================================
 echo.
 goto :done

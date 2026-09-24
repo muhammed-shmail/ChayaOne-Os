@@ -1,49 +1,51 @@
 import { NextResponse } from 'next/server';
-import { updateManager } from '@/lib/system/update-manager';
+import { prisma } from '@cafeos/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const state = updateManager.getState();
-  const busyStatus = await updateManager.isCafeInActiveOperation();
+  let isCafeBusy = false;
+  let activeOrders = 0;
+
+  try {
+    activeOrders = await prisma.order.count({
+      where: {
+        status: { in: ['open', 'pending_approval', 'approved', 'in_kitchen', 'ready', 'served'] },
+      },
+    });
+    isCafeBusy = activeOrders > 0;
+  } catch {
+    // If database is not reachable, default to false
+  }
+
+  const currentVersion = process.env.CHAYAONE_APP_VERSION || '0.1.0';
 
   return NextResponse.json({
-    ...state,
-    isCafeBusy: busyStatus.isBusy,
-    activeOrders: busyStatus.activeOrderCount,
+    state: 'IDLE',
+    currentVersion,
+    channel: 'stable',
+    provider: 'github',
+    isCafeBusy,
+    activeOrders,
   });
 }
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const action = body.action || 'check';
 
     if (action === 'check') {
-      const channel = body.channel || 'stable';
-      const result = await updateManager.checkForUpdates(channel);
-      return NextResponse.json(result);
-    }
-
-    if (action === 'apply') {
-      const manifest = body.manifest;
-      const forceDuringBusyHours = !!body.forceDuringBusyHours;
-      const result = await updateManager.applyUpdate({ manifest, forceDuringBusyHours });
-      return NextResponse.json(result);
-    }
-
-    if (action === 'schedule') {
-      const state = updateManager.getState();
+      const currentVersion = process.env.CHAYAONE_APP_VERSION || '0.1.0';
       return NextResponse.json({
-        success: true,
-        message: 'Update scheduled to install automatically after business hours closing.',
-        scheduledVersion: state.targetVersion || state.manifest?.version,
+        updateAvailable: false,
+        message: `Current version is v${currentVersion}. Native updates are managed via GitHub Releases.`,
       });
     }
 
-    return NextResponse.json({ error: 'Invalid update action' }, { status: 400 });
+    return NextResponse.json({ success: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Update operation failed' }, { status: 500 });
+    return NextResponse.json({ error: err?.message || 'Operation failed' }, { status: 500 });
   }
 }

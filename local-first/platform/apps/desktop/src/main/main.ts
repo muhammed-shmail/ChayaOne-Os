@@ -365,6 +365,13 @@ async function startServices() {
     logger.error('Customer 4G Tunnel failed to start:', err);
   });
 
+  // Initialize auto-updater
+  try {
+    desktopUpdateManager.init();
+  } catch (err) {
+    logger.error('Failed to initialize desktop auto-updater:', err);
+  }
+
   const health = healthManager.getSystemHealth();
   if (!health.isHealthy) {
     logger.warn('One or more services reported unhealthy status:', health);
@@ -563,6 +570,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('get-network-info', () => healthManager.getSystemHealth());
   ipcMain.handle('get-update-status', async () => await desktopUpdateManager.getStatus());
   ipcMain.handle('check-for-updates', async () => await desktopUpdateManager.checkForUpdates());
+  ipcMain.handle('quit-and-install', () => desktopUpdateManager.quitAndInstall());
   ipcMain.handle('get-installation-id', () => getInstallationId());
   
   ipcMain.handle('get-license-status', async () => {

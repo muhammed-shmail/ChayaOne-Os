@@ -15,12 +15,26 @@
  *   postgresql://cafeos:cafeos@localhost:5433/cafeos
  */
 import EmbeddedPostgres from 'embedded-postgres';
-import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(__dirname, '..', '.localdb');
+
+function getEnvDataDir() {
+  if (process.env.CHAYAONE_DB_DATA_DIR) return process.env.CHAYAONE_DB_DATA_DIR;
+  try {
+    const envPath = join(__dirname, '..', '..', '.env');
+    const content = readFileSync(envPath, 'utf8');
+    const m = content.match(/^\s*CHAYAONE_DB_DATA_DIR\s*=\s*["']?([^"'\r\n]+)/m);
+    return m ? m[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+const customDataDir = getEnvDataDir();
+const dataDir = customDataDir ? resolve(customDataDir) : join(__dirname, '..', '.localdb');
 const PORT = 5433;
 const USER = 'cafeos';
 const PASSWORD = 'cafeos';

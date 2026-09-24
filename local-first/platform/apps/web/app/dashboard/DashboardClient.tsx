@@ -171,15 +171,19 @@ export default function DashboardClient({
 
   const hasPermission = (p: string) => rbacHasPermission(currentStaff, p);
 
-  // Feature & Module filtering: hide menus if corresponding module or feature is disabled
+  // Feature & Module filtering: in DashboardClient (management portal), ensure all management menus are available to owner/managers
+  const isOwnerOrManager =
+    rbacHasRole(currentStaff, ['owner', 'manager', 'accountant']) ||
+    ['owner', 'manager', 'accountant', 'admin'].includes(String(currentStaff?.role).toLowerCase());
+
   const visibleMenus = MENUS.filter((m) => {
+    // Owners, Managers, and Accountants have full access to management dashboard menus
+    if (isOwnerOrManager) return true;
+
     // Module enablement checks
     if (m.key === 'inventory' && !moduleConfig.enabledModules.includes('inventory')) return false;
     if (m.key === 'suppliers' && !moduleConfig.enabledModules.includes('inventory')) return false;
     if (m.key === 'customers' && (!moduleConfig.enabledModules.includes('crm') || features.crm === false)) return false;
-
-    // Owners have full access to all menus
-    if (rbacHasRole(currentStaff, 'owner')) return true;
 
     if (m.key === 'home') return true;
     if (m.key === 'orders') return rbacHasRole(currentStaff, ['manager', 'cashier', 'accountant', 'waiter', 'kitchen']) || rbacHasPermission(currentStaff, 'orders:view');
@@ -197,8 +201,8 @@ export default function DashboardClient({
   });
 
   const visibleBottomNav = BOTTOM_NAV.filter((m) => {
+    if (isOwnerOrManager) return true;
     if (m.key === 'customers' && features.crm === false) return false;
-    if (rbacHasRole(currentStaff, 'owner')) return true;
     if (m.key === 'home') return true;
     if (m.key === 'orders') return rbacHasRole(currentStaff, ['manager', 'cashier', 'accountant', 'waiter', 'kitchen']) || rbacHasPermission(currentStaff, 'orders:view');
     if (m.key === 'finance') return rbacHasRole(currentStaff, ['manager', 'cashier', 'accountant']) || rbacHasPermission(currentStaff, 'finance:daily_summary');
@@ -333,12 +337,12 @@ export default function DashboardClient({
     }
   }, []);
 
-  // Reset active menu to 'home' if the current tab gets disabled via module settings
+  // Reset active menu to 'home' only if an unknown or invalid menu key was set
   useEffect(() => {
-    if (!visibleMenus.some((m) => m.key === activeMenu)) {
+    if (!MENUS.some((m) => m.key === activeMenu)) {
       setActiveMenu('home');
     }
-  }, [visibleMenus, activeMenu]);
+  }, [activeMenu]);
 
   // Sync sub tab when menu changes
   useEffect(() => {
@@ -2096,6 +2100,11 @@ export default function DashboardClient({
                 onClick={() => {
                   setActiveMenu(m.key);
                   setLiveOrders(0);
+                  if (typeof window !== 'undefined') {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('tab', m.key);
+                    window.history.replaceState(null, '', url.toString());
+                  }
                 }}
                 aria-current={on ? 'page' : undefined}
                 className={`group relative flex items-center rounded-xl transition ${
@@ -4968,7 +4977,15 @@ export default function DashboardClient({
         onClose={() => setDrawerOpen(false)}
         items={visibleMenus as NavItem[]}
         activeKey={activeMenu}
-        onSelect={(k) => { setActiveMenu(k); setLiveOrders(0); }}
+        onSelect={(k) => {
+          setActiveMenu(k);
+          setLiveOrders(0);
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', k);
+            window.history.replaceState(null, '', url.toString());
+          }
+        }}
         plan={outlet.plan}
         onLogout={logout}
         staffRole={staff.role}
@@ -4976,7 +4993,15 @@ export default function DashboardClient({
       <BottomNav
         items={visibleBottomNav as NavItem[]}
         activeKey={activeMenu}
-        onSelect={(k) => { setActiveMenu(k); setLiveOrders(0); }}
+        onSelect={(k) => {
+          setActiveMenu(k);
+          setLiveOrders(0);
+          if (typeof window !== 'undefined') {
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', k);
+            window.history.replaceState(null, '', url.toString());
+          }
+        }}
         onMore={() => setDrawerOpen(true)}
         drawerOpen={drawerOpen}
         liveOrders={liveOrders}

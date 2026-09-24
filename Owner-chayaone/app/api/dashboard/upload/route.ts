@@ -150,8 +150,7 @@ export async function POST(req: NextRequest) {
       // Mirror across monorepo and web public dirs
       const candidatePublicDirs = [
         path.resolve(process.cwd(), '..', 'local-first', 'platform', 'apps', 'web', 'public'),
-        path.resolve('c:/nuro 7/CHAYAONE/CHAYAONE OS/local-first/platform/apps/web/public'),
-        path.resolve('c:/nuro 7/CHAYAONE/CHAYAONE OS/Owner-chayaone/public'),
+        path.resolve(process.cwd(), 'apps', 'web', 'public'),
       ];
 
       for (const pubDir of candidatePublicDirs) {

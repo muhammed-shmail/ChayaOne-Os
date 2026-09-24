@@ -13,8 +13,11 @@ function getPlatformDir(): string {
     }
     cur = path.dirname(cur);
   }
+  const cwd = process.cwd();
   const knownLocations = [
-    'c:\\nuro 7\\CHAYAONE\\CHAYAONE OS\\local-first\\platform',
+    cwd,
+    path.join(cwd, 'local-first', 'platform'),
+    path.resolve(cwd, '..', '..'),
     path.resolve(__dirname, '../../../../..'),
   ];
   for (const loc of knownLocations) {

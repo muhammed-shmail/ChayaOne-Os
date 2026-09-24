@@ -13,8 +13,11 @@ function getPlatformDir(): string {
     }
     cur = path.dirname(cur);
   }
+  const cwd = process.cwd();
   const knownLocations = [
-    'c:\\nuro 7\\CHAYAONE\\CHAYAONE OS\\local-first\\platform',
+    cwd,
+    path.join(cwd, 'local-first', 'platform'),
+    path.resolve(cwd, '..', '..'),
     path.resolve(__dirname, '../../../../..'),
   ];
   for (const loc of knownLocations) {
@@ -94,7 +97,9 @@ export class DatabaseManager {
     const platformDir = getPlatformDir();
     const fallbackPgCtl = path.join(platformDir, 'node_modules', '@embedded-postgres', 'windows-x64', 'native', 'bin', 'pg_ctl.exe');
     const fallbackPostgres = path.join(platformDir, 'node_modules', '@embedded-postgres', 'windows-x64', 'native', 'bin', 'postgres.exe');
-    const fallbackDataDir = path.join(platformDir, 'packages', 'db', '.localdb');
+    const fallbackDataDir = process.env.CHAYAONE_DB_DATA_DIR
+      ? path.resolve(process.env.CHAYAONE_DB_DATA_DIR)
+      : path.join(platformDir, 'packages', 'db', '.localdb');
 
     if (app.isPackaged) {
       let dataDir = path.join(app.getPath('userData'), 'database');

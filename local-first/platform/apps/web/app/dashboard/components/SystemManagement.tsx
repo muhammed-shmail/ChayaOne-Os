@@ -39,7 +39,6 @@ export default function SystemManagement({
   // Updates State
   const [updateState, setUpdateState] = useState<any>(null);
   const [updateChecking, setUpdateChecking] = useState(false);
-  const [updateApplying, setUpdateApplying] = useState(false);
   const [channel, setChannel] = useState<'stable' | 'beta'>('stable');
 
   // History State
@@ -80,6 +79,13 @@ export default function SystemManagement({
 
   const loadUpdateState = async () => {
     try {
+      if (typeof window !== 'undefined' && (window as any).chayaOne?.getUpdateStatus) {
+        const desktopStatus = await (window as any).chayaOne.getUpdateStatus();
+        if (desktopStatus) {
+          setUpdateState(desktopStatus);
+          return;
+        }
+      }
       const res = await fetch('/api/system/updates');
       if (res.ok) {
         const data = await res.json();
@@ -94,6 +100,12 @@ export default function SystemManagement({
   const handleCheckUpdates = async () => {
     setUpdateChecking(true);
     try {
+      if (typeof window !== 'undefined' && (window as any).chayaOne?.checkForUpdates) {
+        const result = await (window as any).chayaOne.checkForUpdates();
+        flashMessage(result.message || 'Update check completed.');
+        await loadUpdateState();
+        return;
+      }
       const res = await fetch('/api/system/updates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -109,40 +121,11 @@ export default function SystemManagement({
     }
   };
 
-  const handleApplyUpdate = async (force = false) => {
-    setUpdateApplying(true);
-    try {
-      const res = await fetch('/api/system/updates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'apply', forceDuringBusyHours: force }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        flashMessage(`✓ ${data.message}`);
-      } else {
-        flashMessage(`Update notice: ${data.message}`);
-      }
-      await loadUpdateState();
-      await loadAbout();
-    } catch (err: any) {
-      flashMessage('Update transaction failed to execute.');
-    } finally {
-      setUpdateApplying(false);
-    }
-  };
-
-  const handleScheduleUpdate = async () => {
-    try {
-      const res = await fetch('/api/system/updates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'schedule' }),
-      });
-      const data = await res.json();
-      flashMessage(data.message || 'Update scheduled after closing.');
-    } catch {
-      flashMessage('Failed to schedule update.');
+  const handleRestartAndInstall = () => {
+    if (typeof window !== 'undefined' && (window as any).chayaOne?.quitAndInstall) {
+      (window as any).chayaOne.quitAndInstall();
+    } else {
+      flashMessage('Restart & Install is available inside the Windows Desktop App.');
     }
   };
 
@@ -456,56 +439,61 @@ export default function SystemManagement({
                     </span>
                   </div>
 
-                  {updateState?.manifest ? (
+                  {updateState?.state === 'DOWNLOADED' ? (
+                    <div className="mt-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-900 dark:text-emerald-200">
+                      <div className="flex items-center gap-2 font-bold text-sm text-emerald-700 dark:text-emerald-300">
+                        <CheckCircle2 size={16} /> Update Downloaded: v{updateState.targetVersion || 'New Version'}
+                      </div>
+                      <p className="text-xs text-emerald-800/90 dark:text-emerald-300/90 mt-1">
+                        The update is downloaded and ready to install. It will automatically install when the app is restarted or closed, or you can restart now.
+                      </p>
+                      <div className="mt-4 pt-3 border-t border-emerald-500/20 flex items-center justify-between">
+                        <span className="text-xs text-gray-500 dark:text-slate-400">Database and settings are safely preserved.</span>
+                        <button
+                          onClick={handleRestartAndInstall}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                        >
+                          <RefreshCw size={14} />
+                          Restart &amp; Install Now
+                        </button>
+                      </div>
+                    </div>
+                  ) : updateState?.state === 'DOWNLOADING' ? (
+                    <div className="mt-4 p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-900 dark:text-blue-200">
+                      <div className="flex items-center gap-2 font-bold text-sm text-blue-700 dark:text-blue-300">
+                        <Download size={16} className="animate-bounce" /> Downloading Update in Background... ({updateState.progressPercent || 0}%)
+                      </div>
+                      <div className="w-full bg-blue-200 dark:bg-blue-950 rounded-full h-2 mt-2.5 overflow-hidden">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${updateState.progressPercent || 0}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-blue-700/80 dark:text-blue-300/80 mt-2">
+                        POS operations continue as normal. Ongoing orders and printers are not affected.
+                      </p>
+                    </div>
+                  ) : updateState?.state === 'AVAILABLE' ? (
                     <div className="mt-4 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200">
                       <div className="flex items-center gap-2 font-bold text-sm text-amber-700 dark:text-amber-300">
-                        <Zap size={16} /> New Version Available: v{updateState.manifest.version}
+                        <Zap size={16} /> New Version v{updateState.targetVersion} Detected
                       </div>
-                      <div className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-1">
-                        Release Date: {new Date(updateState.manifest.releaseDate).toLocaleDateString()}
+                      <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-1">
+                        Connecting to GitHub Releases to download update in the background...
+                      </p>
+                    </div>
+                  ) : updateState?.error ? (
+                    <div className="mt-3 p-3 rounded-xl bg-gray-100 dark:bg-slate-800/80 border border-gray-200 dark:border-slate-700 text-xs text-gray-600 dark:text-slate-400 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Info size={14} className="text-gray-500" />
+                        <span>Operating in Local LAN Mode ({updateState.error})</span>
                       </div>
-
-                      {updateState.manifest.releaseNotes?.length > 0 && (
-                        <div className="mt-3">
-                          <div className="text-xs font-bold uppercase tracking-wider mb-1">What&apos;s New:</div>
-                          <ul className="list-disc list-inside text-xs space-y-1">
-                            {updateState.manifest.releaseNotes.map((note: string, idx: number) => (
-                              <li key={idx}>{note}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      <div className="mt-4 pt-3 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-3">
-                        <div className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 font-medium">
-                          <CheckCircle2 size={14} /> Mandatory Pre-update Database Backup Ready
-                        </div>
-
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleScheduleUpdate}
-                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg transition-colors"
-                          >
-                            Schedule After Closing
-                          </button>
-                          <button
-                            onClick={() => handleApplyUpdate(false)}
-                            disabled={updateApplying}
-                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-                          >
-                            <Download size={14} />
-                            {updateApplying ? 'Installing Update...' : 'Update Now'}
-                          </button>
-                        </div>
-                      </div>
+                      <span className="text-[11px] text-gray-400">POS fully functional</span>
                     </div>
                   ) : (
                     <div className="mt-2 text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
                       <CheckCircle2 size={14} className="text-emerald-500" />
-                      You&apos;re running the latest release. Last checked:{' '}
-                      {updateState?.lastCheckedAt
-                        ? new Date(updateState.lastCheckedAt).toLocaleTimeString()
-                        : 'Just now'}
+                      You&apos;re running the latest release. Online updates connect to GitHub Releases.
                     </div>
                   )}
                 </div>

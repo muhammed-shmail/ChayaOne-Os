@@ -33,14 +33,16 @@ export async function GET(
 
   const relativePath = segments.join(path.sep);
 
+  const cwd = process.cwd();
   const candidateDirs = [
-    path.join(process.cwd(), 'public', 'uploads'),
-    path.resolve(process.cwd(), '..', 'apps', 'web', 'public', 'uploads'),
-    path.resolve(process.cwd(), '..', '..', 'Owner-chayaone', 'public', 'uploads'),
-    'c:\\nuro 7\\CHAYAONE\\CHAYAONE OS\\local-first\\platform\\apps\\web\\public\\uploads',
-    'c:\\nuro 7\\CHAYAONE\\CHAYAONE OS\\Owner-chayaone\\public\\uploads',
-    'c:\\nuro 7\\CHAYAONE\\CHAYAONE OS\\local-first\\platform\\apps\\waiter\\public\\uploads',
-    'c:\\nuro 7\\CHAYAONE\\CHAYAONE OS\\local-first\\platform\\apps\\customer\\public\\uploads',
+    path.join(cwd, 'public', 'uploads'),
+    path.resolve(cwd, 'apps', 'web', 'public', 'uploads'),
+    path.resolve(cwd, '..', 'web', 'public', 'uploads'),
+    path.resolve(cwd, '..', 'apps', 'web', 'public', 'uploads'),
+    path.resolve(cwd, '..', 'waiter', 'public', 'uploads'),
+    path.resolve(cwd, '..', 'customer', 'public', 'uploads'),
+    path.resolve(cwd, '..', '..', 'Owner-chayaone', 'public', 'uploads'),
+    path.resolve(cwd, '..', '..', '..', 'Owner-chayaone', 'public', 'uploads'),
   ];
 
   let targetFile: string | null = null;

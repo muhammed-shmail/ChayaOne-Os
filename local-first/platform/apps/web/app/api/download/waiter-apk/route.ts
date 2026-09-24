@@ -10,7 +10,7 @@ export async function GET(_req: NextRequest) {
     path.resolve(process.cwd(), '..', '..', 'android', 'release-apks', 'ChayaOne-Waiter.apk'),
     path.resolve(process.cwd(), '..', '..', '..', 'android', 'release-apks', 'ChayaOne-Waiter.apk'),
     path.resolve(process.cwd(), 'android', 'release-apks', 'ChayaOne-Waiter.apk'),
-    'C:\\nuro 7\\CHAYAONE\\CHAYAONE OS\\android\\release-apks\\ChayaOne-Waiter.apk',
+    path.resolve(process.cwd(), 'release-apks', 'ChayaOne-Waiter.apk'),
   ];
 
   let apkPath: string | null = null;

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@cafeos/db';
-import { updateManager } from '@/lib/system/update-manager';
 import { getRuntimeConfig } from '@/lib/runtime-config';
 
 export const runtime = 'nodejs';
@@ -8,7 +7,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const cfg = getRuntimeConfig();
-  const updateState = updateManager.getState();
+  const currentVersion = process.env.CHAYAONE_APP_VERSION || '0.1.0';
+  const channel = 'stable';
   
   let tenantName = 'ChayaOne POS';
   let outletName = 'Main Outlet';
@@ -23,9 +23,9 @@ export async function GET() {
 
   return NextResponse.json({
     appName: 'ChayaOne OS',
-    version: updateState.currentVersion,
+    version: currentVersion,
     build: '20260905',
-    channel: updateState.channel,
+    channel,
     runtimeMode: cfg.mode,
     databaseEngine: 'PostgreSQL 16 (Local Embedded)',
     cafeName: tenantName,

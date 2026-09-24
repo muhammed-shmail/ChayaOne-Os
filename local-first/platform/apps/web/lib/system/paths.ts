@@ -29,7 +29,9 @@ export function resolveSystemPaths(): SystemPaths {
   const isProdWin = process.platform === 'win32' && process.env.NODE_ENV === 'production' && process.env.PROGRAMDATA;
   
   let baseDataDir: string;
-  if (isProdWin && process.env.PROGRAMDATA) {
+  if (process.env.CHAYAONE_DATA_DIR) {
+    baseDataDir = path.resolve(process.env.CHAYAONE_DATA_DIR);
+  } else if (isProdWin && process.env.PROGRAMDATA) {
     baseDataDir = path.join(process.env.PROGRAMDATA, 'ChayaOne');
   } else {
     // Development fallback inside workspace

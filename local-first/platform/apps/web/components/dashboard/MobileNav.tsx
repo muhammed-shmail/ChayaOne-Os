@@ -28,7 +28,7 @@ export function MobileDrawer({
   items,
   activeKey,
   onSelect,
-  plan,
+  plan: _plan,
   onLogout,
   staffRole,
 }: {
@@ -37,7 +37,7 @@ export function MobileDrawer({
   items: NavItem[];
   activeKey: string;
   onSelect: (key: string) => void;
-  plan: string;
+  plan?: string;
   onLogout: () => void;
   staffRole?: string;
 }) {
@@ -164,16 +164,6 @@ export function MobileDrawer({
             <LayoutDashboard size={16} aria-hidden /> Manager Dashboard
           </a>
         )}
-
-        <div className="card p-3 mt-1" style={{ background: 'var(--paper-3)' }}>
-          <b className="text-sm capitalize">{plan} plan</b>
-          <span className="block text-xs mb-2" style={{ color: 'var(--ink-3)' }}>
-            14 days left in trial
-          </span>
-          <button className="btn btn-primary w-full" style={{ padding: '8px' }}>
-            Upgrade
-          </button>
-        </div>
 
         <button
           onClick={onLogout}

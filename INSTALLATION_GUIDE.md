@@ -74,8 +74,8 @@ ChayaOne OS is organized into dedicated, collision-free applications:
 Open PowerShell or terminal in the project root directory:
 
 ```powershell
-# Navigate to the workspace root
-cd "c:\nuro 7\CHAYAONE\CHAYAONE OS"
+# Navigate to your workspace root (e.g. D:\CHAYAONE OS or C:\nuro 7\CHAYAONE\CHAYAONE OS)
+cd "D:\CHAYAONE OS"
 
 # Install all workspace dependencies across all packages
 npm install
