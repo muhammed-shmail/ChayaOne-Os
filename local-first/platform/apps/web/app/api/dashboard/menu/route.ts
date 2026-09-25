@@ -40,11 +40,61 @@ export async function POST(req: NextRequest) {
     const name = String(body.name ?? '').trim();
     if (!name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
     const count = await prisma.category.count({ where: { outletId: session.outletId } });
+    const sort = typeof body.sort === 'number' && Number.isFinite(body.sort) ? Math.round(body.sort) : count;
     const cat = await prisma.category.create({
-      data: { outletId: session.outletId, name, sort: count },
-      select: { id: true, name: true },
+      data: { outletId: session.outletId, name, sort },
+      select: { id: true, name: true, sort: true },
     });
     return NextResponse.json({ ok: true, category: cat });
+  }
+
+  // ---- update / edit category ----
+  if (action === 'category_update') {
+    const { categoryId, name, sort } = body;
+    if (!categoryId) return NextResponse.json({ error: 'missing_category' }, { status: 400 });
+    const cat = await prisma.category.findFirst({ where: { id: categoryId, outletId: session.outletId } });
+    if (!cat) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    const data: { name?: string; sort?: number } = {};
+    if (typeof name === 'string' && name.trim()) data.name = name.trim();
+    if (typeof sort === 'number' && Number.isFinite(sort)) data.sort = Math.round(sort);
+    const updated = await prisma.category.update({
+      where: { id: categoryId },
+      data,
+      select: { id: true, name: true, sort: true },
+    });
+    return NextResponse.json({ ok: true, category: updated });
+  }
+
+  // ---- delete category ----
+  if (action === 'category_delete') {
+    const { categoryId } = body;
+    if (!categoryId) return NextResponse.json({ error: 'missing_category' }, { status: 400 });
+    const cat = await prisma.category.findFirst({ where: { id: categoryId, outletId: session.outletId } });
+    if (!cat) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+    // Safe unlink: items in this category become Uncategorised so no products or past receipts are lost
+    await prisma.menuItem.updateMany({
+      where: { categoryId, outletId: session.outletId },
+      data: { categoryId: null },
+    });
+    await prisma.category.delete({ where: { id: categoryId } });
+    return NextResponse.json({ ok: true, deleted: categoryId });
+  }
+
+  // ---- reorder categories ----
+  if (action === 'category_reorder') {
+    const { order } = body;
+    if (Array.isArray(order)) {
+      await Promise.all(
+        order.map((catId: string, idx: number) =>
+          prisma.category.updateMany({
+            where: { id: catId, outletId: session.outletId },
+            data: { sort: idx },
+          })
+        )
+      );
+      return NextResponse.json({ ok: true });
+    }
+    return NextResponse.json({ error: 'invalid_order' }, { status: 400 });
   }
 
   // ---- create a new product ----

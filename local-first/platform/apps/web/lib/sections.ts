@@ -1073,7 +1073,7 @@ export interface MenuData {
     name: string;
     items: { id: string; name: string; pricePaise: number; gstRate: number; station: string | null; isAvailable: boolean; tags: string[]; categoryId: string | null; description: string | null }[];
   }[];
-  categoryList: { id: string; name: string }[];
+  categoryList: { id: string; name: string; sort?: number; itemCount?: number }[];
   /** the outlet's kitchens/stations — powers the item "Station" picker */
   kitchens: Kitchen[];
   /** whether GST is enabled for this outlet — controls visibility of GST fields in the product form */
@@ -1117,8 +1117,8 @@ async function getMenu(outletId: string): Promise<MenuData> {
     }),
   }));
 
-  // flat category list (id + name) for product-management dropdowns
-  const categoryList = categories.map((c) => ({ id: c.id, name: c.name }));
+  // flat category list (id + name + sort + itemCount) for product and category management
+  const categoryList = categories.map((c) => ({ id: c.id, name: c.name, sort: c.sort, itemCount: c.items.length }));
 
   const gst = readGstConfig(outlet?.settings);
   return { counts: { items, available, unavailable: items - available }, categories: out, categoryList, kitchens: readKitchens(outlet?.settings), gstEnabled: gst.enabled };

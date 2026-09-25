@@ -1160,7 +1160,7 @@ export default function DashboardClient({
   const GST_OPTIONS = [0, 5, 12, 18, 28];
   // kitchens/stations are configured per outlet — populated from the menu/settings section loads
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
-  const [menuCategories, setMenuCategories] = useState<{ id: string; name: string }[]>([]);
+  const [menuCategories, setMenuCategories] = useState<{ id: string; name: string; sort?: number; itemCount?: number }[]>([]);
   const [menuCatFilter, setMenuCatFilter] = useState('all'); // 'all' | category id | 'none'
   const blankProduct = { name: '', price: '', gstRate: '5', station: '', categoryId: '', description: '', isAvailable: true, hsnCode: '', tags: [] as string[] };
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -1168,6 +1168,15 @@ export default function DashboardClient({
   const [newCategory, setNewCategory] = useState('');
   const [editProductId, setEditProductId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ ...blankProduct });
+
+  // Category management tab state
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editCatName, setEditCatName] = useState('');
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categorySearch, setCategorySearch] = useState('');
+  const [deleteConfirmCatId, setDeleteConfirmCatId] = useState<string | null>(null);
 
   // Station picker options = default unassigned option plus configured stations.
   const stationOptions = (current: string) => {
@@ -1195,6 +1204,115 @@ export default function DashboardClient({
         setNewProduct((p) => ({ ...p, categoryId: d.category.id }));
       } else flashMessage('Could not add category');
     } catch (err) { console.error(err); }
+  };
+
+  const handleCreateCategoryFromTab = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const name = newCatName.trim();
+    if (!name) {
+      flashMessage('Please enter a category name');
+      return;
+    }
+    setCategorySaving(true);
+    try {
+      const res = await fetch('/api/dashboard/menu', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'category_create', name, sort: menuCategories.length }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.category) {
+        flashMessage('Category added successfully!');
+        setNewCatName('');
+        setShowAddCategoryModal(false);
+        await loadInventoryData();
+      } else {
+        flashMessage(d.error || 'Could not add category');
+      }
+    } catch (err) {
+      console.error(err);
+      flashMessage('Failed to add category');
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleUpdateCategoryName = async (catId: string) => {
+    const name = editCatName.trim();
+    if (!name) {
+      flashMessage('Category name cannot be empty');
+      return;
+    }
+    setCategorySaving(true);
+    try {
+      const res = await fetch('/api/dashboard/menu', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'category_update', categoryId: catId, name }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        flashMessage('Category renamed!');
+        setEditingCatId(null);
+        setEditCatName('');
+        await loadInventoryData();
+      } else {
+        flashMessage(d.error || 'Could not update category');
+      }
+    } catch (err) {
+      console.error(err);
+      flashMessage('Failed to update category');
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleDeleteCategoryConfirmed = async (catId: string) => {
+    setCategorySaving(true);
+    try {
+      const res = await fetch('/api/dashboard/menu', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'category_delete', categoryId: catId }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        flashMessage('Category deleted! Items moved to Uncategorised.');
+        setDeleteConfirmCatId(null);
+        await loadInventoryData();
+      } else {
+        flashMessage(d.error || 'Could not delete category');
+      }
+    } catch (err) {
+      console.error(err);
+      flashMessage('Failed to delete category');
+    } finally {
+      setCategorySaving(false);
+    }
+  };
+
+  const handleMoveCategoryOrder = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= menuCategories.length) return;
+    const reordered = [...menuCategories];
+    const current = reordered[index];
+    const target = reordered[targetIndex];
+    if (!current || !target) return;
+    reordered[index] = target;
+    reordered[targetIndex] = current;
+    setMenuCategories(reordered);
+    try {
+      const order = reordered.map((c) => c.id);
+      await fetch('/api/dashboard/menu', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'category_reorder', order }),
+      });
+      flashMessage('Category order saved');
+    } catch (err) {
+      console.error(err);
+      await loadInventoryData();
+    }
   };
 
   const handleCreateProduct = async (e: React.FormEvent) => {
@@ -4202,10 +4320,21 @@ export default function DashboardClient({
                     >
                       ⚡ Availability & Limits
                     </button>
+                    <button
+                      role="tab"
+                      aria-selected={activeSubTab === 'categories'}
+                      onClick={() => setActiveSubTab('categories')}
+                      className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                      style={activeSubTab === 'categories'
+                        ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                        : { color: 'var(--ink-2)', background: 'transparent' }}
+                    >
+                      📁 Categories & Manage (Edit)
+                    </button>
                   </div>
                 </div>
 
-                {activeSubTab === 'menu' ? (() => {
+                {activeSubTab === 'menu' && (() => {
                   const q = menuSearch.trim().toLowerCase();
                   // search + category filter
                   const filtered = menuItems.filter((m) => {
@@ -4579,7 +4708,9 @@ export default function DashboardClient({
                     )}
                   </section>
                   );
-                })() : (() => {
+                })()}
+
+                {activeSubTab === 'availability' && (() => {
                   const q = menuSearch.trim().toLowerCase();
                   const filtered = menuItems.filter((m) => {
                     if (q && !m.name.toLowerCase().includes(q)) return false;
@@ -4680,6 +4811,348 @@ export default function DashboardClient({
                                     </div>
                                   )}
                                 </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })()}
+
+                {activeSubTab === 'categories' && (() => {
+                  const q = categorySearch.trim().toLowerCase();
+                  const filteredCats = menuCategories.filter((c) =>
+                    !q || c.name.toLowerCase().includes(q)
+                  );
+                  const uncategorisedItems = menuItems.filter((m) => !m.categoryId);
+
+                  return (
+                    <section className="card p-5">
+                      {/* Header row */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-lg">📁 Category Management & Editing</h4>
+                            <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold" style={{ background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line-2)' }}>
+                              {menuCategories.length} {menuCategories.length === 1 ? 'Category' : 'Categories'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-ink-3 mt-1">
+                            Create new categories, rename or edit existing categories, and rearrange their order in your menu.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--ink-3)' }}>🔍</span>
+                            <input
+                              value={categorySearch}
+                              onChange={(e) => setCategorySearch(e.target.value)}
+                              placeholder="Search categories…"
+                              className="pl-8 pr-3 py-2 rounded-xl border text-sm outline-none w-44"
+                              style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}
+                            />
+                          </div>
+                          <button
+                            onClick={() => {
+                              setShowAddCategoryModal((prev) => !prev);
+                              setNewCatName('');
+                            }}
+                            className="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                            style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                          >
+                            <span>{showAddCategoryModal ? '✕ Close Form' : '+ Add Category'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Add Category Card */}
+                      {showAddCategoryModal && (
+                        <form
+                          onSubmit={handleCreateCategoryFromTab}
+                          className="p-4 rounded-2xl mb-5 border transition-all animate-fadeIn"
+                          style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                        >
+                          <h5 className="font-bold text-sm mb-2 flex items-center gap-2">
+                            <span>✨ Add New Category</span>
+                          </h5>
+                          <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
+                            <input
+                              type="text"
+                              value={newCatName}
+                              onChange={(e) => setNewCatName(e.target.value)}
+                              placeholder="e.g. Signature Teas, Sandwiches, Mocktails..."
+                              autoFocus
+                              className="flex-1 px-3.5 py-2.5 rounded-xl border text-sm outline-none font-medium"
+                              style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}
+                            />
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="submit"
+                                disabled={categorySaving || !newCatName.trim()}
+                                className="px-5 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                              >
+                                {categorySaving ? 'Saving…' : '✓ Create Category'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowAddCategoryModal(false);
+                                  setNewCatName('');
+                                }}
+                                className="px-3.5 py-2.5 rounded-xl text-xs font-medium border cursor-pointer hover:opacity-80"
+                                style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </form>
+                      )}
+
+                      {/* Uncategorised notice banner if any uncategorised items exist */}
+                      {uncategorisedItems.length > 0 && (
+                        <div
+                          className="p-3.5 rounded-xl mb-4 text-xs flex flex-wrap items-center justify-between gap-2 border"
+                          style={{ background: 'rgba(217, 119, 6, 0.08)', borderColor: 'rgba(217, 119, 6, 0.25)', color: 'var(--ink)' }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">⚠️</span>
+                            <span>
+                              <strong>{uncategorisedItems.length} product{uncategorisedItems.length === 1 ? '' : 's'}</strong> are currently <em>Uncategorised</em>.
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setActiveSubTab('menu');
+                              setMenuCatFilter('none');
+                            }}
+                            className="text-xs font-bold underline cursor-pointer hover:opacity-80"
+                            style={{ color: '#b45309' }}
+                          >
+                            Assign them in Menu Management →
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Category List */}
+                      {menuCategories.length === 0 ? (
+                        <div className="text-center py-12 px-4 rounded-2xl border border-dashed" style={{ borderColor: 'var(--line-2)', background: 'var(--paper-2)' }}>
+                          <span className="text-4xl block mb-2">📁</span>
+                          <h5 className="font-bold text-base mb-1">No categories yet</h5>
+                          <p className="text-xs text-ink-3 mb-4 max-w-sm mx-auto">
+                            Group your food, drinks, and snacks into categories so your staff and customers can find items quickly.
+                          </p>
+                          <button
+                            onClick={() => setShowAddCategoryModal(true)}
+                            className="px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
+                            style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                          >
+                            + Add Your First Category
+                          </button>
+                        </div>
+                      ) : filteredCats.length === 0 ? (
+                        <div className="text-center py-8 text-xs text-ink-3">
+                          No category matched &ldquo;{categorySearch}&rdquo;.
+                        </div>
+                      ) : (
+                        <div className="grid gap-2.5">
+                          {filteredCats.map((cat) => {
+                            const originalIndex = menuCategories.findIndex((c) => c.id === cat.id);
+                            const itemsInCat = menuItems.filter((m) => m.categoryId === cat.id);
+                            const isEditing = editingCatId === cat.id;
+                            const isConfirmingDelete = deleteConfirmCatId === cat.id;
+
+                            return (
+                              <div
+                                key={cat.id}
+                                className="p-3.5 sm:p-4 rounded-2xl border transition-all"
+                                style={{
+                                  background: 'var(--paper-2)',
+                                  borderColor: isEditing ? 'var(--turmeric)' : 'var(--line)',
+                                  boxShadow: isEditing ? '0 0 0 1px var(--turmeric)' : 'none',
+                                }}
+                              >
+                                {isEditing ? (
+                                  /* Edit Category Inline Form */
+                                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <span className="text-xs font-mono font-bold px-2 py-1 rounded bg-black/5 text-ink-3">
+                                        #{originalIndex + 1}
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={editCatName}
+                                        onChange={(e) => setEditCatName(e.target.value)}
+                                        placeholder="Category name"
+                                        autoFocus
+                                        className="flex-1 px-3 py-2 rounded-xl border text-sm outline-none font-semibold"
+                                        style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleUpdateCategoryName(cat.id);
+                                          } else if (e.key === 'Escape') {
+                                            setEditingCatId(null);
+                                          }
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2 justify-end">
+                                      <button
+                                        type="button"
+                                        disabled={categorySaving || !editCatName.trim()}
+                                        onClick={() => handleUpdateCategoryName(cat.id)}
+                                        className="px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                                        style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                                      >
+                                        {categorySaving ? 'Saving…' : 'Save'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingCatId(null)}
+                                        className="px-3 py-2 rounded-xl text-xs font-medium border cursor-pointer hover:opacity-80"
+                                        style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* Category View Row */
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="flex items-start sm:items-center gap-3">
+                                      {/* Reorder Arrows */}
+                                      <div className="flex sm:flex-col gap-1 items-center shrink-0">
+                                        <button
+                                          type="button"
+                                          disabled={originalIndex === 0 || !!categorySearch}
+                                          onClick={() => handleMoveCategoryOrder(originalIndex, 'up')}
+                                          title="Move Up"
+                                          className="w-7 h-6 flex items-center justify-center rounded-lg border text-xs cursor-pointer hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                                          style={{ borderColor: 'var(--line-2)', background: 'var(--paper-3)', color: 'var(--ink)' }}
+                                        >
+                                          ▲
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={originalIndex === menuCategories.length - 1 || !!categorySearch}
+                                          onClick={() => handleMoveCategoryOrder(originalIndex, 'down')}
+                                          title="Move Down"
+                                          className="w-7 h-6 flex items-center justify-center rounded-lg border text-xs cursor-pointer hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed transition"
+                                          style={{ borderColor: 'var(--line-2)', background: 'var(--paper-3)', color: 'var(--ink)' }}
+                                        >
+                                          ▼
+                                        </button>
+                                      </div>
+
+                                      {/* Order Badge & Category Info */}
+                                      <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded text-ink-3" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
+                                            #{originalIndex + 1}
+                                          </span>
+                                          <span className="font-bold text-base text-ink">
+                                            {cat.name}
+                                          </span>
+                                          <span
+                                            className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                                            style={{
+                                              background: itemsInCat.length > 0 ? 'rgba(34, 197, 94, 0.12)' : 'var(--paper-3)',
+                                              color: itemsInCat.length > 0 ? '#15803d' : 'var(--ink-3)',
+                                              border: '1px solid var(--line-2)',
+                                            }}
+                                          >
+                                            {itemsInCat.length} {itemsInCat.length === 1 ? 'item' : 'items'}
+                                          </span>
+                                        </div>
+
+                                        {/* Sample Items in this Category */}
+                                        {itemsInCat.length > 0 && (
+                                          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                            {itemsInCat.slice(0, 4).map((it) => (
+                                              <span
+                                                key={it.id}
+                                                className="text-[11px] px-2 py-0.5 rounded-md text-ink-3 truncate max-w-[140px]"
+                                                style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}
+                                              >
+                                                {it.name}
+                                              </span>
+                                            ))}
+                                            {itemsInCat.length > 4 && (
+                                              <span className="text-[11px] text-ink-3 font-medium">
+                                                +{itemsInCat.length - 4} more
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex items-center gap-2 sm:self-center shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0" style={{ borderColor: 'var(--line-2)' }}>
+                                      {isConfirmingDelete ? (
+                                        <div className="flex items-center gap-1.5 bg-red-50 dark:bg-red-950/30 p-1.5 rounded-xl border border-red-200 dark:border-red-900/50">
+                                          <span className="text-xs text-red-600 dark:text-red-400 font-medium px-1">
+                                            Confirm delete?
+                                          </span>
+                                          <button
+                                            type="button"
+                                            disabled={categorySaving}
+                                            onClick={() => handleDeleteCategoryConfirmed(cat.id)}
+                                            className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 cursor-pointer disabled:opacity-50"
+                                          >
+                                            {categorySaving ? '…' : 'Yes, Delete'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setDeleteConfirmCatId(null)}
+                                            className="px-2 py-1 rounded-lg text-xs font-medium border text-ink-2 bg-white dark:bg-neutral-800 cursor-pointer"
+                                            style={{ borderColor: 'var(--line-2)' }}
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setActiveSubTab('menu');
+                                              setMenuCatFilter(cat.id);
+                                            }}
+                                            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer hover:bg-black/5 transition"
+                                            style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}
+                                            title="View products in Menu Management"
+                                          >
+                                            View items
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingCatId(cat.id);
+                                              setEditCatName(cat.name);
+                                            }}
+                                            className="px-3 py-1.5 rounded-xl text-xs font-bold border cursor-pointer hover:bg-black/5 transition flex items-center gap-1"
+                                            style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)', color: 'var(--ink)' }}
+                                          >
+                                            <span>✏️ Edit</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setDeleteConfirmCatId(cat.id)}
+                                            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer hover:bg-red-500/10 transition text-red-600 dark:text-red-400"
+                                            style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}
+                                            title="Delete category"
+                                          >
+                                            🗑️
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
