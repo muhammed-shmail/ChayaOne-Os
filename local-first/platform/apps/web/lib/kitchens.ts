@@ -45,11 +45,22 @@ export function kitchenSlug(name: string): string {
     .slice(0, 24);
 }
 
+import { readUnifiedStations } from './waiter-stations';
+
 /**
- * Read & normalize the kitchen list from Outlet.settings.kitchens. Never throws.
+ * Read & normalize the kitchen list from Outlet.settings. Returns a unified list of stations. Never throws.
  * Returns empty array when nothing is configured (default: no station).
  */
 export function readKitchens(settings: unknown): Kitchen[] {
+  const unified = readUnifiedStations(settings);
+  if (Array.isArray(unified) && unified.length > 0) {
+    return unified.map((st, i) => ({
+      id: st.id,
+      name: `${st.code} · ${st.name}`,
+      color: KITCHEN_PALETTE[i % KITCHEN_PALETTE.length],
+      sort: i,
+    }));
+  }
   const raw = (settings as { kitchens?: unknown } | null)?.kitchens;
   if (!Array.isArray(raw)) return DEFAULT_KITCHENS;
   const seen = new Set<string>();
@@ -71,7 +82,8 @@ export function readKitchens(settings: unknown): Kitchen[] {
 /** Resolve a station slug to its display name (falls back to a prettified slug). */
 export function kitchenName(kitchens: Kitchen[], station: string | null | undefined): string {
   if (!station) return '';
-  const hit = kitchens.find((k) => k.id === station);
+  const clean = station.trim().toLowerCase();
+  const hit = kitchens.find((k) => k.id.toLowerCase() === clean);
   if (hit) return hit.name;
   // unknown/legacy slug — prettify: "cold-kitchen" → "Cold Kitchen"
   return station.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -80,6 +92,7 @@ export function kitchenName(kitchens: Kitchen[], station: string | null | undefi
 /** Resolve a station slug to its chip colour (falls back to a neutral tint). */
 export function kitchenColor(kitchens: Kitchen[], station: string | null | undefined): string | null {
   if (!station) return null;
-  const hit = kitchens.find((k) => k.id === station);
+  const clean = station.trim().toLowerCase();
+  const hit = kitchens.find((k) => k.id.toLowerCase() === clean);
   return hit?.color ?? null;
 }

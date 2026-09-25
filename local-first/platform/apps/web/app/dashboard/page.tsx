@@ -39,7 +39,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
   const receipt = readReceiptConfig(outlet.settings);
   const upiConfig = readUpiConfig(outlet.settings, outlet.name);
 
-  const dashboardOutlet = { name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt, upiConfig };
+  const dashboardOutlet = { name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt, upiConfig, settings: outlet.settings };
 
   const showOwner = hasRole(session, ['owner', 'accountant']) || (hasRole(session, 'manager') && searchParams?.view === 'owner');
 

@@ -144,7 +144,7 @@ export default function DashboardClient({
   features,
   initialModuleConfig,
 }: {
-  outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: ReceiptConfig; staffAppEnabled?: boolean; upiConfig?: any };
+  outlet: { name: string; brand: string; plan: string; gstin: string | null; receipt: ReceiptConfig; staffAppEnabled?: boolean; upiConfig?: any; settings?: any };
   staff: { name: string; role: string; permissions?: string[] };
   data: DashboardData;
   features: Record<string, boolean>;
@@ -999,7 +999,7 @@ export default function DashboardClient({
   const [kitchens, setKitchens] = useState<Kitchen[]>([]);
   const [menuCategories, setMenuCategories] = useState<{ id: string; name: string }[]>([]);
   const [menuCatFilter, setMenuCatFilter] = useState('all'); // 'all' | category id | 'none'
-  const blankProduct = { name: '', price: '', gstRate: '5', station: 'kitchen', categoryId: '', description: '', isAvailable: true, hsnCode: '', tags: [] as string[] };
+  const blankProduct = { name: '', price: '', gstRate: '5', station: '', categoryId: '', description: '', isAvailable: true, hsnCode: '', tags: [] as string[] };
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [newProduct, setNewProduct] = useState({ ...blankProduct });
   const [newCategory, setNewCategory] = useState('');
@@ -1010,7 +1010,10 @@ export default function DashboardClient({
   // if it's a legacy/removed slug (so editing never silently drops a routing).
   const stationOptions = (current: string) => {
     const list = kitchens.map((k) => ({ id: k.id, name: k.name }));
-    if (current && !list.some((k) => k.id === current)) list.unshift({ id: current, name: current });
+    const clean = (current || '').trim().toLowerCase();
+    if (clean && clean !== 'kitchen' && clean !== 'none' && !list.some((k) => k.id.toLowerCase() === clean)) {
+      list.unshift({ id: current, name: current.toUpperCase() });
+    }
     return [{ id: '', name: '— No Station (Default) —' }, ...list];
   };
 
@@ -1068,7 +1071,7 @@ export default function DashboardClient({
       name: item.name ?? '',
       price: ((item.pricePaise ?? 0) / 100).toString(),
       gstRate: String(item.gstRate ?? 5),
-      station: item.station ?? 'kitchen',
+      station: (item.station && item.station.toLowerCase() !== 'kitchen') ? item.station : '',
       categoryId: item.categoryId ?? '',
       description: item.description ?? '',
       isAvailable: !!item.isAvailable,
@@ -1368,7 +1371,7 @@ export default function DashboardClient({
 
   // Devices & printers (Settings → Devices)
   const [devices, setDevices] = useState<Device[]>([]);
-  const blankDevice = { id: '', name: '', type: 'receipt_printer', connection: 'network', target: '', ip: '', port: '9100', station: 'kitchen', copies: '1', isDefault: false };
+  const blankDevice = { id: '', name: '', type: 'receipt_printer', connection: 'network', target: '', ip: '', port: '9100', station: '', copies: '1', isDefault: false };
   const [deviceForm, setDeviceForm] = useState<typeof blankDevice>({ ...blankDevice });
   const [showDeviceForm, setShowDeviceForm] = useState(false);
 
@@ -1590,7 +1593,14 @@ export default function DashboardClient({
         body: JSON.stringify(payload),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok && Array.isArray(d.kitchens)) { setKitchens(d.kitchens); flashMessage(okMsg); return true; }
+      if (res.ok && (Array.isArray(d.kitchens) || Array.isArray(d.waiterStations))) {
+        if (Array.isArray(d.kitchens)) setKitchens(d.kitchens);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('stations:changed', { detail: { waiterStations: d.waiterStations, kitchens: d.kitchens } }));
+        }
+        flashMessage(okMsg);
+        return true;
+      }
       flashMessage(KITCHEN_ERR[d.error as string] ?? `Could not save (${d.error ?? 'error'})`);
       return false;
     } catch (err) { console.error(err); flashMessage('Network error'); return false; }
@@ -1714,7 +1724,7 @@ export default function DashboardClient({
         target: dev.target,
         ip: dev.ip || parts[0] || '',
         port: dev.port ? String(dev.port) : parts[1] || '9100',
-        station: dev.station ?? 'kitchen',
+        station: (dev.station && dev.station.toLowerCase() !== 'kitchen') ? dev.station : '',
         copies: String(dev.copies),
         isDefault: dev.isDefault,
       });
@@ -4197,31 +4207,7 @@ export default function DashboardClient({
                       </div>
                     )}
 
-                    {/* Kitchens / prep stations — where each item routes on the KDS */}
-                    <div className="p-4 mb-4 rounded-xl" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
-                      <h5 className="font-bold text-sm mb-1">Kitchens / prep stations</h5>
-                      <p className="text-xs text-ink-3 mb-3">Each product routes to one kitchen. Orders split into one ticket per kitchen on the KDS — a café with 2 kitchens (say Hot &amp; Cold) gets a screen tab for each.</p>
-                      <form onSubmit={handleAddKitchen} className="flex flex-wrap items-end gap-2 mb-3">
-                        <input value={newKitchenName} onChange={(e) => setNewKitchenName(e.target.value)} placeholder="e.g. Hot Kitchen" className="inp flex-1 min-w-[160px]" />
-                        <button type="submit" disabled={kitchenBusy} className="btn btn-primary disabled:opacity-50">Add kitchen</button>
-                      </form>
-                      <div className="flex flex-wrap gap-2">
-                        {kitchens.map((k) => editKitchenId === k.id ? (
-                          <div key={k.id} className="flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
-                            <input value={editKitchenName} onChange={(e) => setEditKitchenName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleRenameKitchen(k.id); } if (e.key === 'Escape') setEditKitchenId(null); }} className="w-32 p-1 rounded-lg border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }} autoFocus />
-                            <button onClick={() => handleRenameKitchen(k.id)} disabled={kitchenBusy} className="btn btn-primary py-1 px-2 text-xs disabled:opacity-50">Save</button>
-                            <button onClick={() => setEditKitchenId(null)} className="btn py-1 px-2 text-xs" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>✕</button>
-                          </div>
-                        ) : (
-                          <span key={k.id} className="inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-sm font-bold" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)' }}>
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: k.color ?? 'var(--turmeric)' }} />
-                            {k.name}
-                            <button onClick={() => { setEditKitchenId(k.id); setEditKitchenName(k.name); }} className="text-xs text-ink-3 hover:text-ink" title="Rename" aria-label={`Rename ${k.name}`}>✎</button>
-                            <button onClick={() => handleDeleteKitchen(k)} disabled={kitchenBusy} className="text-xs disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: 'var(--clay)' }} title="Delete" aria-label={`Delete ${k.name}`}>🗑</button>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+                    
 
                     {showAddProduct && (
                       <form onSubmit={handleCreateProduct} className="grid gap-3 p-4 mb-4 rounded-xl" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
@@ -4370,7 +4356,11 @@ export default function DashboardClient({
                                     <button onClick={() => { setPriceEditId(item.id); setPriceDraft((item.pricePaise / 100).toString()); }} className="underline decoration-dotted">
                                       {formatINR(item.pricePaise)}
                                     </button>
-                                    {item.station ? <span> · {kitchens.find((k) => k.id === item.station)?.name ?? item.station}</span> : null} · GST {item.gstRate}%
+                                    {item.station ? (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-turmeric/15 text-turmeric-d border border-turmeric/30 ml-1.5 mr-1">
+                                        📍 {kitchens.find((k) => k.id.toLowerCase() === item.station?.toLowerCase())?.name ?? item.station.toUpperCase()}
+                                      </span>
+                                    ) : null} · GST {item.gstRate}%
                                   </span>
                                 )}
                               </div>

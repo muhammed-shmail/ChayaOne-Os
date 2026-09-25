@@ -8,6 +8,7 @@ import { readReceiptConfig, RECEIPT_FIELD_MAX } from '@/lib/receipt';
 import { readUpiConfig } from '@/lib/print/upi';
 import { normalizeLocationInput } from '@/lib/geo';
 import { readKitchens, kitchenSlug, KITCHEN_NAME_MAX, KITCHEN_PALETTE, type Kitchen } from '@/lib/kitchens';
+import { readWaiterStations, type WaiterStation } from '@/lib/waiter-stations';
 import { readKitchenWorkflow, normalizeKitchenWorkflowInput } from '@/lib/kitchenWorkflow';
 import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
 import { printerHealthCheck, checkAllPrintersHealth, parsePrinterEndpoint } from '@/lib/print/health';
@@ -527,44 +528,109 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // ---- kitchens / prep stations (stored in Outlet.settings.kitchens) ----
-  // Persisting from the defaults on first edit keeps every existing menu item
-  // (station = 'kitchen'|'bar'|'dessert') mapped; the slug id is stable so a
-  // rename never orphans items.
-  if (body.action === 'kitchen_add' || body.action === 'kitchen_rename' || body.action === 'kitchen_delete') {
+  // ---- Unified Stations (stored across Outlet.settings.kitchens & Outlet.settings.waiterStations) ----
+  if (
+    body.action === 'kitchen_add' ||
+    body.action === 'station_add' ||
+    body.action === 'kitchen_rename' ||
+    body.action === 'station_rename' ||
+    body.action === 'kitchen_delete' ||
+    body.action === 'station_delete'
+  ) {
     const outlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
     const settings = (outlet?.settings as Record<string, unknown>) ?? {};
-    const current = readKitchens(settings);
-    let next: Kitchen[];
+    const currentKitchens = readKitchens(settings);
+    const currentWaiters = readWaiterStations(settings);
+    let nextKitchens: Kitchen[] = currentKitchens;
+    let nextWaiters: WaiterStation[] = currentWaiters;
 
-    if (body.action === 'kitchen_add') {
+    if (body.action === 'kitchen_add' || body.action === 'station_add') {
       const name = String(body.name ?? '').trim().slice(0, KITCHEN_NAME_MAX);
       if (!name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
-      if (current.some((k) => k.name.toLowerCase() === name.toLowerCase())) return NextResponse.json({ error: 'duplicate_name' }, { status: 409 });
-      // stable, unique slug id
-      let id = kitchenSlug(name) || 'kitchen';
-      if (current.some((k) => k.id === id)) { let n = 2; while (current.some((k) => k.id === `${id}-${n}`)) n++; id = `${id}-${n}`; }
-      const color = KITCHEN_PALETTE[current.length % KITCHEN_PALETTE.length];
-      next = [...current, { id, name, color, sort: current.length }];
-    } else if (body.action === 'kitchen_rename') {
-      const id = String(body.id ?? '');
+
+      // Determine code (e.g. 'P1', 'P2', 'P3' or custom code)
+      let rawCode = typeof body.code === 'string' && body.code.trim() ? body.code.trim().toUpperCase() : '';
+      if (!rawCode) {
+        // Find next available P-number
+        let num = 1;
+        while (currentWaiters.some(w => w.code.toUpperCase() === `P${num}`)) num++;
+        rawCode = `P${num}`;
+      }
+      const id = rawCode.toLowerCase();
+
+      if (currentWaiters.some((w) => w.code === rawCode || w.id === id || w.name.toLowerCase() === name.toLowerCase())) {
+        return NextResponse.json({ error: 'duplicate_name', message: `Station ${rawCode} or "${name}" already exists` }, { status: 409 });
+      }
+
+      const color = KITCHEN_PALETTE[currentKitchens.length % KITCHEN_PALETTE.length];
+      nextKitchens = [...currentKitchens.filter(k => k.id !== id), { id, name: `${rawCode} · ${name}`, color, sort: currentKitchens.length }];
+      nextWaiters = [
+        ...currentWaiters.filter(w => w.id !== id),
+        {
+          id,
+          code: rawCode,
+          name,
+          label: `${rawCode} (${name})`,
+          desc: 'Unified Station',
+          isCustom: true,
+        }
+      ];
+      const prevDel = Array.isArray((settings as any)?.deletedDefaultStations) ? ((settings as any).deletedDefaultStations as string[]) : [];
+      if (prevDel.includes(id)) {
+        (settings as any).deletedDefaultStations = prevDel.filter((x: string) => x !== id);
+      }
+    } else if (body.action === 'kitchen_rename' || body.action === 'station_rename') {
+      const id = String(body.id ?? '').toLowerCase().trim();
       const name = String(body.name ?? '').trim().slice(0, KITCHEN_NAME_MAX);
+      const rawCode = typeof body.code === 'string' && body.code.trim() ? body.code.trim().toUpperCase() : id.toUpperCase();
       if (!id || !name) return NextResponse.json({ error: 'missing_name' }, { status: 400 });
-      if (current.some((k) => k.id !== id && k.name.toLowerCase() === name.toLowerCase())) return NextResponse.json({ error: 'duplicate_name' }, { status: 409 });
-      if (!current.some((k) => k.id === id)) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-      next = current.map((k) => (k.id === id ? { ...k, name } : k)); // id/slug stays → items stay mapped
-    } else {
-      const id = String(body.id ?? '');
+
+      nextKitchens = currentKitchens.map((k) => (k.id === id ? { ...k, name: `${rawCode} · ${name}` } : k));
+      nextWaiters = currentWaiters.map((w) => (w.id === id ? { ...w, code: rawCode, name, label: `${rawCode} (${name})` } : w));
+    } else if (body.action === 'kitchen_delete' || body.action === 'station_delete') {
+      const id = String(body.id ?? '').toLowerCase().trim();
       if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
-      next = current.filter((k) => k.id !== id).map((k, i) => ({ ...k, sort: i }));
+      nextKitchens = currentKitchens.filter((k) => k.id !== id).map((k, i) => ({ ...k, sort: i }));
+      nextWaiters = currentWaiters.filter((w) => w.id !== id && w.code.toLowerCase() !== id);
+      const prevDeleted = Array.isArray((settings as any)?.deletedDefaultStations) ? ((settings as any).deletedDefaultStations as string[]) : [];
+      if (!prevDeleted.includes(id)) {
+        (settings as any).deletedDefaultStations = [...prevDeleted, id];
+      }
     }
 
-    const merged = { ...settings, kitchens: next };
+    const merged = {
+      ...settings,
+      kitchens: nextKitchens,
+      waiterStations: nextWaiters,
+      stations: nextWaiters,
+    };
     await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
     await prisma.auditLog.create({
-      data: { outletId: session.outletId, actorId: session.staffId, action: `kitchen.${body.action.replace('kitchen_', '')}`, entity: 'outlet', entityId: session.outletId, after: { kitchens: next } as unknown as Prisma.InputJsonValue },
+      data: { outletId: session.outletId, actorId: session.staffId, action: `station.${body.action}`, entity: 'outlet', entityId: session.outletId, after: { waiterStations: nextWaiters } as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
-    return NextResponse.json({ ok: true, kitchens: next });
+    return NextResponse.json({ ok: true, kitchens: nextKitchens, waiterStations: nextWaiters, stations: nextWaiters });
+  }
+
+  // ---- Assign Printer to Station ----
+  if (body.action === 'station_assign_printer') {
+    const { stationId, printerId } = body;
+    if (!stationId) return NextResponse.json({ error: 'missing_station_id' }, { status: 400 });
+    const outlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const current = readDevices(outlet?.settings);
+    const stClean = String(stationId).trim().toLowerCase();
+
+    const next = current.map((d) => {
+      if (printerId && d.id === printerId) {
+        return { ...d, station: stationId };
+      } else if (d.station?.trim().toLowerCase() === stClean && d.id !== printerId) {
+        // Unassign old printer from this station if new printer assigned or unassigned
+        return { ...d, station: '' };
+      }
+      return d;
+    });
+
+    await saveDevices(session.outletId, next);
+    return NextResponse.json({ ok: true, devices: next });
   }
 
   // ---- receipt layout (stored in Outlet.settings.receipt) ----

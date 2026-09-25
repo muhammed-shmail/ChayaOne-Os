@@ -179,6 +179,18 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   }, [d?.waiterStations]);
 
   useEffect(() => {
+    const handleStationsChanged = (e: any) => {
+      if (e.detail?.waiterStations && Array.isArray(e.detail.waiterStations)) {
+        setWaiterStations(e.detail.waiterStations.length > 0 ? e.detail.waiterStations : DEFAULT_WAITER_STATIONS);
+      } else {
+        refresh();
+      }
+    };
+    window.addEventListener('stations:changed', handleStationsChanged);
+    return () => window.removeEventListener('stations:changed', handleStationsChanged);
+  }, [refresh]);
+
+  useEffect(() => {
     if (d?.members) {
       const formatted = d.members.map((m: any) => {
         let permissionsObj = { assignedRoles: [m.role], branchAccess: ['main-branch'], overrides: {}, dataRestrictions: [] };
@@ -494,6 +506,9 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         : waiterStations.filter((s) => s.id !== stId);
 
       setWaiterStations(nextList);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('stations:changed', { detail: { waiterStations: nextList } }));
+      }
       if (selectedStation === stId) {
         setSelectedStation(nextList[0]?.id || 'p1');
       }
@@ -503,6 +518,9 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     } catch (err: any) {
       const nextList = waiterStations.filter((s) => s.id !== stId);
       setWaiterStations(nextList);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('stations:changed', { detail: { waiterStations: nextList } }));
+      }
       if (selectedStation === stId) {
         setSelectedStation(nextList[0]?.id || 'p1');
       }
@@ -586,16 +604,23 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           ];
 
       setWaiterStations(updatedList);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('stations:changed', { detail: { waiterStations: updatedList } }));
+      }
       if (selectedStation === originalId || !selectedStation) {
         setSelectedStation(id);
       }
       handleCancelStationForm();
     } catch (err: any) {
       // Fallback: persist in local state so UI is never blocked
-      setWaiterStations((prev) => [
-        ...prev.filter((s) => s.id !== originalId && s.id !== id),
+      const fallbackList = [
+        ...waiterStations.filter((s) => s.id !== originalId && s.id !== id),
         savedStation,
-      ]);
+      ];
+      setWaiterStations(fallbackList);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('stations:changed', { detail: { waiterStations: fallbackList } }));
+      }
       if (selectedStation === originalId || !selectedStation) {
         setSelectedStation(id);
       }
@@ -1105,25 +1130,9 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                           Floor Section / Station
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (showNewStationInput && !editingStationId) {
-                            handleCancelStationForm();
-                          } else {
-                            setEditingStationId(null);
-                            setNewStationCode('');
-                            setNewStationName('');
-                            setShowNewStationInput(true);
-                          }
-                        }}
-                        className="text-[11px] font-semibold text-turmeric hover:underline cursor-pointer"
-                      >
-                        + Add Custom
-                      </button>
                     </div>
                     <p className="text-[10px] text-ink-3">
-                      Orders placed by this waiter will automatically print to this station's designated printer.
+                      Orders placed by this waiter will automatically print to this station's designated printer. Manage stations in Settings → Device Printers.
                     </p>
 
                     {showNewStationInput && (
@@ -1198,30 +1207,9 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                           >
                             <div className="flex items-center justify-between mb-1 gap-1">
                               <span className="font-mono text-[10px] uppercase font-bold">{st.code}</span>
-                              <div className="flex items-center gap-1">
-                                {/* Hover Edit & Delete ("during mouse touching time") */}
-                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                                  <button
-                                    type="button"
-                                    title="Edit station"
-                                    onClick={(e) => handleStartEditStation(st, e)}
-                                    className="p-0.5 px-1 rounded bg-paper border border-line text-[10px] hover:text-turmeric hover:border-turmeric cursor-pointer"
-                                  >
-                                    ✏️
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="Delete station"
-                                    onClick={(e) => promptDeleteStation(st, e)}
-                                    className="p-0.5 px-1 rounded bg-paper border border-line text-[10px] hover:text-red-500 hover:border-red-400 cursor-pointer"
-                                  >
-                                    🗑️
-                                  </button>
-                                </div>
-                                {isSel && (
-                                  <span className="text-[10px] text-turmeric font-bold">✓</span>
-                                )}
-                              </div>
+                              {isSel && (
+                                <span className="text-[10px] text-turmeric font-bold">✓</span>
+                              )}
                             </div>
                             <span className="truncate text-ink font-semibold">{st.name}</span>
                           </div>
@@ -1645,90 +1633,15 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                         </span>
                       </div>
                       <p className="text-[11px] text-ink-3 mt-0.5">
-                        Assign this waiter to a floor section. Orders taken by this waiter will automatically print to that station's printer.
+                        Assign this waiter to a floor section. Orders taken by this waiter will automatically print to that station's printer. Manage stations in Settings → Device Printers.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (showNewStationInput && !editingStationId) {
-                          handleCancelStationForm();
-                        } else {
-                          setEditingStationId(null);
-                          setNewStationCode('');
-                          setNewStationName('');
-                          setShowNewStationInput(true);
-                        }
-                      }}
-                      className="text-xs font-semibold text-turmeric hover:underline flex items-center gap-1 cursor-pointer shrink-0 ml-3"
-                    >
-                      <span>+ Add Custom Station</span>
-                    </button>
                   </div>
-
-                  {/* Inline Add/Edit Custom Station Form */}
-                  {showNewStationInput && (
-                    <div className="p-3 mb-3 rounded-xl border border-turmeric/40 bg-turmeric-l/5 space-y-2.5 animate-in fade-in duration-150">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-ink">
-                          {editingStationId ? `Edit Floor Station (${newStationCode || 'Station'})` : 'Add Custom Floor Station'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleCancelStationForm}
-                          className="text-ink-3 hover:text-ink text-xs p-1 cursor-pointer"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[10px] font-semibold text-ink-3 mb-1">Station Code * (e.g. P1, P2)</label>
-                          <input
-                            type="text"
-                            value={newStationCode}
-                            onChange={(e) => setNewStationCode(e.target.value)}
-                            placeholder="e.g. P1"
-                            maxLength={8}
-                            className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink uppercase font-bold focus:outline-none focus:border-turmeric"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-ink-3 mb-1">Section Name * (e.g. Terrace)</label>
-                          <input
-                            type="text"
-                            value={newStationName}
-                            onChange={(e) => setNewStationName(e.target.value)}
-                            placeholder="e.g. Terrace / Rooftop"
-                            className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink focus:outline-none focus:border-turmeric"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={handleCancelStationForm}
-                          className="px-3 py-1.5 rounded-lg border border-line text-ink-3 hover:text-ink font-semibold text-xs cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isCreatingStation || !newStationName.trim()}
-                          onClick={handleCreateCustomStation}
-                          className="px-3 py-1.5 rounded-lg bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 disabled:opacity-50 cursor-pointer"
-                        >
-                          {isCreatingStation ? 'Saving…' : (editingStationId ? 'Update Station' : 'Save & Select Station')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
                   {/* Station Selector Cards */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     {waiterStations.map((st) => {
                       const isSel = selectedStation.toLowerCase() === st.id.toLowerCase();
-                      const isBeingDeleted = isDeletingStation && stationToDelete?.id === st.id;
                       return (
                         <div
                           key={st.id}
@@ -1739,36 +1652,15 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                             isSel
                               ? 'border-turmeric bg-turmeric/10 text-ink ring-2 ring-turmeric/30'
                               : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
-                          } ${isBeingDeleted ? 'opacity-40 pointer-events-none' : ''}`}
+                          }`}
                         >
                           <div className="flex items-center justify-between mb-1 gap-1">
                             <span className="font-mono text-xs font-black uppercase px-2 py-0.5 rounded bg-turmeric/20 text-turmeric-d border border-turmeric/30">
                               {st.code}
                             </span>
-                            <div className="flex items-center gap-1">
-                              {/* Hover Edit & Delete ("during mouse touching time") */}
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                                <button
-                                  type="button"
-                                  title="Edit station"
-                                  onClick={(e) => handleStartEditStation(st, e)}
-                                  className="p-1 rounded bg-paper border border-line text-[11px] hover:text-turmeric hover:border-turmeric shadow-xs transition-colors cursor-pointer"
-                                >
-                                  ✏️
-                                </button>
-                                <button
-                                  type="button"
-                                  title="Delete station"
-                                  onClick={(e) => promptDeleteStation(st, e)}
-                                  className="p-1 rounded bg-paper border border-line text-[11px] hover:text-red-500 hover:border-red-400 shadow-xs transition-colors cursor-pointer"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                              {isSel && (
-                                <span className="text-xs text-turmeric font-bold ml-0.5">✓</span>
-                              )}
-                            </div>
+                            {isSel && (
+                              <span className="text-xs text-turmeric font-bold ml-0.5">✓</span>
+                            )}
                           </div>
                           <div>
                             <b className="text-xs block font-bold text-ink truncate">{st.name}</b>
