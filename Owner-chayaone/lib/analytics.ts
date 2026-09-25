@@ -21,6 +21,12 @@ export interface Kpi {
   footfall: number; // distinct guests served today (customers + walk-in covers)
   salesDeltaPct: number | null; // vs yesterday
   ordersDeltaPct: number | null;
+  todaySalesCashPaise?: number;
+  todaySalesUpiPaise?: number;
+  todaySalesCardPaise?: number;
+  todayDiscountPaise?: number;
+  todayRefundPaise?: number;
+  todayTaxPaise?: number;
 }
 
 export interface TrendPoint {
@@ -103,6 +109,12 @@ export async function getDashboardData(outletId: string): Promise<DashboardData>
     footfall: today.footfall,
     salesDeltaPct: pctDelta(today.gross, yesterday.gross),
     ordersDeltaPct: pctDelta(today.orders, yesterday.orders),
+    todaySalesCashPaise: today.cashSalesPaise,
+    todaySalesUpiPaise: today.upiSalesPaise,
+    todaySalesCardPaise: today.cardSalesPaise,
+    todayDiscountPaise: today.discountPaise,
+    todayRefundPaise: today.refundPaise,
+    todayTaxPaise: today.taxPaise,
   };
 
   const menuQuadrant = toQuadrant(itemRows);
@@ -127,21 +139,63 @@ export async function getDashboardData(outletId: string): Promise<DashboardData>
 // --------------------------- KPIs ---------------------------
 async function todayKpis(outletId: string, daysAgo: number, cutoffHour = 4) {
   const shiftInterval = `${cutoffHour} hours`;
-  const rows = await prisma.$queryRaw<
-    { orders: number; gross: number; footfall: number }[]
-  >`
-    SELECT
-      COUNT(*)::int AS orders,
-      COALESCE(SUM("totalPaise"), 0)::int AS gross,
-      (COUNT(DISTINCT "customerId")
-        + COUNT(*) FILTER (WHERE "customerId" IS NULL))::int AS footfall
-    FROM orders
-    WHERE "outletId" = ${outletId}::uuid
-      AND "status" <> 'cancelled'
-      AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
-          = (("now"() AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date - ${daysAgo}::int
-  `;
-  return rows[0] ?? { orders: 0, gross: 0, footfall: 0 };
+  const [orderRows, payRows, refundRows] = await Promise.all([
+    prisma.$queryRaw<
+      { orders: number; gross: number; footfall: number; discount: number; tax: number }[]
+    >`
+      SELECT
+        COUNT(*)::int AS orders,
+        COALESCE(SUM("totalPaise"), 0)::int AS gross,
+        (COUNT(DISTINCT "customerId")
+          + COUNT(*) FILTER (WHERE "customerId" IS NULL))::int AS footfall,
+        COALESCE(SUM("discountPaise"), 0)::int AS discount,
+        COALESCE(SUM("cgstPaise" + "sgstPaise" + "igstPaise"), 0)::int AS tax
+      FROM orders
+      WHERE "outletId" = ${outletId}::uuid
+        AND "status" <> 'cancelled'
+        AND (("placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
+            = (("now"() AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date - ${daysAgo}::int
+    `,
+    prisma.$queryRaw<
+      { cash_sales: number; upi_sales: number; card_sales: number }[]
+    >`
+      SELECT
+        COALESCE(SUM(CASE WHEN p."method" = 'cash' THEN p."amountPaise" ELSE 0 END), 0)::int AS cash_sales,
+        COALESCE(SUM(CASE WHEN p."method" = 'upi' THEN p."amountPaise" ELSE 0 END), 0)::int AS upi_sales,
+        COALESCE(SUM(CASE WHEN p."method" = 'card' THEN p."amountPaise" ELSE 0 END), 0)::int AS card_sales
+      FROM payments p
+      JOIN orders o ON p."orderId" = o.id
+      WHERE o."outletId" = ${outletId}::uuid
+        AND o."status" <> 'cancelled'
+        AND p."status" = 'success'
+        AND ((o."placedAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
+            = (("now"() AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date - ${daysAgo}::int
+    `,
+    prisma.$queryRaw<{ refunds: number }[]>`
+      SELECT COALESCE(SUM(r."amountPaise"), 0)::int AS refunds
+      FROM refunds r
+      JOIN orders o ON r."orderId" = o.id
+      WHERE o."outletId" = ${outletId}::uuid
+        AND ((r."createdAt" AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date
+            = (("now"() AT TIME ZONE ${TZ}) - (${shiftInterval})::interval)::date - ${daysAgo}::int
+    `.catch(() => [{ refunds: 0 }]),
+  ]);
+
+  const ord = orderRows[0] ?? { orders: 0, gross: 0, footfall: 0, discount: 0, tax: 0 };
+  const pay = payRows[0] ?? { cash_sales: 0, upi_sales: 0, card_sales: 0 };
+  const ref = refundRows[0] ?? { refunds: 0 };
+
+  return {
+    orders: ord.orders,
+    gross: ord.gross,
+    footfall: ord.footfall,
+    cashSalesPaise: pay.cash_sales,
+    upiSalesPaise: pay.upi_sales,
+    cardSalesPaise: pay.card_sales,
+    discountPaise: ord.discount,
+    taxPaise: ord.tax,
+    refundPaise: ref.refunds,
+  };
 }
 
 // --------------------------- 7-day trend ---------------------------

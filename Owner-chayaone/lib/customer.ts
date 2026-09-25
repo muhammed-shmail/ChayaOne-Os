@@ -103,35 +103,69 @@ export async function findOrCreateCustomerByPhone(
   input: { name?: string | null; phone?: string | null },
 ): Promise<string | null> {
   const phone = normalizePhone(String(input?.phone ?? ''));
-  if (!isValidPhone(phone)) return null; // name-only / junk → prints only, no CRM row
-  const phoneHash = hashPhone(phone);
-  const name = typeof input.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 60) : null;
+  const rawName = typeof input.name === 'string' ? input.name.trim().slice(0, 60) : '';
+  const isGeneric = !rawName || ['walk-in customer', 'walk in', 'walk-in', 'customer', 'guest'].includes(rawName.toLowerCase());
+  const name = !isGeneric ? rawName : null;
 
-  const existing = await prisma.customer.findFirst({ where: { tenantId, phoneHash }, select: { id: true, name: true } });
-  if (existing) {
-    await prisma.customer.update({
-      where: { id: existing.id },
-      // keep an existing name unless the walk-in provides a new one
-      data: { name: name || existing.name || undefined, phone, lastVisit: new Date() },
+  if (isValidPhone(phone)) {
+    const phoneHash = hashPhone(phone);
+    const existing = await prisma.customer.findFirst({ where: { tenantId, phoneHash }, select: { id: true, name: true } });
+    if (existing) {
+      await prisma.customer.update({
+        where: { id: existing.id },
+        // keep an existing name unless the walk-in provides a new one
+        data: { name: name || existing.name || undefined, phone, lastVisit: new Date() },
+      });
+      return existing.id;
+    }
+
+    // slot enforcement (G6): a capped tenant simply stops gaining new CRM rows —
+    // it must never fail an in-progress sale, so swallow the cap and return null.
+    try {
+      await assertSlot(tenantId, 'customers');
+    } catch (e) {
+      if (e instanceof SlotExceeded) return null;
+      throw e;
+    }
+    const now = new Date();
+    const created = await prisma.customer.create({
+      data: { tenantId, name, phone, phoneHash, source: 'manual', firstVisit: now, lastVisit: now },
+      select: { id: true },
     });
-    return existing.id;
+    await bumpUsage(tenantId, 'customers').catch(() => {});
+    return created.id;
   }
 
-  // slot enforcement (G6): a capped tenant simply stops gaining new CRM rows —
-  // it must never fail an in-progress sale, so swallow the cap and return null.
-  try {
-    await assertSlot(tenantId, 'customers');
-  } catch (e) {
-    if (e instanceof SlotExceeded) return null;
-    throw e;
+  // Name-only walk-in (no valid phone, but explicit non-generic customer name)
+  if (name) {
+    const existing = await prisma.customer.findFirst({
+      where: { tenantId, name: { equals: name, mode: 'insensitive' } },
+      select: { id: true, name: true },
+    });
+    if (existing) {
+      await prisma.customer.update({
+        where: { id: existing.id },
+        data: { lastVisit: new Date() },
+      });
+      return existing.id;
+    }
+
+    try {
+      await assertSlot(tenantId, 'customers');
+    } catch (e) {
+      if (e instanceof SlotExceeded) return null;
+      throw e;
+    }
+    const now = new Date();
+    const created = await prisma.customer.create({
+      data: { tenantId, name, source: 'manual', firstVisit: now, lastVisit: now },
+      select: { id: true },
+    });
+    await bumpUsage(tenantId, 'customers').catch(() => {});
+    return created.id;
   }
-  const now = new Date();
-  const created = await prisma.customer.create({
-    data: { tenantId, name, phone, phoneHash, source: 'manual', firstVisit: now, lastVisit: now },
-    select: { id: true },
-  });
-  await bumpUsage(tenantId, 'customers').catch(() => {});
-  return created.id;
+
+  return null;
 }
 
 /**

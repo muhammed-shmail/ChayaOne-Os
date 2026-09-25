@@ -9,7 +9,8 @@ import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { readReceiptConfig } from '@/lib/receipt';
 import { readUpiConfig } from '@/lib/print/upi';
 import { createPrintJob } from '@/lib/print/manager';
-import { hashPhone } from '@/lib/phone';
+import { findOrCreateCustomerByPhone, accrueLoyaltyOnSettle } from '@/lib/customer';
+import { getOutletPwa } from '@/lib/pwa';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!canSettle(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
-  const { orderId, discountPct, discountFlatPaise, payments, customerName, customerPhone, customerGstin } = body;
+  const { orderId, discountPct, discountFlatPaise, payments, customerName, customerPhone, customerGstin, printReceipt } = body;
 
   if (!orderId) {
     return NextResponse.json({ error: 'missing_order_id' }, { status: 400 });
@@ -104,51 +105,22 @@ export async function POST(req: NextRequest) {
 
   // 4. Update or link Customer if provided
   let customerId = order.customerId;
-  if (customerName && customerName.trim() && customerName !== 'Walk-in Customer') {
-    const rawPhone = customerPhone?.trim() || null;
-    const normPhone = rawPhone ? rawPhone.replace(/\D/g, '').slice(-10) : null;
-    const pHash = normPhone && normPhone.length === 10 ? hashPhone(normPhone) : null;
+  const rawCustName = typeof customerName === 'string' ? customerName.trim() : '';
+  const isGeneric = !rawCustName || ['walk-in customer', 'walk in', 'walk-in', 'customer', 'guest'].includes(rawCustName.toLowerCase());
+  const effectiveName = !isGeneric ? rawCustName : null;
+  const rawCustPhone = typeof customerPhone === 'string' ? customerPhone.trim() : '';
 
-    if (order.customerId) {
-      await prisma.customer.updateMany({
-        where: { id: order.customerId, tenantId: session.tenantId },
-        data: { name: customerName.trim(), ...(normPhone ? { phone: normPhone, phoneHash: pHash } : {}) },
-      }).catch(() => {});
-    } else if (normPhone && pHash) {
-      const existing = await prisma.customer.findFirst({
-        where: { tenantId: session.tenantId, phoneHash: pHash },
-        select: { id: true },
-      });
-      if (existing) {
-        customerId = existing.id;
-        await prisma.customer.update({
-          where: { id: existing.id },
-          data: { name: customerName.trim() },
-        }).catch(() => {});
-      } else {
-        const newCust = await prisma.customer.create({
-          data: {
-            tenantId: session.tenantId,
-            name: customerName.trim(),
-            phone: normPhone,
-            phoneHash: pHash,
-            source: 'manual',
-          },
-        }).catch(() => null);
-        if (newCust) customerId = newCust.id;
-      }
-    } else {
-      const newCust = await prisma.customer.create({
-        data: {
-          tenantId: session.tenantId,
-          name: customerName.trim(),
-          source: 'manual',
-        },
-      }).catch(() => null);
-      if (newCust) customerId = newCust.id;
+  if (effectiveName || rawCustPhone) {
+    const linkedId = await findOrCreateCustomerByPhone(session.tenantId, {
+      name: effectiveName,
+      phone: rawCustPhone,
+    });
+    if (linkedId) {
+      customerId = linkedId;
     }
   }
 
+  const pwaConfig = customerId ? await getOutletPwa(session.outletId) : null;
 
   // 5. Atomic DB Settlement Transaction
   const updatedOrder = await prisma.$transaction(async (tx) => {
@@ -158,7 +130,7 @@ export async function POST(req: NextRequest) {
       data: {
         status: 'settled',
         settledAt: new Date(),
-        customerId,
+        customerId: customerId || undefined,
         discountPaise: bill.discountPaise,
         cgstPaise: bill.cgstPaise,
         sgstPaise: bill.sgstPaise,
@@ -168,6 +140,17 @@ export async function POST(req: NextRequest) {
       },
       include: { items: true, table: { select: { label: true } }, customer: { select: { name: true, phone: true } } },
     });
+
+    // Accrue loyalty points and increment customer lifetime spend/visits
+    if (customerId && pwaConfig) {
+      await accrueLoyaltyOnSettle(tx, {
+        customerId,
+        outletId: session.outletId,
+        totalPaise: bill.totalPaise,
+        pwa: pwaConfig,
+        refId: o.id,
+      });
+    }
 
     // Mark KOT items as served
     await tx.orderItem.updateMany({
@@ -261,8 +244,8 @@ export async function POST(req: NextRequest) {
     tableName: updatedOrder.table?.label ?? (updatedOrder.type === 'takeaway' ? 'Takeaway' : 'Direct'),
     tableLabel: updatedOrder.table?.label ?? null,
     orderType: updatedOrder.type,
-    customerName: updatedOrder.customer?.name ?? customerName ?? 'Walk-in Customer',
-    customerPhone: updatedOrder.customer?.phone ?? customerPhone ?? '',
+    customerName: updatedOrder.customer?.name ?? (effectiveName || 'Walk-in Customer'),
+    customerPhone: updatedOrder.customer?.phone ?? (rawCustPhone || ''),
     customerGstin: customerGstin ?? '',
     date: new Date().toLocaleDateString('en-IN'),
     time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
@@ -299,12 +282,14 @@ export async function POST(req: NextRequest) {
     upiConfig,
   };
 
-  await createPrintJob(prisma, {
-    tenantId: session.tenantId,
-    outletId: session.outletId,
-    jobType: 'RECEIPT' as any,
-    payload: receiptPayload,
-  }).catch(() => {});
+  if (printReceipt !== false) {
+    await createPrintJob(prisma, {
+      tenantId: session.tenantId,
+      outletId: session.outletId,
+      jobType: 'RECEIPT' as any,
+      payload: receiptPayload,
+    }).catch(() => {});
+  }
 
   // 8. Publish Realtime Notification
   await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updatedOrder) });

@@ -480,12 +480,21 @@ export class DayClosingService {
     const canClose = blockingReasons.length === 0;
 
     // Available bank accounts
-    const bankAccounts = [
-      { id: 'bank_hdfc', name: 'HDFC Current Account', type: 'bank', identifier: 'XXXX-XXXX-9844' },
-      { id: 'bank_sbi', name: 'SBI Settlement Account', type: 'bank', identifier: 'XXXX-XXXX-1209' },
-      { id: 'vault_safe', name: 'Restaurant Main Safe / Vault', type: 'vault', identifier: 'Vault 01' },
-      { id: 'owner_draw', name: 'Owner Cash Withdrawal', type: 'owner', identifier: 'Proprietor Drawing' },
-    ];
+    const outletSettings = (outlet.settings as Record<string, unknown>) ?? {};
+    const outletFinance = (outletSettings.finance as Record<string, unknown>) ?? {};
+    const configuredBankAccounts = Array.isArray(outletFinance.bankAccounts) ? outletFinance.bankAccounts : [];
+
+    const bankAccounts = configuredBankAccounts.length > 0
+      ? configuredBankAccounts.map((a: any) => ({
+          id: String(a.id),
+          name: String(a.name),
+          type: a.type || 'bank',
+          identifier: a.identifier || ''
+        }))
+      : [
+          { id: 'vault_safe', name: 'Main Safe / Cash Drawer Vault', type: 'vault', identifier: 'Vault 01' },
+          { id: 'owner_draw', name: 'Owner Cash Withdrawal', type: 'owner', identifier: 'Proprietor Drawing' },
+        ];
 
     return {
       businessDate,

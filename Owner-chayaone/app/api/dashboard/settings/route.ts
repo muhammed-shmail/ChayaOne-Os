@@ -141,7 +141,6 @@ export async function POST(req: NextRequest) {
     } else {
       const id = String(body.id ?? '');
       if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
-      if (current.length <= 1) return NextResponse.json({ error: 'last_kitchen' }, { status: 409 });
       next = current.filter((k) => k.id !== id).map((k, i) => ({ ...k, sort: i }));
     }
 
@@ -305,7 +304,14 @@ export async function POST(req: NextRequest) {
   }
 
   const data: Prisma.OutletUpdateInput = {};
-  if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim();
+  if (typeof body.name === 'string' && body.name.trim()) {
+    const trimmedName = body.name.trim();
+    data.name = trimmedName;
+    await prisma.tenant.update({
+      where: { id: session.tenantId },
+      data: { name: trimmedName },
+    }).catch((err) => console.warn('[Owner settings] Tenant name sync error:', err));
+  }
   if (body.gstin !== undefined) data.gstin = body.gstin ? String(body.gstin).trim() : null;
   if (body.stateCode !== undefined) data.stateCode = body.stateCode ? String(body.stateCode).trim().toUpperCase().slice(0, 2) : null;
   if (body.address && typeof body.address === 'object') {

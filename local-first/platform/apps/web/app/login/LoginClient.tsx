@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { BrandMark } from '@/components/BrandMark';
 import { Delete, AlphaTag, Eye, EyeOff, WaveHand } from '@/components/ui';
@@ -10,8 +10,25 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del'];
 
 type Staff = { name: string; role: string };
 
-export default function LoginClient() {
+interface LoginClientProps {
+  initialBusinessName?: string;
+  initialLogoUrl?: string | null;
+}
+
+export default function LoginClient({ initialBusinessName, initialLogoUrl }: LoginClientProps = {}) {
   const router = useRouter();
+  const [businessName, setBusinessName] = useState<string>(initialBusinessName || '');
+  const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl || null);
+
+  useEffect(() => {
+    fetch('/api/auth/store-info')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.name) setBusinessName(d.name);
+        if (d?.logoUrl) setLogoUrl(d.logoUrl);
+      })
+      .catch(() => {});
+  }, []);
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -277,10 +294,10 @@ export default function LoginClient() {
             className="mb-1.5 disabled:opacity-50 flex justify-center items-center w-full"
             style={{ background: 'none', border: 'none', padding: 0, lineHeight: 0, cursor: 'pointer' }}
           >
-            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="brand-logo object-contain mx-auto block" />
+            <img src={logoUrl || "/logo chaya one.png"} alt={businessName || "ChayaOne"} style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="brand-logo object-contain mx-auto block" />
           </button>
           <AlphaTag />
-          <h1 className="font-display text-[40px] leading-none mt-3.5">Kahwa House</h1>
+          <h1 className="font-display text-[40px] leading-none mt-3.5">{businessName || 'ChayaOne'}</h1>
           <p className="text-sm mt-2" style={{ color: 'var(--ink-3)' }}>
             {mode === 'pin' ? 'Enter your staff PIN to open the till' : 'Sign in with your username & password'}
           </p>

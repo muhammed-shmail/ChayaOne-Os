@@ -61,9 +61,11 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
   const [discountType, setDiscountType] = useState<'pct' | 'flat'>('pct');
   const [discountVal, setDiscountVal] = useState<string>('0');
 
-  const [custName, setCustName] = useState<string>('Walk-in Customer');
+  const [custName, setCustName] = useState<string>('');
   const [custPhone, setCustPhone] = useState<string>('');
   const [custGstin, setCustGstin] = useState<string>('');
+  const [custMatches, setCustMatches] = useState<{ id: string; name: string | null; phone: string | null; points: number; visitCount: number }[]>([]);
+  const [printReceipt, setPrintReceipt] = useState<boolean>(true);
 
   const [payTab, setPayTab] = useState<'cash' | 'upi' | 'card' | 'split'>('cash');
   const [cashReceived, setCashReceived] = useState<string>('');
@@ -365,8 +367,9 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     setSelectedOrder(order);
     setDiscountType('pct');
     setDiscountVal('0');
-    setCustName(order.customer?.name || 'Walk-in Customer');
+    setCustName(order.customer?.name || '');
     setCustPhone(order.customer?.phone || '');
+    setCustMatches([]);
     setCustGstin('');
     setPayTab('cash');
     setCashReceived('');
@@ -377,6 +380,31 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     setSplitCard('0');
     setView('workspace');
   };
+
+  useEffect(() => {
+    const rawDigits = custPhone.replace(/\D/g, '');
+    if (rawDigits.length < 3) {
+      setCustMatches([]);
+      return;
+    }
+    const ac = new AbortController();
+    const t = window.setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/pos/customer/lookup?phone=${encodeURIComponent(custPhone)}`, { signal: ac.signal });
+        if (!r.ok) return;
+        const d = await r.json();
+        const found = typeof d?.customer?.name === 'string' ? d.customer.name.trim() : '';
+        if (found && (!custName.trim() || custName.trim().toLowerCase() === 'walk-in customer' || custName.trim().toLowerCase() === 'customer' || custName.trim().toLowerCase() === 'guest')) {
+          setCustName(found);
+        }
+        setCustMatches(Array.isArray(d?.customers) ? d.customers : []);
+      } catch {}
+    }, 250);
+    return () => {
+      ac.abort();
+      window.clearTimeout(t);
+    };
+  }, [custPhone]);
 
   useEffect(() => {
     if (displayOrders.length === 0) {
@@ -583,9 +611,10 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
           discountPct: discountType === 'pct' ? parseFloat(discountVal) || 0 : undefined,
           discountFlatPaise: discountType === 'flat' ? Math.round((parseFloat(discountVal) || 0) * 100) : undefined,
           payments,
-          customerName: custName,
-          customerPhone: custPhone,
-          customerGstin: custGstin,
+          customerName: custName.trim() || 'Walk-in Customer',
+          customerPhone: custPhone.trim(),
+          customerGstin: custGstin.trim(),
+          printReceipt,
         }),
       });
 
@@ -596,7 +625,10 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       }
 
       setSettledResult(data);
-      flash('Bill completed & invoice generated! 🎉');
+      flash(printReceipt ? 'Bill settled & sent to printer! 🎉' : 'Bill settled & confirmed! 🎉');
+      setCustName('');
+      setCustPhone('');
+      setCustMatches([]);
       setView('completed');
       loadOrders();
       loadCompletedOrders();
@@ -1107,7 +1139,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                 >
                   Enter
                 </kbd>
-                {filter === 'completed' ? 'to reprint / view' : 'to bill'}
+                {filter === 'completed' ? 'to reprint / view' : 'to settle'}
               </span>
             </div>
 
@@ -1369,7 +1401,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                                   }
                             }
                           >
-                            Bill Now <ChevronRight size={12} />
+                            Settle Now <ChevronRight size={12} />
                           </button>
                         )}
                       </div>
@@ -1578,10 +1610,26 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                 </div>
 
                 {/* Customer Info */}
-                <div className="border-t pt-3" style={{ borderColor: 'var(--line)' }}>
-                  <span className="text-xs font-bold flex items-center gap-1.5 mb-2" style={{ color: 'var(--ink-3)' }}>
-                    <User size={12} /> Customer
-                  </span>
+                <div className="border-t pt-3 relative" style={{ borderColor: 'var(--line)' }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold flex items-center gap-1.5" style={{ color: 'var(--ink-3)' }}>
+                      <User size={12} /> Customer
+                    </span>
+                    {(custName.trim() || custPhone.trim()) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustName('');
+                          setCustPhone('');
+                          setCustMatches([]);
+                        }}
+                        className="text-[11px] font-bold transition hover:opacity-80"
+                        style={{ color: 'var(--ink-3)' }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <input
                       value={custName}
@@ -1593,11 +1641,48 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                     <input
                       value={custPhone}
                       onChange={(e) => setCustPhone(e.target.value)}
-                      placeholder="Phone"
+                      placeholder="Phone (CRM & loyalty)"
+                      inputMode="tel"
                       className="w-full px-3 py-2 rounded-xl border text-xs outline-none transition"
                       style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
                     />
                   </div>
+                  {custMatches.length > 0 && (
+                    <div
+                      className="mt-2 rounded-xl border overflow-hidden shadow-lg"
+                      style={{ borderColor: 'var(--line)', background: 'var(--paper-2)' }}
+                    >
+                      {custMatches.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            setCustName(m.name || '');
+                            setCustPhone(m.phone || custPhone);
+                            setCustMatches([]);
+                          }}
+                          className="w-full px-3 py-2 text-left text-[11px] font-bold border-b last:border-b-0 flex items-center justify-between transition hover:opacity-80 cursor-pointer"
+                          style={{ borderColor: 'var(--line)', color: 'var(--ink-2)' }}
+                        >
+                          <div>
+                            <span>{m.name || 'Guest'}</span>
+                            <span className="ml-2 font-mono text-[10px]" style={{ color: 'var(--ink-3)' }}>
+                              {m.phone}
+                            </span>
+                          </div>
+                          <span
+                            className="text-[10px] px-2 py-0.5 rounded-full"
+                            style={{
+                              background: 'color-mix(in srgb, var(--gold) 20%, transparent)',
+                              color: 'var(--gold-d)',
+                            }}
+                          >
+                            {m.points} pts · {m.visitCount} visits
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Payment Methods */}
@@ -1765,6 +1850,33 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                   )}
                 </div>
 
+                {/* Print Option Checkbox */}
+                <div
+                  className="flex items-center justify-between px-3 py-2 rounded-xl border select-none transition"
+                  style={{
+                    background: 'var(--paper-3)',
+                    borderColor: printReceipt ? 'color-mix(in srgb, var(--gold) 35%, var(--line))' : 'var(--line)',
+                  }}
+                >
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold" style={{ color: 'var(--ink)' }}>
+                    <input
+                      type="checkbox"
+                      checked={printReceipt}
+                      onChange={(e) => setPrintReceipt(e.target.checked)}
+                      className="w-4 h-4 rounded accent-[var(--gold)] cursor-pointer"
+                    />
+                    <span className="flex items-center gap-1.5">
+                      <Printer size={13} style={{ color: printReceipt ? 'var(--gold-d)' : 'var(--ink-3)' }} /> Print
+                    </span>
+                  </label>
+                  <span
+                    className="text-[10px] font-bold uppercase tracking-wider"
+                    style={{ color: printReceipt ? 'var(--gold-d)' : 'var(--ink-3)' }}
+                  >
+                    {printReceipt ? 'To printer' : 'Skip print'}
+                  </span>
+                </div>
+
                 {/* Action Buttons */}
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
@@ -1790,8 +1902,8 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                       boxShadow: settleBusy ? 'none' : '0 3px 12px color-mix(in srgb, var(--gold) 35%, transparent)',
                     }}
                   >
-                    <Printer size={15} />
-                    {settleBusy ? 'Processing…' : 'Complete & Print (F8)'}
+                    {printReceipt ? <Printer size={15} /> : <CheckCircle2 size={15} />}
+                    {settleBusy ? 'Processing…' : 'Settle and Confirm (F8)'}
                   </button>
                 </div>
               </div>
@@ -2142,7 +2254,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                 ['Tab', 'Navigate Between Controls'],
                 ['F4', 'Focus Cash Amount Input'],
                 ['F6', 'Preview Receipt'],
-                ['F8', 'Complete Payment & Settle'],
+                ['F8', 'Settle and Confirm'],
                 ['Esc', 'Back to Queue / Exit'],
               ].map(([key, desc]) => (
                 <div

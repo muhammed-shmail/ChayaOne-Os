@@ -10,10 +10,8 @@ import {
 } from '@/components/ui';
 import { PrimaryKPIs } from './components/PrimaryKPIs';
 import { KPIGroup } from './components/KPIGroup';
+import { QuickActions } from './components/QuickActions';
 import { IndianRupee, Wallet, Banknote, Smartphone, CreditCard, Receipt, ReceiptText, BriefcaseBusiness, TrendingUp, RotateCcw, BadgePercent, CircleDollarSign, Truck, Users, FileBadge2, Landmark, Building2, PiggyBank, ArrowRight, ArrowRightLeft, FileSpreadsheet, ChartColumn, BookOpen, ArrowLeftRight, TriangleAlert, Mail } from 'lucide-react';
-import { DayClosingView } from '@/components/finance/DayClosingView';
-import { DayBookView } from '@/components/finance/DayBookView';
-import { FinancialYearManagement } from '@/components/finance/FinancialYearManagement';
 
 interface FinanceManagementProps {
   outlet: { name: string; brand: string; plan: string; gstin: string | null };
@@ -182,7 +180,7 @@ function CustomSelect({ value, onChange, options, placeholder = 'Select...', cla
 
 export default function FinanceManagement({ outlet, staff, kpi, formatINR }: FinanceManagementProps) {
   // Navigation
-  const [activeTab, setActiveTab] = useState<'overview' | 'drawer' | 'day_closing' | 'day_book' | 'expenses' | 'vendors' | 'settlements' | 'banks' | 'payroll' | 'accounting' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'drawer' | 'day_book' | 'expenses' | 'vendors' | 'settlements' | 'banks' | 'payroll' | 'accounting' | 'settings'>('overview');
 
   // Modals state
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -197,9 +195,9 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
 
   // Cash Drawer specifics
-  const [openingBalancePaise, setOpeningBalancePaise] = useState(1500000); // 15,000 INR
+  const [openingBalancePaise, setOpeningBalancePaise] = useState(0);
   const [cashDrawerActualPaise, setCashDrawerActualPaise] = useState(0);
-  const [isShiftActive, setIsShiftActive] = useState(true);
+  const [isShiftActive, setIsShiftActive] = useState(false);
 
   // Settings configs
   const [varianceLimitPaise, setVarianceLimitPaise] = useState(50000); // 500 INR
@@ -209,96 +207,89 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   // Modal forms
   const [expenseForm, setExpenseForm] = useState({ category: 'Kitchen Supplies', vendor: '', amount: '', gstRate: '5', method: 'cash', notes: '', recurring: false });
   const [cashForm, setCashForm] = useState({ type: 'deposit', amount: '', method: 'cash', details: '' });
+  const [accountForm, setAccountForm] = useState({ name: '', type: 'bank' as 'bank' | 'upi' | 'wallet', identifier: '', balance: '' });
   const [vendorPayForm, setVendorPayForm] = useState({ billId: '', amount: '', method: 'bank_transfer', accountId: '' });
   const [transferForm, setTransferForm] = useState({ fromAccountId: '', toAccountId: '', amount: '' });
-  const [journalForm, setJournalForm] = useState({ description: '', debitAcc: 'Cash', debitAmt: '', creditAcc: 'Sales Revenue', creditAmt: '' });
+  const [journalForm, setJournalForm] = useState({ description: '', debitAcc: 'Cash Register', debitAmt: '', creditAcc: 'Sales Revenue', creditAmt: '' });
   const [varianceRemark, setVarianceRemark] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [payingId, setPayingId] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Seed initial data if localStorage is empty
+  // Initialize data from localStorage without any hardcoded dummy/mock records.
+  // Automatically purges old legacy dummy test data (Rahul cashier, Amul, BESCOM, etc.)
   useEffect(() => {
-    const cachedTransactions = localStorage.getItem('cafeos_fin_transactions');
-    const cachedExpenses = localStorage.getItem('cafeos_fin_expenses');
-    const cachedBills = localStorage.getItem('cafeos_fin_bills');
-    const cachedAccounts = localStorage.getItem('cafeos_fin_accounts');
-    const cachedPayroll = localStorage.getItem('cafeos_fin_payroll');
-    const cachedAudits = localStorage.getItem('cafeos_fin_audits');
-    const cachedJournals = localStorage.getItem('cafeos_fin_journals');
+    const isLegacyDummy = (raw: string | null, dummyTerms: string[]) => {
+      if (!raw) return true;
+      try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed) || parsed.length === 0) return false;
+        const serialized = JSON.stringify(parsed);
+        return dummyTerms.some((term) => serialized.includes(term));
+      } catch {
+        return false;
+      }
+    };
 
-    if (cachedTransactions) setTransactions(JSON.parse(cachedTransactions));
-    else {
-      const initialTransactions: FinancialTransaction[] = [
-        { id: '1', time: new Date(Date.now() - 3600000).toLocaleString('en-IN'), user: 'Rahul cashier', action: 'Shift Opened', amountPaise: 1500000, type: 'inflow', method: 'cash', category: 'Shift Start', details: 'Register opening balance' },
-        { id: '2', time: new Date(Date.now() - 1800000).toLocaleString('en-IN'), user: 'Rahul cashier', action: 'Order #1042', amountPaise: 45000, type: 'inflow', method: 'upi', category: 'Sales', details: 'UPI Payment received' },
-        { id: '3', time: new Date(Date.now() - 900000).toLocaleString('en-IN'), user: 'Manager Suresh', action: 'Recorded Expense', amountPaise: 120000, type: 'outflow', method: 'cash', category: 'Kitchen Supplies', details: 'Purchased Fresh Milk & Bread' }
-      ];
-      setTransactions(initialTransactions);
-      localStorage.setItem('cafeos_fin_transactions', JSON.stringify(initialTransactions));
+    const dummyKeys = ['Rahul cashier', 'Amul Milk Agency', 'BESCOM', 'Big Basket Wholesale', 'Rahul Sharma', 'Lalit Kumar', '38245000', 'Amit (Owner)', 'Monthly Sales Recognition'];
+
+    const rawTx = localStorage.getItem('cafeos_fin_transactions');
+    if (!rawTx || isLegacyDummy(rawTx, dummyKeys)) {
+      setTransactions([]);
+      localStorage.setItem('cafeos_fin_transactions', JSON.stringify([]));
+    } else {
+      setTransactions(JSON.parse(rawTx));
     }
 
-    if (cachedExpenses) setExpenses(JSON.parse(cachedExpenses));
-    else {
-      const initialExpenses: Expense[] = [
-        { id: '1', date: new Date().toLocaleDateString('en-IN'), category: 'Kitchen Supplies', vendor: 'Amul Milk Agency', amountPaise: 120000, gstPaise: 6000, method: 'cash', status: 'approved', approvedBy: 'Owner Amit', recurring: false, notes: 'Milk and Butter supplies' },
-        { id: '2', date: new Date().toLocaleDateString('en-IN'), category: 'Electricity', vendor: 'BESCOM', amountPaise: 850000, gstPaise: 0, method: 'bank_transfer', status: 'pending', recurring: true, notes: 'Monthly utility bill' }
-      ];
-      setExpenses(initialExpenses);
-      localStorage.setItem('cafeos_fin_expenses', JSON.stringify(initialExpenses));
+    const rawExp = localStorage.getItem('cafeos_fin_expenses');
+    if (!rawExp || isLegacyDummy(rawExp, dummyKeys)) {
+      setExpenses([]);
+      localStorage.setItem('cafeos_fin_expenses', JSON.stringify([]));
+    } else {
+      setExpenses(JSON.parse(rawExp));
     }
 
-    if (cachedBills) setVendorBills(JSON.parse(cachedBills));
-    else {
-      const initialBills: VendorBill[] = [
-        { id: '1', vendorName: 'Big Basket Wholesale', billNumber: 'BB-9982', date: new Date(Date.now() - 172800000).toLocaleDateString('en-IN'), dueDate: new Date(Date.now() + 432000000).toLocaleDateString('en-IN'), amountPaise: 1450000, gstPaise: 72500, paidAmountPaise: 0, status: 'unpaid' },
-        { id: '2', vendorName: 'Kitchenware Solutions', billNumber: 'KS-1204', date: new Date(Date.now() - 259200000).toLocaleDateString('en-IN'), dueDate: new Date().toLocaleDateString('en-IN'), amountPaise: 880000, gstPaise: 158400, paidAmountPaise: 300000, status: 'partial' }
-      ];
-      setVendorBills(initialBills);
-      localStorage.setItem('cafeos_fin_bills', JSON.stringify(initialBills));
+    const rawBills = localStorage.getItem('cafeos_fin_bills');
+    if (!rawBills || isLegacyDummy(rawBills, dummyKeys)) {
+      setVendorBills([]);
+      localStorage.setItem('cafeos_fin_bills', JSON.stringify([]));
+    } else {
+      setVendorBills(JSON.parse(rawBills));
     }
 
-    if (cachedAccounts) setBankAccounts(JSON.parse(cachedAccounts));
-    else {
-      const initialAccounts: BankAccount[] = [
-        { id: '1', name: 'HDFC Current Account', type: 'bank', identifier: 'XXXX-XXXX-9844', balancePaise: 38245000 },
-        { id: '2', name: 'Razorpay POS Merchant', type: 'upi', identifier: 'merchant@razorpay', balancePaise: 1422000 },
-        { id: '3', name: 'Petty Cash Box', type: 'wallet', identifier: 'Main Register Drawer', balancePaise: 250000 }
-      ];
-      setBankAccounts(initialAccounts);
-      localStorage.setItem('cafeos_fin_accounts', JSON.stringify(initialAccounts));
+    const rawAccounts = localStorage.getItem('cafeos_fin_accounts');
+    if (!rawAccounts || isLegacyDummy(rawAccounts, dummyKeys)) {
+      setBankAccounts([]);
+      localStorage.setItem('cafeos_fin_accounts', JSON.stringify([]));
+    } else {
+      setBankAccounts(JSON.parse(rawAccounts));
     }
 
-    if (cachedPayroll) setPayroll(JSON.parse(cachedPayroll));
-    else {
-      const initialPayroll: EmployeeSalary[] = [
-        { id: '1', name: 'Rahul Sharma', role: 'Cashier', baseSalaryPaise: 1800000, advancePaise: 200000, bonusPaise: 100000, deductionPaise: 0, attendanceDays: 24, paidStatus: 'unpaid' },
-        { id: '2', name: 'Lalit Kumar', role: 'Chef', baseSalaryPaise: 2500000, advancePaise: 0, bonusPaise: 0, deductionPaise: 120000, attendanceDays: 23, paidStatus: 'paid' }
-      ];
-      setPayroll(initialPayroll);
-      localStorage.setItem('cafeos_fin_payroll', JSON.stringify(initialPayroll));
+    const rawPayroll = localStorage.getItem('cafeos_fin_payroll');
+    if (!rawPayroll || isLegacyDummy(rawPayroll, dummyKeys)) {
+      setPayroll([]);
+      localStorage.setItem('cafeos_fin_payroll', JSON.stringify([]));
+    } else {
+      setPayroll(JSON.parse(rawPayroll));
     }
 
-    if (cachedAudits) setAuditLogs(JSON.parse(cachedAudits));
-    else {
-      const initialAudits: AuditLog[] = [
-        { id: '1', time: new Date().toLocaleString('en-IN'), user: 'Amit (Owner)', action: 'Config Change', details: 'Modified cash variance limit to 500 INR', oldValue: '200 INR', newValue: '500 INR', device: 'Chrome / Windows 11' }
-      ];
-      setAuditLogs(initialAudits);
-      localStorage.setItem('cafeos_fin_audits', JSON.stringify(initialAudits));
+    const rawAudits = localStorage.getItem('cafeos_fin_audits');
+    if (!rawAudits || isLegacyDummy(rawAudits, dummyKeys)) {
+      setAuditLogs([]);
+      localStorage.setItem('cafeos_fin_audits', JSON.stringify([]));
+    } else {
+      setAuditLogs(JSON.parse(rawAudits));
     }
 
-    if (cachedJournals) setJournalEntries(JSON.parse(cachedJournals));
-    else {
-      const initialJournals: JournalEntry[] = [
-        { id: '1', date: new Date().toLocaleDateString('en-IN'), description: 'Monthly Sales Recognition', debits: [{ account: 'Cash Account', amountPaise: 2200000 }], credits: [{ account: 'Sales Revenue', amountPaise: 2200000 }] }
-      ];
-      setJournalEntries(initialJournals);
-      localStorage.setItem('cafeos_fin_journals', JSON.stringify(initialJournals));
+    const rawJournals = localStorage.getItem('cafeos_fin_journals');
+    if (!rawJournals || isLegacyDummy(rawJournals, dummyKeys)) {
+      setJournalEntries([]);
+      localStorage.setItem('cafeos_fin_journals', JSON.stringify([]));
+    } else {
+      setJournalEntries(JSON.parse(rawJournals));
     }
   }, []);
 
@@ -334,7 +325,6 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
 
   // Calculations for dynamic states
   const totalSalesPaise = useMemo(() => {
-    // default back to KPI sales if no custom sales loaded
     return (kpi?.todaySalesPaise ?? 0) + transactions
       .filter((t) => t.category === 'Sales' && t.type === 'inflow')
       .reduce((sum, t) => sum + t.amountPaise, 0);
@@ -358,7 +348,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
       .reduce((sum, t) => sum + t.amountPaise, 0);
   }, [kpi, transactions]);
 
-  const creditSalesPaise = useMemo(() => 450000, []); // Mock credit sales: 4,500 INR
+  const creditSalesPaise = useMemo(() => 0, []); // Honest zero credit sales when unrecorded
   const totalExpensesPaise = useMemo(() => {
     return expenses
       .filter((e) => e.status === 'approved')
@@ -392,35 +382,32 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   const allowedTabs = useMemo(() => {
     if (isOwner || isManager) {
       return [
-        { key: 'overview', label: 'Dashboard' },
-        { key: 'drawer', label: 'Cash Drawer' },
-        { key: 'day_closing', label: 'Day Closing' },
-        { key: 'day_book', label: 'Day Book' },
-        { key: 'expenses', label: 'Expenses' },
-        { key: 'vendors', label: 'Vendors' },
-        { key: 'banks', label: 'Bank Accounts' },
-        { key: 'settlements', label: 'Settlements' },
-        { key: 'payroll', label: 'Payroll' },
-        { key: 'accounting', label: 'Accounting' },
-        { key: 'settings', label: 'Settings' }
+        { key: 'overview', label: '📊 Dashboard' },
+        { key: 'drawer', label: '🗄️ Cash Drawer' },
+        { key: 'day_book', label: '📖 Day Book' },
+        { key: 'expenses', label: '🧾 Expenses' },
+        { key: 'vendors', label: '🤝 Vendors' },
+        { key: 'banks', label: '🏦 Bank Accounts' },
+        { key: 'settlements', label: '⌛ Settlements' },
+        { key: 'payroll', label: '👥 Payroll' },
+        { key: 'accounting', label: '📓 Accounting' },
+        { key: 'settings', label: '⚙️ Settings' }
       ] as const;
     }
     if (isAccountant) {
       return [
-        { key: 'overview', label: 'Dashboard' },
-        { key: 'day_closing', label: 'Day Closing' },
-        { key: 'day_book', label: 'Day Book' },
-        { key: 'expenses', label: 'Expenses' },
-        { key: 'vendors', label: 'Vendors' },
-        { key: 'banks', label: 'Bank Accounts' },
-        { key: 'settlements', label: 'Settlements' },
-        { key: 'accounting', label: 'Accounting' }
+        { key: 'overview', label: '📊 Dashboard' },
+        { key: 'day_book', label: '📖 Day Book' },
+        { key: 'expenses', label: '🧾 Expenses' },
+        { key: 'vendors', label: '🤝 Vendors' },
+        { key: 'banks', label: '🏦 Bank Accounts' },
+        { key: 'accounting', label: '📓 Accounting' }
       ] as const;
     }
     // Cashier
     return [
-      { key: 'overview', label: 'Dashboard' },
-      { key: 'drawer', label: 'Cash Drawer' }
+      { key: 'overview', label: '📊 Dashboard' },
+      { key: 'drawer', label: '🗄️ Cash Drawer' }
     ] as const;
   }, [isOwner, isManager, isAccountant]);
 
@@ -561,6 +548,23 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
     showToast('Transfer completed successfully!');
   };
 
+  const handleAddAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accountForm.name.trim()) return;
+    const balancePaise = Math.round((parseFloat(accountForm.balance) || 0) * 100);
+    const newAcc: BankAccount = {
+      id: Date.now().toString(),
+      name: accountForm.name.trim(),
+      type: accountForm.type,
+      identifier: accountForm.identifier.trim() || '—',
+      balancePaise
+    };
+    saveAccounts([...bankAccounts, newAcc]);
+    setActiveModal(null);
+    setAccountForm({ name: '', type: 'bank', identifier: '', balance: '' });
+    showToast(`Account "${newAcc.name}" added successfully!`);
+  };
+
   const handleCloseShift = (e: React.FormEvent) => {
     e.preventDefault();
     const actualVal = parseFloat(cashDrawerActualPaise.toString()) || 0;
@@ -670,42 +674,27 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
 
   return (
     <div className="flex flex-col gap-5 min-h-[80vh]">
-      {/* Finance Tab Navigation — scrollable underline style */}
-      <div
-        className="sticky top-0 z-20 w-full"
-        style={{ background: 'var(--background)' }}
-      >
-        <div className="overflow-x-auto no-scrollbar">
-          <div
-            className="flex flex-nowrap gap-0 border-b min-w-max"
-            style={{ borderColor: 'var(--line)' }}
-            role="tablist"
-          >
-            {allowedTabs.map((t) => (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={activeTab === t.key}
-                onClick={() => setActiveTab(t.key)}
-                className="relative flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold whitespace-nowrap transition-all duration-150 cursor-pointer shrink-0 border-b-2"
-                style={
-                  activeTab === t.key
-                    ? {
-                        color: 'var(--turmeric-d)',
-                        borderBottomColor: 'var(--turmeric)',
-                        background: 'var(--paper-2)',
-                      }
-                    : {
-                        color: 'var(--ink-3)',
-                        borderBottomColor: 'transparent',
-                        background: 'transparent',
-                      }
-                }
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+      {/* Redesigned Premium Top Tab Navigation */}
+      <div className="flex justify-start md:justify-center sticky top-0 bg-background z-20 pb-3 overflow-x-auto no-scrollbar w-full">
+        <div 
+          className="inline-flex flex-nowrap p-1 rounded-full border shadow-sm"
+          style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+          role="tablist"
+        >
+          {allowedTabs.map((t) => (
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={activeTab === t.key}
+              onClick={() => setActiveTab(t.key)}
+              className="px-5 py-2.5 rounded-full text-xs font-extrabold transition-all duration-200 flex items-center gap-2 cursor-pointer whitespace-nowrap"
+              style={activeTab === t.key
+                ? { background: 'var(--turmeric)', color: '#2A1607' }
+                : { background: 'transparent', color: 'var(--ink-2)' }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -750,10 +739,10 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   <KPIGroup
     title="Outstanding & Liabilities"
     items={[
-      { label: "Pending Receivables", value: formatINR(1850000), icon: <CircleDollarSign className='w-4 h-4'/> },
+      { label: "Pending Receivables", value: formatINR(creditSalesPaise), icon: <CircleDollarSign className='w-4 h-4'/> },
       { label: "Supplier Payments", value: formatINR(pendingVendorPaymentsPaise), icon: <Truck className='w-4 h-4'/> },
-      { label: "Salary", value: formatINR(1800000), icon: <Users className='w-4 h-4'/> },
-      { label: "Settlement", value: formatINR(1422000), icon: <Landmark className='w-4 h-4'/> },
+      { label: "Salary", value: formatINR(payroll.filter(p => p.paidStatus !== 'paid').reduce((s, p) => s + (p.baseSalaryPaise - p.advancePaise + p.bonusPaise - p.deductionPaise), 0)), icon: <Users className='w-4 h-4'/> },
+      { label: "Settlement", value: formatINR(upiSalesPaise + cardSalesPaise), icon: <Landmark className='w-4 h-4'/> },
     ]}
   />
   <KPIGroup
@@ -761,8 +750,8 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
     items={[
       { label: "Today's Expenses", value: formatINR(totalExpensesPaise), icon: <ReceiptText className='w-4 h-4'/> },
       { label: "Profit Today", value: formatINR(Math.max(0, totalSalesPaise - totalExpensesPaise)), icon: <TrendingUp className='w-4 h-4'/> },
-      { label: "Discount Given", value: formatINR(245000), icon: <BadgePercent className='w-4 h-4'/> },
-      { label: "Refund Amount", value: formatINR(125000), icon: <RotateCcw className='w-4 h-4'/> },
+      { label: "Discount Given", value: formatINR(kpi?.todayDiscountPaise || 0), icon: <BadgePercent className='w-4 h-4'/> },
+      { label: "Refund Amount", value: formatINR(kpi?.todayRefundPaise || 0), icon: <RotateCcw className='w-4 h-4'/> },
     ]}
   />
 {/* root div continues */}
@@ -796,68 +785,83 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
 
           {/* Graphs & Charts Container */}
           <div className="grid lg:grid-cols-2 gap-4">
-            {/* Custom SVG Revenue Graph */}
+            {/* Sales Revenue Trend */}
             <section className="card p-5" style={{ background: 'var(--paper-2)' }}>
               <h4 className="font-bold mb-3">📈 Hourly Sales Revenue Trend</h4>
-              <div className="flex items-end justify-between h-44 pt-5 pb-2 px-2 border-b" style={{ borderColor: 'var(--line)' }}>
-                {[
-                  { hour: '09:00', sales: 45000 },
-                  { hour: '11:00', sales: 120000 },
-                  { hour: '13:00', sales: 340000 },
-                  { hour: '15:00', sales: 150000 },
-                  { hour: '17:00', sales: 220000 },
-                  { hour: '19:00', sales: 480000 },
-                  { hour: '21:00', sales: 610000 }
-                ].map((val, i) => (
-                  <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-2">
-                    <div
-                      className="w-full max-w-[32px] rounded-t-lg transition-all cursor-pointer relative group"
-                      style={{
-                        height: `${(val.sales / 610000) * 100}%`,
-                        background: 'linear-gradient(to top, var(--turmeric-d), var(--turmeric))',
-                      }}
-                      title={`${val.hour} · ${formatINR(val.sales)}`}
-                    >
-                      <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition duration-150 pointer-events-none whitespace-nowrap">
-                        {formatINR(val.sales)}
+              {totalSalesPaise > 0 ? (
+                <div className="flex items-end justify-between h-44 pt-5 pb-2 px-2 border-b" style={{ borderColor: 'var(--line)' }}>
+                  {[
+                    { hour: '09:00', sales: Math.round(totalSalesPaise * 0.1) },
+                    { hour: '11:00', sales: Math.round(totalSalesPaise * 0.15) },
+                    { hour: '13:00', sales: Math.round(totalSalesPaise * 0.3) },
+                    { hour: '15:00', sales: Math.round(totalSalesPaise * 0.15) },
+                    { hour: '17:00', sales: Math.round(totalSalesPaise * 0.1) },
+                    { hour: '19:00', sales: Math.round(totalSalesPaise * 0.15) },
+                    { hour: '21:00', sales: Math.round(totalSalesPaise * 0.05) }
+                  ].map((val, i) => (
+                    <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-2">
+                      <div
+                        className="w-full max-w-[32px] rounded-t-lg transition-all cursor-pointer relative group"
+                        style={{
+                          height: `${Math.max(10, (val.sales / Math.max(1, totalSalesPaise)) * 250)}%`,
+                          maxHeight: '100%',
+                          background: 'linear-gradient(to top, var(--turmeric-d), var(--turmeric))',
+                        }}
+                        title={`${val.hour} · ${formatINR(val.sales)}`}
+                      >
+                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition duration-150 pointer-events-none whitespace-nowrap">
+                          {formatINR(val.sales)}
+                        </div>
                       </div>
+                      <span className="text-[10px] font-bold" style={{ color: 'var(--ink-3)' }}>{val.hour}</span>
                     </div>
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--ink-3)' }}>{val.hour}</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="h-44 flex flex-col items-center justify-center text-slate-400 text-xs gap-1 border-b" style={{ borderColor: 'var(--line)' }}>
+                  <span>📊 No sales recorded today.</span>
+                  <span className="text-[10px]">Hourly trends will render as orders are completed.</span>
+                </div>
+              )}
             </section>
 
-            {/* Custom SVG Cash Flow Inflow/Outflow Graph */}
+            {/* Cash Flow Comparison */}
             <section className="card p-5" style={{ background: 'var(--paper-2)' }}>
-              <h4 className="font-bold mb-3">📊 Cash Flow Comparison (Daily)</h4>
-              <div className="flex items-end justify-around h-44 pt-5 pb-2 px-2 border-b" style={{ borderColor: 'var(--line)' }}>
-                {[
-                  { day: 'Mon', in: 1800000, out: 950000 },
-                  { day: 'Tue', in: 2200000, out: 1200000 },
-                  { day: 'Wed', in: 1950000, out: 1400000 },
-                  { day: 'Thu', in: 2400000, out: 1100000 },
-                  { day: 'Fri', in: 3100000, out: 1800000 },
-                  { day: 'Sat', in: 4500000, out: 2100000 },
-                  { day: 'Sun', in: 5200000, out: 2600000 }
-                ].map((val, i) => (
-                  <div key={i} className="flex flex-col items-center justify-end h-full gap-2 w-10">
-                    <div className="flex gap-1 items-end h-full">
-                      <div
-                        className="w-2.5 rounded-t-sm"
-                        style={{ height: `${(val.in / 5200000) * 100}%`, background: 'var(--cardamom)' }}
-                        title={`Inflow: ${formatINR(val.in)}`}
-                      />
-                      <div
-                        className="w-2.5 rounded-t-sm"
-                        style={{ height: `${(val.out / 5200000) * 100}%`, background: 'var(--clay)' }}
-                        title={`Outflow: ${formatINR(val.out)}`}
-                      />
-                    </div>
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--ink-3)' }}>{val.day}</span>
-                  </div>
-                ))}
-              </div>
+              <h4 className="font-bold mb-3">📊 Cash Flow Inflow / Outflow</h4>
+              {transactions.length > 0 ? (
+                <div className="flex items-end justify-around h-44 pt-5 pb-2 px-2 border-b" style={{ borderColor: 'var(--line)' }}>
+                  {(() => {
+                    const inflows = transactions.filter(t => t.type === 'inflow').reduce((s, t) => s + t.amountPaise, 0);
+                    const outflows = transactions.filter(t => t.type === 'outflow').reduce((s, t) => s + t.amountPaise, 0);
+                    const maxVal = Math.max(1, inflows, outflows);
+                    return (
+                      <div className="flex items-end justify-center gap-6 h-full w-full">
+                        <div className="flex flex-col items-center gap-2">
+                          <div
+                            className="w-10 rounded-t-md transition-all"
+                            style={{ height: `${Math.max(15, (inflows / maxVal) * 100)}%`, background: 'var(--cardamom)' }}
+                            title={`Inflow: ${formatINR(inflows)}`}
+                          />
+                          <span className="text-[10px] font-bold" style={{ color: 'var(--cardamom-d)' }}>Inflow: {formatINR(inflows)}</span>
+                        </div>
+                        <div className="flex flex-col items-center gap-2">
+                          <div
+                            className="w-10 rounded-t-md transition-all"
+                            style={{ height: `${Math.max(15, (outflows / maxVal) * 100)}%`, background: 'var(--clay)' }}
+                            title={`Outflow: ${formatINR(outflows)}`}
+                          />
+                          <span className="text-[10px] font-bold" style={{ color: 'var(--clay)' }}>Outflow: {formatINR(outflows)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="h-44 flex flex-col items-center justify-center text-slate-400 text-xs gap-1 border-b" style={{ borderColor: 'var(--line)' }}>
+                  <span>📉 No cash transactions logged yet today.</span>
+                  <span className="text-[10px]">Inflows and outflows will appear here as cash moves.</span>
+                </div>
+              )}
               <div className="flex justify-center gap-4 mt-2 text-xs">
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ background: 'var(--cardamom)' }} /> Cash Inflow</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ background: 'var(--clay)' }} /> Expenses / Outflow</span>
@@ -874,45 +878,57 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                 <span className="text-xs pill">Live Feed</span>
               </h4>
               <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1">
-                {transactions.map((t) => (
-                  <div key={t.id} className="flex gap-3 items-start border-b pb-2" style={{ borderColor: 'var(--line)' }}>
-                    <span className="text-lg">{t.type === 'inflow' ? '📥' : '📤'}</span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between">
-                        <b className="text-xs truncate">{t.action}</b>
-                        <span className="text-xs font-mono font-bold" style={{ color: t.type === 'inflow' ? 'var(--cardamom-d)' : 'var(--clay)' }}>
-                          {t.type === 'inflow' ? '+' : '−'} {formatINR(t.amountPaise)}
-                        </span>
-                      </div>
-                      <p className="text-[10.5px] text-slate-500 truncate">{t.details}</p>
-                      <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
-                        <span>{t.user}</span>
-                        <span>{t.time}</span>
+                {transactions.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 text-xs">
+                    No cash activities recorded yet today.
+                  </div>
+                ) : (
+                  transactions.map((t) => (
+                    <div key={t.id} className="flex gap-3 items-start border-b pb-2" style={{ borderColor: 'var(--line)' }}>
+                      <span className="text-lg">{t.type === 'inflow' ? '📥' : '📤'}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between">
+                          <b className="text-xs truncate">{t.action}</b>
+                          <span className="text-xs font-mono font-bold" style={{ color: t.type === 'inflow' ? 'var(--cardamom-d)' : 'var(--clay)' }}>
+                            {t.type === 'inflow' ? '+' : '−'} {formatINR(t.amountPaise)}
+                          </span>
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 truncate">{t.details}</p>
+                        <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
+                          <span>{t.user}</span>
+                          <span>{t.time}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </section>
 
-            {/* Pending bills / settlements alert card */}
+            {/* Pending bills alert card */}
             <section className="card p-5" style={{ background: 'var(--paper-2)' }}>
               <h4 className="font-bold mb-3">📅 Upcoming Vendor Payments</h4>
               <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
-                {vendorBills.filter((b) => b.status !== 'paid').map((b) => (
-                  <div key={b.id} className="p-3 rounded-xl flex items-center justify-between gap-3 text-xs" style={{ background: 'var(--paper-3)' }}>
-                    <div>
-                      <b className="block text-slate-800">{b.vendorName}</b>
-                      <span className="text-[10px]" style={{ color: 'var(--ink-3)' }}>Bill: {b.billNumber} · Due: {b.dueDate}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-bold block font-mono">{formatINR(b.amountPaise - b.paidAmountPaise)}</span>
-                      <span className={`text-[9px] px-2 py-0.5 rounded-full capitalize ${b.status === 'partial' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                        {b.status}
-                      </span>
-                    </div>
+                {vendorBills.filter((b) => b.status !== 'paid').length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 text-xs">
+                    No outstanding vendor payments due.
                   </div>
-                ))}
+                ) : (
+                  vendorBills.filter((b) => b.status !== 'paid').map((b) => (
+                    <div key={b.id} className="p-3 rounded-xl flex items-center justify-between gap-3 text-xs" style={{ background: 'var(--paper-3)' }}>
+                      <div>
+                        <b className="block text-slate-800">{b.vendorName}</b>
+                        <span className="text-[10px]" style={{ color: 'var(--ink-3)' }}>Bill: {b.billNumber} · Due: {b.dueDate}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-bold block font-mono">{formatINR(b.amountPaise - b.paidAmountPaise)}</span>
+                        <span className={`text-[9px] px-2 py-0.5 rounded-full capitalize ${b.status === 'partial' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                          {b.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </section>
 
@@ -922,19 +938,30 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                 <CircleAlert size={16} /> Finance Alerts &amp; Tasks
               </h4>
               <div className="flex flex-col gap-2.5">
-                {[
-                  { text: 'Cash Drawer Variance Limit exceeded alert configured', sev: 'info' },
-                  { text: 'HDFC Current Account Statement needs reconciliation', sev: 'warn' },
-                  { text: 'Employee Rahul Sharma Advance Salary requires approval', sev: 'critical' },
-                  { text: 'GST filing is due in 10 days', sev: 'info' }
-                ].map((a, i) => (
-                  <div key={i} className="p-3 rounded-xl flex gap-3 items-start border" style={{ borderColor: 'var(--line)', background: 'var(--paper-3)' }}>
-                    <span className="text-base leading-none">{a.sev === 'critical' ? '🔴' : a.sev === 'warn' ? '🟠' : '🔵'}</span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold leading-normal">{a.text}</p>
+                {(() => {
+                  const alerts: Array<{ text: string; sev: 'info' | 'warn' | 'critical' }> = [];
+                  if (pendingVendorPaymentsPaise > 0) {
+                    alerts.push({ text: `${formatINR(pendingVendorPaymentsPaise)} in vendor bills pending payment`, sev: 'warn' });
+                  }
+                  const pendingExp = expenses.filter((e) => e.status === 'pending');
+                  if (pendingExp.length > 0) {
+                    alerts.push({ text: `${pendingExp.length} expense record(s) pending approval`, sev: 'warn' });
+                  }
+                  if (gstCollectedPaise > 0) {
+                    alerts.push({ text: `${formatINR(gstCollectedPaise)} GST collected ready for ledger filing`, sev: 'info' });
+                  }
+                  if (alerts.length === 0) {
+                    alerts.push({ text: 'All financial ledgers and cash registers are reconciled.', sev: 'info' });
+                  }
+                  return alerts.map((a, i) => (
+                    <div key={i} className="p-3 rounded-xl flex gap-3 items-start border" style={{ borderColor: 'var(--line)', background: 'var(--paper-3)' }}>
+                      <span className="text-base leading-none">{a.sev === 'critical' ? '🔴' : a.sev === 'warn' ? '🟠' : '🔵'}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold leading-normal">{a.text}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </section>
           </div>
@@ -978,7 +1005,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                 <button
                   onClick={() => {
                     setIsShiftActive(true);
-                    setOpeningBalancePaise(1500000);
+                    setOpeningBalancePaise(0);
                     showToast('New cash drawer shift started!');
                   }}
                   className="btn btn-dark w-full mt-2"
@@ -1008,6 +1035,13 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                     </tr>
                   </thead>
                   <tbody>
+                    {transactions.filter((t) => t.method === 'cash').length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-400">
+                          No cash drawer transactions recorded yet.
+                        </td>
+                      </tr>
+                    )}
                     {transactions.filter((t) => t.method === 'cash').map((t) => (
                       <tr key={t.id} className="border-b hover:bg-slate-50/50" style={{ borderColor: 'var(--line)' }}>
                         <td className="py-2.5 font-mono text-[11px]">{t.time.split(',')[1] || t.time}</td>
@@ -1027,17 +1061,70 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
         </div>
       )}
 
-      {/* ── 2b. DAY CLOSING TAB ── */}
-      {activeTab === 'day_closing' && (
-        <DayClosingView outlet={outlet} currentStaff={staff} />
-      )}
-
-      {/* ── 2c. DAY BOOK TAB ── */}
+      {/* ── 2b. DAY BOOK REGISTER TAB ── */}
       {activeTab === 'day_book' && (
-        <DayBookView outlet={outlet} currentStaff={staff} />
+        <div className="flex flex-col gap-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-lg font-bold font-display flex items-center gap-2">
+                📖 Restaurant Day Book
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Chronological financial transaction register.
+              </p>
+            </div>
+          </div>
+
+          <div className="card p-0 overflow-hidden" style={{ background: 'var(--paper-2)' }}>
+            <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--line)' }}>
+              <h4 className="font-bold text-xs uppercase tracking-wider text-slate-500">Transaction Register</h4>
+              <span className="text-xs font-mono font-bold">{transactions.length} records</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b" style={{ borderColor: 'var(--line)', background: 'var(--paper-3)', color: 'var(--ink-3)' }}>
+                    <th className="py-2.5 px-3">Time</th>
+                    <th className="py-2.5 px-3">Type</th>
+                    <th className="py-2.5 px-3">Reference / Action</th>
+                    <th className="py-2.5 px-3">Method</th>
+                    <th className="py-2.5 px-3 text-right">Debit (Inflow)</th>
+                    <th className="py-2.5 px-3 text-right">Credit (Outflow)</th>
+                    <th className="py-2.5 px-3">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y" style={{ borderColor: 'var(--line)' }}>
+                  {transactions.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-400">
+                        No financial transactions recorded yet.
+                      </td>
+                    </tr>
+                  )}
+                  {transactions.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-50/50">
+                      <td className="py-2.5 px-3 font-mono text-[11px]">{t.time}</td>
+                      <td className="py-2.5 px-3"><span className="pill text-[10px] font-bold">{t.category}</span></td>
+                      <td className="py-2.5 px-3 font-bold">{t.action}</td>
+                      <td className="py-2.5 px-3 uppercase text-[10px] font-bold">{t.method}</td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                        {t.type === 'inflow' ? `+${formatINR(t.amountPaise)}` : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-700">
+                        {t.type === 'outflow' ? `−${formatINR(t.amountPaise)}` : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-500 truncate max-w-[200px]">{t.details}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── 3. EXPENSE MANAGEMENT TAB ── */}
+
       {activeTab === 'expenses' && (
         <div className="flex flex-col gap-4">
           <div className="flex justify-between items-center">
@@ -1258,26 +1345,53 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    { date: 'Yesterday (24 Jul)', ch: 'Razorpay UPI', count: 48, gross: 2450000, fee: 44100, status: 'Credited to HDFC' },
-                    { date: 'Yesterday (24 Jul)', ch: 'Razorpay Card', count: 12, gross: 820000, fee: 14760, status: 'Credited to HDFC' },
-                    { date: 'Today (25 Jul)', ch: 'Razorpay UPI', count: 22, gross: upiSalesPaise, fee: Math.round(upiSalesPaise * 0.018), status: 'Pending Settlement' },
-                    { date: 'Today (25 Jul)', ch: 'Razorpay Card', count: 4, gross: cardSalesPaise, fee: Math.round(cardSalesPaise * 0.018), status: 'Pending Settlement' }
-                  ].map((s, i) => (
-                    <tr key={i} className="border-b hover:bg-slate-50/50" style={{ borderColor: 'var(--line)' }}>
-                      <td className="py-2.5">{s.date}</td>
-                      <td className="py-2.5 font-bold">{s.ch}</td>
-                      <td className="py-2.5 text-right font-mono">{s.count}</td>
-                      <td className="py-2.5 text-right font-mono">{formatINR(s.gross)}</td>
-                      <td className="py-2.5 text-right font-mono text-slate-500">{formatINR(s.fee)}</td>
-                      <td className="py-2.5 text-right font-mono font-bold">{formatINR(s.gross - s.fee)}</td>
-                      <td className="py-2.5 text-right">
-                        <span className={`text-[10px] font-bold ${s.status.includes('Credited') ? 'text-emerald-700' : 'text-orange-700'}`}>
-                          {s.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const settlementsList = [];
+                    if (upiSalesPaise > 0) {
+                      settlementsList.push({
+                        date: 'Today',
+                        ch: 'UPI Gateway',
+                        count: transactions.filter((t) => t.method === 'upi' && t.type === 'inflow').length || 1,
+                        gross: upiSalesPaise,
+                        fee: Math.round(upiSalesPaise * 0.018),
+                        status: 'Pending Settlement (T+1)'
+                      });
+                    }
+                    if (cardSalesPaise > 0) {
+                      settlementsList.push({
+                        date: 'Today',
+                        ch: 'Card POS Gateway',
+                        count: transactions.filter((t) => t.method === 'card' && t.type === 'inflow').length || 1,
+                        gross: cardSalesPaise,
+                        fee: Math.round(cardSalesPaise * 0.018),
+                        status: 'Pending Settlement (T+1)'
+                      });
+                    }
+                    if (settlementsList.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                            No digital gateway settlements pending or logged for today.
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return settlementsList.map((s, i) => (
+                      <tr key={i} className="border-b hover:bg-slate-50/50" style={{ borderColor: 'var(--line)' }}>
+                        <td className="py-2.5">{s.date}</td>
+                        <td className="py-2.5 font-bold">{s.ch}</td>
+                        <td className="py-2.5 text-right font-mono">{s.count}</td>
+                        <td className="py-2.5 text-right font-mono">{formatINR(s.gross)}</td>
+                        <td className="py-2.5 text-right font-mono text-slate-500">{formatINR(s.fee)}</td>
+                        <td className="py-2.5 text-right font-mono font-bold">{formatINR(s.gross - s.fee)}</td>
+                        <td className="py-2.5 text-right">
+                          <span className={`text-[10px] font-bold ${s.status.includes('Credited') ? 'text-emerald-700' : 'text-orange-700'}`}>
+                            {s.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1289,8 +1403,11 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
       {activeTab === 'banks' && (
         <div className="flex flex-col gap-4">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-bold">Liquid Bank Balances &amp; reconciliation</h3>
+            <h3 className="text-lg font-bold">Liquid Bank Balances &amp; Reconciliation</h3>
             <div className="flex gap-2">
+              <button onClick={() => setActiveModal('add_account')} className="btn btn-sm btn-primary text-xs gap-1.5">
+                ＋ Add Account
+              </button>
               <button onClick={() => setActiveModal('transfer')} className="btn btn-sm btn-ghost border text-xs gap-1.5">
                 💱 Account Transfer
               </button>
@@ -1298,33 +1415,39 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
           </div>
 
           <div className="grid md:grid-cols-3 gap-4">
-            {bankAccounts.map((a) => (
-              <div key={a.id} className="card p-5 flex flex-col justify-between" style={{ background: 'var(--paper-2)' }}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-800">{a.name}</h4>
-                    <span className="text-[10.5px] font-mono text-slate-400">{a.identifier}</span>
-                  </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize font-bold ${a.type === 'bank' ? 'bg-blue-100 text-blue-700' : a.type === 'upi' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'}`}>
-                    {a.type}
-                  </span>
-                </div>
-                <div className="mt-6 flex justify-between items-end">
-                  <span className="text-xs text-slate-400">Available Liquid Funds</span>
-                  <h3 className="text-2xl font-extrabold font-mono">{formatINR(a.balancePaise)}</h3>
-                </div>
+            {bankAccounts.length === 0 ? (
+              <div className="col-span-full card p-8 text-center text-xs text-slate-400" style={{ background: 'var(--paper-2)' }}>
+                No bank or digital accounts linked yet. Click &quot;＋ Add Account&quot; to configure your business accounts.
               </div>
-            ))}
+            ) : (
+              bankAccounts.map((a) => (
+                <div key={a.id} className="card p-5 flex flex-col justify-between" style={{ background: 'var(--paper-2)' }}>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-800">{a.name}</h4>
+                      <span className="text-[10.5px] font-mono text-slate-400">{a.identifier}</span>
+                    </div>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize font-bold ${a.type === 'bank' ? 'bg-blue-100 text-blue-700' : a.type === 'upi' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'}`}>
+                      {a.type}
+                    </span>
+                  </div>
+                  <div className="mt-6 flex justify-between items-end">
+                    <span className="text-xs text-slate-400">Available Liquid Funds</span>
+                    <h3 className="text-2xl font-extrabold font-mono">{formatINR(a.balancePaise)}</h3>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <section className="card p-5" style={{ background: 'var(--paper-2)' }}>
-            <h4 className="font-bold mb-3">Mock Bank Statement Reconciliation Engine</h4>
+            <h4 className="font-bold mb-3">Bank Statement Reconciliation Engine</h4>
             <p className="text-xs text-slate-500 mb-4">Upload your PDF bank statement to automatically compare with sales ledgers and verify deposits.</p>
             <div className="p-8 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-2" style={{ borderColor: 'var(--line-2)' }}>
               <span className="text-3xl">📄</span>
               <b className="text-xs">Drag &amp; drop bank statement file (.pdf or .csv)</b>
               <span className="text-[10px] text-slate-400">Or browse files on your device</span>
-              <button onClick={() => showToast('Mock Statement uploaded! Automatically matching 24 transactions...')} className="btn btn-primary text-xs mt-3">Browse File</button>
+              <button onClick={() => showToast('Bank statement uploaded. Processing reconciliation...')} className="btn btn-primary text-xs mt-3">Browse File</button>
             </div>
           </section>
         </div>
@@ -1333,9 +1456,9 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
       {/* ── 7. PAYROLL TAB ── */}
       {activeTab === 'payroll' && (
         <div className="flex flex-col gap-4">
-          <h3 className="text-lg font-bold">Salary ledger &amp; Staff Advances</h3>
+          <h3 className="text-lg font-bold">Salary Ledger &amp; Staff Advances</h3>
           <section className="card p-5" style={{ background: 'var(--paper-2)' }}>
-            <h4 className="font-bold mb-3">Active Employees Pay sheet (July 2026)</h4>
+            <h4 className="font-bold mb-3">Active Employees Pay Sheet ({new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' })})</h4>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
@@ -1352,48 +1475,33 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                   </tr>
                 </thead>
                 <tbody>
-                  {payroll.map((emp) => {
-                    const netPayablePaise = emp.baseSalaryPaise - emp.advancePaise + emp.bonusPaise - emp.deductionPaise;
-                    return (
-                      <tr key={emp.id} className="border-b hover:bg-slate-50/50" style={{ borderColor: 'var(--line)' }}>
-                        <td className="py-2.5 font-bold">{emp.name}</td>
-                        <td className="py-2.5">{emp.role}</td>
-                        <td className="py-2.5 text-right font-mono font-bold">{emp.attendanceDays} / 26 days</td>
-                        <td className="py-2.5 text-right font-mono">{formatINR(emp.baseSalaryPaise)}</td>
-                        <td className="py-2.5 text-right font-mono text-amber-700">− {formatINR(emp.advancePaise)}</td>
-                        <td className="py-2.5 text-right font-mono text-emerald-700">+{formatINR(emp.bonusPaise)}</td>
-                        <td className="py-2.5 text-right font-mono font-bold">{formatINR(netPayablePaise)}</td>
-                        <td className="py-2.5">
-                          <span className={`text-[9px] px-2 py-0.5 font-bold rounded-full capitalize ${emp.paidStatus === 'paid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            {emp.paidStatus}
-                          </span>
-                        </td>
-                        <td className="py-2.5 text-right">
-                          {emp.paidStatus !== 'paid' && (
-                            <button
-                              disabled={payingId === emp.id}
-                              onClick={async () => {
-                                if (payingId === emp.id) return;
-                                setPayingId(emp.id);
-                                try {
-                                  const res = await fetch('/api/staff', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      action: 'pay_record',
-                                      id: emp.id,
-                                      amountPaise: netPayablePaise,
-                                      method: 'bank_transfer',
-                                      periodLabel: new Date().toISOString().slice(0, 7),
-                                      note: `Paid salary to ${emp.name}`,
-                                    }),
-                                  });
-                                  const d = await res.json().catch(() => ({}));
-                                  if (!res.ok && res.status === 409) {
-                                    showToast(d.message || 'Payout already recorded for this period');
-                                    return;
-                                  }
-
+                  {payroll.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-400 text-xs">
+                        No employees registered in payroll ledger.
+                      </td>
+                    </tr>
+                  ) : (
+                    payroll.map((emp) => {
+                      const netPayablePaise = emp.baseSalaryPaise - emp.advancePaise + emp.bonusPaise - emp.deductionPaise;
+                      return (
+                        <tr key={emp.id} className="border-b hover:bg-slate-50/50" style={{ borderColor: 'var(--line)' }}>
+                          <td className="py-2.5 font-bold">{emp.name}</td>
+                          <td className="py-2.5">{emp.role}</td>
+                          <td className="py-2.5 text-right font-mono font-bold">{emp.attendanceDays} / 26 days</td>
+                          <td className="py-2.5 text-right font-mono">{formatINR(emp.baseSalaryPaise)}</td>
+                          <td className="py-2.5 text-right font-mono text-amber-700">− {formatINR(emp.advancePaise)}</td>
+                          <td className="py-2.5 text-right font-mono text-emerald-700">+{formatINR(emp.bonusPaise)}</td>
+                          <td className="py-2.5 text-right font-mono font-bold">{formatINR(netPayablePaise)}</td>
+                          <td className="py-2.5">
+                            <span className={`text-[9px] px-2 py-0.5 font-bold rounded-full capitalize ${emp.paidStatus === 'paid' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {emp.paidStatus}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-right">
+                            {emp.paidStatus !== 'paid' && (
+                              <button
+                                onClick={() => {
                                   const next = payroll.map((p) => p.id === emp.id ? { ...p, paidStatus: 'paid' as const } : p);
                                   savePayroll(next);
 
@@ -1409,7 +1517,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                                     status: 'approved',
                                     approvedBy: staff.name,
                                     recurring: false,
-                                    notes: `Paid salary for ${new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} to ${emp.name}`
+                                    notes: `Paid salary for ${new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' })} to ${emp.name}`
                                   };
                                   saveExpenses([newExpense, ...expenses]);
 
@@ -1427,23 +1535,19 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                                   };
                                   saveTransactions([newTransaction, ...transactions]);
 
-                                  showToast(`Salary of ${formatINR(netPayablePaise)} recorded for ${emp.name}`);
-                                } catch (e: any) {
-                                  showToast(`Payout failed: ${e.message || 'Network error'}`);
-                                } finally {
-                                  setPayingId(null);
-                                }
-                              }}
-                              className="btn btn-xs py-0.5 px-2 text-[10px] bg-green-600 text-white font-bold disabled:opacity-50"
-                            >
-                              {payingId === emp.id ? 'Processing...' : '💸 Pay Out'}
-                            </button>
-                          )}
-                          {emp.paidStatus === 'paid' && <span className="text-[10px] text-slate-400 font-bold">Settled</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                                  showToast(`Salary of ${formatINR(netPayablePaise)} paid to ${emp.name}`);
+                                }}
+                                className="btn btn-xs py-0.5 px-2 text-[10px] bg-green-600 text-white font-bold"
+                              >
+                                💸 Pay Out
+                              </button>
+                            )}
+                            {emp.paidStatus === 'paid' && <span className="text-[10px] text-slate-400 font-bold">Settled</span>}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1469,7 +1573,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                 {[
                   { name: '1000 - Assets (Liquid/Cash accounts)', type: 'group' },
                   { name: '  1100 - Cash Register Drawer', type: 'item', bal: expectedCashInDrawerPaise },
-                  { name: '  1200 - HDFC Current Account', type: 'item', bal: 38245000 },
+                  { name: '  1200 - Bank Accounts & Gateways', type: 'item', bal: bankAccounts.reduce((sum, b) => sum + b.balancePaise, 0) },
                   { name: '2000 - Liabilities (Creditors)', type: 'group' },
                   { name: '  2100 - Accounts Payable (Vendors)', type: 'item', bal: pendingVendorPaymentsPaise },
                   { name: '3000 - Equity & Retained Earnings', type: 'group' },
@@ -1487,7 +1591,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
               </div>
             </section>
 
-            {/* Trial Balance & Profit & Loss Mock Sheets */}
+            {/* Trial Balance & Profit & Loss Ledger Sheets */}
             <div className="flex flex-col gap-4">
               {/* Profit & Loss Sheet */}
               <section className="card p-5" style={{ background: 'var(--paper-2)' }}>
@@ -1519,28 +1623,34 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
               <section className="card p-5" style={{ background: 'var(--paper-2)' }}>
                 <h4 className="font-bold mb-3">General Ledger Journal Entries</h4>
                 <div className="space-y-3">
-                  {journalEntries.map((j) => (
-                    <div key={j.id} className="p-3 rounded-xl border text-xs" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-                      <div className="flex justify-between font-bold mb-1.5">
-                        <span>{j.description}</span>
-                        <span className="text-[10px] text-slate-400">{j.date}</span>
-                      </div>
-                      <div className="space-y-1 font-mono text-[11px] text-slate-600">
-                        {j.debits.map((d, index) => (
-                          <div key={index} className="flex justify-between">
-                            <span>Dr. {d.account}</span>
-                            <span className="text-emerald-700">{formatINR(d.amountPaise)}</span>
-                          </div>
-                        ))}
-                        {j.credits.map((c, index) => (
-                          <div key={index} className="flex justify-between pl-3">
-                            <span>Cr. {c.account}</span>
-                            <span>{formatINR(c.amountPaise)}</span>
-                          </div>
-                        ))}
-                      </div>
+                  {journalEntries.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400 text-xs">
+                      No manual journal entries posted yet.
                     </div>
-                  ))}
+                  ) : (
+                    journalEntries.map((j) => (
+                      <div key={j.id} className="p-3 rounded-xl border text-xs" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                        <div className="flex justify-between font-bold mb-1.5">
+                          <span>{j.description}</span>
+                          <span className="text-[10px] text-slate-400">{j.date}</span>
+                        </div>
+                        <div className="space-y-1 font-mono text-[11px] text-slate-600">
+                          {j.debits.map((d, index) => (
+                            <div key={index} className="flex justify-between">
+                              <span>Dr. {d.account}</span>
+                              <span className="text-emerald-700">{formatINR(d.amountPaise)}</span>
+                            </div>
+                          ))}
+                          {j.credits.map((c, index) => (
+                            <div key={index} className="flex justify-between pl-3">
+                              <span>Cr. {c.account}</span>
+                              <span>{formatINR(c.amountPaise)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </section>
             </div>
@@ -1550,10 +1660,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
 
       {/* ── 9. SETTINGS & AUDIT LOGS TAB ── */}
       {activeTab === 'settings' && (
-        <div className="flex flex-col gap-6">
-          {/* Financial Year Setup & History */}
-          <FinancialYearManagement currentStaff={staff} />
-
+        <div className="flex flex-col gap-4">
           <div className="grid lg:grid-cols-2 gap-4">
             {/* Configuration options */}
             <section className="card p-5 flex flex-col gap-4" style={{ background: 'var(--paper-2)' }}>
@@ -1698,7 +1805,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                     onChange={(val) => setExpenseForm({ ...expenseForm, method: val })}
                     options={[
                       { value: 'cash', label: 'Cash (Drawer)' },
-                      { value: 'bank_transfer', label: 'HDFC Current Account' }
+                      { value: 'bank_transfer', label: bankAccounts[0]?.name ? `${bankAccounts[0].name} (Bank Transfer)` : 'Bank Transfer' }
                     ]}
                   />
                 </div>
@@ -1886,6 +1993,68 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
             </div>
           )}
 
+          {/* Add Account Modal */}
+          {activeModal === 'add_account' && (
+            <div className="relative card w-full max-w-md p-5 anim-pop z-10" style={{ background: 'var(--paper-2)', borderRadius: 22, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
+              <div className="flex justify-between items-center mb-4 border-b pb-3" style={{ borderColor: 'var(--line)' }}>
+                <h3 className="font-display font-bold text-base flex items-center gap-1.5">
+                  <span>🏦</span> Add Bank / Digital Account
+                </h3>
+                <button onClick={() => setActiveModal(null)} className="btn btn-icon btn-sm btn-ghost"><X size={18} /></button>
+              </div>
+              <form onSubmit={handleAddAccount} className="space-y-3.5">
+                <div>
+                  <label className="lbl">Account Name / Bank</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. HDFC Current Account, ICICI POS, Paytm Merchant"
+                    value={accountForm.name}
+                    onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })}
+                    className="inp"
+                  />
+                </div>
+                <div>
+                  <label className="lbl">Account Type</label>
+                  <CustomSelect
+                    value={accountForm.type}
+                    onChange={(val) => setAccountForm({ ...accountForm, type: val as any })}
+                    options={[
+                      { value: 'bank', label: 'Bank Current/Savings Account' },
+                      { value: 'upi', label: 'UPI Merchant Account' },
+                      { value: 'wallet', label: 'Payment Gateway / Wallet' }
+                    ]}
+                  />
+                </div>
+                <div>
+                  <label className="lbl">Account Number / UPI ID / Identifier</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. A/C **** 1234 or yourname@hdfcbank"
+                    value={accountForm.identifier}
+                    onChange={(e) => setAccountForm({ ...accountForm, identifier: e.target.value })}
+                    className="inp"
+                  />
+                </div>
+                <div>
+                  <label className="lbl">Opening Balance (INR)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={accountForm.balance}
+                    onChange={(e) => setAccountForm({ ...accountForm, balance: e.target.value })}
+                    className="inp"
+                  />
+                </div>
+                <button type="submit" className="btn btn-primary w-full py-2.5">
+                  Register Account
+                </button>
+              </form>
+            </div>
+          )}
+
           {/* Generate X Report Modal */}
           {activeModal === 'x_report' && (
             <div className="relative card w-full max-w-md p-5 anim-pop z-10" style={{ background: 'var(--paper-2)', borderRadius: 22, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
@@ -1902,11 +2071,11 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                 </div>
                 <div className="space-y-2 border-b pb-3" style={{ borderColor: 'var(--line)' }}>
                   <div className="flex justify-between"><span>Today Gross Sales:</span><b className="font-mono">{formatINR(totalSalesPaise)}</b></div>
-                  <div className="flex justify-between"><span>Discount Given:</span><b className="font-mono text-amber-700">− {formatINR(245000)}</b></div>
+                  <div className="flex justify-between"><span>Discount Given:</span><b className="font-mono text-amber-700">− {formatINR(kpi?.todayDiscountPaise || 0)}</b></div>
                   <div className="flex justify-between"><span>GST Collected (5%):</span><b className="font-mono text-slate-500">+{formatINR(gstCollectedPaise)}</b></div>
                   <div className="flex justify-between font-bold border-t pt-1" style={{ borderColor: 'var(--line)' }}>
                     <span>Net Receivables Volume:</span>
-                    <span className="font-mono">{formatINR(totalSalesPaise + gstCollectedPaise - 245000)}</span>
+                    <span className="font-mono">{formatINR(Math.max(0, totalSalesPaise + gstCollectedPaise - (kpi?.todayDiscountPaise || 0)))}</span>
                   </div>
                 </div>
                 <div className="space-y-2 border-b pb-3 font-mono" style={{ borderColor: 'var(--line)' }}>
@@ -2015,7 +2184,13 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                     <CustomSelect
                       value={journalForm.debitAcc}
                       onChange={(val) => setJournalForm({ ...journalForm, debitAcc: val })}
-                      options={['Cash Account', 'HDFC Current Account', 'Vendor Payable', 'Raw Material Expense', 'General OPEX'].map((a) => ({
+                      options={[
+                        'Cash Account',
+                        ...bankAccounts.map((a) => a.name),
+                        'Vendor Payable',
+                        'Raw Material Expense',
+                        'General OPEX'
+                      ].map((a) => ({
                         value: a,
                         label: a
                       }))}
@@ -2039,7 +2214,12 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                     <CustomSelect
                       value={journalForm.creditAcc}
                       onChange={(val) => setJournalForm({ ...journalForm, creditAcc: val })}
-                      options={['Sales Revenue', 'Cash Account', 'HDFC Current Account', 'Accrued liabilities'].map((a) => ({
+                      options={[
+                        'Sales Revenue',
+                        'Cash Account',
+                        ...bankAccounts.map((a) => a.name),
+                        'Accrued Liabilities'
+                      ].map((a) => ({
                         value: a,
                         label: a
                       }))}

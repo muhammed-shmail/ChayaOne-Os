@@ -951,6 +951,9 @@ export default function SettingsCenter({
   const [routingSearch, setRoutingSearch] = useState<string>('');
   const [routingStationFilter, setRoutingStationFilter] = useState<string>('all');
   const [savingMenuItemId, setSavingMenuItemId] = useState<string | null>(null);
+  const [showAddStationModal, setShowAddStationModal] = useState<boolean>(false);
+  const [newStationModalName, setNewStationModalName] = useState<string>('');
+  const [addingStation, setAddingStation] = useState<boolean>(false);
 
   // Auto health check on mount / when devices change:
   // Render printer as CHECKING... then run real health check. NEVER assume ONLINE on load.
@@ -1161,17 +1164,18 @@ export default function SettingsCenter({
 
   const handleAssignItemStation = async (itemId: string, station: string) => {
     setSavingMenuItemId(itemId);
+    const targetStation = !station || station === 'none' ? null : station;
     try {
       const res = await fetch('/api/dashboard/menu', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'update', itemId, station: station === 'none' ? null : station }),
+        body: JSON.stringify({ action: 'update', itemId, station: targetStation }),
       });
       if (res.ok) {
-        flashMessage('Item station updated!');
+        flashMessage(targetStation ? 'Item assigned to station!' : 'Item set to No Station (Default)');
         if (setMenuItems) {
           setMenuItems((prev) =>
-            prev.map((i) => (i.id === itemId ? { ...i, station: station === 'none' ? null : station } : i))
+            prev.map((i) => (i.id === itemId ? { ...i, station: targetStation } : i))
           );
         }
       } else {
@@ -2590,7 +2594,7 @@ export default function SettingsCenter({
                   <form onSubmit={handleSaveProfile} className="flex flex-col gap-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="lbl">Outlet Name</label>
+                        <label className="lbl">Business / Store Name</label>
                         <input value={profile.name} onChange={(e) => setProfile((p: any) => ({ ...p, name: e.target.value }))} required className="inp" />
                       </div>
                       <div>
@@ -4284,14 +4288,18 @@ export default function SettingsCenter({
                     <div className="border-t pt-4">
                       <h4 className="font-bold text-sm mb-3">Kitchen Preparation Stations</h4>
                       <div className="flex flex-col gap-2">
-                        {kitchens.map((k) => (
-                          <div key={k.id} className={`flex items-center justify-between p-3 rounded-xl border bg-paper-3 text-sm transition-opacity ${deletingStationId === k.id ? 'opacity-40 pointer-events-none' : ''}`}>
-                            <div className="flex items-center gap-3">
-                              <span className="w-3.5 h-3.5 rounded-full" style={{ background: k.color || 'var(--turmeric)' }} />
-                              <b className="font-semibold">{k.name}</b>
-                              <span className="text-xs text-ink-3">Slug: {k.id}</span>
-                            </div>
-                            {kitchens.length > 1 && (
+                        {kitchens.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-ink-3 border border-dashed border-line rounded-xl bg-paper-2">
+                            No preparation stations configured. Default is no station (all items route to general KOT printers).
+                          </div>
+                        ) : (
+                          kitchens.map((k) => (
+                            <div key={k.id} className={`flex items-center justify-between p-3 rounded-xl border bg-paper-3 text-sm transition-opacity ${deletingStationId === k.id ? 'opacity-40 pointer-events-none' : ''}`}>
+                              <div className="flex items-center gap-3">
+                                <span className="w-3.5 h-3.5 rounded-full" style={{ background: k.color || 'var(--turmeric)' }} />
+                                <b className="font-semibold">{k.name}</b>
+                                <span className="text-xs text-ink-3">Slug: {k.id}</span>
+                              </div>
                               <button
                                 type="button"
                                 disabled={kitchenBusy || deletingStationId === k.id}
@@ -4299,7 +4307,7 @@ export default function SettingsCenter({
                                   setShowConfirmModal({
                                     show: true,
                                     title: `Remove Station "${k.name}"`,
-                                    message: `Are you sure you want to remove the "${k.name}" preparation station? Menu items mapped to this station will keep their tag until reassigned.`,
+                                    message: `Are you sure you want to remove the "${k.name}" preparation station? Menu items mapped to this station will revert to unassigned (no station).`,
                                     onConfirm: async () => {
                                       setDeletingStationId(k.id);
                                       try {
@@ -4319,9 +4327,9 @@ export default function SettingsCenter({
                                   <Trash2 size={16} />
                                 )}
                               </button>
-                            )}
-                          </div>
-                        ))}
+                            </div>
+                          ))
+                        )}
                       </div>
 
                       {/* Add new station row */}
@@ -4814,7 +4822,7 @@ export default function SettingsCenter({
                             target: '192.168.1.201:9100',
                             ip: '192.168.1.201',
                             port: '9100',
-                            station: 'kitchen',
+                            station: '',
                             priority: 'primary',
                             kotRule: 'station_only',
                             isDefault: false
@@ -4828,10 +4836,10 @@ export default function SettingsCenter({
                     </div>
                   </div>
 
-                  {/* UNASSIGNED ITEM WARNING BANNER */}
+                  {/* UNASSIGNED ITEM WARNING BANNER (Only shown when custom stations are configured and some items are unassigned) */}
                   {(() => {
                     const unassignedCount = (menuItems || []).filter(i => !i.station || i.station === 'none').length;
-                    if (unassignedCount === 0) return null;
+                    if (kitchens.length === 0 || unassignedCount === 0) return null;
                     return (
                       <div className="p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs bg-amber-500/10 border-amber-500/30 text-amber-900">
                         <div className="flex items-center gap-2 font-bold">
@@ -4845,7 +4853,7 @@ export default function SettingsCenter({
                           }}
                           className="btn btn-sm bg-amber-600 text-white hover:bg-amber-700 font-bold"
                         >
-                          Review Items
+                          Assign Items
                         </button>
                       </div>
                     );
@@ -4853,99 +4861,170 @@ export default function SettingsCenter({
 
                   {/* KOT STATIONS SUMMARY CARDS */}
                   <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <h4 className="font-bold text-sm">KOT STATIONS</h4>
                         <p className="text-[11px] text-ink-3">Preparation stations and configured physical LAN printers.</p>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRoutingStationFilter('all');
+                            setShowStationRoutingModal(true);
+                          }}
+                          className="btn btn-xs bg-paper-2 border hover:bg-paper font-semibold"
+                        >
+                          Assign Items to Stations
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddStationModal(true)}
+                          className="btn btn-xs btn-primary font-semibold flex items-center gap-1"
+                        >
+                          <Plus size={13} /> Add Station
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                      {[
-                        { id: 'kitchen', name: 'Kitchen', icon: '🍳', desc: 'Food preparation' },
-                        { id: 'bar', name: 'Bar', icon: '☕', desc: 'Drinks & beverages' },
-                        { id: 'bakery', name: 'Bakery', icon: '🥐', desc: 'Bakery items' },
-                        { id: 'dessert', name: 'Dessert', icon: '🍰', desc: 'Desserts & sweets' },
-                        ...kitchens
-                          .filter(k => !['kitchen', 'bar', 'bakery', 'dessert'].includes(k.id))
-                          .map(k => ({ id: k.id, name: k.name, icon: '⚙️', desc: 'Custom station' }))
-                      ].map((st) => {
-                        const stationPrinters = devices.filter(d => d.type === 'kot_printer' && d.station === st.id);
-                        const primaryPrinter = stationPrinters.find(d => d.priority === 'primary' || d.isDefault) || stationPrinters[0];
-                        const backupPrinter = stationPrinters.find(d => d.id !== primaryPrinter?.id && d.priority === 'backup') || (stationPrinters.length > 1 ? stationPrinters[1] : null);
-                        const assignedItemsCount = (menuItems || []).filter(i => (i.station || 'kitchen') === st.id).length;
+                    {(() => {
+                      const displayStations = kitchens.map(k => ({
+                        id: k.id,
+                        name: k.name,
+                        icon: '🍳',
+                        desc: 'Preparation station',
+                        color: k.color || '#eab308',
+                      }));
 
+                      if (displayStations.length === 0) {
                         return (
-                          <div key={st.id} className="card p-4 bg-paper-3 flex flex-col justify-between gap-3 border border-line rounded-xl">
+                          <div className="p-8 border border-dashed border-line rounded-2xl bg-paper-3/40 text-center flex flex-col items-center justify-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-paper-2 border border-line flex items-center justify-center text-2xl shadow-sm">
+                              🍳
+                            </div>
                             <div>
-                              <div className="flex items-center justify-between border-b pb-2 border-line">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xl">{st.icon}</span>
-                                  <div>
-                                    <b className="text-sm block font-bold">{st.name}</b>
-                                    <span className="text-[10px] text-ink-3 block">{st.desc}</span>
-                                  </div>
-                                </div>
-                                <span className="pill text-[10px] font-bold">{assignedItemsCount} Items</span>
-                              </div>
-
-                              <div className="mt-3 flex flex-col gap-1.5 text-xs">
-                                <div className="flex justify-between items-center text-[11px]">
-                                  <span className="text-ink-3">Printers:</span>
-                                  <b className="font-bold">{stationPrinters.length} Configured</b>
-                                </div>
-                                <div className="flex justify-between items-center text-[11px]">
-                                  <span className="text-ink-3">Primary:</span>
-                                  <span className="font-semibold text-turmeric-d truncate max-w-[110px]" title={primaryPrinter?.name || 'None'}>
-                                    {primaryPrinter ? primaryPrinter.name : '— Not set'}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-center text-[11px]">
-                                  <span className="text-ink-3">Backup:</span>
-                                  <span className="font-semibold text-ink-2 truncate max-w-[110px]" title={backupPrinter?.name || 'None'}>
-                                    {backupPrinter ? backupPrinter.name : '— None'}
-                                  </span>
-                                </div>
-                              </div>
+                              <b className="text-sm font-bold block text-ink">No Preparation Stations Configured</b>
+                              <p className="text-xs text-ink-3 max-w-md mt-1">
+                                Default is no station — all items route to general KOT printers. Click &quot;+ Add Station&quot; to create custom stations (e.g. Hot Kitchen, Coffee Bar, Bakery, Grill) based on your cafe&apos;s setup.
+                              </p>
                             </div>
-
-                            <div className="flex items-center gap-1.5 pt-2 border-t border-line">
-                              <button
-                                onClick={() => {
-                                  setRoutingStationFilter(st.id);
-                                  setShowStationRoutingModal(true);
-                                }}
-                                className="btn btn-xs flex-1 bg-paper-2 border hover:bg-paper"
-                              >
-                                Manage
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setDeviceForm({
-                                    id: undefined,
-                                    name: `${st.name} Printer ${stationPrinters.length + 1}`,
-                                    type: 'kot_printer',
-                                    connection: 'network',
-                                    target: `192.168.1.${201 + devices.length}:9100`,
-                                    ip: `192.168.1.${201 + devices.length}`,
-                                    port: '9100',
-                                    station: st.id,
-                                    priority: stationPrinters.length === 0 ? 'primary' : 'backup',
-                                    kotRule: 'station_only',
-                                    isDefault: false
-                                  });
-                                  setShowDeviceForm(true);
-                                }}
-                                className="btn btn-xs btn-primary px-2"
-                                title={`Add another printer for ${st.name}`}
-                              >
-                                + Add
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowAddStationModal(true)}
+                              className="btn btn-sm btn-primary flex items-center gap-1.5 font-bold"
+                            >
+                              <Plus size={14} /> Add Station
+                            </button>
                           </div>
                         );
-                      })}
-                    </div>
+                      }
+
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          {displayStations.map((st) => {
+                            const stationPrinters = devices.filter(d => (d.type === 'kot_printer' || d.type === 'both_printer') && d.station === st.id);
+                            const primaryPrinter = stationPrinters.find(d => d.priority === 'primary' || d.isDefault) || stationPrinters[0];
+                            const backupPrinter = stationPrinters.find(d => d.id !== primaryPrinter?.id && d.priority === 'backup') || (stationPrinters.length > 1 ? stationPrinters[1] : null);
+                            const assignedItemsCount = (menuItems || []).filter(i => i.station === st.id).length;
+
+                            return (
+                              <div key={st.id} className="card p-4 bg-paper-3 flex flex-col justify-between gap-3 border border-line rounded-xl shadow-sm hover:border-turmeric/40 transition-colors">
+                                <div>
+                                  <div className="flex items-center justify-between border-b pb-2 border-line">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xl">{st.icon}</span>
+                                      <div>
+                                        <b className="text-sm block font-bold text-ink">{st.name}</b>
+                                        <span className="text-[10px] text-ink-3 block">{st.desc}</span>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="pill text-[10px] font-bold">{assignedItemsCount} Items</span>
+                                      <button
+                                        type="button"
+                                        disabled={kitchenBusy || deletingStationId === st.id}
+                                        onClick={() => {
+                                          setShowConfirmModal({
+                                            show: true,
+                                            title: `Remove Station "${st.name}"`,
+                                            message: `Are you sure you want to remove the "${st.name}" station? Menu items mapped to this station will revert to unassigned (no station).`,
+                                            onConfirm: async () => {
+                                              setDeletingStationId(st.id);
+                                              try {
+                                                await kitchenApi({ action: 'kitchen_delete', id: st.id }, `Station "${st.name}" deleted`);
+                                              } finally {
+                                                setDeletingStationId(null);
+                                              }
+                                            },
+                                          });
+                                        }}
+                                        className="text-ink-4 hover:text-red-500 p-1 rounded transition-colors"
+                                        title={`Delete station ${st.name}`}
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3 flex flex-col gap-1.5 text-xs">
+                                    <div className="flex justify-between items-center text-[11px]">
+                                      <span className="text-ink-3">Printers:</span>
+                                      <b className="font-bold">{stationPrinters.length} Configured</b>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[11px]">
+                                      <span className="text-ink-3">Primary:</span>
+                                      <span className="font-semibold text-turmeric-d truncate max-w-[110px]" title={primaryPrinter?.name || 'None'}>
+                                        {primaryPrinter ? primaryPrinter.name : '— Not set'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[11px]">
+                                      <span className="text-ink-3">Backup:</span>
+                                      <span className="font-semibold text-ink-2 truncate max-w-[110px]" title={backupPrinter?.name || 'None'}>
+                                        {backupPrinter ? backupPrinter.name : '— None'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 pt-2 border-t border-line">
+                                  <button
+                                    onClick={() => {
+                                      setRoutingStationFilter(st.id);
+                                      setShowStationRoutingModal(true);
+                                    }}
+                                    className="btn btn-xs flex-1 bg-paper-2 border hover:bg-paper font-semibold"
+                                  >
+                                    Assign Items
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setDeviceForm({
+                                        id: undefined,
+                                        name: `${st.name} Printer ${stationPrinters.length + 1}`,
+                                        type: 'kot_printer',
+                                        connection: 'network',
+                                        target: `192.168.1.${201 + devices.length}:9100`,
+                                        ip: `192.168.1.${201 + devices.length}`,
+                                        port: '9100',
+                                        station: st.id,
+                                        priority: stationPrinters.length === 0 ? 'primary' : 'backup',
+                                        kotRule: 'station_only',
+                                        isDefault: false
+                                      });
+                                      setShowDeviceForm(true);
+                                    }}
+                                    className="btn btn-xs btn-primary px-2"
+                                    title={`Add another printer for ${st.name}`}
+                                  >
+                                    + Add
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* HARDWARE REGISTRY TABLE */}
@@ -4962,7 +5041,7 @@ export default function SettingsCenter({
                             target: '192.168.1.201:9100',
                             ip: '192.168.1.201',
                             port: '9100',
-                            station: 'kitchen',
+                            station: '',
                             priority: 'primary',
                             kotRule: 'station_only',
                             isDefault: false
@@ -5019,8 +5098,15 @@ export default function SettingsCenter({
                                       return null;
                                     })()}
                                   </td>
-                                  <td className="p-3 capitalize font-semibold text-turmeric-d">
-                                    {d.station ? d.station : d.type === 'both_printer' ? 'Billing & Kitchen' : d.type === 'receipt_printer' ? 'Billing Counter' : '—'}
+                                  <td className="p-3 font-semibold text-turmeric-d">
+                                    {(() => {
+                                      if (!d.station) {
+                                        return d.type === 'both_printer' ? 'Billing & KOT (All)' : d.type === 'receipt_printer' ? 'Billing Counter' : 'General (All Stations)';
+                                      }
+                                      const kt = kitchens.find((k) => k.id === d.station);
+                                      if (kt) return <span className="inline-flex items-center gap-1"><span>🍳</span> {kt.name}</span>;
+                                      return <span className="capitalize">{d.station}</span>;
+                                    })()}
                                   </td>
                                   <td className="p-3">
                                     {d.priority === 'backup' ? (
@@ -5111,7 +5197,7 @@ export default function SettingsCenter({
                                             target: d.target || `${cleanIp}:${cleanPort}`,
                                             ip: cleanIp,
                                             port: cleanPort,
-                                            station: d.station || 'kitchen',
+                                            station: d.station || '',
                                             priority: d.priority || 'primary',
                                             kotRule: d.kotRule || 'station_only',
                                             isDefault: !!d.isDefault
@@ -5271,37 +5357,90 @@ export default function SettingsCenter({
                           <>
                             {/* KOT STATION */}
                             <div className="flex flex-col gap-3 border-t pt-4 border-line">
-                              <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">2. KOT Station</h4>
-                              <p className="text-xs text-ink-3">Which station should this printer serve?</p>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">2. KOT Station</h4>
+                                  <p className="text-xs text-ink-3">Which station should this printer serve?</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddStationModal(true)}
+                                  className="text-xs text-turmeric-d hover:underline font-bold flex items-center gap-1"
+                                >
+                                  <Plus size={12} /> Add New Station
+                                </button>
+                              </div>
 
-                              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                                {[
-                                  { id: 'kitchen', name: 'Kitchen', icon: '🍳', desc: 'Food prep' },
-                                  { id: 'bar', name: 'Bar', icon: '☕', desc: 'Drinks & beverages' },
-                                  { id: 'bakery', name: 'Bakery', icon: '🥐', desc: 'Bakery items' },
-                                  { id: 'dessert', name: 'Dessert', icon: '🍰', desc: 'Desserts & sweets' },
-                                  { id: 'custom', name: 'Custom', icon: '⚙️', desc: 'Custom station' },
-                                ].map((st) => {
-                                  const isSel = (deviceForm.station || 'kitchen') === st.id;
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {/* General / No Station option */}
+                                {(() => {
+                                  const isSel = !deviceForm.station || deviceForm.station === 'none' || deviceForm.station === 'all';
                                   return (
                                     <button
-                                      key={st.id}
                                       type="button"
-                                      onClick={() => setDeviceForm((prev: any) => ({ ...prev, station: st.id }))}
+                                      onClick={() => setDeviceForm((prev: any) => ({ ...prev, station: '' }))}
                                       className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
                                         isSel
-                                          ? 'bg-amber-500/10 border-turmeric text-ink ring-2 ring-turmeric/30'
+                                          ? 'bg-amber-500/15 border-turmeric text-ink ring-2 ring-turmeric/30'
                                           : 'bg-paper-2 border-line hover:border-line-2'
                                       }`}
                                     >
-                                      <span className="text-2xl mb-1">{st.icon}</span>
+                                      <span className="text-2xl mb-1">🖨️</span>
                                       <div>
-                                        <b className="text-xs block font-bold">{st.name}</b>
-                                        <span className="text-[10px] text-ink-3 block">{st.desc}</span>
+                                        <b className="text-xs block font-bold">General / All Items</b>
+                                        <span className="text-[10px] text-ink-3 block">Prints all items or unassigned</span>
+                                      </div>
+                                    </button>
+                                  );
+                                })()}
+
+                                {/* Dynamically configured stations */}
+                                {kitchens.map((k) => {
+                                  const isSel = deviceForm.station === k.id;
+                                  return (
+                                    <button
+                                      key={k.id}
+                                      type="button"
+                                      onClick={() => setDeviceForm((prev: any) => ({ ...prev, station: k.id }))}
+                                      className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                                        isSel
+                                          ? 'bg-amber-500/15 border-turmeric text-ink ring-2 ring-turmeric/30'
+                                          : 'bg-paper-2 border-line hover:border-line-2'
+                                      }`}
+                                    >
+                                      <span className="text-2xl mb-1">🍳</span>
+                                      <div>
+                                        <b className="text-xs block font-bold">{k.name}</b>
+                                        <span className="text-[10px] text-ink-3 block">Station printer</span>
                                       </div>
                                     </button>
                                   );
                                 })}
+
+                                {/* If deviceForm.station has a custom value not in kitchens */}
+                                {deviceForm.station && deviceForm.station !== 'all' && deviceForm.station !== 'none' && !kitchens.some(k => k.id === deviceForm.station) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {}}
+                                    className="p-3 rounded-xl border text-left flex flex-col justify-between bg-amber-500/15 border-turmeric text-ink ring-2 ring-turmeric/30"
+                                  >
+                                    <span className="text-2xl mb-1">⚙️</span>
+                                    <div>
+                                      <b className="text-xs block font-bold">{deviceForm.station}</b>
+                                      <span className="text-[10px] text-ink-3 block">Custom station</span>
+                                    </div>
+                                  </button>
+                                )}
+
+                                {/* Quick add station card */}
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddStationModal(true)}
+                                  className="p-3 rounded-xl border border-dashed border-line-2 text-left flex flex-col justify-center items-center gap-1 hover:border-turmeric hover:bg-turmeric/5 transition-all text-ink-3 hover:text-ink min-h-[90px]"
+                                >
+                                  <Plus size={20} className="text-turmeric-d" />
+                                  <span className="text-xs font-bold">+ Add Station</span>
+                                </button>
                               </div>
                             </div>
 
@@ -5338,7 +5477,8 @@ export default function SettingsCenter({
 
                               {/* Priority warning if primary already exists */}
                               {(() => {
-                                const targetStation = deviceForm.station || 'kitchen';
+                                const targetStation = deviceForm.station || '';
+                                if (!targetStation) return null;
                                 const existingPrimary = devices.find(
                                   (d) => d.type === 'kot_printer' && d.station === targetStation && d.priority === 'primary' && d.id !== deviceForm.id
                                 );
@@ -5346,7 +5486,7 @@ export default function SettingsCenter({
 
                                 return (
                                   <div className="p-3 rounded-xl border bg-amber-500/10 border-amber-500/30 text-amber-900 text-xs flex items-center justify-between gap-3">
-                                    <span>⚠️ Primary printer already configured for {targetStation} ({existingPrimary.name}).</span>
+                                    <span>⚠️ Primary printer already configured for {kitchens.find(k => k.id === targetStation)?.name || targetStation} ({existingPrimary.name}).</span>
                                     <div className="flex gap-2">
                                       <button
                                         type="button"
@@ -5415,7 +5555,7 @@ export default function SettingsCenter({
 
                               <div className="p-3 rounded-xl bg-paper-2 border border-line text-[11px] text-ink-3 flex items-center gap-2">
                                 <Info size={16} className="text-turmeric shrink-0" />
-                                <span>Recommended: Use station-based printing to prevent duplicate KOTs across Kitchen, Bar and Bakery printers.</span>
+                                <span>Recommended: Use station-based printing to prevent duplicate KOTs across preparation stations.</span>
                               </div>
                             </div>
 
@@ -5426,26 +5566,21 @@ export default function SettingsCenter({
                                 <div className="flex items-center gap-2 text-ink">
                                   <span className="font-bold">Order</span>
                                   <span>↓</span>
-                                  <span className="font-bold text-turmeric-d uppercase">{deviceForm.station || 'Kitchen'} Station</span>
+                                  <span className="font-bold text-turmeric-d uppercase">{deviceForm.station ? (kitchens.find(k => k.id === deviceForm.station)?.name || deviceForm.station) : 'General (All Stations)'}</span>
                                   <span>↓</span>
-                                  <span className="font-bold">{deviceForm.name || 'Kitchen Printer 01'}</span>
+                                  <span className="font-bold">{deviceForm.name || 'Station Printer 01'}</span>
                                   <span className="pill text-[9px] uppercase">{deviceForm.priority || 'primary'}</span>
                                 </div>
                                 <div className="border-t pt-2 border-line-2 text-ink-2">
                                   {deviceForm.kotRule === 'all_items' ? (
                                     <div>
                                       <b>Printed Items (Full Order):</b>
-                                      <div className="pl-3 mt-1 text-[11px]">Burger × 1</div>
-                                      <div className="pl-3 text-[11px]">Pizza × 2</div>
-                                      <div className="pl-3 text-[11px]">Iced Tea × 1 (Bar)</div>
-                                      <div className="pl-3 text-[11px]">Chocolate Muffin × 1 (Bakery)</div>
+                                      <div className="pl-3 mt-1 text-[11px]">All order items routed to this printer</div>
                                     </div>
                                   ) : (
                                     <div>
-                                      <b>Printed Items (Only {deviceForm.station || 'Kitchen'} items):</b>
-                                      <div className="pl-3 mt-1 text-[11px]">Burger × 1</div>
-                                      <div className="pl-3 text-[11px]">Pizza × 2</div>
-                                      <div className="text-[10px] text-ink-3 italic mt-1">(Bar &amp; Bakery items excluded from this ticket)</div>
+                                      <b>Printed Items (Only {deviceForm.station ? (kitchens.find(k => k.id === deviceForm.station)?.name || deviceForm.station) : 'unassigned/general'} items):</b>
+                                      <div className="pl-3 mt-1 text-[11px]">Only items assigned to this station</div>
                                     </div>
                                   )}
                                 </div>
@@ -5549,16 +5684,25 @@ export default function SettingsCenter({
 
                   {/* MODAL: MENU ITEM TO STATION ROUTING MANAGER */}
                   {showStationRoutingModal && (
-                    <div className="fixed inset-0 z-[8500] grid place-items-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="fixed inset-0 z-[8500] grid place-items-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
                       <div className="w-[min(750px,95vw)] max-h-[90vh] bg-paper-2 rounded-2xl border border-line shadow-2xl flex flex-col overflow-hidden">
                         <div className="p-4 border-b border-line flex items-center justify-between bg-paper-3">
                           <div>
                             <h3 className="font-bold font-display text-base">Menu Item ➔ KOT Station Routing</h3>
-                            <p className="text-xs text-ink-3">Assign products to Kitchen, Bar, Bakery, Dessert or Custom stations.</p>
+                            <p className="text-xs text-ink-3">Assign products to custom preparation stations for targeted KOT printing and KDS routing.</p>
                           </div>
-                          <button onClick={() => setShowStationRoutingModal(false)} className="text-ink-3 hover:text-ink">
-                            <X size={18} />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowAddStationModal(true)}
+                              className="btn btn-xs btn-primary flex items-center gap-1 font-semibold"
+                            >
+                              <Plus size={13} /> Add Station
+                            </button>
+                            <button onClick={() => setShowStationRoutingModal(false)} className="text-ink-3 hover:text-ink p-1">
+                              <X size={18} />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Search & Filter Bar */}
@@ -5573,12 +5717,12 @@ export default function SettingsCenter({
 
                           <div className="flex flex-wrap gap-1">
                             {[
-                              { id: 'all', label: 'All Items' },
-                              { id: 'unassigned', label: '⚠ Unassigned' },
-                              { id: 'kitchen', label: 'Kitchen' },
-                              { id: 'bar', label: 'Bar' },
-                              { id: 'bakery', label: 'Bakery' },
-                              { id: 'dessert', label: 'Dessert' },
+                              { id: 'all', label: `All Items (${(menuItems || []).length})` },
+                              { id: 'unassigned', label: `No Station (${(menuItems || []).filter(i => !i.station || i.station === 'none').length})` },
+                              ...kitchens.map(k => ({
+                                id: k.id,
+                                label: `${k.name} (${(menuItems || []).filter(i => i.station === k.id).length})`,
+                              })),
                             ].map((f) => (
                               <button
                                 key={f.id}
@@ -5602,14 +5746,23 @@ export default function SettingsCenter({
                             const filtered = (menuItems || []).filter((item) => {
                               if (q && !item.name.toLowerCase().includes(q)) return false;
                               if (routingStationFilter === 'unassigned') return !item.station || item.station === 'none';
-                              if (routingStationFilter !== 'all') return (item.station || 'kitchen') === routingStationFilter;
+                              if (routingStationFilter !== 'all') return item.station === routingStationFilter;
                               return true;
                             });
 
                             if (filtered.length === 0) {
                               return (
-                                <div className="p-8 text-center text-ink-3 text-xs">
-                                  No menu items match your search or filter criteria.
+                                <div className="p-8 text-center text-ink-3 text-xs flex flex-col items-center justify-center gap-2">
+                                  <p>No menu items match your search or filter criteria.</p>
+                                  {kitchens.length === 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowAddStationModal(true)}
+                                      className="btn btn-xs btn-primary mt-1 font-semibold flex items-center gap-1"
+                                    >
+                                      <Plus size={12} /> Add Preparation Station
+                                    </button>
+                                  )}
                                 </div>
                               );
                             }
@@ -5617,7 +5770,7 @@ export default function SettingsCenter({
                             return (
                               <div className="divide-y divide-line border rounded-xl overflow-hidden bg-paper-3 text-xs">
                                 {filtered.map((item) => {
-                                  const curStation = item.station || 'kitchen';
+                                  const curStation = item.station || '';
                                   return (
                                     <div key={item.id} className="p-3 flex items-center justify-between gap-3 hover:bg-paper-2/50 transition-colors">
                                       <div>
@@ -5630,17 +5783,15 @@ export default function SettingsCenter({
                                           value={curStation}
                                           disabled={savingMenuItemId === item.id}
                                           onChange={(e) => handleAssignItemStation(item.id, e.target.value)}
-                                          className="inp inp-compact bg-paper-2 font-bold text-xs cursor-pointer min-w-[140px]"
+                                          className="inp inp-compact bg-paper-2 font-bold text-xs cursor-pointer min-w-[170px]"
                                         >
-                                          <option value="kitchen">🍳 Kitchen</option>
-                                          <option value="bar">☕ Bar</option>
-                                          <option value="bakery">🥐 Bakery</option>
-                                          <option value="dessert">🍰 Dessert</option>
-                                          {kitchens
-                                            .filter(k => !['kitchen', 'bar', 'bakery', 'dessert'].includes(k.id))
-                                            .map(k => (
-                                              <option key={k.id} value={k.id}>⚙️ {k.name}</option>
-                                            ))}
+                                          <option value="">— No Station (Default) —</option>
+                                          {kitchens.map((k) => (
+                                            <option key={k.id} value={k.id}>🍳 {k.name}</option>
+                                          ))}
+                                          {curStation && !kitchens.some(k => k.id === curStation) && (
+                                            <option value={curStation}>🏷️ {curStation}</option>
+                                          )}
                                         </select>
                                       </div>
                                     </div>
@@ -5651,11 +5802,122 @@ export default function SettingsCenter({
                           })()}
                         </div>
 
-                        <div className="p-3 border-t border-line bg-paper-3 flex justify-end shrink-0">
+                        <div className="p-3 border-t border-line bg-paper-3 flex items-center justify-between shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setShowAddStationModal(true)}
+                            className="btn btn-xs btn-ghost text-turmeric-d font-bold flex items-center gap-1"
+                          >
+                            <Plus size={13} /> Add New Station
+                          </button>
                           <button onClick={() => setShowStationRoutingModal(false)} className="btn btn-sm btn-primary px-5">
                             Done
                           </button>
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MODAL: ADD PREPARATION STATION */}
+                  {showAddStationModal && (
+                    <div className="fixed inset-0 z-[8600] grid place-items-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
+                      <div className="w-[min(480px,95vw)] bg-paper-2 rounded-2xl border border-line shadow-2xl flex flex-col overflow-hidden">
+                        <div className="p-4 border-b border-line flex items-center justify-between bg-paper-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">🍳</span>
+                            <div>
+                              <h3 className="font-bold font-display text-base">Add Preparation Station</h3>
+                              <p className="text-xs text-ink-3">Create a custom station to route menu items and KOT print tickets.</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowAddStationModal(false);
+                              setNewStationModalName('');
+                            }}
+                            className="text-ink-3 hover:text-ink"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            const name = newStationModalName.trim();
+                            if (!name) return;
+                            setAddingStation(true);
+                            try {
+                              const ok = await kitchenApi({ action: 'kitchen_add', name }, `Station "${name}" created!`);
+                              if (ok) {
+                                setNewStationModalName('');
+                                setShowAddStationModal(false);
+                              }
+                            } finally {
+                              setAddingStation(false);
+                            }
+                          }}
+                          className="p-5 flex flex-col gap-4"
+                        >
+                          <div>
+                            <label className="lbl font-bold text-xs mb-1.5 block">Station Name</label>
+                            <input
+                              type="text"
+                              autoFocus
+                              required
+                              placeholder="e.g. Hot Kitchen, Juice Bar, Dessert Counter..."
+                              value={newStationModalName}
+                              onChange={(e) => setNewStationModalName(e.target.value)}
+                              className="inp w-full"
+                            />
+                          </div>
+
+                          {/* Suggestions chips */}
+                          <div>
+                            <span className="text-[11px] font-semibold text-ink-3 block mb-1.5">Common Suggestions:</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {['Main Kitchen', 'Coffee & Tea Bar', 'Juice & Coolers', 'Dessert Counter', 'Bakery & Pastry', 'Grill & Tandoor', 'Salad & Cold Bar', 'Pizza Deck'].map((sug) => (
+                                <button
+                                  key={sug}
+                                  type="button"
+                                  onClick={() => setNewStationModalName(sug)}
+                                  className="px-2 py-0.5 rounded-lg border border-line bg-paper-3 text-[11px] text-ink-2 hover:bg-paper-1 hover:border-turmeric transition"
+                                >
+                                  + {sug}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex justify-end gap-2 pt-3 border-t border-line mt-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowAddStationModal(false);
+                                setNewStationModalName('');
+                              }}
+                              className="btn btn-sm bg-paper-3 border hover:bg-paper"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={addingStation || !newStationModalName.trim()}
+                              className="btn btn-sm btn-primary px-5 disabled:opacity-50 flex items-center gap-1.5 font-bold"
+                            >
+                              {addingStation ? (
+                                <>
+                                  <Loader2 size={14} className="animate-spin" /> Creating...
+                                </>
+                              ) : (
+                                <>
+                                  <Plus size={14} /> Create Station
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </form>
                       </div>
                     </div>
                   )}

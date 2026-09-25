@@ -71,11 +71,11 @@ export function routeOrderToStations(
     ];
   }
 
-  // Group line items by station slug (default to 'kitchen' if null)
+  // Group line items by station slug (default to 'general' if null)
   const stationGroups = new Map<string, typeof order.items>();
 
   for (const item of order.items) {
-    const stationSlug = item.station || 'kitchen';
+    const stationSlug = item.station || 'general';
     if (!stationGroups.has(stationSlug)) {
       stationGroups.set(stationSlug, []);
     }
@@ -86,9 +86,11 @@ export function routeOrderToStations(
   let kotSeq = 1;
 
   for (const [stationSlug, items] of stationGroups.entries()) {
-    // Find designated devices for this station
-    const stationPrinters = kotPrinters.filter((p) => p.station === stationSlug || (!p.station && stationSlug === 'kitchen'));
-    const primaryDevice = stationPrinters.find((p) => p.isDefault) || stationPrinters[0] || null;
+    // Find designated devices for this station. General printers (no station) or all_items printers handle general/unassigned items.
+    const stationPrinters = kotPrinters.filter(
+      (p) => p.station === stationSlug || (!p.station && (stationSlug === 'general' || stationSlug === 'kitchen')) || (p.kotRule === 'all_items')
+    );
+    const primaryDevice = stationPrinters.find((p) => p.isDefault) || stationPrinters[0] || (stationSlug === 'general' ? (kotPrinters.find((p) => p.isDefault) || kotPrinters[0] || null) : null);
     const backupDevice = stationPrinters.find((p) => p.id !== primaryDevice?.id) || null;
 
     const payload: KotPrintPayload = {
@@ -96,7 +98,7 @@ export function routeOrderToStations(
       orderNumber: order.number,
       tableLabel: order.table?.label ?? null,
       orderType: order.type,
-      stationName: stationSlug,
+      stationName: stationSlug === 'general' ? 'KOT' : stationSlug,
       placedAt: order.placedAt,
       items: items.map((i) => ({
         name: i.nameSnapshot,
@@ -108,7 +110,7 @@ export function routeOrderToStations(
 
     routedJobs.push({
       stationId: stationSlug,
-      stationName: stationSlug,
+      stationName: stationSlug === 'general' ? 'KOT' : stationSlug,
       targetDevice: primaryDevice,
       backupDevice,
       payload,
@@ -142,10 +144,10 @@ export function routeTransferToStations(
   const devices = readDevices(settings);
   const kotPrinters = devices.filter((d) => d.type === 'kot_printer' || d.type === 'both_printer');
 
-  // Group line items by station slug (default to 'kitchen' if null)
+  // Group line items by station slug (default to 'general' if null)
   const stationGroups = new Map<string, typeof order.items>();
   for (const item of order.items) {
-    const stationSlug = item.station || 'kitchen';
+    const stationSlug = item.station || 'general';
     if (!stationGroups.has(stationSlug)) {
       stationGroups.set(stationSlug, []);
     }
@@ -153,15 +155,17 @@ export function routeTransferToStations(
   }
 
   if (stationGroups.size === 0) {
-    stationGroups.set('kitchen', []);
+    stationGroups.set('general', []);
   }
 
   const routedJobs: StationRoutedJob[] = [];
   let kotSeq = 1;
 
   for (const [stationSlug, items] of stationGroups.entries()) {
-    const stationPrinters = kotPrinters.filter((p) => p.station === stationSlug || (!p.station && stationSlug === 'kitchen'));
-    const primaryDevice = stationPrinters.find((p) => p.isDefault) || stationPrinters[0] || null;
+    const stationPrinters = kotPrinters.filter(
+      (p) => p.station === stationSlug || (!p.station && (stationSlug === 'general' || stationSlug === 'kitchen')) || (p.kotRule === 'all_items')
+    );
+    const primaryDevice = stationPrinters.find((p) => p.isDefault) || stationPrinters[0] || (stationSlug === 'general' ? (kotPrinters.find((p) => p.isDefault) || kotPrinters[0] || null) : null);
     const backupDevice = stationPrinters.find((p) => p.id !== primaryDevice?.id) || null;
 
     const payload: KotPrintPayload = {

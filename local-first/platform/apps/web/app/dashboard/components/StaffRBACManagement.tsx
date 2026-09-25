@@ -86,17 +86,19 @@ const DATA_RESTRICTION_OPTIONS = [
 ];
 
 const BRANCH_OPTIONS = [
-  { id: 'main-branch', name: 'Main Branch' },
-  { id: 'beach-branch', name: 'Beach Branch' },
-  { id: 'airport-branch', name: 'Airport Branch' }
+  { id: 'main-branch', name: 'Main Branch' }
 ];
 
-const INITIAL_AUDIT_LOGS = [
-  { who: 'Sarah Jenkins', action: 'Modified Permissions', target: 'Rahul Sharma (void bill added)', branch: 'Main Branch', timestamp: '2026-07-25 15:10', device: 'Chrome (Win10) · 103.45.2.1' },
-  { who: 'Rahul Sharma', action: 'Session Revoked', target: 'Device Logged Out', branch: 'Beach Branch', timestamp: '2026-07-25 14:02', device: 'POS Terminal · 192.168.1.5' },
-  { who: 'System', action: 'Failed Login', target: 'PIN Error (3 attempts)', branch: 'Airport Branch', timestamp: '2026-07-25 11:45', device: 'iPad POS 2 · 192.168.2.12' },
-  { who: 'Sarah Jenkins', action: 'Created Staff Member', target: 'Priya Nair', branch: 'Main Branch', timestamp: '2026-07-25 09:30', device: 'Safari (macOS) · 103.45.2.1' }
-];
+interface AuditLogEntry {
+  who: string;
+  action: string;
+  target: string;
+  branch: string;
+  device: string;
+  timestamp: string;
+}
+
+const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [];
 
 export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: () => void }) {
   const [activeSubTab, setActiveSubTab] = useState<'directory' | 'permissions' | 'audit'>('directory');
@@ -705,7 +707,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       </section>
       <section className="card p-4">
         <span className="block text-xs mb-2" style={{ color: 'var(--ink-3)' }}>Assigned Branches</span>
-        <span className="block text-2xl md:text-3xl font-bold tnum font-mono">3 Outlets</span>
+        <span className="block text-2xl md:text-3xl font-bold tnum font-mono">{BRANCH_OPTIONS.length} {BRANCH_OPTIONS.length === 1 ? 'Outlet' : 'Outlets'}</span>
       </section>
       <section className="card p-4">
         <span className="block text-xs mb-2" style={{ color: 'var(--ink-3)' }}>Enforced Security Profile</span>
@@ -834,11 +836,11 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line/30">
-                      {filteredMembers.map((m, idx) => {
-                        const mockLogins = ['Just now', '12 mins ago', '2 hours ago', 'Yesterday', '3 days ago', '4 days ago'];
-                        const mockShifts = ['Morning (9A - 5P)', 'Evening (4P - 12A)', 'Off Shift', 'Off Shift'];
-                        const loginText = mockLogins[idx % mockLogins.length] || 'Just now';
-                        const shiftText = mockShifts[idx % mockShifts.length] || 'Off Shift';
+                      {filteredMembers.map((m) => {
+                        const loginText = m.lastLoginAt
+                          ? new Date(m.lastLoginAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })
+                          : (m.updatedAt ? new Date(m.updatedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : 'Never');
+                        const shiftText = m.currentShift || (m.active ? 'Active Shift' : 'Off Shift');
 
                         return (
                           <tr key={m.id} className="hover:bg-line/10 transition-colors">
@@ -975,16 +977,24 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                   </tr>
                 </thead>
                 <tbody>
-                  {INITIAL_AUDIT_LOGS.map((log, index) => (
-                    <tr key={index} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-line/20">
-                      <td className="py-2.5 font-bold text-ink">{log.who}</td>
-                      <td className="py-2.5 font-mono text-turmeric">{log.action}</td>
-                      <td className="py-2.5 text-ink-2">{log.target}</td>
-                      <td className="py-2.5 text-ink-2">{log.branch}</td>
-                      <td className="py-2.5 font-mono text-[10px] text-ink-3">{log.device}</td>
-                      <td className="py-2.5 text-right font-mono text-ink-2">{log.timestamp}</td>
+                  {INITIAL_AUDIT_LOGS.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-ink-3 text-xs">
+                        No security or permission modification audit events recorded yet.
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    INITIAL_AUDIT_LOGS.map((log, index) => (
+                      <tr key={index} style={{ borderBottom: '1px solid var(--line)' }} className="hover:bg-line/20">
+                        <td className="py-2.5 font-bold text-ink">{log.who}</td>
+                        <td className="py-2.5 font-mono text-turmeric">{log.action}</td>
+                        <td className="py-2.5 text-ink-2">{log.target}</td>
+                        <td className="py-2.5 text-ink-2">{log.branch}</td>
+                        <td className="py-2.5 font-mono text-[10px] text-ink-3">{log.device}</td>
+                        <td className="py-2.5 text-right font-mono text-ink-2">{log.timestamp}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1465,7 +1475,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                       required
                       value={newStaffName} 
                       onChange={(e) => setNewStaffName(e.target.value)}
-                      placeholder="Rahul Sharma"
+                      placeholder="Staff member full name"
                       className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
                     />
                   </div>
@@ -1475,7 +1485,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                       type="text" 
                       value={newStaffCode} 
                       onChange={(e) => setNewStaffCode(e.target.value)}
-                      placeholder="CH-102"
+                      placeholder="e.g. ST-01"
                       className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
                     />
                   </div>
@@ -1485,7 +1495,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                       type="tel" 
                       value={newStaffPhone} 
                       onChange={(e) => setNewStaffPhone(e.target.value)}
-                      placeholder="9876543210"
+                      placeholder="10-digit phone number"
                       className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
                     />
                   </div>
@@ -1807,7 +1817,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                       required
                       value={newStaffEmail} 
                       onChange={(e) => setNewStaffEmail(e.target.value)}
-                      placeholder="rahul.sharma"
+                      placeholder="username"
                       className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
                     />
                   </div>

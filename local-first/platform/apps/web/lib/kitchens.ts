@@ -27,12 +27,8 @@ export interface Kitchen {
   sort: number;
 }
 
-/** Legacy stations — the value every existing menu item already carries. */
-export const DEFAULT_KITCHENS: Kitchen[] = [
-  { id: 'kitchen', name: 'Kitchen', color: '#c3492f', sort: 0 },
-  { id: 'bar', name: 'Bar', color: '#d9a93a', sort: 1 },
-  { id: 'dessert', name: 'Dessert', color: '#8e3b6b', sort: 2 },
-];
+/** Default stations — empty by default so cafe owners can add stations based on their situation. */
+export const DEFAULT_KITCHENS: Kitchen[] = [];
 
 /** Rotating palette for auto-coloured kitchens (used when none is set). */
 export const KITCHEN_PALETTE = ['#c3492f', '#d9a93a', '#8e3b6b', '#2f7d6b', '#3b6fc3', '#b2593f', '#6b7d2f', '#a03b8e'];
@@ -51,12 +47,11 @@ export function kitchenSlug(name: string): string {
 
 /**
  * Read & normalize the kitchen list from Outlet.settings.kitchens. Never throws.
- * Falls back to the three legacy defaults when nothing is configured, so an
- * untouched outlet behaves exactly as before.
+ * Returns empty array when nothing is configured (default: no station).
  */
 export function readKitchens(settings: unknown): Kitchen[] {
   const raw = (settings as { kitchens?: unknown } | null)?.kitchens;
-  if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_KITCHENS;
+  if (!Array.isArray(raw)) return DEFAULT_KITCHENS;
   const seen = new Set<string>();
   const list = raw
     .map((k, i): Kitchen | null => {
@@ -70,7 +65,7 @@ export function readKitchens(settings: unknown): Kitchen[] {
     })
     .filter((k): k is Kitchen => k !== null)
     .sort((a, b) => a.sort - b.sort);
-  return list.length ? list : DEFAULT_KITCHENS;
+  return list;
 }
 
 /** Resolve a station slug to its display name (falls back to a prettified slug). */

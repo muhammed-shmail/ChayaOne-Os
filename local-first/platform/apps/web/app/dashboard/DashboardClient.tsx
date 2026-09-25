@@ -1163,21 +1163,13 @@ export default function DashboardClient({
   const [editProductId, setEditProductId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ ...blankProduct });
 
-  // Station picker options = configured kitchens, plus the item's current value
+  // Station picker options = default unassigned option, configured kitchens, plus the item's current value
   // if it's a legacy/removed slug (so editing never silently drops a routing).
   const stationOptions = (current: string) => {
     const list = kitchens.map((k) => ({ id: k.id, name: k.name }));
     if (current && !list.some((k) => k.id === current)) list.unshift({ id: current, name: current });
-    return list;
+    return [{ id: '', name: '— No Station (Default) —' }, ...list];
   };
-  // Default a new product to a real kitchen once the list loads.
-  useEffect(() => {
-    const first = kitchens[0];
-    if (first && !kitchens.some((k) => k.id === newProduct.station)) {
-      setNewProduct((p) => ({ ...p, station: first.id }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kitchens]);
 
   const handleCreateCategory = async () => {
     const name = newCategory.trim();

@@ -10,7 +10,10 @@ import { createHash } from 'node:crypto';
 
 /** Keep only digits, drop a leading country code's +, cap length. */
 export function normalizePhone(raw: string): string {
-  return String(raw ?? '').replace(/\D/g, '').slice(-15);
+  let d = String(raw ?? '').replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+  else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+  return d.slice(-15);
 }
 
 export function hashPhone(raw: string): string {

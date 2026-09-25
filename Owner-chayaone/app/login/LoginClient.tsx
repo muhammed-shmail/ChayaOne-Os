@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlphaTag, Eye, EyeOff, Delete } from '@/components/ui';
 
@@ -8,10 +8,29 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del'];
 
 interface LoginClientProps {
   next?: string;
+  initialBusinessName?: string;
+  initialLogoUrl?: string | null;
 }
 
-export default function LoginClient({ next = '/dashboard' }: LoginClientProps) {
+export default function LoginClient({
+  next = '/dashboard',
+  initialBusinessName,
+  initialLogoUrl,
+}: LoginClientProps) {
   const router = useRouter();
+  const [businessName, setBusinessName] = useState<string>(initialBusinessName || '');
+  const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl || null);
+
+  useEffect(() => {
+    fetch('/api/auth/store-info')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.name) setBusinessName(d.name);
+        if (d?.logoUrl) setLogoUrl(d.logoUrl);
+      })
+      .catch(() => {});
+  }, []);
+
   const [mode, setMode] = useState<'password' | 'pin'>('password');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -108,14 +127,16 @@ export default function LoginClient({ next = '/dashboard' }: LoginClientProps) {
             style={{ background: 'none', border: 'none', padding: 0, lineHeight: 0 }}
           >
             <img
-              src="/logo chaya one.png"
-              alt="ChayaOne"
+              src={logoUrl || '/logo chaya one.png'}
+              alt={businessName || 'ChayaOne'}
               style={{ width: 288, height: 'auto', maxWidth: '84%' }}
               className="brand-logo object-contain mx-auto block"
             />
           </button>
           <AlphaTag />
-          <h1 className="font-display text-[38px] leading-none mt-3.5">ChayaOne Owner</h1>
+          <h1 className="font-display text-[38px] leading-none mt-3.5">
+            {businessName ? `${businessName} Owner` : 'ChayaOne Owner'}
+          </h1>
           <p className="text-sm mt-2" style={{ color: 'var(--ink-3)' }}>
             {mode === 'password'
               ? 'Sign in with your username & password'

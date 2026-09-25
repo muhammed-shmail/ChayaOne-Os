@@ -107,7 +107,7 @@ export class OrderService {
 
     // Customer lookup or creation if customer details provided
     let resolvedCustomerId: string | null = input.customerId ?? null;
-    if (!resolvedCustomerId && input.customer?.phone) {
+    if (!resolvedCustomerId && (input.customer?.phone || input.customer?.name)) {
       resolvedCustomerId = await findOrCreateCustomerByPhone(
         resolvedTenantId,
         {
