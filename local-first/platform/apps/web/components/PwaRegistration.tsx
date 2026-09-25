@@ -3,6 +3,27 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 
+if (typeof window !== 'undefined') {
+  const patchConsole = (method: 'error' | 'warn') => {
+    const orig = console[method];
+    if (!orig) return;
+    console[method] = function (...args: any[]) {
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (typeof a === 'string' && a.includes('fdprocessedid')) return;
+        if (a && typeof a === 'object') {
+          try {
+            if (JSON.stringify(a).includes('fdprocessedid')) return;
+          } catch {}
+        }
+      }
+      return orig.apply(console, args);
+    };
+  };
+  patchConsole('error');
+  patchConsole('warn');
+}
+
 export function PwaRegistration() {
   const pathname = usePathname();
 

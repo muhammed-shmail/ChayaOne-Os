@@ -483,6 +483,9 @@ export default function SettingsCenter({
       title: `Delete Section "${s.name}"`,
       message: msg,
       onConfirm: async () => {
+        // Optimistic UI update immediately
+        setFloorList((prev) => prev.filter((item) => item.id !== s.id));
+        setTableList((prev) => prev.map((item) => item.floorId === s.id ? { ...item, floorId: null } : item));
         try {
           const res = await fetch('/api/dashboard/floor', {
             method: 'POST',
@@ -496,7 +499,8 @@ export default function SettingsCenter({
           flashMessage(`Section "${s.name}" deleted`);
           await refreshFloorData();
         } catch (err: any) {
-          alert(err.message || 'Error deleting section');
+          flashMessage(err.message || 'Error deleting section');
+          await refreshFloorData();
         }
       },
     });
@@ -576,6 +580,8 @@ export default function SettingsCenter({
       title: `Delete Table "${t.label}"`,
       message: `Are you sure you want to delete table "${t.label}"? If historical orders exist, it will be safely deactivated to preserve sales history.`,
       onConfirm: async () => {
+        // Optimistic UI update immediately
+        setTableList((prev) => prev.filter((item) => item.id !== t.id));
         try {
           const res = await fetch('/api/dashboard/floor', {
             method: 'POST',
@@ -589,7 +595,8 @@ export default function SettingsCenter({
           flashMessage(data.deactivated ? `Table "${t.label}" deactivated (orders preserved)` : `Table "${t.label}" removed`);
           await refreshFloorData();
         } catch (err: any) {
-          alert(err.message || 'Error deleting table');
+          flashMessage(err.message || 'Error deleting table');
+          await refreshFloorData();
         }
       },
     });
@@ -614,30 +621,34 @@ export default function SettingsCenter({
   };
 
   const handleRegenerateQr = async (t: any) => {
-    if (!confirm(`Regenerate QR token for table "${t.label}"? Any previously printed QR code for this table will stop working.`)) {
-      return;
-    }
-    setQrRegenerating(true);
-    try {
-      const res = await fetch('/api/dashboard/floor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'regenerate', id: t.id }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.message || data.error || 'Failed to regenerate QR');
-      }
-      flashMessage(`QR token regenerated for ${t.label}`);
-      if (qrModalTable && qrModalTable.id === t.id && data.table) {
-        setQrModalTable({ ...qrModalTable, qrToken: data.table.qrToken });
-      }
-      await refreshFloorData();
-    } catch (err: any) {
-      alert(err.message || 'Error regenerating QR');
-    } finally {
-      setQrRegenerating(false);
-    }
+    setShowConfirmModal({
+      show: true,
+      title: `Regenerate QR for "${t.label}"`,
+      message: `Regenerate QR token for table "${t.label}"? Any previously printed QR code for this table will stop working.`,
+      onConfirm: async () => {
+        setQrRegenerating(true);
+        try {
+          const res = await fetch('/api/dashboard/floor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'regenerate', id: t.id }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            throw new Error(data.message || data.error || 'Failed to regenerate QR');
+          }
+          flashMessage(`QR token regenerated for ${t.label}`);
+          if (qrModalTable && qrModalTable.id === t.id && data.table) {
+            setQrModalTable({ ...qrModalTable, qrToken: data.table.qrToken });
+          }
+          await refreshFloorData();
+        } catch (err: any) {
+          flashMessage(err.message || 'Error regenerating QR');
+        } finally {
+          setQrRegenerating(false);
+        }
+      },
+    });
   };
 
   const handlePrintTableQr = (table: any, sectionName?: string) => {
@@ -8749,8 +8760,14 @@ export default function SettingsCenter({
 
       {/* ── CONFIRMATION MODAL OVERLAY ── */}
       {showConfirmModal?.show && (
-        <div className="fixed inset-0 scrim z-[9900] flex items-center justify-center p-4">
-          <div className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-pop">
+        <div 
+          onClick={() => setShowConfirmModal(null)}
+          className="fixed inset-0 bg-black/25 backdrop-blur-[1px] z-[9900] flex items-center justify-center p-4"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-pop"
+          >
             <h3 className="font-bold text-base flex items-center gap-2">
               <AlertTriangle className="text-turmeric shrink-0" size={18} />
               {showConfirmModal.title}
@@ -8768,9 +8785,16 @@ export default function SettingsCenter({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  showConfirmModal.onConfirm();
+                onClick={async () => {
+                  const fn = showConfirmModal.onConfirm;
                   setShowConfirmModal(null);
+                  if (fn) {
+                    try {
+                      await fn();
+                    } catch (err) {
+                      console.error('Confirm action error:', err);
+                    }
+                  }
                 }}
                 className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow transition-all"
               >
@@ -8782,8 +8806,14 @@ export default function SettingsCenter({
       )}
 
       {showGstReasonPrompt && (
-        <div className="fixed inset-0 scrim z-[9900] flex items-center justify-center p-4">
-          <div className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-pop">
+        <div 
+          onClick={() => { setShowGstReasonPrompt(false); setGstReasonText(''); }}
+          className="fixed inset-0 bg-black/25 backdrop-blur-[1px] z-[9900] flex items-center justify-center p-4"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-pop"
+          >
             <h3 className="font-bold text-base flex items-center gap-2">
               <Info className="text-turmeric shrink-0" size={18} />
               Confirm Save Changes
@@ -8823,7 +8853,7 @@ export default function SettingsCenter({
 
       {/* ── TRANSACTIONAL RESET CONFIRMATION MODAL ── */}
       {showTxResetModal && (
-        <div className="fixed inset-0 scrim z-[9950] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/25 backdrop-blur-[1px] z-[9950] flex items-center justify-center p-4">
           <div className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-md w-full p-6 animate-pop">
             <div className="flex items-center justify-between pb-3 border-b border-line mb-3">
               <h3 className="font-bold text-base flex items-center gap-2 text-ink">
@@ -8929,7 +8959,7 @@ export default function SettingsCenter({
 
       {/* ── FACTORY RESET & RELOCATE ALL CONFIRMATION MODAL ── */}
       {showFactoryResetModal && (
-        <div className="fixed inset-0 scrim z-[9950] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/25 backdrop-blur-[1px] z-[9950] flex items-center justify-center p-4">
           <div className="bg-paper-3 border border-red-500/30 rounded-2xl shadow-2xl max-w-md w-full p-6 animate-pop">
             <div className="flex items-center justify-between pb-3 border-b border-line mb-3">
               <h3 className="font-bold text-base flex items-center gap-2 text-red-600 dark:text-red-400">
@@ -9039,7 +9069,7 @@ export default function SettingsCenter({
 
       {/* ── SECTION MODAL (ADD / EDIT) ── */}
       {showSectionModal && (
-        <div className="fixed inset-0 scrim z-[9920] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/25 backdrop-blur-[1px] z-[9920] flex items-center justify-center p-4">
           <div className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-md w-full p-6 animate-pop flex flex-col gap-4">
             <div className="flex items-center justify-between pb-3 border-b border-line">
               <h3 className="font-bold text-base flex items-center gap-2 text-ink">
@@ -9111,7 +9141,7 @@ export default function SettingsCenter({
 
       {/* ── TABLE MODAL (ADD / EDIT) ── */}
       {showTableModal && (
-        <div className="fixed inset-0 scrim z-[9920] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/25 backdrop-blur-[1px] z-[9920] flex items-center justify-center p-4">
           <div className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-md w-full p-6 animate-pop flex flex-col gap-4">
             <div className="flex items-center justify-between pb-3 border-b border-line">
               <h3 className="font-bold text-base flex items-center gap-2 text-ink">
@@ -9216,7 +9246,7 @@ export default function SettingsCenter({
 
       {/* ── TABLE QR MODAL (VIEW / DOWNLOAD / PRINT / REGENERATE) ── */}
       {qrModalTable && (
-        <div className="fixed inset-0 scrim z-[9920] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/25 backdrop-blur-[1px] z-[9920] flex items-center justify-center p-4">
           <div className="bg-paper-3 border border-line rounded-2xl shadow-2xl max-w-md w-full p-6 animate-pop flex flex-col gap-4">
             <div className="flex items-center justify-between pb-3 border-b border-line">
               <div>

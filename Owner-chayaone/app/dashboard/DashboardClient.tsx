@@ -934,10 +934,16 @@ export default function DashboardClient({
 
   const handleRemoveUser = async (id: string, name: string) => {
     if (!confirm(`Remove ${name}? They will no longer be able to log in. History is preserved.`)) return;
-    const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'remove', id }) });
-    const d = await res.json().catch(() => ({}));
-    if (res.ok) { flashMessage(`${name} removed`); loadStaff(); }
-    else flashMessage(`Could not remove: ${(d.error ?? 'failed').replace(/_/g, ' ')}`);
+    setStaffMembers((prev: any[]) => prev.filter((m: any) => m.id !== id));
+    try {
+      const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'remove', id }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { flashMessage(`${name} removed`); loadStaff(); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed')); }
+      else { flashMessage(`Could not remove: ${(d.error ?? 'failed').replace(/_/g, ' ')}`); loadStaff(); }
+    } catch {
+      flashMessage(`Could not remove ${name}`);
+      loadStaff();
+    }
   };
 
   const canManageMember = (memberRole: string) =>
@@ -1584,7 +1590,7 @@ export default function DashboardClient({
         body: JSON.stringify(payload),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok && Array.isArray(d.kitchens)) { setKitchens(d.kitchens); flashMessage(okMsg); router.refresh(); return true; }
+      if (res.ok && Array.isArray(d.kitchens)) { setKitchens(d.kitchens); flashMessage(okMsg); return true; }
       flashMessage(KITCHEN_ERR[d.error as string] ?? `Could not save (${d.error ?? 'error'})`);
       return false;
     } catch (err) { console.error(err); flashMessage('Network error'); return false; }
@@ -1753,13 +1759,14 @@ export default function DashboardClient({
 
   const handleDeleteDevice = async (id: string, name: string, skipConfirm = false) => {
     if (!skipConfirm && !window.confirm(`Remove “${name}”?`)) return;
+    setDevices((prev) => prev.filter((d) => d.id !== id));
     try {
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'device_delete', id }),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok) { flashMessage('Device removed'); setDevices(d.devices ?? []); router.refresh(); }
+      if (res.ok) { flashMessage('Device removed'); if (Array.isArray(d.devices)) setDevices(d.devices); }
       else flashMessage('Could not remove device');
     } catch (err) { console.error(err); }
   };

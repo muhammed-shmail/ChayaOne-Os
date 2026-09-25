@@ -269,3 +269,48 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ error: 'unknown_action' }, { status: 400 });
 }
+
+export async function DELETE(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  if (session.role !== 'owner' && session.role !== 'manager') {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const queryId = searchParams.get('id');
+
+  let bodyId: string | undefined;
+  try {
+    const body = await req.json();
+    bodyId = body?.id;
+  } catch {}
+
+  const id = queryId || bodyId;
+  if (!id) {
+    return NextResponse.json({ error: 'missing_id', message: 'Staff ID is required' }, { status: 400 });
+  }
+
+  if (id === session.staffId) {
+    return NextResponse.json({ error: 'cannot_remove_self', message: 'You cannot remove your own active account' }, { status: 400 });
+  }
+
+  try {
+    // Attempt soft delete / deactivate to preserve historical integrity
+    await prisma.staffUser.update({
+      where: { id },
+      data: {
+        active: false,
+        pinHash: null,
+        username: null,
+        passwordHash: null,
+      },
+    });
+
+    return NextResponse.json({ ok: true, message: 'Staff account removed successfully' });
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message || 'failed_to_delete_staff' }, { status: 500 });
+  }
+}
+

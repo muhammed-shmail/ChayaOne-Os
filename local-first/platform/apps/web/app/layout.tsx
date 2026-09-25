@@ -40,14 +40,24 @@ const initScript = `(function(){
     if (t === 'dark') { document.documentElement.setAttribute('data-theme', 'dark'); }
   } catch(e) {}
   try {
-    var origErr = console.error;
-    console.error = function() {
-      var msg = arguments[0];
-      if (typeof msg === 'string' && (msg.indexOf('fdprocessedid') !== -1 || (msg.indexOf('Extra attributes from the server') !== -1 && msg.indexOf('fdprocessedid') !== -1))) {
-        return;
-      }
-      return origErr.apply(console, arguments);
+    var patchConsole = function(method) {
+      var orig = console[method];
+      if (!orig) return;
+      console[method] = function() {
+        for (var i = 0; i < arguments.length; i++) {
+          var a = arguments[i];
+          if (typeof a === 'string' && a.indexOf('fdprocessedid') !== -1) return;
+          if (a && typeof a === 'object') {
+            try {
+              if (JSON.stringify(a).indexOf('fdprocessedid') !== -1) return;
+            } catch(e) {}
+          }
+        }
+        return orig.apply(console, arguments);
+      };
     };
+    patchConsole('error');
+    patchConsole('warn');
   } catch(e) {}
   window.addEventListener('error', function(e) {
     var m = (e && (e.message || (e.error && e.error.message))) || '';
