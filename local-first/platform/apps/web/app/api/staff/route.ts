@@ -115,9 +115,21 @@ export async function POST(req: NextRequest) {
     const next = [...current.filter((s) => s.id.toLowerCase() !== targetToRemove && s.id.toLowerCase() !== id), updatedStation];
     if (session.outletId) {
       const prevSettings = (outlet?.settings as Record<string, unknown>) || {};
+      const prevKitchens = Array.isArray(prevSettings.kitchens) ? (prevSettings.kitchens as any[]) : [];
+      const nextKitchens = [
+        ...prevKitchens.filter((k) => k.id?.toLowerCase() !== targetToRemove && k.id?.toLowerCase() !== id),
+        { id, name: cleanName, sort: next.length - 1 }
+      ];
       await prisma.outlet.update({
         where: { id: session.outletId },
-        data: { settings: { ...prevSettings, waiterStations: next } as any },
+        data: {
+          settings: {
+            ...prevSettings,
+            waiterStations: next,
+            kitchens: nextKitchens,
+            stations: next,
+          } as any,
+        },
       });
     }
     return NextResponse.json({ ok: true, waiterStations: next, station: updatedStation });
@@ -132,11 +144,23 @@ export async function POST(req: NextRequest) {
     const current = readWaiterStations(outlet?.settings);
     const targetId = id.trim().toLowerCase();
     const next = current.filter((s) => s.id.toLowerCase() !== targetId && s.code.toLowerCase() !== targetId);
+    const prevSettings = (outlet?.settings as Record<string, unknown>) || {};
+    const prevDeleted = Array.isArray((prevSettings as any)?.deletedDefaultStations) ? ((prevSettings as any).deletedDefaultStations as string[]) : [];
+    const nextDeleted = prevDeleted.includes(targetId) ? prevDeleted : [...prevDeleted, targetId];
     if (session.outletId) {
-      const prevSettings = (outlet?.settings as Record<string, unknown>) || {};
+      const prevKitchens = Array.isArray(prevSettings.kitchens) ? (prevSettings.kitchens as any[]) : [];
+      const nextKitchens = prevKitchens.filter((k) => k.id?.toLowerCase() !== targetId);
       await prisma.outlet.update({
         where: { id: session.outletId },
-        data: { settings: { ...prevSettings, waiterStations: next } as any },
+        data: {
+          settings: {
+            ...prevSettings,
+            waiterStations: next,
+            kitchens: nextKitchens,
+            stations: next,
+            deletedDefaultStations: nextDeleted,
+          } as any,
+        },
       });
     }
     return NextResponse.json({ ok: true, waiterStations: next });

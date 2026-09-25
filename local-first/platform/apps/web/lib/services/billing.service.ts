@@ -4,6 +4,7 @@ import { createOutboxEntry } from '../outbox';
 import { createPrintJob, processPrintQueueBatch } from '../print/manager';
 import { readReceiptConfig } from '../receipt';
 import { readUpiConfig } from '../print/upi';
+import { resolveReceiptPrinter } from '../print/router';
 import { accrueLoyaltyOnSettle } from '../customer';
 import { getOutletPwa } from '../pwa';
 
@@ -136,6 +137,13 @@ export class BillingService {
       const receiptConfig = readReceiptConfig(outlet?.settings);
       const upiConfig = readUpiConfig(outlet?.settings, outlet?.name || 'CHAYA CAFE');
 
+      let staffStation: string | null = null;
+      if (staffId) {
+        const staffObj = await tx.staffUser.findUnique({ where: { id: staffId }, select: { permissions: true } }).catch(() => null);
+        staffStation = (staffObj?.permissions as any)?.station || null;
+      }
+      const receiptPrinter = resolveReceiptPrinter(outlet?.settings, staffStation);
+
       const receiptPayload = {
         storeName: outlet?.name || 'CHAYA CAFE',
         gstin: outlet?.gstin ?? undefined,
@@ -145,6 +153,7 @@ export class BillingService {
         table: order.table?.label,
         waiter: staffName ?? undefined,
         cashier: staffName ?? undefined,
+        station: staffStation ?? undefined,
         customerName: order.customer?.name ?? undefined,
         customerPhone: order.customer?.phone ?? undefined,
         placedAt: order.placedAt.toISOString(),
@@ -175,6 +184,8 @@ export class BillingService {
         tenantId: resolvedTenantId,
         outletId,
         orderId: order.id,
+        printerId: receiptPrinter?.id ?? null,
+        stationId: staffStation ?? undefined,
         jobType: PrintJobType.RECEIPT,
         payload: receiptPayload,
         priority: 2, // High priority for customer bill
