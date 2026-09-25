@@ -26,6 +26,7 @@ import { getGeoHeaders } from '@/lib/geo-client';
 
 import { generateAuthoritativeUpiUri } from '@/lib/print/upi';
 import { generateQrDataUrl } from '@/lib/print/qr';
+import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
 import { hasRole, hasPermission, canAccess, canSettle } from '@/lib/rbac';
 
 /** Category → SVG icon (replaces structural emoji; food glyph stays decorative). */
@@ -119,7 +120,37 @@ function generateClientUuid(): string {
   });
 }
 
-export default function PosClient({ outlet, staff, menu, tables, floors, staffAppEnabled = false, locationGate = false }: { outlet: Outlet; staff: Staff; menu: MenuCategory[]; tables: TableDto[]; floors: Floor[]; staffAppEnabled?: boolean; locationGate?: boolean }) {
+export default function PosClient({ outlet: initialOutlet, staff, menu, tables, floors, staffAppEnabled = false, locationGate = false }: { outlet: Outlet; staff: Staff; menu: MenuCategory[]; tables: TableDto[]; floors: Floor[]; staffAppEnabled?: boolean; locationGate?: boolean }) {
+  const [outlet, setOutlet] = useState<Outlet>(initialOutlet);
+  useEffect(() => {
+    setOutlet(initialOutlet);
+  }, [initialOutlet]);
+
+  // Live GST / Settings change listener: recalculates current cart immediately (Requirement 24)
+  useEffect(() => {
+    const handleSettingsUpdate = (e: any) => {
+      try {
+        const updated = e?.detail || JSON.parse(localStorage.getItem('cafeos_settings') || '{}');
+        if (updated && (updated.gst !== undefined || updated.gstEnabled !== undefined)) {
+          const gstEnabled = updated.gst?.enabled !== undefined ? Boolean(updated.gst.enabled) : Boolean(updated.gstEnabled);
+          console.log(`[BILLING] Live GST setting update detected: gstEnabled = ${gstEnabled}`);
+          setOutlet((prev) => ({
+            ...prev,
+            gstEnabled,
+            gstConfig: { ...prev.gstConfig, enabled: gstEnabled, ...(updated.gst || {}) },
+          }));
+        }
+      } catch {}
+    };
+
+    window.addEventListener('settings.updated', handleSettingsUpdate);
+    window.addEventListener('storage', handleSettingsUpdate);
+    return () => {
+      window.removeEventListener('settings.updated', handleSettingsUpdate);
+      window.removeEventListener('storage', handleSettingsUpdate);
+    };
+  }, []);
+
   const [currentStaff, setCurrentStaff] = useState<Staff>(staff);
   useEffect(() => {
     setCurrentStaff(staff);
@@ -476,9 +507,11 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     console.log(`[PRINT] Timestamp: ${new Date().toISOString()}`);
 
     // Build the complete print document
-    // 80mm roll: ~72mm printable at 203dpi ≈ 574px at 96dpi screen preview
-    // We use 72mm with left/right 4mm margins each for the print media.
-    const html = `<!DOCTYPE html><html lang="en"><head>
+    // Build the complete print document
+    // If a full HTML receipt document is passed, use it directly.
+    const html = htmlBody.startsWith('<!DOCTYPE html>')
+      ? htmlBody
+      : `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"/>
 <title>${title}</title>
 <style>
@@ -789,66 +822,42 @@ ${htmlBody}
     console.log(`[PRINT] Order #  : ${orderNum}`);
     console.log(`[PRINT] Cashier  : ${currentStaff.name}`);
     console.log(`[PRINT] Items    : ${tableOrder.lines?.length || 0}`);
-    console.log(`[PRINT] Total    : ${formatINR(tableOrder.totals?.totalPaise || 0)}`);
+    const totals = tableOrder.totals || {};
+    const receiptData: ReceiptInputData = {
+      storeName: outlet.name,
+      logoUrl: outlet.receipt?.showLogo !== false ? outlet.receipt?.logoUrl : null,
+      address: outlet.address,
+      phone: outlet.receipt?.phone,
+      gstin: outlet.gstin,
+      orderNumber: orderNum,
+      orderType: tableOrder.type || 'dine_in',
+      tableLabel: tableLabel,
+      placedAt: tableOrder.placedAt || new Date(),
+      items: (tableOrder.lines || []).map((l: any) => ({
+        name: l.name,
+        qty: l.qty,
+        unitPricePaise: l.unitPricePaise ?? l.pricePaise ?? 0,
+        totalPaise: l.linePaise ?? l.totalPaise ?? ((l.unitPricePaise ?? l.pricePaise ?? 0) * l.qty),
+        notes: l.notes,
+      })),
+      subtotalPaise: totals.subtotalPaise || 0,
+      discountPaise: totals.discountPaise || 0,
+      cgstPaise: totals.cgstPaise || 0,
+      sgstPaise: totals.sgstPaise || 0,
+      igstPaise: totals.igstPaise || 0,
+      serviceChargePaise: totals.serviceChargePaise || 0,
+      roundOffPaise: totals.roundOffPaise || 0,
+      totalPaise: totals.totalPaise || 0,
+      gstEnabled: outlet.gstEnabled,
+      cashierName: currentStaff.name,
+      customerName: billCustomer !== 'Customer' ? billCustomer : undefined,
+      customerPhone: custPhone.trim() || undefined,
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig,
+    };
 
-    // Build item rows with proper 80mm column alignment
-    const now80 = new Date();
-    const dateStr = now80.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const timeStr = now80.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-    const itemRowsHtml = tableOrder.lines.map((l: any) => {
-      const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId || it.name === l.name);
-      const unitPrice = l.unitPricePaise ?? l.pricePaise ?? 0;
-      const lineTotal = l.linePaise ?? l.totalPaise ?? 0;
-      const hsnText = showHsn && dbItem?.hsnCode
-        ? `<div class="item-note">HSN: ${escRcpt(dbItem.hsnCode)}</div>` : '';
-      const noteText = l.notes
-        ? `<div class="item-note">Note: ${escRcpt(l.notes)}</div>` : '';
-      return `<div class="item-row">
-        <div class="col-name item-name">${escRcpt(l.name)}${noteText}${hsnText}</div>
-        <div class="col-qty">${l.qty}</div>
-        <div class="col-rate">${formatINR(unitPrice)}</div>
-        <div class="col-amt">${formatINR(lineTotal)}</div>
-      </div>`;
-    }).join('');
-
-    const totals = tableOrder.totals;
-    const orderTypeLabel = (tableOrder.type || 'DINE IN').toUpperCase().replace('_', ' ');
-    const custLine = billCustomer !== 'Customer' ? escRcpt(billCustomer) : '';
-    const custPhoneLine = custPhone.trim() ? escRcpt(custPhone.trim()) : '';
-
-    const htmlBody = `
-${receiptHeaderHtml()}
-<div class="div-dashed"></div>
-<div class="meta-row bold"><span>Table ${escRcpt(tableLabel)}</span><span>${orderTypeLabel}</span></div>
-${orderNum ? `<div class="meta-row"><span>Bill #${escRcpt(String(orderNum))}</span><span>${dateStr}</span></div>` : `<div class="meta-row"><span>${dateStr}</span><span></span></div>`}
-<div class="meta-row"><span>Cashier: ${escRcpt(currentStaff.name)}</span><span>${timeStr}</span></div>
-${custLine ? `<div class="meta-row"><span>Customer: ${custLine}${custPhoneLine ? ` · ${custPhoneLine}` : ''}</span></div>` : ''}
-<div class="div-solid"></div>
-<div class="items-hdr">
-  <div class="col-name">ITEM</div>
-  <div class="col-qty">QTY</div>
-  <div class="col-rate">RATE</div>
-  <div class="col-amt">AMT</div>
-</div>
-<div class="div-dashed"></div>
-${itemRowsHtml}
-<div class="div-solid"></div>
-<div class="totals-row"><span>Subtotal</span><span>${formatINR(totals.subtotalPaise)}</span></div>
-${totals.discountPaise > 0 ? `<div class="totals-row discount"><span>Discount</span><span>-${formatINR(totals.discountPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showCgst && totals.cgstPaise > 0 ? `<div class="totals-row"><span>CGST</span><span>${formatINR(totals.cgstPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showSgst && totals.sgstPaise > 0 ? `<div class="totals-row"><span>SGST</span><span>${formatINR(totals.sgstPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showIgst && totals.igstPaise > 0 ? `<div class="totals-row"><span>IGST</span><span>${formatINR(totals.igstPaise)}</span></div>` : ''}
-${totals.serviceChargePaise > 0 ? `<div class="totals-row"><span>Service Charge</span><span>${formatINR(totals.serviceChargePaise)}</span></div>` : ''}
-${Math.abs(totals.roundOffPaise || 0) > 0 ? `<div class="totals-row"><span>Round Off</span><span>${totals.roundOffPaise >= 0 ? '+' : '-'}${formatINR(Math.abs(totals.roundOffPaise))}</span></div>` : ''}
-${taxSummaryTableHtml(tableOrder)}
-<div class="div-solid"></div>
-<div class="totals-row grand"><span>TOTAL</span><span>${formatINR(totals.totalPaise)}</span></div>
-<div class="div-solid"></div>
-<div class="footer">
-  <div class="thank-you">${receiptFooterText()}</div>
-  <div>Served by ${escRcpt(currentStaff.name)}</div>
-</div>`;
+    const paperWidth = outlet.receipt?.paperWidth === '58mm' ? '58mm' : '80mm';
+    const htmlBody = formatReceiptHtml(receiptData, paperWidth);
 
     const waiterStation = (currentStaff.permissions as any)?.station || (currentStaff as any)?.station || null;
     console.log(`[PRINT] Sending bill directly to ${waiterStation ? waiterStation.toUpperCase() + ' station printer' : 'station printer'} (no popup)...`);
@@ -964,68 +973,43 @@ ${rows}
     console.log(`[PRINT] Job ID   : ${jobId}`);
     console.log(`[PRINT] Method   : ${method.toUpperCase()}`);
     console.log(`[PRINT] Total    : ${formatINR(totalWithTip)}`);
-    console.log(`[PRINT] Cashier  : ${currentStaff.name}`);
+    const receiptData: ReceiptInputData = {
+      storeName: outlet.name,
+      logoUrl: outlet.receipt?.showLogo !== false ? outlet.receipt?.logoUrl : null,
+      address: outlet.address,
+      phone: outlet.receipt?.phone,
+      gstin: outlet.gstin,
+      orderNumber: number,
+      orderType: orderType,
+      tableLabel: tableId ? (tables.find(t => t.id === tableId)?.label || null) : null,
+      placedAt: new Date(),
+      settledAt: new Date(),
+      items: cart.map(l => ({
+        name: l.name,
+        qty: l.qty,
+        unitPricePaise: l.pricePaise,
+        totalPaise: l.pricePaise * l.qty,
+        notes: l.notes,
+      })),
+      subtotalPaise: bill.subtotalPaise,
+      discountPaise: bill.discountPaise,
+      cgstPaise: bill.cgstPaise,
+      sgstPaise: bill.sgstPaise,
+      igstPaise: bill.igstPaise,
+      serviceChargePaise: bill.serviceChargePaise,
+      roundOffPaise: bill.roundOffPaise,
+      totalPaise: totalWithTip,
+      paymentMethod: method,
+      gstEnabled: outlet.gstEnabled,
+      cashierName: currentStaff.name,
+      customerName: customer?.name,
+      customerPhone: customer?.phone,
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig,
+    };
 
-    const now80 = new Date();
-    const dateStr = now80.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const timeStr = now80.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-    const itemRowsHtml = cart.map((l) => {
-      const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId);
-      const lineTotal = l.pricePaise * l.qty;
-      const hsnText = showHsn && dbItem?.hsnCode
-        ? `<div class="item-note">HSN: ${escRcpt(dbItem.hsnCode)}</div>` : '';
-      const noteText = l.notes
-        ? `<div class="item-note">Note: ${escRcpt(l.notes)}</div>` : '';
-      return `<div class="item-row">
-        <div class="col-name item-name">${escRcpt(l.name)}${noteText}${hsnText}</div>
-        <div class="col-qty">${l.qty}</div>
-        <div class="col-rate">${formatINR(l.pricePaise)}</div>
-        <div class="col-amt">${formatINR(lineTotal)}</div>
-      </div>`;
-    }).join('');
-
-    const custName = customer?.name?.trim() || '';
-    const custPhoneStr = customer?.phone?.trim() || '';
-    const subtotalLabel = outlet.gstEnabled && outlet.gstInclusive ? 'Taxable Value' : 'Subtotal';
-
-    const htmlBody = `
-${receiptHeaderHtml()}
-<div class="div-dashed"></div>
-<div class="meta-row bold"><span>Receipt #${number}</span><span>${dateStr}</span></div>
-<div class="meta-row"><span>Cashier: ${escRcpt(currentStaff.name)}</span><span>${timeStr}</span></div>
-${custName || custPhoneStr ? `<div class="meta-row"><span>Customer: ${escRcpt(custName)}${custPhoneStr ? ` · ${escRcpt(custPhoneStr)}` : ''}</span></div>` : ''}
-<div class="div-solid"></div>
-<div class="items-hdr">
-  <div class="col-name">ITEM</div>
-  <div class="col-qty">QTY</div>
-  <div class="col-rate">RATE</div>
-  <div class="col-amt">AMT</div>
-</div>
-<div class="div-dashed"></div>
-${itemRowsHtml}
-<div class="div-solid"></div>
-<div class="totals-row"><span>${subtotalLabel}</span><span>${formatINR(bill.subtotalPaise)}</span></div>
-${bill.discountPaise > 0 ? `<div class="totals-row discount"><span>Discount${discountPct > 0 ? ` (${discountPct}%)` : ''}</span><span>-${formatINR(bill.discountPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showCgst && bill.cgstPaise > 0 ? `<div class="totals-row"><span>CGST</span><span>${formatINR(bill.cgstPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showSgst && bill.sgstPaise > 0 ? `<div class="totals-row"><span>SGST</span><span>${formatINR(bill.sgstPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showIgst && bill.igstPaise > 0 ? `<div class="totals-row"><span>IGST</span><span>${formatINR(bill.igstPaise)}</span></div>` : ''}
-${scPct > 0 ? `<div class="totals-row"><span>Service Charge</span><span>${formatINR(bill.serviceChargePaise)}</span></div>` : ''}
-${bill.deliveryChargePaise > 0 ? `<div class="totals-row"><span>Delivery Charge</span><span>${formatINR(bill.deliveryChargePaise)}</span></div>` : ''}
-${bill.packagingChargePaise > 0 ? `<div class="totals-row"><span>Packaging Charge</span><span>${formatINR(bill.packagingChargePaise)}</span></div>` : ''}
-${bill.convenienceFeePaise > 0 ? `<div class="totals-row"><span>Convenience Fee</span><span>${formatINR(bill.convenienceFeePaise)}</span></div>` : ''}
-${Math.abs(bill.roundOffPaise || 0) > 0 ? `<div class="totals-row"><span>Round Off</span><span>${bill.roundOffPaise >= 0 ? '+' : '-'}${formatINR(Math.abs(bill.roundOffPaise))}</span></div>` : ''}
-${tipPaise > 0 ? `<div class="totals-row"><span>Tip</span><span>${formatINR(tipPaise)}</span></div>` : ''}
-${taxSummaryTableHtml(bill)}
-<div class="div-solid"></div>
-<div class="totals-row grand"><span>TOTAL</span><span>${formatINR(totalWithTip)}</span></div>
-<div class="div-solid"></div>
-<div class="pay-row"><span>Payment</span><span>${escRcpt(method.toUpperCase())}</span></div>
-<div class="div-dashed"></div>
-<div class="footer">
-  <div class="thank-you">${receiptFooterText()}</div>
-  <div>Served by ${escRcpt(currentStaff.name)}</div>
-</div>`;
+    const paperWidth = outlet.receipt?.paperWidth === '58mm' ? '58mm' : '80mm';
+    const htmlBody = formatReceiptHtml(receiptData, paperWidth);
 
     console.log(`[PRINT] Sending receipt to print dialog...`);
     printThermal80mm(`Receipt #${number}`, htmlBody, jobId);
@@ -1110,8 +1094,20 @@ ${taxSummaryTableHtml(bill)}
 
   const bill = useMemo(() => {
     const lines: BillLine[] = cart.map((l) => ({ pricePaise: l.pricePaise, gstRate: l.gstRate, qty: l.qty }));
-    return computeBill(lines, { discountPct, discountFlatPaise, serviceChargePct: scPct, gstEnabled: outlet.gstEnabled, gstRateOverride: outlet.gstRate, gstInclusive: outlet.gstInclusive });
-  }, [cart, discountPct, discountFlatPaise, scPct, outlet.gstEnabled, outlet.gstRate, outlet.gstInclusive]);
+    const b = computeBill(lines, {
+      discountPct,
+      discountFlatPaise,
+      serviceChargePct: scPct,
+      gstEnabled: outlet.gstEnabled,
+      gstRateOverride: outlet.gstRate,
+      gstInclusive: outlet.gstInclusive,
+      roundOff: outlet.gstConfig?.roundOff !== false && (outlet.receipt as any)?.roundOff !== false,
+    });
+    if (lines.length > 0) {
+      console.log(`[BILLING]\nGST enabled: ${outlet.gstEnabled}\nSubtotal: ${(b.subtotalPaise / 100).toFixed(2)}\nDiscount: ${(b.discountPaise / 100).toFixed(2)}\nTax: ${(b.taxPaise / 100).toFixed(2)}\nRound-off: ${(b.roundOffPaise / 100).toFixed(2)}\nFinal payable: ${(b.finalPayablePaise / 100).toFixed(2)}`);
+    }
+    return b;
+  }, [cart, discountPct, discountFlatPaise, scPct, outlet.gstEnabled, outlet.gstRate, outlet.gstInclusive, outlet.gstConfig?.roundOff, (outlet.receipt as any)?.roundOff]);
 
   function flash(msg: string) {
     setToast(msg);

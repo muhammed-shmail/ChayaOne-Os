@@ -1475,9 +1475,15 @@ export default function DashboardClient({
       const res = await fetch('/api/dashboard/upload', { method: 'POST', body: fd });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.url) return d.url as string;
-      flashMessage(`Upload failed (${d.error ?? 'error'})`);
+      const errMsg = d.message || d.error || 'Upload failed';
+      console.error('[uploadImage error]', res.status, d);
+      flashMessage(`Upload failed: ${errMsg}`);
       return null;
-    } catch { flashMessage('Upload failed'); return null; }
+    } catch (err) {
+      console.error('[uploadImage network error]', err);
+      flashMessage('Upload failed: Network error');
+      return null;
+    }
   };
 
   const handleSavePwa = async (cfg: PwaConfig) => {

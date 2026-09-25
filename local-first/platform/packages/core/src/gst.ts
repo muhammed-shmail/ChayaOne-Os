@@ -71,6 +71,9 @@ export interface BillOptions {
 
   // Restaurant-specific type rules (Section 12)
   orderTypeRateOverride?: number | null;
+
+  /** Round off total payable amount to nearest rupee (default true) */
+  roundOff?: boolean;
 }
 
 export interface Bill {
@@ -86,6 +89,10 @@ export interface Bill {
   convenienceFeePaise: Paise;
   roundOffPaise: Paise; // can be negative
   totalPaise: Paise;
+  /** Authoritative final payable amount alias */
+  finalPayablePaise: Paise;
+  /** Total calculated tax across CGST, SGST, IGST */
+  taxPaise: Paise;
   /** tax grouped by rate, for the receipt's GST summary */
   taxByRate: Record<string, Paise>;
 }
@@ -239,7 +246,8 @@ export function computeBill(lines: BillLine[], opts: BillOptions = {}): Bill {
 
   const taxTotal = cgstPaise + sgstPaise + igstPaise;
   const preRound = taxablePaise + taxTotal + serviceChargePaise + deliveryChargePaise + packagingChargePaise + convenienceFeePaise;
-  const totalPaise = roundToRupee(preRound);
+  const shouldRound = opts.roundOff !== false;
+  const totalPaise = shouldRound ? roundToRupee(preRound) : preRound;
   const roundOffPaise = totalPaise - preRound;
 
   return {
@@ -255,6 +263,8 @@ export function computeBill(lines: BillLine[], opts: BillOptions = {}): Bill {
     convenienceFeePaise,
     roundOffPaise,
     totalPaise,
+    finalPayablePaise: totalPaise,
+    taxPaise: taxTotal,
     taxByRate,
   };
 }

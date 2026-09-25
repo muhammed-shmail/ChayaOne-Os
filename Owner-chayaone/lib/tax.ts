@@ -187,6 +187,7 @@ export function gstBillOptions(cfg: GstConfig, orderType?: string): Record<strin
     calculateGstBeforeDiscount: cfg.calculateGstBeforeDiscount,
     applyGstToCoupon: cfg.applyGstToCoupon,
     applyGstToManual: cfg.applyGstToManual,
+    roundOff: cfg.roundOff,
     orderTypeRateOverride,
   };
 }

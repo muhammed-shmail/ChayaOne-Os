@@ -2717,9 +2717,9 @@ export default function SettingsCenter({
                       <div className="flex flex-col gap-1.5">
                         <label className={`btn btn-sm cursor-pointer ${logoBusy ? 'opacity-60 pointer-events-none' : ''}`} style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
                           {logoBusy ? 'Uploading...' : logoUrl ? 'Change Image' : 'Upload Image'}
-                          <input type="file" accept="image/png,image/jpeg,image/webp,image/jpg" className="hidden" disabled={logoBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f); e.currentTarget.value = ''; }} />
+                          <input type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.svg,.gif,.ico,.bmp,.jfif" className="hidden" disabled={logoBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f); e.currentTarget.value = ''; }} />
                         </label>
-                        <span className="text-[10px] text-ink-3">Max size: 5MB. Format: PNG, JPG, WEBP</span>
+                        <span className="text-[10px] text-ink-3">Max size: 10MB. Format: PNG, JPG, WEBP, SVG</span>
                       </div>
                     </div>
                   </div>

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { formatINR } from '@cafeos/core';
+import { computeBill, formatINR, type BillLine } from '@cafeos/core';
 import { BrandMark } from '@/components/BrandMark';
 import { CountUp } from '@/components/ui/motion';
 import { TeaLoader } from '@/components/ui/TeaLoader';
@@ -1436,8 +1436,7 @@ export default function DashboardClient({
       r.showLogo && logo ? `<img src="${logo}" alt="" />` : '',
       `<h2>${escHtml(outlet.brand)}</h2>`,
       r.header.trim() ? `<div class="muted">${escHtml(r.header).replace(/\n/g, '<br/>')}</div>` : '',
-      r.phone.trim() ? `<div class="muted">☎ ${escHtml(r.phone)}</div>` : '',
-      r.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escHtml(outlet.gstin)}</div>` : '',
+      Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled ?? (outlet as any)?.settings?.gst?.enabled) && r.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escHtml(outlet.gstin)}</div>` : '',
     ];
     return parts.filter(Boolean).join('\n');
   }
@@ -1582,42 +1581,34 @@ export default function DashboardClient({
   };
 
   const computeQuickInvoiceTotals = () => {
-    let subtotalPaise = 0;
-    let cgstPaise = 0;
-    let sgstPaise = 0;
+    const isGst = Boolean(profile.gstEnabled);
+    const billLines: BillLine[] = quickInvoiceLines.map((l) => ({
+      pricePaise: Math.round((parseFloat(l.price) || 0) * 100),
+      gstRate: parseFloat(l.gst) || 0,
+      qty: parseInt(l.qty) || 1,
+    }));
 
-    const computedLines = quickInvoiceLines.map((l) => {
-      const priceVal = parseFloat(l.price) || 0;
-      const pricePaise = Math.round(priceVal * 100);
-      const qtyVal = parseInt(l.qty) || 1;
-      const lineTotalPaise = pricePaise * qtyVal;
+    const bill = computeBill(billLines, { gstEnabled: isGst, roundOff: true });
 
-      const gstRate = parseFloat(l.gst) || 0;
-      const gstAmountPaise = Math.round((lineTotalPaise * gstRate) / 100);
-
-      subtotalPaise += lineTotalPaise;
-      cgstPaise += Math.round(gstAmountPaise / 2);
-      sgstPaise += Math.round(gstAmountPaise / 2);
-
+    const computedLines = quickInvoiceLines.map((l, idx) => {
+      const bl = billLines[idx];
+      const pPaise = bl?.pricePaise ?? 0;
+      const qVal = bl?.qty ?? 1;
       return {
         ...l,
-        pricePaise,
-        qty: qtyVal,
-        lineTotalPaise,
+        pricePaise: pPaise,
+        qty: qVal,
+        lineTotalPaise: pPaise * qVal,
       };
     });
 
-    const totalBeforeRoundPaise = subtotalPaise + cgstPaise + sgstPaise;
-    const finalTotalPaise = Math.round(totalBeforeRoundPaise / 100) * 100;
-    const roundOffPaise = finalTotalPaise - totalBeforeRoundPaise;
-
     return {
       lines: computedLines,
-      subtotalPaise,
-      cgstPaise,
-      sgstPaise,
-      roundOffPaise,
-      totalPaise: finalTotalPaise,
+      subtotalPaise: bill.subtotalPaise,
+      cgstPaise: bill.cgstPaise,
+      sgstPaise: bill.sgstPaise,
+      roundOffPaise: bill.roundOffPaise,
+      totalPaise: bill.finalPayablePaise,
     };
   };
 
@@ -1641,8 +1632,8 @@ export default function DashboardClient({
       <div class="line"></div><table>${rows}</table><div class="line"></div>
       <table>
         ${row('Subtotal', totals.subtotalPaise)}
-        ${totals.cgstPaise > 0 ? row('CGST', totals.cgstPaise) : ''}
-        ${totals.sgstPaise > 0 ? row('SGST', totals.sgstPaise) : ''}
+        ${profile.gstEnabled && totals.cgstPaise > 0 ? row('CGST', totals.cgstPaise) : ''}
+        ${profile.gstEnabled && totals.sgstPaise > 0 ? row('SGST', totals.sgstPaise) : ''}
         ${totals.roundOffPaise !== 0 ? row('Round off', totals.roundOffPaise) : ''}
         <tr class="tot"><td>Total</td><td class="r">${formatINR(totals.totalPaise)}</td></tr>
       </table>
@@ -1839,9 +1830,15 @@ export default function DashboardClient({
       const res = await fetch('/api/dashboard/upload', { method: 'POST', body: fd });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.url) return d.url as string;
-      flashMessage(`Upload failed (${d.error ?? 'error'})`);
+      const errMsg = d.message || d.error || 'Upload failed';
+      console.error('[uploadImage error]', res.status, d);
+      flashMessage(`Upload failed: ${errMsg}`);
       return null;
-    } catch { flashMessage('Upload failed'); return null; }
+    } catch (err) {
+      console.error('[uploadImage network error]', err);
+      flashMessage('Upload failed: Network error');
+      return null;
+    }
   };
 
   const handleSavePwa = async (cfg: PwaConfig) => {

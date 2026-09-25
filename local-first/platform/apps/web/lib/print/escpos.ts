@@ -66,11 +66,11 @@ export interface ReceiptPrintPayload {
 
   orderNumber: number;
   tableLabel?: string | null;
-  orderType: string;
+  orderType?: string;
   customerName?: string | null;
   customerPhone?: string | null;
   paymentMethod?: string | null;
-  placedAt: string | Date;
+  placedAt?: string | Date;
   settledAt?: string | Date | null;
 
   items?: ReceiptItemLine[];
@@ -94,6 +94,7 @@ export interface ReceiptPrintPayload {
 
   isReprint?: boolean;
   isCancelled?: boolean;
+  gstEnabled?: boolean;
   paperWidth?: ReceiptPaperWidth;
   receiptConfig?: Partial<ReceiptConfig>;
   upiConfig?: Partial<UpiPaymentConfig>;
@@ -361,17 +362,25 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   // Dynamic UPI QR Code
   if (model.showUpiQr && model.upiResult.uri) {
     add(COMMANDS.ALIGN_CENTER);
+    if (model.showScanAndPay) {
+      add(COMMANDS.BOLD_ON);
+      add('SCAN & PAY');
+      add(COMMANDS.BOLD_OFF);
+    }
     add(COMMANDS.LINE_FEED);
 
     // Raster QR: 4 dots per module for 58mm, 5 dots for 80mm
     const qrScale = resolvedPaperWidth === '58mm' ? 4 : 5;
-    const qrBuffer = buildRasterEscposQr(model.upiResult.uri, qrScale, 3);
+    const targetDots = resolvedPaperWidth === '58mm' ? 384 : 576;
+    const qrBuffer = buildRasterEscposQr(model.upiResult.uri, qrScale, 3, targetDots);
     add(qrBuffer);
 
-    if (model.scanAndPayText) {
+    if (model.showScanAndPay) {
+      add(COMMANDS.LINE_FEED);
       add(COMMANDS.BOLD_ON);
-      add(model.scanAndPayText);
+      add(model.totalText);
       add(COMMANDS.BOLD_OFF);
+      add('Scan to pay via UPI');
     }
     add(COMMANDS.LINE_FEED);
     add(divider);

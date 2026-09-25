@@ -193,6 +193,7 @@ async function dispatchStationBillPrint(
     roundOffPaise,
     totalPaise,
     isBillPreview: true,
+    gstEnabled: (cgstPaise + sgstPaise + igstPaise > 0) || Boolean((outlet?.settings as any)?.gst?.enabled),
     receiptConfig,
     upiConfig,
   };

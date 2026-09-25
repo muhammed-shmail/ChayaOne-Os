@@ -18,6 +18,7 @@
 import { formatINR } from '@cafeos/core';
 import type { ReceiptConfig, ReceiptPaperWidth } from '../receipt';
 import { generateAuthoritativeUpiUri, type UpiPaymentConfig, type UpiValidationResult } from './upi';
+import { generateQrSvgSync } from './qr';
 
 export interface ReceiptItemLine {
   name: string;
@@ -37,11 +38,14 @@ export interface ReceiptInputData {
   gstin?: string | null;
   timezone?: string;
 
-  orderNumber: number;
+  orderNumber: number | string;
   tableLabel?: string | null;
-  orderType: 'dine_in' | 'takeaway' | 'delivery' | string;
-  placedAt: Date | string;
+  orderType?: 'dine_in' | 'takeaway' | 'delivery' | string;
+  placedAt?: Date | string;
   settledAt?: Date | string | null;
+  cashierName?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
 
   items: ReceiptItemLine[];
 
@@ -50,8 +54,15 @@ export interface ReceiptInputData {
   cgstPaise?: number;
   sgstPaise?: number;
   igstPaise?: number;
+  serviceChargePaise?: number;
+  deliveryChargePaise?: number;
+  packagingChargePaise?: number;
+  convenienceFeePaise?: number;
   roundOffPaise?: number;
   totalPaise: number;
+
+  /** Authoritative single source of truth: whether GST is active for this bill */
+  gstEnabled?: boolean;
 
   paymentMethod?: string | null;
   isReprint?: boolean;
@@ -66,6 +77,7 @@ export interface FormattedReceiptModel {
   charsPerLine: number;
   isReprint: boolean;
   isCancelled: boolean;
+  isGstActive: boolean;
 
   // Header lines
   logoUrl: string | null;
@@ -77,6 +89,8 @@ export interface FormattedReceiptModel {
   // Meta rows (same line)
   tableAndOrderRow: string;
   dateTimeRow: string;
+  cashierLine?: string | null;
+  customerLine?: string | null;
 
   // Items
   itemLines: Array<{
@@ -90,6 +104,7 @@ export interface FormattedReceiptModel {
   subtotalText: string;
   discountText: string | null;
   taxBreakdown: Array<{ label: string; amountText: string }>;
+  serviceChargeText?: string | null;
   roundOffText: string | null;
   totalText: string;
   totalPaise: number;
@@ -97,6 +112,7 @@ export interface FormattedReceiptModel {
   // UPI QR
   upiResult: UpiValidationResult;
   showUpiQr: boolean;
+  showScanAndPay: boolean;
   scanAndPayText: string | null;
 
   // Footer
@@ -186,10 +202,15 @@ export function formatReceiptModel(data: ReceiptInputData, requestedWidth?: Rece
   // Standard thermal printable characters: 32 chars for 58mm, 42 chars for 80mm
   const charsPerLine = paperWidth === '58mm' ? 32 : 42;
 
-  const timezone = data.timezone || 'Asia/Kolkata';
-  const { dateStr, timeStr } = formatReceiptDateTime(data.placedAt, timezone);
+  // 1. Authoritative GST State
+  const hadHistoricalTax = (data.cgstPaise ?? 0) > 0 || (data.sgstPaise ?? 0) > 0 || (data.igstPaise ?? 0) > 0;
+  const isGstActive = data.gstEnabled !== undefined ? Boolean(data.gstEnabled) : hadHistoricalTax;
+  console.log(`[RECEIPT] GST section: ${isGstActive ? 'displayed' : 'hidden'}`);
 
-  // 1. Where / Order Type
+  const timezone = data.timezone || 'Asia/Kolkata';
+  const { dateStr, timeStr } = formatReceiptDateTime(data.placedAt || new Date(), timezone);
+
+  // Where / Order Type
   let whereText = '';
   const orderType = (data.orderType || '').toLowerCase();
   if (orderType === 'takeaway') {
@@ -203,6 +224,11 @@ export function formatReceiptModel(data: ReceiptInputData, requestedWidth?: Rece
   const orderNumText = `Order #${data.orderNumber}`;
   const tableAndOrderRow = alignLeftRight(whereText, orderNumText, charsPerLine);
   const dateTimeRow = alignLeftRight(dateStr, timeStr, charsPerLine);
+
+  const cashierLine = data.cashierName ? `Cashier: ${data.cashierName}` : null;
+  const customerLine = data.customerName || data.customerPhone
+    ? `Customer: ${[data.customerName, data.customerPhone].filter(Boolean).join(' · ')}`
+    : null;
 
   // 2. Address & Contact header
   let addressText: string | null = null;
@@ -219,7 +245,8 @@ export function formatReceiptModel(data: ReceiptInputData, requestedWidth?: Rece
   if (data.receiptConfig?.showPhone !== false && data.phone) {
     contactParts.push(data.phone.trim());
   }
-  if (data.receiptConfig?.showGstin !== false && data.gstin) {
+  // Only show GSTIN when GST is actively enabled!
+  if (isGstActive && data.receiptConfig?.showGstin !== false && data.gstin) {
     contactParts.push(`GSTIN: ${data.gstin.trim()}`);
   }
   const contactLine = contactParts.length > 0 ? contactParts.join(' • ') : null;
@@ -281,8 +308,9 @@ export function formatReceiptModel(data: ReceiptInputData, requestedWidth?: Rece
       ? `-${formatINR(data.discountPaise)}`
       : null;
 
+  // Only display tax details if GST is active AND showTaxDetails is enabled
   const taxBreakdown: Array<{ label: string; amountText: string }> = [];
-  if (data.receiptConfig?.showTaxDetails !== false) {
+  if (isGstActive && data.receiptConfig?.showTaxDetails !== false) {
     if (data.cgstPaise && data.cgstPaise > 0) {
       taxBreakdown.push({ label: 'CGST', amountText: formatINR(data.cgstPaise) });
     }
@@ -294,26 +322,27 @@ export function formatReceiptModel(data: ReceiptInputData, requestedWidth?: Rece
     }
   }
 
+  const serviceChargeText = data.serviceChargePaise && data.serviceChargePaise > 0 ? formatINR(data.serviceChargePaise) : null;
   const roundOffText = data.roundOffPaise ? formatINR(data.roundOffPaise) : null;
   const totalText = formatINR(data.totalPaise);
 
   // 5. Authoritative UPI QR Code
-  const upiId = data.upiConfig?.upiId || '';
-  const upiBusinessName = data.upiConfig?.upiBusinessName || data.storeName || 'Chaya Cafe';
-  const upiEnabled = data.upiConfig?.upiEnabled ?? (upiId.length > 0);
+  const upiId = (data.upiConfig?.upiId || '').trim();
+  const upiBusinessName = (data.upiConfig?.upiBusinessName || data.storeName || 'Chaya Cafe').trim();
+  const upiEnabled = (data.upiConfig?.upiEnabled !== false) && (upiId.length > 0);
   const receiptQrEnabled = (data.upiConfig?.receiptQrEnabled !== false) && (data.receiptConfig?.showUpiQr !== false);
 
   const upiResult = generateAuthoritativeUpiUri({
     upiId,
     businessName: upiBusinessName,
     amountPaise: data.totalPaise,
-    orderNumber: data.orderNumber,
     isCancelled: !!data.isCancelled,
   });
 
   const showUpiQr = upiEnabled && receiptQrEnabled && upiResult.valid;
+  const showScanAndPay = (data.upiConfig?.showScanAndPayText !== false) && (data.receiptConfig?.showScanAndPay !== false);
   const scanAndPayText =
-    showUpiQr && (data.receiptConfig?.showScanAndPay !== false)
+    showUpiQr && showScanAndPay
       ? `Scan & Pay ${formatINR(data.totalPaise)}`
       : null;
 
@@ -322,6 +351,7 @@ export function formatReceiptModel(data: ReceiptInputData, requestedWidth?: Rece
     charsPerLine,
     isReprint: !!data.isReprint,
     isCancelled: !!data.isCancelled,
+    isGstActive,
 
     logoUrl: data.receiptConfig?.showLogo !== false ? (data.logoUrl || null) : null,
     storeName: (data.storeName || 'CHAYA CAFE').toUpperCase(),
@@ -331,21 +361,202 @@ export function formatReceiptModel(data: ReceiptInputData, requestedWidth?: Rece
 
     tableAndOrderRow,
     dateTimeRow,
+    cashierLine,
+    customerLine,
 
     itemLines,
 
     subtotalText,
     discountText,
     taxBreakdown,
+    serviceChargeText,
     roundOffText,
     totalText,
     totalPaise: data.totalPaise,
 
     upiResult,
     showUpiQr,
+    showScanAndPay,
     scanAndPayText,
 
     footerNote: data.receiptConfig?.footer || null,
     brandingText: 'chaya.one',
   };
+}
+
+/**
+ * Format a complete, self-contained HTML thermal receipt document.
+ * Universal across browser print dialog (iframe) and web preview.
+ * Includes dynamic UPI QR code rendered as crisp inline SVG.
+ */
+export function formatReceiptHtml(data: ReceiptInputData, requestedWidth?: ReceiptPaperWidth): string {
+  const is58 = requestedWidth === '58mm' || data.receiptConfig?.paperWidth === '58mm';
+  const paperWidth: ReceiptPaperWidth = is58 ? '58mm' : '80mm';
+  const model = formatReceiptModel(data, paperWidth);
+
+  const esc = (s: string) =>
+    s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c] as string));
+
+  const docTitle = model.isGstActive ? 'TAX INVOICE' : 'INVOICE';
+  const widthMm = is58 ? '48mm' : '72mm';
+  const pageSizeMm = is58 ? '58mm' : '80mm';
+  const qrPixelSize = is58 ? 120 : 150;
+
+  // Build items rows
+  const itemRowsHtml = model.itemLines.map((line) => {
+    const extraHtml = line.extraLines.length > 0
+      ? `<div style="font-size:8.5pt;color:#444;padding-left:6pt;">${line.extraLines.map(esc).join('<br/>')}</div>`
+      : '';
+    return `
+      <div style="display:flex;justify-content:space-between;padding:1.5pt 0;align-items:flex-start;">
+        <div style="flex:1;word-break:break-word;padding-right:4pt;">${esc(line.name)}${extraHtml}</div>
+        <div style="width:24pt;text-align:center;">${line.qtyText.trim()}</div>
+        <div style="min-width:44pt;text-align:right;font-weight:600;">${line.amountText.trim()}</div>
+      </div>
+    `;
+  }).join('');
+
+  // Tax breakdown rows
+  const taxRowsHtml = model.taxBreakdown.map((t) => `
+    <div style="display:flex;justify-content:space-between;padding:1pt 0;">
+      <span>${esc(t.label)}</span>
+      <span>${esc(t.amountText)}</span>
+    </div>
+  `).join('');
+
+  // Dynamic QR Code SVG
+  let qrSectionHtml = '';
+  if (model.showUpiQr && model.upiResult.uri) {
+    const qrSvg = generateQrSvgSync(model.upiResult.uri, { size: qrPixelSize, margin: 2 });
+    qrSectionHtml = `
+      <div style="border-top:1px dashed #000;margin:6pt 0;"></div>
+      <div style="text-align:center;margin:6pt 0 4pt;">
+        ${model.showScanAndPay ? '<div style="font-weight:700;font-size:10pt;letter-spacing:1px;margin-bottom:4pt;">SCAN & PAY</div>' : ''}
+        <div style="display:flex;justify-content:center;margin:4pt 0;">
+          ${qrSvg}
+        </div>
+        ${model.showScanAndPay ? `
+          <div style="font-weight:800;font-size:11pt;margin-top:4pt;">${model.totalText}</div>
+          <div style="font-size:8.5pt;color:#333;margin-top:2pt;">Scan to pay via UPI</div>
+        ` : ''}
+      </div>
+      <div style="border-top:1px dashed #000;margin:6pt 0;"></div>
+    `;
+  }
+
+  const html = `<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/>
+<title>${esc(docTitle)} - ${esc(String(data.orderNumber))}</title>
+<style>
+  @page {
+    size: ${pageSizeMm} auto;
+    margin: 3mm 4mm;
+  }
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    width: ${widthMm};
+    font-family: 'Courier New', Courier, 'Lucida Console', monospace;
+    font-size: ${is58 ? '9.5pt' : '10.5pt'};
+    line-height: 1.35;
+    color: #000;
+    background: #fff;
+    margin: 0 auto;
+  }
+  .receipt { width: 100%; padding: 0; }
+  .store-name { text-align: center; font-size: ${is58 ? '13pt' : '15pt'}; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2pt; }
+  .store-sub { text-align: center; font-size: 8.5pt; color: #222; margin-bottom: 1pt; }
+  .doc-title { text-align: center; font-size: 9.5pt; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin: 3pt 0 2pt; }
+  .div-solid  { border-top: 1.5px solid #000; margin: 3pt 0; }
+  .div-dashed { border-top: 1px dashed #000; margin: 3pt 0; }
+  .meta-row { display: flex; justify-content: space-between; font-size: 8.5pt; line-height: 1.3; }
+  .meta-row.bold { font-weight: 700; font-size: 9pt; }
+  .items-hdr { display: flex; font-size: 8.5pt; font-weight: 700; text-transform: uppercase; padding-bottom: 2pt; border-bottom: 1px dashed #000; margin-bottom: 2pt; }
+  .totals-row { display: flex; justify-content: space-between; font-size: 9.5pt; line-height: 1.35; padding: 1pt 0; }
+  .totals-row.grand { font-size: ${is58 ? '12pt' : '13pt'}; font-weight: 900; margin: 2pt 0; }
+  .totals-row.discount { color: #1a7a1a; }
+  .footer { text-align: center; font-size: 8.5pt; color: #333; margin-top: 6pt; line-height: 1.4; }
+  .footer .thank-you { font-size: 10pt; font-weight: 700; color: #000; margin-bottom: 2pt; }
+  .logo-wrap { text-align: center; margin-bottom: 3pt; }
+  .logo-wrap img { max-height: 14mm; max-width: 40mm; object-fit: contain; }
+  @media screen {
+    body { background: #f5f5f5; padding: 8px; }
+    .receipt { background: #fff; padding: 8px; box-shadow: 0 0 12px rgba(0,0,0,0.15); }
+  }
+</style>
+</head><body>
+<div class="receipt">
+  ${model.isReprint ? '<div style="text-align:center;font-weight:700;font-size:9.5pt;border:1px solid #000;padding:2pt;margin-bottom:4pt;">*** REPRINT ***</div>' : ''}
+  ${model.isCancelled ? '<div style="text-align:center;font-weight:700;font-size:11pt;border:1.5px solid #000;padding:3pt;margin-bottom:4pt;">*** CANCELLED / VOID ***</div>' : ''}
+  ${model.logoUrl ? `<div class="logo-wrap"><img src="${esc(model.logoUrl)}" alt="Logo"/></div>` : ''}
+  <div class="store-name">${esc(model.storeName)}</div>
+  ${model.addressText ? `<div class="store-sub">${esc(model.addressText)}</div>` : ''}
+  ${model.contactLine ? `<div class="store-sub">${esc(model.contactLine)}</div>` : ''}
+  ${model.headerNote ? `<div class="store-sub">${esc(model.headerNote)}</div>` : ''}
+  <div class="doc-title">${esc(docTitle)}</div>
+
+  <div class="div-dashed"></div>
+  <div class="meta-row bold">
+    <span>${esc(model.tableAndOrderRow.split(/\s{2,}/)[0] || '')}</span>
+    <span>${esc(model.tableAndOrderRow.split(/\s{2,}/)[1] || '')}</span>
+  </div>
+  <div class="meta-row">
+    <span>${esc(model.dateTimeRow.split(/\s{2,}/)[0] || '')}</span>
+    <span>${esc(model.dateTimeRow.split(/\s{2,}/)[1] || '')}</span>
+  </div>
+  ${model.cashierLine ? `<div class="meta-row"><span>${esc(model.cashierLine)}</span></div>` : ''}
+  ${model.customerLine ? `<div class="meta-row"><span>${esc(model.customerLine)}</span></div>` : ''}
+
+  <div class="div-solid"></div>
+  <div class="items-hdr">
+    <div style="flex:1;">ITEM</div>
+    <div style="width:24pt;text-align:center;">QTY</div>
+    <div style="min-width:44pt;text-align:right;">AMOUNT</div>
+  </div>
+  ${itemRowsHtml}
+
+  <div class="div-solid"></div>
+  <div class="totals-row">
+    <span>Subtotal</span>
+    <span>${model.subtotalText}</span>
+  </div>
+  ${model.discountText ? `<div class="totals-row discount"><span>Discount</span><span>${model.discountText}</span></div>` : ''}
+  ${taxRowsHtml}
+  ${model.serviceChargeText ? `<div class="totals-row"><span>Service Charge</span><span>${model.serviceChargeText}</span></div>` : ''}
+  ${model.roundOffText ? `<div class="totals-row"><span>Round Off</span><span>${model.roundOffText}</span></div>` : ''}
+
+  <div class="div-solid"></div>
+  <div class="totals-row grand">
+    <span>TOTAL</span>
+    <span>${model.totalText}</span>
+  </div>
+  <div class="div-solid"></div>
+
+  ${data.paymentMethod ? `
+    <div class="totals-row" style="margin:2pt 0;font-weight:700;">
+      <span>Payment</span>
+      <span>${esc(data.paymentMethod.toUpperCase())}</span>
+    </div>
+  ` : ''}
+
+  ${qrSectionHtml}
+
+  <div class="footer">
+    <div class="thank-you">${model.footerNote ? esc(model.footerNote) : 'Thank you! Visit again.'}</div>
+    <div style="font-size:8pt;color:#666;">${esc(model.brandingText)}</div>
+  </div>
+</div>
+<script>
+  window.onload = function() {
+    window.print();
+  };
+</script>
+</body></html>`;
+
+  return html;
 }

@@ -282,6 +282,11 @@ export default function ReceiptPreviewModal({
             {/* Dynamic UPI QR Code */}
             {model.showUpiQr && (
               <div className="text-center my-3 pt-1 space-y-1.5">
+                {model.showScanAndPay && (
+                  <p className="font-extrabold text-xs tracking-wider text-black uppercase">
+                    SCAN &amp; PAY
+                  </p>
+                )}
                 <div className="inline-block p-2 bg-white rounded-xl border border-[#E5E0D8] shadow-sm">
                   {qrDataUrl ? (
                     <img
@@ -295,10 +300,15 @@ export default function ReceiptPreviewModal({
                     </div>
                   )}
                 </div>
-                {model.scanAndPayText && (
-                  <p className="font-extrabold text-xs tracking-wide text-black uppercase">
-                    {model.scanAndPayText}
-                  </p>
+                {model.showScanAndPay && (
+                  <>
+                    <p className="font-extrabold text-sm tracking-wide text-black">
+                      {model.totalText}
+                    </p>
+                    <p className="text-[10px] text-[#6B5E52]">
+                      Scan to pay via UPI
+                    </p>
+                  </>
                 )}
                 <div className="my-2 border-t border-dashed border-[#16120E]/40" />
               </div>

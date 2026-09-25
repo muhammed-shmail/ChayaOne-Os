@@ -94,31 +94,69 @@ export function buildNativeEscposQr(text: string, moduleSize = 5): Buffer {
 }
 
 /**
- * Build universal ESC/POS raster bit-image buffer (GS v 0).
- * Works reliably across ALL thermal printers (including budget/OEM printers that lack native QR commands).
- * 
- * @param text The text/URI to encode
- * @param scale Number of physical printer dots per QR module (typically 3 to 6)
- * @param quietMargin Quiet zone in modules around the QR (default 3)
+ * Generate an offline, pure SVG string representation synchronously.
+ * Zero network requests, crisp vector edges, perfect for HTML preview and iframe print.
  */
-export function buildRasterEscposQr(text: string, scale = 4, quietMargin = 3): Buffer {
+export function generateQrSvgSync(text: string, options?: { margin?: number; size?: number }): string {
+  if (!text) return '';
+  const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
+  const margin = options?.margin ?? 3;
+  const numModules = qr.modules.size;
+  const total = numModules + margin * 2;
+  const size = options?.size ?? 140;
+
+  let path = '';
+  for (let r = 0; r < numModules; r++) {
+    for (let c = 0; c < numModules; c++) {
+      if (qr.modules.get(r, c)) {
+        path += `M${c + margin},${r + margin}h1v1h-1z `;
+      }
+    }
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}" width="${size}" height="${size}" style="max-width:100%;height:auto;display:block;margin:0 auto;" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#000"/></svg>`;
+}
+
+/**
+ * Build universal ESC/POS raster bit-image buffer (GS v 0).
+ * Works reliably across ALL thermal printers (including TVSE RP3200 Lite, RP3200 Plus, Epson TM-T82, Star, etc.).
+ *
+ * @param text The text/URI to encode
+ * @param scale Number of physical printer dots per QR module (typically 4 for 58mm, 5 for 80mm)
+ * @param quietMargin Quiet zone in modules around the QR (default 3)
+ * @param targetPrinterWidthDots Total printable width in dots (576 for 80mm TVSE RP3200, 384 for 58mm) to guarantee perfect horizontal centering
+ */
+export function buildRasterEscposQr(
+  text: string,
+  scale = 4,
+  quietMargin = 3,
+  targetPrinterWidthDots?: number,
+): Buffer {
   const { size: qrSize, modules } = getQrMatrix(text, 'M');
 
   const totalModules = qrSize + quietMargin * 2;
-  const pixelWidth = totalModules * scale;
-  const pixelHeight = pixelWidth;
+  const qrPixelWidth = totalModules * scale;
+  const qrPixelHeight = qrPixelWidth;
 
-  // Each byte in GS v 0 holds 8 horizontal pixels (1 = black dot, 0 = white paper)
-  const bytesPerRow = Math.ceil(pixelWidth / 8);
-  const rasterData = Buffer.alloc(bytesPerRow * pixelHeight, 0x00);
+  const targetWidth = targetPrinterWidthDots ?? (scale <= 4 ? 384 : 576);
+
+  // If targetWidth is provided and > qrPixelWidth, center the QR code horizontally
+  const finalWidthDots =
+    targetWidth && targetWidth > qrPixelWidth
+      ? targetWidth
+      : qrPixelWidth;
+
+  const leftPadDots = Math.floor((finalWidthDots - qrPixelWidth) / 2);
+  const bytesPerRow = Math.ceil(finalWidthDots / 8);
+  const rasterData = Buffer.alloc(bytesPerRow * qrPixelHeight, 0x00);
 
   for (let r = 0; r < qrSize; r++) {
     const row = modules[r];
     if (!row) continue;
     for (let c = 0; c < qrSize; c++) {
       if (row[c]) {
-        // Module is black — fill scale x scale pixels
-        const startX = (c + quietMargin) * scale;
+        // Module is black — fill scale x scale pixels with offset
+        const startX = leftPadDots + (c + quietMargin) * scale;
         const startY = (r + quietMargin) * scale;
 
         for (let dy = 0; dy < scale; dy++) {
@@ -141,9 +179,10 @@ export function buildRasterEscposQr(text: string, scale = 4, quietMargin = 3): B
   // m = 0 (normal density 203 DPI)
   const xL = bytesPerRow % 256;
   const xH = Math.floor(bytesPerRow / 256);
-  const yL = pixelHeight % 256;
-  const yH = Math.floor(pixelHeight / 256);
+  const yL = qrPixelHeight % 256;
+  const yH = Math.floor(qrPixelHeight / 256);
 
   const header = Buffer.from([0x1d, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
+  console.log('[UPI QR] QR image generated successfully');
   return Buffer.concat([header, rasterData]);
 }
