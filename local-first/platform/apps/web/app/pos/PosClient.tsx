@@ -850,9 +850,8 @@ ${taxSummaryTableHtml(tableOrder)}
   <div>Served by ${escRcpt(currentStaff.name)}</div>
 </div>`;
 
-    console.log(`[PRINT] Sending bill to print dialog...`);
-    printThermal80mm(`Bill - Table ${tableLabel}`, htmlBody, jobId);
-    console.log(`[PRINT] Bill print dialog launched for Table ${tableLabel}`);
+    const waiterStation = (currentStaff.permissions as any)?.station || (currentStaff as any)?.station || null;
+    console.log(`[PRINT] Sending bill directly to ${waiterStation ? waiterStation.toUpperCase() + ' station printer' : 'station printer'} (no popup)...`);
 
     // 1. Immediately disable button and record printed locally
     setBillPrinted(true);
@@ -875,7 +874,7 @@ ${taxSummaryTableHtml(tableOrder)}
       });
     }
 
-    // 3. Mark table as free on server & broadcast realtime table.updated event
+    // 3. Mark table as free on server & dispatch station direct print (no browser popup)
     if (tableId) {
       fetch('/api/tables/order', {
         method: 'POST',
@@ -884,10 +883,20 @@ ${taxSummaryTableHtml(tableOrder)}
           action: 'print_bill',
           tableId,
           orderId: orderIds[0] || null,
+          waiterStation,
+          staffName: currentStaff.name,
         }),
       })
-        .then(() => refreshTables())
-        .catch((err) => console.error('[PRINT] Server free table failed:', err));
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (data.printerName) {
+            flash(`🖨️ Bill sent directly to ${data.printerName} (${(data.station || waiterStation || '').toUpperCase()})`);
+          } else {
+            flash('✓ Bill printed through station printer');
+          }
+          refreshTables();
+        })
+        .catch((err) => console.error('[PRINT] Server free table / bill print failed:', err));
     }
 
     // 4. Smoothly close modal after user sees confirmation

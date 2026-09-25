@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { prisma, PrintJobStatus, PrintJobType } from '@cafeos/db';
 import { buildKotEscposBuffer, buildReceiptEscposBuffer, formatColumnRow, COMMANDS } from './escpos';
-import { routeOrderToStations } from './router';
+import { routeOrderToStations, resolveReceiptPrinter } from './router';
 import { createPrintJob, processPrintQueueBatch } from './manager';
 
 async function runStep6PrintTests() {
@@ -107,9 +107,54 @@ async function runStep6PrintTests() {
   console.assert(updatedJob?.printedAt !== null, 'printedAt timestamp must be set');
   console.log('✓ Test 4 passed (Print Worker Processing verified)');
 
-  // Clean up test record
-  await prisma.printJob.delete({ where: { id: printJob.id } });
-  console.log('✓ Cleaned up test PrintJob record');
+  // Test 5: Dynamic Waiter Station Billing Route Verification (P1, P2, and New Stations)
+  console.log('Test 5: Station-Based Waiter Bill Printer Resolution');
+  const multiStationSettings = {
+    waiterStations: [
+      { id: 'p1', code: 'P1', name: 'Lower', label: 'P1 (Lower)' },
+      { id: 'p2', code: 'P2', name: 'Upper', label: 'P2 (Upper)' },
+      { id: 'p3', code: 'P3', name: 'Terrace', label: 'P3 (Terrace)', isCustom: true },
+    ],
+    devices: [
+      { id: 'printer-p1', name: 'P1 Station Printer', type: 'both_printer', connection: 'network', target: '192.168.1.101:9100', station: 'p1', copies: 1, isDefault: false },
+      { id: 'printer-p2', name: 'P2 Station Printer', type: 'both_printer', connection: 'network', target: '192.168.1.102:9100', station: 'p2', copies: 1, isDefault: true },
+      { id: 'printer-p3', name: 'P3 Terrace Printer', type: 'receipt_printer', connection: 'network', target: '192.168.1.103:9100', station: 'p3', copies: 1, isDefault: false },
+    ],
+  };
+
+  // 1. Waiter assigned to P1 -> MUST resolve to P1 printer (not P2 despite P2 being default!)
+  const p1Target = resolveReceiptPrinter(multiStationSettings, 'p1');
+  console.assert(p1Target?.id === 'printer-p1', `P1 station must route to printer-p1, got: ${p1Target?.id}`);
+
+  // Test variations of P1 casing / label
+  const p1TargetCaps = resolveReceiptPrinter(multiStationSettings, 'P1');
+  console.assert(p1TargetCaps?.id === 'printer-p1', `P1 caps must route to printer-p1, got: ${p1TargetCaps?.id}`);
+
+  const p1TargetLabel = resolveReceiptPrinter(multiStationSettings, 'P1 (Lower)');
+  console.assert(p1TargetLabel?.id === 'printer-p1', `P1 label must route to printer-p1, got: ${p1TargetLabel?.id}`);
+
+  const p1TargetName = resolveReceiptPrinter(multiStationSettings, 'Lower');
+  console.assert(p1TargetName?.id === 'printer-p1', `P1 name must route to printer-p1, got: ${p1TargetName?.id}`);
+
+  // 2. Waiter assigned to P2 -> MUST resolve to P2 printer
+  const p2Target = resolveReceiptPrinter(multiStationSettings, 'p2');
+  console.assert(p2Target?.id === 'printer-p2', `P2 station must route to printer-p2, got: ${p2Target?.id}`);
+
+  const p2TargetCaps = resolveReceiptPrinter(multiStationSettings, 'P2');
+  console.assert(p2TargetCaps?.id === 'printer-p2', `P2 caps must route to printer-p2, got: ${p2TargetCaps?.id}`);
+
+  // 3. Waiter assigned to newly added station P3 -> MUST dynamically resolve to P3 printer
+  const p3Target = resolveReceiptPrinter(multiStationSettings, 'p3');
+  console.assert(p3Target?.id === 'printer-p3', `P3 new station must route to printer-p3, got: ${p3Target?.id}`);
+
+  const p3TargetLabel = resolveReceiptPrinter(multiStationSettings, 'P3 (Terrace)');
+  console.assert(p3TargetLabel?.id === 'printer-p3', `P3 label must route to printer-p3, got: ${p3TargetLabel?.id}`);
+
+  // 4. Unassigned waiter -> fallback to default receipt printer (printer-p2)
+  const defaultTarget = resolveReceiptPrinter(multiStationSettings, null);
+  console.assert(defaultTarget?.id === 'printer-p2', `Unassigned must fallback to default, got: ${defaultTarget?.id}`);
+
+  console.log('✓ Test 5 passed (Dynamic Station-Based Waiter Bill Printer Resolution verified)');
 
   console.log('--- ALL STEP 6 LOCAL PRINT SERVICE TESTS PASSED SUCCESSFULLY ---');
 }
