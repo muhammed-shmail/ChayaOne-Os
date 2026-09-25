@@ -531,6 +531,39 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ error: 'invalid_action' }, { status: 400 });
 }
 
+export async function DELETE(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!canManageStaff(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+
+  const url = new URL(req.url);
+  const id = url.searchParams.get('id');
+  if (!id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
+  if (id === session.staffId) return NextResponse.json({ error: 'cannot_remove_self' }, { status: 400 });
+
+  const target = await prisma.staffUser.findFirst({ where: { id, tenantId: session.tenantId } });
+  if (!target) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (!canManageTarget(session, target.role)) return NextResponse.json({ error: 'cannot_manage_this_user' }, { status: 403 });
+
+  invalidateStaffCache(id);
+  if (session.outletId) {
+    await publish(session.outletId, { type: 'staff.updated', staffId: id }).catch(() => {});
+  }
+  try {
+    await prisma.staffUser.delete({ where: { id } });
+    await audit(session, 'staff.deleted', id, { name: target.name });
+    return NextResponse.json({ ok: true, deleted: true });
+  } catch {
+    const updated = await prisma.staffUser.update({
+      where: { id },
+      data: { active: false, pinHash: null, username: null, passwordHash: null },
+      select: { id: true, name: true, role: true, phone: true, active: true, permissions: true }
+    });
+    await audit(session, 'staff.removed', id, { name: updated.name });
+    return NextResponse.json({ ok: true, member: updated });
+  }
+}
+
 async function audit(session: { outletId: string; staffId: string }, action: string, entityId: string, after: Record<string, unknown>) {
   await prisma.auditLog.create({
     data: { outletId: session.outletId, actorId: session.staffId, action, entity: 'staff_user', entityId, after: after as Prisma.InputJsonValue },

@@ -953,17 +953,18 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
           <button onClick={() => setFloorOpen(true)} className="flex items-center justify-center gap-2 py-3 rounded-[14px] border-[1.5px] border-dashed font-bold text-[13.5px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
             <Table2 size={17} aria-hidden /> Floor map &amp; tables
           </button>
-          <a href="/approvals" className="relative flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+          <button
+            type="button"
+            disabled
+            title="QR Approvals is currently disabled"
+            className="relative flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] opacity-40 cursor-not-allowed select-none"
+            style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
+          >
             <ClipboardList size={17} aria-hidden /> QR Approvals
             {pendingApprovals > 0 && (
-              <span className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
+              <span className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum opacity-60" style={{ background: 'var(--ink-3)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
             )}
-          </a>
-          {(hasRole(currentStaff, ['owner', 'manager', 'cashier']) || hasPermission(currentStaff, 'pos:t_billing')) && (
-            <button onClick={() => setShowTBilling(true)} className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-              <Table2 size={17} aria-hidden /> T-Billing Terminal
-            </button>
-          )}
+          </button>
           {showInstallApp && (
             <button onClick={() => staffInstall.promptInstall()} className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
               <Download size={17} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
@@ -1688,21 +1689,23 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
           )}
         </button>
 
-        <a
-          href="/approvals"
-          className="relative flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold transition"
-          style={{ minHeight: 58, color: 'var(--ink-2)' }}
+        <button
+          type="button"
+          disabled
+          title="QR Approvals is currently disabled"
+          className="relative flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold opacity-40 cursor-not-allowed select-none"
+          style={{ minHeight: 58, color: 'var(--ink-3)' }}
         >
           <span className="relative">
             <ClipboardList size={20} aria-hidden />
             {pendingApprovals > 0 && (
-              <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 grid place-items-center rounded-full text-[9px] font-extrabold text-white" style={{ background: 'var(--clay)' }}>
+              <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] px-1 grid place-items-center rounded-full text-[9px] font-extrabold text-white opacity-60" style={{ background: 'var(--ink-3)' }}>
                 {pendingApprovals}
               </span>
             )}
           </span>
           <span className="leading-none">Approvals</span>
-        </a>
+        </button>
 
         <button
           onClick={() => setMoreOpen(true)}
@@ -1753,33 +1756,21 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
               <button onClick={() => { setMoreOpen(false); setFloorOpen(true); }} className="flex items-center gap-2 px-2.5 py-2 rounded-xl border-[1.5px] border-dashed font-bold text-[13px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
                 <Table2 size={16} aria-hidden /> Floor map &amp; tables
               </button>
-              <a href="/approvals" className="relative flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+              <button
+                type="button"
+                disabled
+                title="QR Approvals is currently disabled"
+                className="relative flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px] opacity-40 cursor-not-allowed select-none text-left"
+                style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
+              >
                 <ClipboardList size={16} aria-hidden /> QR Approvals
                 {pendingApprovals > 0 && (
-                  <span className="ml-auto min-w-[20px] h-[20px] px-1.5 grid place-items-center rounded-full text-[10px] font-extrabold text-white tnum" style={{ background: 'var(--clay)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
+                  <span className="ml-auto min-w-[20px] h-[20px] px-1.5 grid place-items-center rounded-full text-[10px] font-extrabold text-white tnum opacity-60" style={{ background: 'var(--ink-3)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
                 )}
-              </a>
+              </button>
               {showInstallApp && (
                 <button onClick={() => { setMoreOpen(false); staffInstall.promptInstall(); }} className="flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
                   <Download size={16} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
-                </button>
-              )}
-              {(hasRole(currentStaff, ['owner', 'manager', 'cashier']) || hasPermission(currentStaff, 'pos:t_billing')) && (
-                <button
-                  onMouseEnter={() => setTBillingMounted(true)}
-                  onTouchStart={() => setTBillingMounted(true)}
-                  onClick={() => {
-                    setMoreOpen(false);
-                    setTBillingMounted(true);
-                    setShowTBilling(true);
-                    try {
-                      tBillingIframeRef.current?.contentWindow?.postMessage({ type: 't-billing-opened' }, '*');
-                    } catch {}
-                  }}
-                  className="flex items-center gap-2 px-2.5 py-2 rounded-xl font-bold text-[13px] cursor-pointer"
-                  style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
-                >
-                  <Table2 size={16} aria-hidden /> T-Billing Terminal
                 </button>
               )}
             </div>

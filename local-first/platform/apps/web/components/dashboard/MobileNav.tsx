@@ -96,6 +96,7 @@ export function MobileDrawer({
         role="dialog"
         aria-modal="true"
         aria-label="Menu"
+        suppressHydrationWarning
         className={`absolute left-0 top-0 h-full w-[82%] max-w-[300px] flex flex-col gap-1 p-4 overflow-y-auto no-scrollbar transition-transform duration-300 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
@@ -123,13 +124,14 @@ export function MobileDrawer({
           <ServerSyncCard compact />
         </div>
 
-        <nav className="flex flex-col gap-0.5">
+        <nav suppressHydrationWarning className="flex flex-col gap-0.5">
           {items.map((m) => {
             const on = activeKey === m.key || (m.key === 'settings' && activeKey === 'reports');
             const Ic = m.icon;
             return (
               <button
                 key={m.key}
+                suppressHydrationWarning
                 onClick={() => {
                   onSelect(m.key);
                   onClose();
@@ -166,6 +168,7 @@ export function MobileDrawer({
         )}
 
         <button
+          suppressHydrationWarning
           onClick={onLogout}
           className="flex items-center gap-2 px-3 py-2 mt-1 text-sm text-left rounded-xl transition"
           style={{ color: 'var(--ink-3)' }}
@@ -195,6 +198,7 @@ export function BottomNav({
 }) {
   return (
     <nav
+      suppressHydrationWarning
       className="fixed bottom-0 inset-x-0 z-[60] grid lg:hidden"
       style={{
         gridTemplateColumns: `repeat(${items.length + 1}, 1fr)`,
@@ -211,6 +215,7 @@ export function BottomNav({
         return (
           <button
             key={m.key}
+            suppressHydrationWarning
             onClick={() => onSelect(m.key)}
             aria-current={on ? 'page' : undefined}
             className="relative flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold transition"
@@ -238,6 +243,7 @@ export function BottomNav({
         );
       })}
       <button
+        suppressHydrationWarning
         onClick={onMore}
         aria-current={drawerOpen ? 'page' : undefined}
         aria-haspopup="dialog"

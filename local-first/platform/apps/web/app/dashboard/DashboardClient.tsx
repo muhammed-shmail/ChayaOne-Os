@@ -1097,10 +1097,16 @@ export default function DashboardClient({
 
   const handleRemoveUser = async (id: string, name: string) => {
     if (!confirm(`Remove ${name}? They will no longer be able to log in. History is preserved.`)) return;
-    const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'remove', id }) });
-    const d = await res.json().catch(() => ({}));
-    if (res.ok) { flashMessage(`${name} removed`); loadStaff(); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed')); }
-    else flashMessage(`Could not remove: ${(d.error ?? 'failed').replace(/_/g, ' ')}`);
+    setStaffMembers((prev: any[]) => prev.filter((m: any) => m.id !== id));
+    try {
+      const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'remove', id }) });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { flashMessage(`${name} removed`); loadStaff(); if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed')); }
+      else { flashMessage(`Could not remove: ${(d.error ?? 'failed').replace(/_/g, ' ')}`); loadStaff(); }
+    } catch {
+      flashMessage(`Could not remove ${name}`);
+      loadStaff();
+    }
   };
 
   const canManageMember = (memberRole: string) =>
@@ -1747,7 +1753,7 @@ export default function DashboardClient({
         body: JSON.stringify(payload),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok && Array.isArray(d.kitchens)) { setKitchens(d.kitchens); flashMessage(okMsg); router.refresh(); return true; }
+      if (res.ok && Array.isArray(d.kitchens)) { setKitchens(d.kitchens); flashMessage(okMsg); return true; }
       flashMessage(KITCHEN_ERR[d.error as string] ?? `Could not save (${d.error ?? 'error'})`);
       return false;
     } catch (err) { console.error(err); flashMessage('Network error'); return false; }
@@ -1916,13 +1922,14 @@ export default function DashboardClient({
 
   const handleDeleteDevice = async (id: string, name: string, skipConfirm = false) => {
     if (!skipConfirm && !window.confirm(`Remove “${name}”?`)) return;
+    setDevices((prev) => prev.filter((d) => d.id !== id));
     try {
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: 'device_delete', id }),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok) { flashMessage('Device removed'); setDevices(d.devices ?? []); router.refresh(); }
+      if (res.ok) { flashMessage('Device removed'); if (Array.isArray(d.devices)) setDevices(d.devices); }
       else flashMessage('Could not remove device');
     } catch (err) { console.error(err); }
   };
@@ -2153,6 +2160,7 @@ export default function DashboardClient({
     <div className="flex min-h-screen" style={{ background: 'var(--paper)' }}>
       {/* sidebar rail — collapsible (hidden on mobile; nav uses the header dropdown there) */}
       <aside
+        suppressHydrationWarning
         className="hidden md:flex flex-col shrink-0 md:sticky md:top-0 md:h-screen md:self-start overflow-hidden"
         style={{
           width: isExpanded ? 248 : 72,
@@ -2166,7 +2174,7 @@ export default function DashboardClient({
           setHoveredItem(null);
         }}
       >
-      <div className={`flex flex-col gap-1 w-full h-full min-h-0 relative ${isExpanded ? 'p-4' : 'pt-4 pb-4 px-2'}`} style={{ width: isExpanded ? 248 : 72 }}>
+      <div suppressHydrationWarning className={`flex flex-col gap-1 w-full h-full min-h-0 relative ${isExpanded ? 'p-4' : 'pt-4 pb-4 px-2'}`} style={{ width: isExpanded ? 248 : 72 }}>
         {/* Logo container with smooth transitions */}
         <div className="flex items-center justify-center h-16 mb-4 relative w-full shrink-0">
           <motion.div
@@ -2187,13 +2195,14 @@ export default function DashboardClient({
           </motion.div>
         </div>
 
-        <nav className="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar shrink-0">
+        <nav suppressHydrationWarning className="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar shrink-0">
           {visibleMenus.map((m, i) => {
             const on = activeMenu === m.key;
             const Ic = m.icon;
             return (
               <button
                 key={m.key}
+                suppressHydrationWarning
                 onClick={() => {
                   setActiveMenu(m.key);
                   setLiveOrders(0);
@@ -2272,6 +2281,7 @@ export default function DashboardClient({
         {/* Open Till (POS) Link */}
         <div className={`transition-all duration-200 overflow-hidden shrink-0 ${isExpanded ? 'opacity-100 h-auto mt-2' : 'opacity-0 h-0 pointer-events-none'}`}>
           <button
+            suppressHydrationWarning
             onClick={() => { setPosInitialFloorOpen(false); setShowPos(true); }}
             className="flex items-center gap-2 px-3 py-2 text-sm rounded-xl transition font-bold cursor-pointer text-left w-full hover:bg-[var(--paper-3)]"
             style={{ color: 'var(--turmeric-d)' }}
@@ -2293,6 +2303,7 @@ export default function DashboardClient({
 
         {/* Logout Button */}
         <button
+          suppressHydrationWarning
           onClick={logout}
           className={`group flex items-center text-sm text-left transition-all duration-200 shrink-0 ${
             isExpanded
@@ -2661,6 +2672,7 @@ export default function DashboardClient({
                 ].map((tab) => (
                   <button
                     key={tab.key}
+                    suppressHydrationWarning
                     role="tab"
                     aria-selected={activeSubTab === tab.key}
                     onClick={() => setActiveSubTab(tab.key)}

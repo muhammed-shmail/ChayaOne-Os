@@ -420,6 +420,42 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
   // Local copy of members with nested metadata parsing
   const [membersList, setMembersList] = useState<any[]>([]);
+  const [staffToDelete, setStaffToDelete] = useState<{ id: string; name: string; role?: string } | null>(null);
+  const [isDeletingStaff, setIsDeletingStaff] = useState(false);
+
+  const handleConfirmDeleteStaff = async () => {
+    if (!staffToDelete) return;
+    const sId = staffToDelete.id;
+    setIsDeletingStaff(true);
+    // Optimistic removal immediately so UI does not freeze
+    setMembersList(prev => prev.filter(m => m.id !== sId));
+    if (selectedStaff?.id === sId) {
+      setSelectedStaff(null);
+    }
+    setStaffToDelete(null);
+    try {
+      const res = await fetch(`/api/staff?id=${encodeURIComponent(sId)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        await fetch('/api/staff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'remove', id: sId }),
+        });
+      }
+      refresh();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('staff:changed'));
+      }
+    } catch (e) {
+      console.error('Failed to remove staff:', e);
+      refresh();
+    } finally {
+      setIsDeletingStaff(false);
+    }
+  };
 
   useEffect(() => {
     if (d?.members) {
@@ -947,16 +983,9 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                                   {m.active ? 'Suspend' : 'Activate'}
                                 </button>
                                 <button
-                                  onClick={() => {
-                                    if (confirm(`Are you sure you want to delete staff account ${m.name}?`)) {
-                                      fetch('/api/staff', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ action: 'remove', id: m.id })
-                                      }).then(() => refresh());
-                                    }
-                                  }}
-                                  className="px-2 py-1 rounded hover:bg-red-500/10 text-ink-3 hover:text-red-500 transition-all text-xs"
+                                  type="button"
+                                  onClick={() => setStaffToDelete({ id: m.id, name: m.name, role: m.role })}
+                                  className="px-2 py-1 rounded hover:bg-red-500/10 text-ink-3 hover:text-red-500 transition-all text-xs cursor-pointer"
                                   title="Delete Staff Account"
                                 >
                                   🗑️
@@ -1438,6 +1467,44 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Clean standard confirmation popup (no dark black scrim) */}
+      {staffToDelete && (
+        <div
+          onClick={() => !isDeletingStaff && setStaffToDelete(null)}
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-transparent animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-paper border border-line rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center animate-in zoom-in-95 duration-150 ring-1 ring-black/5"
+          >
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 mx-auto flex items-center justify-center text-xl mb-3.5">
+              🗑️
+            </div>
+            <h4 className="text-base font-bold text-ink mb-1.5">Delete Staff Account</h4>
+            <p className="text-xs text-ink-3 leading-relaxed mb-5">
+              Are you sure you want to remove <b className="text-ink">{staffToDelete.name}</b> ({staffToDelete.role})? Historical sales and orders will be safely preserved.
+            </p>
+            <div className="flex gap-2 justify-center">
+              <button
+                type="button"
+                disabled={isDeletingStaff}
+                onClick={() => setStaffToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-line text-xs font-semibold text-ink-2 hover:bg-paper-2 transition-all cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingStaff}
+                onClick={handleConfirmDeleteStaff}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isDeletingStaff ? 'Deleting…' : 'Yes, Delete Staff'}
+              </button>
+            </div>
           </div>
         </div>
       )}
