@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth';
 import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
 import { readReceiptConfig } from '@/lib/receipt';
 import { readUpiConfig } from '@/lib/print/upi';
+import { resolveReceiptPrinter } from '@/lib/print/router';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -104,11 +105,14 @@ export async function POST(req: NextRequest) {
     };
   }
 
+  const targetPrinter = type === 'RECEIPT' ? resolveReceiptPrinter(outlet?.settings, targetStation) : null;
+
   const job = await prisma.$transaction(async (tx) => {
     const created = await createPrintJob(tx, {
       tenantId: session.tenantId,
       outletId: session.outletId,
       orderId: order.id,
+      printerId: targetPrinter?.id ?? null,
       stationId: targetStation,
       jobType: PrintJobType.REPRINT,
       payload,

@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma, type Prisma } from '@cafeos/db';
+import { prisma, type Prisma, PrintJobType } from '@cafeos/db';
 import { computeBill, type BillLine } from '@cafeos/core';
-import { getSession } from '@/lib/auth';
+import { getSession, type Session } from '@/lib/auth';
 import { canSettle, canVoid } from '@/lib/rbac';
 import { publish, toTicket } from '@/lib/realtime';
 import { reverseRecipeConsumption } from '@/lib/inventory';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { getOutletPwa } from '@/lib/pwa';
 import { findOrCreateCustomerByPhone, accrueLoyaltyOnSettle } from '@/lib/customer';
+import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
+import { resolveReceiptPrinter } from '@/lib/print/router';
+import { readReceiptConfig } from '@/lib/receipt';
+import { readUpiConfig } from '@/lib/print/upi';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -85,6 +89,139 @@ export async function GET(req: NextRequest) {
 }
 
 /**
+ * Dispatches a bill print job directly to the physical thermal printer assigned to the waiter's station.
+ * Sends ESC/POS directly to the LAN printer over TCP 9100 without showing any browser print popups.
+ */
+async function dispatchStationBillPrint(
+  session: Session,
+  tableId: string,
+  orderId?: string | null,
+  requestedStation?: string | null,
+  staffName?: string | null,
+) {
+  // 1. Resolve waiter's station
+  let waiterStation = requestedStation || (session.permissions as any)?.station || null;
+  if (!waiterStation && session.staffId) {
+    const staffObj = await prisma.staffUser
+      .findUnique({ where: { id: session.staffId }, select: { permissions: true } })
+      .catch(() => null);
+    waiterStation = (staffObj?.permissions as any)?.station || null;
+  }
+
+  // 2. Fetch orders for this table
+  let orders = await prisma.order.findMany({
+    where: {
+      tableId,
+      outletId: session.outletId,
+      status: { in: [...ACTIVE_STATUS] },
+      settledAt: null,
+    },
+    include: { items: true, table: true, customer: true },
+    orderBy: { placedAt: 'asc' },
+  });
+
+  if (orders.length === 0 && orderId) {
+    const single = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true, table: true, customer: true },
+    });
+    if (single && single.outletId === session.outletId) {
+      orders = [single];
+    }
+  }
+
+  if (orders.length === 0) {
+    return { ok: false, error: 'no_active_orders', printerName: null, station: waiterStation };
+  }
+
+  // 3. Fetch outlet info & settings
+  const outlet = await prisma.outlet.findUnique({
+    where: { id: session.outletId },
+    select: { name: true, gstin: true, address: true, timezone: true, settings: true, tenantId: true },
+  });
+
+  // 4. Resolve printer assigned to the waiter's station (P1, P2, P3, or dynamic new station)
+  const targetPrinter = resolveReceiptPrinter(outlet?.settings, waiterStation);
+  console.log(`[PRINT] Waiter billing print dispatch: Waiter station "${waiterStation}" ➔ Station Printer "${targetPrinter?.name || 'Default'}" (ID: ${targetPrinter?.id || 'none'})`);
+
+  // 5. Build ESC/POS bill preview payload
+  const items = orders.flatMap((o) =>
+    o.items.map((i) => ({
+      name: i.nameSnapshot,
+      qty: i.qty,
+      pricePaise: i.unitPricePaise,
+      totalPaise: i.unitPricePaise * i.qty,
+      notes: i.notes ?? undefined,
+      modifiers: Array.isArray(i.modifiers) ? (i.modifiers as { name: string }[]) : [],
+    }))
+  );
+
+  const subtotalPaise = orders.reduce((s, o) => s + (o.subtotalPaise || 0), 0);
+  const discountPaise = orders.reduce((s, o) => s + (o.discountPaise || 0), 0);
+  const cgstPaise = orders.reduce((s, o) => s + (o.cgstPaise || 0), 0);
+  const sgstPaise = orders.reduce((s, o) => s + (o.sgstPaise || 0), 0);
+  const igstPaise = orders.reduce((s, o) => s + (o.igstPaise || 0), 0);
+  const serviceChargePaise = orders.reduce((s, o) => s + (o.serviceChargePaise || 0), 0);
+  const roundOffPaise = orders.reduce((s, o) => s + (o.roundOffPaise || 0), 0);
+  const totalPaise = orders.reduce((s, o) => s + (o.totalPaise || 0), 0);
+  const orderNumbers = orders.map((o) => o.number).join(', ');
+  const tableLabel = orders[0]?.table?.label || '';
+  const receiptConfig = readReceiptConfig(outlet?.settings);
+  const upiConfig = readUpiConfig(outlet?.settings, outlet?.name || 'Cafe');
+
+  const billPayload = {
+    storeName: outlet?.name || 'Chaya Cafe',
+    gstin: outlet?.gstin ?? undefined,
+    address: typeof outlet?.address === 'string' ? outlet.address : undefined,
+    orderNumber: orderNumbers,
+    invoiceNumber: `BILL-${orderNumbers}`,
+    table: tableLabel,
+    waiter: staffName || session.name,
+    cashier: session.name,
+    station: waiterStation ?? undefined,
+    customerName: orders[0]?.customer?.name ?? undefined,
+    customerPhone: orders[0]?.customer?.phone ?? undefined,
+    placedAt: orders[0]?.placedAt ? new Date(orders[0].placedAt).toISOString() : new Date().toISOString(),
+    settledAt: new Date().toISOString(),
+    items,
+    subtotalPaise,
+    discountPaise,
+    cgstPaise,
+    sgstPaise,
+    igstPaise,
+    serviceChargePaise,
+    roundOffPaise,
+    totalPaise,
+    isBillPreview: true,
+    receiptConfig,
+    upiConfig,
+  };
+
+  // 6. Create print job & trigger batch worker
+  const resolvedTenantId = outlet?.tenantId ?? session.tenantId ?? '00000000-0000-0000-0000-000000000000';
+  const createdJob = await createPrintJob(prisma, {
+    tenantId: resolvedTenantId,
+    outletId: session.outletId,
+    orderId: orders[0]?.id ?? null,
+    printerId: targetPrinter?.id ?? null,
+    stationId: waiterStation ?? undefined,
+    jobType: PrintJobType.BILL_PREVIEW,
+    payload: billPayload,
+    priority: 2,
+  });
+
+  // Trigger LAN network direct printing (no browser popup!)
+  processPrintQueueBatch().catch((err) => console.error('[PRINT] Print queue batch error:', err));
+
+  return {
+    ok: true,
+    jobId: createdJob.id,
+    printerName: targetPrinter?.name ?? null,
+    station: waiterStation ?? null,
+  };
+}
+
+/**
  * POST /api/tables/order
  *   { action: 'settle', tableId, method } — settle every running order on the table.
  *   { action: 'void_item', orderId, itemId } — void a single sent line: recompute
@@ -99,9 +236,19 @@ export async function POST(req: NextRequest) {
   const { action } = body;
 
   if (action === 'print_bill') {
-    const { tableId, orderId } = body;
+    const { tableId, orderId, waiterStation, staffName } = body;
     if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
 
+    // 1. Direct Station Printing: Send bill directly to waiter's station printer (LAN ESC/POS, no browser popup)
+    const printResult = await dispatchStationBillPrint(
+      session,
+      tableId,
+      orderId,
+      waiterStation,
+      staffName
+    );
+
+    // 2. Free table on print bill
     await prisma.tableMap.update({
       where: { id: tableId },
       data: { state: 'free' },
@@ -114,7 +261,7 @@ export async function POST(req: NextRequest) {
         action: 'bill.printed',
         entity: 'table',
         entityId: tableId,
-        after: { orderId: orderId ?? null } as Prisma.InputJsonValue,
+        after: { orderId: orderId ?? null, printResult } as Prisma.InputJsonValue,
       },
     }).catch(() => {});
 
@@ -124,7 +271,13 @@ export async function POST(req: NextRequest) {
       state: 'free',
     });
 
-    return NextResponse.json({ ok: true, state: 'free', billPrinted: true });
+    return NextResponse.json({
+      ok: true,
+      state: 'free',
+      billPrinted: true,
+      printerName: printResult.printerName,
+      station: printResult.station,
+    });
   }
 
   if (action === 'void_item') {
@@ -133,9 +286,21 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'request_bill' || action === 'cancel_bill_request') {
-    const { tableId } = body;
+    const { tableId, waiterStation, staffName } = body;
     if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
     const targetState = action === 'request_bill' ? 'billed' : 'seated';
+
+    let printResult: any = null;
+    if (action === 'request_bill') {
+      // Direct Station Printing: Send bill to waiter's station printer on bill request
+      printResult = await dispatchStationBillPrint(
+        session,
+        tableId,
+        null,
+        waiterStation,
+        staffName
+      );
+    }
 
     await prisma.tableMap.update({
       where: { id: tableId },
@@ -148,7 +313,13 @@ export async function POST(req: NextRequest) {
       state: targetState,
     });
 
-    return NextResponse.json({ ok: true, state: targetState });
+    return NextResponse.json({
+      ok: true,
+      state: targetState,
+      billPrinted: action === 'request_bill' ? printResult?.ok : undefined,
+      printerName: printResult?.printerName,
+      station: printResult?.station,
+    });
   }
 
   // ---- settle ----

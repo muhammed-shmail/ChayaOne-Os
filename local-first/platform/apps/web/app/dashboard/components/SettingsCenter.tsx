@@ -5534,13 +5534,13 @@ export default function SettingsCenter({
                           </div>
                         </div>
 
-                        {/* 2. CONDITIONAL: KOT PRINTER SPECIFIC SECTIONS */}
-                        {(deviceForm.type === 'kot_printer' || deviceForm.type === 'both_printer') && (
+                        {/* 2. CONDITIONAL: STATION PRINTER SPECIFIC SECTIONS */}
+                        {(deviceForm.type === 'kot_printer' || deviceForm.type === 'both_printer' || deviceForm.type === 'receipt_printer') && (
                           <>
-                            {/* KOT STATION */}
+                            {/* TARGET STATION */}
                             <div className="flex flex-col gap-3 border-t pt-4 border-line">
                               <div>
-                                <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">2. KOT Station / Floor Section</h4>
+                                <h4 className="font-bold text-xs uppercase tracking-wider text-turmeric-d">2. Target Station / Floor Section</h4>
                                 <p className="text-xs text-ink-3">Which kitchen prep station or waiter floor station (P1, P2, P3) should this printer serve?</p>
                               </div>
 

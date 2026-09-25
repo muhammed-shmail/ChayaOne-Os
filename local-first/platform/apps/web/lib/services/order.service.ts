@@ -4,7 +4,7 @@ import { computeBill, type BillLine, type CreateOrderInput } from '@cafeos/core'
 import { publish, toTicket } from '../realtime';
 import { createOutboxEntry } from '../outbox';
 import { createPrintJob, processPrintQueueBatch } from '../print/manager';
-import { routeOrderToStations } from '../print/router';
+import { routeOrderToStations, resolveReceiptPrinter } from '../print/router';
 import { readKitchenWorkflow } from '../kitchenWorkflow';
 import { readReceiptConfig } from '../receipt';
 import { readUpiConfig } from '../print/upi';
@@ -330,24 +330,24 @@ export class OrderService {
         }
       }
 
+      let waiterStation: string | null = null;
+      if (sessionStaffId) {
+        const staffUser = await tx.staffUser.findUnique({
+          where: { id: sessionStaffId },
+          select: { permissions: true },
+        }).catch(() => null);
+        if (staffUser?.permissions) {
+          const perms = (typeof staffUser.permissions === 'object' ? staffUser.permissions : {}) as Record<string, any>;
+          waiterStation = perms.station || perms.section || null;
+        }
+      }
+
       // Generate KOTs and Print Jobs if order is confirmed (not pending approval)
       if (status !== OrderStatus.pending_approval) {
         const kw = readKitchenWorkflow(outletRecord?.settings);
 
         // Print routing
         if (kw.autoPrintKot || kw.mode !== 'digital') {
-          let waiterStation: string | null = null;
-          if (sessionStaffId) {
-            const staffUser = await tx.staffUser.findUnique({
-              where: { id: sessionStaffId },
-              select: { permissions: true },
-            }).catch(() => null);
-            if (staffUser?.permissions) {
-              const perms = (typeof staffUser.permissions === 'object' ? staffUser.permissions : {}) as Record<string, any>;
-              waiterStation = perms.station || perms.section || null;
-            }
-          }
-
           const jobs = routeOrderToStations(
             {
               id: createdOrder.id,
@@ -395,9 +395,7 @@ export class OrderService {
       if (input.payment) {
         const rc = readReceiptConfig(outletRecord?.settings);
         const upiConfig = readUpiConfig(outletRecord?.settings, outletRecord?.name || 'Cafe');
-        const devices = readDevices(outletRecord?.settings);
-        const receiptDevice = devices.find((d) => (d.type === 'receipt_printer' || d.type === 'both_printer') && d.isDefault) ||
-          devices.find((d) => d.type === 'receipt_printer' || d.type === 'both_printer') || null;
+        const receiptDevice = resolveReceiptPrinter(outletRecord?.settings, waiterStation);
 
         await createPrintJob(tx, {
           tenantId: resolvedTenantId,
@@ -405,7 +403,7 @@ export class OrderService {
           jobId: crypto.randomUUID(),
           orderId: createdOrder.id,
           printerId: receiptDevice?.id ?? null,
-          stationId: 'receipt',
+          stationId: waiterStation ?? undefined,
           jobType: PrintJobType.RECEIPT,
           payload: {
             storeName: outletRecord?.name || 'Cafe',

@@ -114,10 +114,69 @@ export function formatStationBadge(stationId: string | null | undefined, customL
   return stationId.toUpperCase();
 }
 
+/**
+ * Normalizes any station string (e.g. 'p1', 'P1', 'P1 (Lower)', 'Lower')
+ * to its canonical station ID ('p1', 'p2', etc.) based on configured stations.
+ */
+export function normalizeStationId(val: string | null | undefined, customList?: WaiterStation[]): string | null {
+  if (!val) return null;
+  const clean = val.trim().toLowerCase();
+  if (!clean) return null;
+
+  const list = customList && customList.length > 0 ? customList : DEFAULT_WAITER_STATIONS;
+
+  // 1. Direct match by id or code
+  const exact = list.find((s) => s.id.toLowerCase() === clean || s.code.toLowerCase() === clean);
+  if (exact) return exact.id.toLowerCase();
+
+  // 2. Direct match by name or label
+  const nameOrLabel = list.find(
+    (s) => s.name.toLowerCase() === clean || s.label.toLowerCase() === clean
+  );
+  if (nameOrLabel) return nameOrLabel.id.toLowerCase();
+
+  // 3. Match if string contains code or id as distinct token/prefix (e.g. "P1 (Lower)", "P1 - Ground", "P1 Floor")
+  for (const s of list) {
+    const sId = s.id.toLowerCase();
+    const sCode = s.code.toLowerCase();
+    if (clean === sId || clean === sCode) return sId;
+    if (
+      clean.startsWith(`${sCode} `) ||
+      clean.startsWith(`${sId} `) ||
+      clean.startsWith(`${sCode}(`) ||
+      clean.startsWith(`${sId}(`) ||
+      clean.startsWith(`${sCode}-`) ||
+      clean.startsWith(`${sId}-`)
+    ) {
+      return sId;
+    }
+    const tokens = clean.split(/[^a-z0-9]+/);
+    if (tokens.includes(sId) || tokens.includes(sCode)) {
+      return sId;
+    }
+  }
+
+  // 4. Fallback regex match for station pattern like "p1", "p2", "p3", "p4"
+  const pMatch = clean.match(/^p\d+/i);
+  if (pMatch) return pMatch[0].toLowerCase();
+
+  return clean;
+}
+
 /** Check if two station identifiers refer to the same station. */
-export function isStationMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+export function isStationMatch(
+  a: string | null | undefined,
+  b: string | null | undefined,
+  customList?: WaiterStation[]
+): boolean {
   if (!a || !b) return false;
   const cleanA = a.trim().toLowerCase();
   const cleanB = b.trim().toLowerCase();
-  return cleanA === cleanB;
+  if (cleanA === cleanB) return true;
+
+  const normA = normalizeStationId(a, customList);
+  const normB = normalizeStationId(b, customList);
+  if (normA && normB && normA === normB) return true;
+
+  return false;
 }

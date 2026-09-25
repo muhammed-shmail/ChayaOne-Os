@@ -8,7 +8,8 @@ import { createOutboxEntry } from '@/lib/outbox';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { readReceiptConfig } from '@/lib/receipt';
 import { readUpiConfig } from '@/lib/print/upi';
-import { createPrintJob } from '@/lib/print/manager';
+import { createPrintJob, processPrintQueueBatch } from '@/lib/print/manager';
+import { resolveReceiptPrinter } from '@/lib/print/router';
 import { findOrCreateCustomerByPhone, accrueLoyaltyOnSettle } from '@/lib/customer';
 import { getOutletPwa } from '@/lib/pwa';
 
@@ -283,12 +284,26 @@ export async function POST(req: NextRequest) {
   };
 
   if (printReceipt !== false) {
+    let staffStation: string | null = (session.permissions as any)?.station || null;
+    if (!staffStation && session.staffId) {
+      const staffObj = await prisma.staffUser.findUnique({ where: { id: session.staffId }, select: { permissions: true } }).catch(() => null);
+      staffStation = (staffObj?.permissions as any)?.station || null;
+    }
+    const outlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const receiptPrinter = resolveReceiptPrinter(outlet?.settings, staffStation);
+
     await createPrintJob(prisma, {
       tenantId: session.tenantId,
       outletId: session.outletId,
+      orderId: order.id,
+      printerId: receiptPrinter?.id ?? null,
+      stationId: staffStation ?? undefined,
       jobType: 'RECEIPT' as any,
       payload: receiptPayload,
+      priority: 2,
     }).catch(() => {});
+
+    processPrintQueueBatch().catch(() => {});
   }
 
   // 8. Publish Realtime Notification

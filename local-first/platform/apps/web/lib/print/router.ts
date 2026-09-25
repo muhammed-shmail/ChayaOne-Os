@@ -1,4 +1,5 @@
 import { readDevices, type Device } from '../devices';
+import { readWaiterStations, isStationMatch, normalizeStationId } from '../waiter-stations';
 import type { KotPrintPayload, ReceiptPrintPayload } from './escpos';
 
 export interface StationRoutedJob {
@@ -168,23 +169,58 @@ export function routeTransferToStations(
 }
 
 /**
- * Resolve target receipt printer for billing / invoice settlement.
- * If waiterStation is provided, routes to the printer assigned to that staff/waiter station.
+ * Resolve target receipt/bill printer for billing / invoice settlement.
+ * If waiterStation is provided, dynamically routes to the printer assigned to that staff/waiter station (e.g. P1, P2, P3, etc.).
+ * Always respects the assigned station of the waiter.
  */
 export function resolveReceiptPrinter(settings: unknown, waiterStation?: string | null): Device | null {
   const devices = readDevices(settings);
-  const receiptPrinters = devices.filter((d) => d.type === 'receipt_printer' || d.type === 'both_printer');
+  if (devices.length === 0) return null;
+
+  const stations = readWaiterStations(settings);
 
   if (waiterStation) {
-    const stClean = waiterStation.trim().toLowerCase();
-    const stCode = waiterStation.trim().toUpperCase();
-    const stationPrinter =
-      receiptPrinters.find((d) => d.station?.trim().toLowerCase() === stClean || d.station?.trim().toUpperCase() === stCode) ||
-      devices.find((d) => (d.station?.trim().toLowerCase() === stClean || d.station?.trim().toUpperCase() === stCode) && d.type !== 'display');
-    if (stationPrinter) {
-      return stationPrinter;
+    const normStation = normalizeStationId(waiterStation, stations);
+
+    // 1. Find all printers assigned to this waiter's station
+    const stationPrinters = devices.filter(
+      (d) =>
+        d.type !== 'display' &&
+        d.type !== 'cash_drawer' &&
+        (isStationMatch(d.station, waiterStation, stations) ||
+         (normStation && isStationMatch(d.station, normStation, stations)))
+    );
+
+    if (stationPrinters.length > 0) {
+      // a. Primary receipt / both printer designated for this station
+      const primaryReceipt = stationPrinters.find(
+        (d) => (d.type === 'receipt_printer' || d.type === 'both_printer') && (d.priority === 'primary' || d.isDefault)
+      );
+      if (primaryReceipt) return primaryReceipt;
+
+      // b. Any receipt / both printer designated for this station
+      const anyReceipt = stationPrinters.find((d) => d.type === 'receipt_printer' || d.type === 'both_printer');
+      if (anyReceipt) return anyReceipt;
+
+      // c. KOT printer designated for this station (in single thermal printer per station setups)
+      const primaryKot = stationPrinters.find((d) => d.priority === 'primary' || d.isDefault) || stationPrinters[0];
+      if (primaryKot) return primaryKot;
+    }
+
+    // 2. Name-based match fallback (e.g. printer named "P1 Printer", "P1 Billing", etc.)
+    if (normStation) {
+      const nameMatch = devices.find(
+        (d) =>
+          d.type !== 'display' &&
+          d.type !== 'cash_drawer' &&
+          (d.name.toLowerCase().includes(normStation) ||
+           (waiterStation && d.name.toLowerCase().includes(waiterStation.trim().toLowerCase())))
+      );
+      if (nameMatch) return nameMatch;
     }
   }
 
-  return receiptPrinters.find((d) => d.isDefault) || receiptPrinters[0] || null;
+  // Fallback: Default receipt printer, or first receipt/both printer, or first available non-display device
+  const receiptPrinters = devices.filter((d) => d.type === 'receipt_printer' || d.type === 'both_printer');
+  return receiptPrinters.find((d) => d.isDefault) || receiptPrinters[0] || devices.find((d) => d.type !== 'display') || null;
 }

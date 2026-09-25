@@ -5,6 +5,8 @@ import { sendNetworkPrintJob } from './network';
 import { readDevices } from '../devices';
 import { readReceiptConfig } from '../receipt';
 import { readUpiConfig } from './upi';
+import { resolveReceiptPrinter } from './router';
+import { readWaiterStations, isStationMatch } from '../waiter-stations';
 
 export interface CreatePrintJobParams {
   tenantId: string;
@@ -112,16 +114,25 @@ export async function processPrintQueueBatch(batchSize = 10) {
               (job.payload as any)?.items
             ));
 
+        // For bill preview & receipt jobs: if a waiter station is set, guarantee it routes to that station's printer
+        if (isReceiptJob && job.stationId) {
+          const stations = readWaiterStations(outlet?.settings);
+          if (!targetDevice || !isStationMatch(targetDevice.station, job.stationId, stations)) {
+            const stationDevice = resolveReceiptPrinter(outlet?.settings, job.stationId);
+            if (stationDevice) {
+              targetDevice = stationDevice;
+            }
+          }
+        }
+
         // If no explicit device assigned, pick default for jobType / station
         if (!targetDevice) {
           if (isReceiptJob) {
-            targetDevice =
-              devices.find((d) => (d.type === 'receipt_printer' || d.type === 'both_printer') && d.isDefault) ||
-              devices.find((d) => d.type === 'receipt_printer' || d.type === 'both_printer') ||
-              null;
+            targetDevice = resolveReceiptPrinter(outlet?.settings, job.stationId);
           } else {
+            const stations = readWaiterStations(outlet?.settings);
             targetDevice =
-              devices.find((d) => (d.type === 'kot_printer' || d.type === 'both_printer') && d.station === job.stationId) ||
+              devices.find((d) => (d.type === 'kot_printer' || d.type === 'both_printer') && isStationMatch(d.station, job.stationId, stations)) ||
               devices.find((d) => d.type === 'kot_printer' || d.type === 'both_printer') ||
               null;
           }
