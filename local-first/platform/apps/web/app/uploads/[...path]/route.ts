@@ -10,9 +10,13 @@ const MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.jfif': 'image/jpeg',
   '.webp': 'image/webp',
   '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
+  '.avif': 'image/avif',
+  '.ico': 'image/x-icon',
+  '.bmp': 'image/bmp',
 };
 
 export async function GET(

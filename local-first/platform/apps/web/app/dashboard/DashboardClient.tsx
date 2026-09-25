@@ -2159,12 +2159,20 @@ export default function DashboardClient({
       // GST is managed in its own Tax & GST panel; profile save leaves it untouched.
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'outlet', name: profile.name, gstin: profile.gstin || null, stateCode: profile.stateCode || null, address: { line1: profile.line1, city: profile.city, pincode: profile.pincode } }),
+        body: JSON.stringify({
+          action: 'outlet',
+          name: profile.name,
+          gstin: profile.gstin || null,
+          stateCode: profile.stateCode || null,
+          address: { line1: profile.line1, city: profile.city, pincode: profile.pincode },
+          logoUrl: logoUrl,
+        }),
       });
       if (res.ok) { flashMessage('Store profile saved'); router.refresh(); }
       else flashMessage('Could not save profile');
     } catch (err) {
       console.error(err);
+      flashMessage('Could not save profile');
     }
   };
 

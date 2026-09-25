@@ -138,16 +138,27 @@ function detectImage(buf: Buffer, clientMime?: string, fileName?: string): Detec
   }
 
   // 9. Fallback: Check client-supplied MIME or file extension if byte sniffing didn't match
-  const rawMime = (clientMime || '').toLowerCase().trim();
-  const extFromName = fileName ? path.extname(fileName).toLowerCase().replace('.', '') : '';
+  const rawMime = ((clientMime || '').split(';')[0] ?? '').toLowerCase().trim();
+  const extFromName = fileName ? path.extname(fileName).toLowerCase().replace('.', '').trim() : '';
 
   if (EXT_BY_MIME[rawMime]) {
     const ext = EXT_BY_MIME[rawMime];
     return { valid: true, ext, mime: rawMime };
   }
 
+  if (rawMime.startsWith('image/')) {
+    const sub = rawMime.replace('image/', '').replace('x-', '').replace('vnd.microsoft.', '');
+    const mappedExt = sub === 'jpeg' || sub === 'jfif' || sub === 'pjpeg' ? 'jpg' : sub === 'svg+xml' ? 'svg' : sub;
+    return { valid: true, ext: mappedExt, mime: rawMime };
+  }
+
   if (MIME_BY_EXT[extFromName]) {
     return { valid: true, ext: extFromName === 'jpeg' || extFromName === 'jfif' ? 'jpg' : extFromName, mime: MIME_BY_EXT[extFromName] };
+  }
+
+  if (['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif', 'avif', 'ico', 'bmp', 'jfif'].includes(extFromName)) {
+    const ext = extFromName === 'jpeg' || extFromName === 'jfif' ? 'jpg' : extFromName;
+    return { valid: true, ext, mime: `image/${ext === 'jpg' ? 'jpeg' : ext}` };
   }
 
   return { valid: false, ext: '', mime: '' };
@@ -159,7 +170,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized', message: 'Authentication required' }, { status: 401 });
   }
 
-  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant') {
+  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant' && (session as any).role !== 'admin') {
     return NextResponse.json({ error: 'forbidden', message: 'Insufficient permissions' }, { status: 403 });
   }
 
@@ -188,9 +199,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'upload_failure', message: 'Invalid form data' }, { status: 400 });
   }
 
-  const file = form.get('image') || form.get('file') || form.get('logo');
+  let file = form.get('image') || form.get('file') || form.get('logo') || form.get('upload') || form.get('photo');
+  if (!file) {
+    for (const value of form.values()) {
+      if (value && typeof value === 'object' && typeof (value as any).arrayBuffer === 'function') {
+        file = value;
+        break;
+      }
+    }
+  }
+
   if (!file || typeof file === 'string' || typeof (file as any).arrayBuffer !== 'function') {
-    return NextResponse.json({ error: 'no_file', message: 'No file provided' }, { status: 400 });
+    return NextResponse.json({ error: 'no_file', message: 'No image file provided' }, { status: 400 });
   }
 
   const blobFile = file as unknown as { size: number; type?: string; name?: string; arrayBuffer: () => Promise<ArrayBuffer> };
@@ -226,12 +246,21 @@ export async function POST(req: NextRequest) {
   const name = `${crypto.randomUUID()}.${ext}`;
   const key = `${outletId}/${name}`;
 
-  let url: string;
+  let url: string | null = null;
   try {
-    const remoteUrl = await putImage(key, buf, mime);
+    const remoteUrl = await putImage(key, buf, mime).catch((err) => {
+      console.warn('[Owner upload] Remote storage failed, falling back to local disk:', err?.message || err);
+      return null;
+    });
     if (remoteUrl) {
       url = remoteUrl;
-    } else {
+    }
+  } catch (err) {
+    console.warn('[Owner upload] Remote storage exception, using local fallback:', err);
+  }
+
+  if (!url) {
+    try {
       const relativeUploadPath = path.join('uploads', outletId);
       const cwd = process.cwd();
       const primaryDir = path.join(cwd, 'public', relativeUploadPath);
@@ -260,13 +289,13 @@ export async function POST(req: NextRequest) {
       }
 
       url = `/uploads/${outletId}/${name}`;
+    } catch (err: any) {
+      console.error('[Owner upload] local storage write failed', err);
+      return NextResponse.json(
+        { error: 'storage_failure', message: err?.message || 'Failed to write file to storage' },
+        { status: 500 }
+      );
     }
-  } catch (err) {
-    console.error('[Owner upload] storage failed', err);
-    return NextResponse.json(
-      { error: 'storage_failure', message: 'Failed to write file to storage' },
-      { status: 502 }
-    );
   }
 
   return NextResponse.json({ ok: true, url });

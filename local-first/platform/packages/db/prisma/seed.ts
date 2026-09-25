@@ -3,10 +3,10 @@
  * categories, menu (with GST rates + stations), modifiers, tables, one customer.
  * Mirrors the prototype's data so the POS works against a real DB immediately.
  *
- * Run:  npm run db:seed   (after db:push / db:migrate)
  */
-import { PrismaClient, StaffRole, Station, TableState, Tier } from '@prisma/client';
+import { PrismaClient, StaffRole, TableState, Tier } from '@prisma/client';
 import { createHash, randomBytes, scryptSync } from 'node:crypto';
+import { KAAWA_CATEGORIES, KAAWA_MENU, type KaawaMenuItemSeed } from './kaawa-menu-data';
 
 const prisma = new PrismaClient();
 
@@ -18,43 +18,10 @@ const adminPw = (pw: string) => {
   return `scrypt$${salt.toString('hex')}$${scryptSync(pw, salt, 64).toString('hex')}`;
 };
 
-type Seed = {
-  cat: string;
-  name: string;
-  pricePaise: number;
-  gst: number;
-  station: Station;
-  tags: string[];
-};
+type Seed = KaawaMenuItemSeed;
 
-const CATEGORIES = ['Coffee', 'Chai & Tea', 'Coolers', 'All-Day', 'Bakery', 'Desserts'];
-
-const MENU: Seed[] = [
-  { cat: 'Coffee', name: 'Filter Kaapi', pricePaise: 12000, gst: 5, station: 'bar', tags: ['veg', 'bestseller'] },
-  { cat: 'Coffee', name: 'Cappuccino', pricePaise: 18000, gst: 5, station: 'bar', tags: ['veg'] },
-  { cat: 'Coffee', name: 'Cortado', pricePaise: 19000, gst: 5, station: 'bar', tags: ['veg'] },
-  { cat: 'Coffee', name: 'Cold Brew', pricePaise: 22000, gst: 5, station: 'bar', tags: ['veg'] },
-  { cat: 'Coffee', name: 'Spanish Latte', pricePaise: 24000, gst: 5, station: 'bar', tags: ['veg', 'bestseller'] },
-  { cat: 'Coffee', name: 'Espresso', pricePaise: 14000, gst: 5, station: 'bar', tags: ['veg'] },
-  { cat: 'Chai & Tea', name: 'Masala Chai', pricePaise: 9000, gst: 5, station: 'bar', tags: ['veg', 'bestseller'] },
-  { cat: 'Chai & Tea', name: 'Kashmiri Kahwa', pricePaise: 13000, gst: 5, station: 'bar', tags: ['veg'] },
-  { cat: 'Chai & Tea', name: 'Lemon Iced Tea', pricePaise: 12000, gst: 5, station: 'bar', tags: ['veg'] },
-  { cat: 'Coolers', name: 'Mango Lassi', pricePaise: 15000, gst: 12, station: 'bar', tags: ['veg'] },
-  { cat: 'Coolers', name: 'Rose Falooda', pricePaise: 18000, gst: 12, station: 'dessert', tags: ['veg'] },
-  { cat: 'Coolers', name: 'Nimbu Soda', pricePaise: 8000, gst: 12, station: 'bar', tags: ['veg'] },
-  { cat: 'All-Day', name: 'Masala Omelette', pricePaise: 16000, gst: 5, station: 'kitchen', tags: ['egg'] },
-  { cat: 'All-Day', name: 'Paneer Kathi Roll', pricePaise: 19000, gst: 5, station: 'kitchen', tags: ['veg', 'bestseller'] },
-  { cat: 'All-Day', name: 'Truffle Fries', pricePaise: 17000, gst: 5, station: 'kitchen', tags: ['veg'] },
-  { cat: 'All-Day', name: 'Chicken Club', pricePaise: 24000, gst: 5, station: 'kitchen', tags: ['nonveg'] },
-  { cat: 'All-Day', name: 'Avocado Toast', pricePaise: 21000, gst: 5, station: 'kitchen', tags: ['veg'] },
-  { cat: 'All-Day', name: 'Maggi Masala Bowl', pricePaise: 12000, gst: 5, station: 'kitchen', tags: ['veg'] },
-  { cat: 'Bakery', name: 'Butter Croissant', pricePaise: 14000, gst: 18, station: 'dessert', tags: ['veg'] },
-  { cat: 'Bakery', name: 'Almond Danish', pricePaise: 16000, gst: 18, station: 'dessert', tags: ['veg'] },
-  { cat: 'Bakery', name: 'Garlic Bread', pricePaise: 13000, gst: 18, station: 'kitchen', tags: ['veg'] },
-  { cat: 'Desserts', name: 'Tiramisu Jar', pricePaise: 22000, gst: 18, station: 'dessert', tags: ['veg', 'bestseller'] },
-  { cat: 'Desserts', name: 'Choco Brownie', pricePaise: 13000, gst: 18, station: 'dessert', tags: ['veg'] },
-  { cat: 'Desserts', name: 'Gulab Jamun Cheesecake', pricePaise: 19000, gst: 18, station: 'dessert', tags: ['veg'] },
-];
+const CATEGORIES = KAAWA_CATEGORIES;
+const MENU = KAAWA_MENU;
 
 // Control-plane plan catalogue (global, not tenant-scoped). null limit = unlimited.
 const PLANS = [
@@ -171,19 +138,22 @@ async function main() {
     });
   }
 
-  // a coffee modifier group attached to coffee items
-  const milk = await prisma.modifierGroup.create({
+  // a beverage modifier group attached to tea/drink items
+  const sugarGroup = await prisma.modifierGroup.create({
     data: {
       outletId: outlet.id,
-      name: 'Milk',
-      min: 1,
+      name: 'Sugar Preference',
+      min: 0,
       max: 1,
-      modifiers: { create: [{ name: 'Regular', pricePaise: 0 }, { name: 'Oat', pricePaise: 3000 }, { name: 'Almond', pricePaise: 3000 }] },
+      modifiers: { create: [{ name: 'Regular Sugar', pricePaise: 0 }, { name: 'Less Sugar', pricePaise: 0 }, { name: 'No Sugar', pricePaise: 0 }] },
     },
   });
-  const coffees = await prisma.menuItem.findMany({ where: { outletId: outlet.id, categoryId: catMap.get('Coffee')! } });
-  for (const c of coffees) {
-    await prisma.itemModifierGroup.create({ data: { itemId: c.id, groupId: milk.id } });
+  const chayaCatId = catMap.get('Chaya');
+  if (chayaCatId) {
+    const chayas = await prisma.menuItem.findMany({ where: { outletId: outlet.id, categoryId: chayaCatId }, take: 5 });
+    for (const c of chayas) {
+      await prisma.itemModifierGroup.create({ data: { itemId: c.id, groupId: sugarGroup.id } });
+    }
   }
 
   // tables with QR tokens
@@ -200,11 +170,11 @@ async function main() {
   // rewards catalog (PWA redemption)
   await prisma.rewardCatalog.createMany({
     data: [
-      { tenantId: tenant.id, name: 'Free Filter Kaapi', type: 'free_item', costPoints: 400, active: true },
+      { tenantId: tenant.id, name: 'Free Kaawa Signature Tea', type: 'free_item', costPoints: 400, active: true },
       { tenantId: tenant.id, name: '₹50 off next visit', type: 'cashback', costPoints: 600, active: true },
-      { tenantId: tenant.id, name: 'Buy-1-Get-1 Croissant', type: 'bogo', costPoints: 900, active: true },
-      { tenantId: tenant.id, name: 'Free Tiramisu Jar', type: 'free_item', costPoints: 1200, active: true },
-      { tenantId: tenant.id, name: 'Oat-milk upgrade ×5', type: 'topping', costPoints: 300, active: true },
+      { tenantId: tenant.id, name: 'Free Mint Lime', type: 'free_item', costPoints: 500, active: true },
+      { tenantId: tenant.id, name: 'Free Royal Falooda', type: 'free_item', costPoints: 1200, active: true },
+      { tenantId: tenant.id, name: 'Free Steamed Momos', type: 'free_item', costPoints: 800, active: true },
     ],
   });
 

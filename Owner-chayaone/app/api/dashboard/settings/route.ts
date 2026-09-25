@@ -37,6 +37,10 @@ export async function POST(req: NextRequest) {
     });
     outletId = firstOutlet?.id ?? null;
   }
+  if (!outletId) {
+    const fallbackOutlet = await prisma.outlet.findFirst({ select: { id: true } });
+    outletId = fallbackOutlet?.id ?? null;
+  }
   if (!outletId) return NextResponse.json({ error: 'no_outlet' }, { status: 400 });
 
   const body = await req.json().catch(() => ({}));
@@ -339,12 +343,20 @@ export async function POST(req: NextRequest) {
       const cleanLogoUrl = body.logoUrl ? String(body.logoUrl).trim().slice(0, 1000) : null;
       settings.logoUrl = cleanLogoUrl;
 
+      // Sync into receipt layout settings so thermal bill and receipt preview immediately display the logo
+      const receipt = (settings.receipt as Record<string, unknown>) ?? {};
+      receipt.logoUrl = cleanLogoUrl;
+      settings.receipt = receipt;
+
       // Sync to TenantBranding so tenant-level brand fallback receives the logo
-      await prisma.tenantBranding.upsert({
-        where: { tenantId: session.tenantId },
-        create: { tenantId: session.tenantId, logoUrl: cleanLogoUrl },
-        update: { logoUrl: cleanLogoUrl },
-      }).catch((err) => console.warn('[Owner settings] TenantBranding sync error:', err));
+      const targetTenantId = session.tenantId || (await prisma.outlet.findUnique({ where: { id: outletId }, select: { tenantId: true } }))?.tenantId;
+      if (targetTenantId) {
+        await prisma.tenantBranding.upsert({
+          where: { tenantId: targetTenantId },
+          create: { tenantId: targetTenantId, logoUrl: cleanLogoUrl },
+          update: { logoUrl: cleanLogoUrl },
+        }).catch((err) => console.warn('[Owner settings] TenantBranding sync error:', err));
+      }
     }
     data.settings = settings as Prisma.InputJsonValue;
   }

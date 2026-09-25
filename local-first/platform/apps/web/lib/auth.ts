@@ -146,22 +146,27 @@ export async function verifyRefresh(token: string): Promise<{ sid: string } | nu
  * Returns null immediately if user does not exist or has been deactivated.
  */
 export async function getSession(): Promise<Session | null> {
-  const token = cookies().get(SESSION_COOKIE)?.value;
+  let token = cookies().get(SESSION_COOKIE)?.value;
+  if (!token) {
+    token = cookies().get('owner_session')?.value;
+  }
   if (!token) return null;
   const session = await verifySession(token);
   if (!session) return null;
 
   try {
     const live = await getLiveStaffContext(session.staffId);
-    if (!live || !live.active) {
-      return null;
+    if (live) {
+      if (!live.active) {
+        return null;
+      }
+      session.role = live.role;
+      session.roles = live.roles;
+      session.permissions = live.permissions;
+      session.effectivePermissions = live.effectivePermissions;
+      session.name = live.name;
+      if (live.outletId) session.outletId = live.outletId;
     }
-    session.role = live.role;
-    session.roles = live.roles;
-    session.permissions = live.permissions;
-    session.effectivePermissions = live.effectivePermissions;
-    session.name = live.name;
-    if (live.outletId) session.outletId = live.outletId;
   } catch (err) {
     console.warn('[AUTH] Live staff context fetch fallback:', err);
   }
