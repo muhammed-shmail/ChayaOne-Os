@@ -150,7 +150,7 @@ export default function StaffRuntime({ pwa = false }: { pwa?: boolean }) {
             {iosHint ? (
               <>Install this app: tap <span className="font-semibold">Share</span> then <span className="font-semibold">Add to Home Screen</span>.</>
             ) : (
-              <>Install <span className="font-semibold">Cafe Staff</span> on your phone for one-tap access.</>
+              <>Install <span className="font-semibold">ChayaOne Waiter</span> on your tablet or phone for one-tap access.</>
             )}
           </div>
           {!iosHint && (

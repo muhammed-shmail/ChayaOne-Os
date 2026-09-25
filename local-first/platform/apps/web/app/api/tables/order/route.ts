@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const tableId = req.nextUrl.searchParams.get('tableId');
   if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
 
-  const table = await prisma.tableMap.findFirst({ where: { id: tableId, outletId: session.outletId }, select: { id: true, label: true } });
+  const table = await prisma.tableMap.findFirst({ where: { id: tableId, outletId: session.outletId }, select: { id: true, label: true, state: true } });
   if (!table) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
   const orders = await prisma.order.findMany({
@@ -60,12 +60,27 @@ export async function GET(req: NextRequest) {
     totalPaise: orders.reduce((s, o) => s + o.totalPaise, 0),
   };
 
+  const billPrintedAudit = orders.length > 0 && orders[0]?.placedAt
+    ? await prisma.auditLog.findFirst({
+        where: {
+          outletId: session.outletId,
+          action: 'bill.printed',
+          entity: 'table',
+          entityId: tableId,
+          createdAt: { gte: orders[0].placedAt },
+        },
+        select: { id: true },
+      }).catch(() => null)
+    : null;
+  const isBillPrinted = Boolean(billPrintedAudit) || table.state === 'free';
+
   return NextResponse.json({
     table: { id: table.id, label: table.label },
     count: orders.length,
     orders: orders.map((o) => ({ id: o.id, number: o.number, totalPaise: o.totalPaise, placedAt: o.placedAt })),
     lines: allLines,
     totals,
+    billPrinted: isBillPrinted,
   });
 }
 
@@ -82,6 +97,35 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const { action } = body;
+
+  if (action === 'print_bill') {
+    const { tableId, orderId } = body;
+    if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
+
+    await prisma.tableMap.update({
+      where: { id: tableId },
+      data: { state: 'free' },
+    }).catch(() => {});
+
+    await prisma.auditLog.create({
+      data: {
+        outletId: session.outletId,
+        actorId: session.staffId,
+        action: 'bill.printed',
+        entity: 'table',
+        entityId: tableId,
+        after: { orderId: orderId ?? null } as Prisma.InputJsonValue,
+      },
+    }).catch(() => {});
+
+    await publish(session.outletId, {
+      type: 'table.updated',
+      tableId,
+      state: 'free',
+    });
+
+    return NextResponse.json({ ok: true, state: 'free', billPrinted: true });
+  }
 
   if (action === 'void_item') {
     if (!canVoid(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });

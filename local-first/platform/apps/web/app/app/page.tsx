@@ -1,5 +1,7 @@
 import { resolveTable } from '@/lib/customer';
 import { isModuleEnabled } from '@/lib/modules';
+import { getSession } from '@/lib/auth';
+import { redirect } from 'next/navigation';
 import PwaClient from './PwaClient';
 
 export const dynamic = 'force-dynamic';
@@ -8,9 +10,20 @@ export const dynamic = 'force-dynamic';
  * /app — the Customer PWA. Public (no staff session). The QR token arrives as
  * ?t=<token>; the client loads everything from /api/customer/context (which
  * also binds the device's customer cookie).
+ *
+ * If opened without a table token (?t=) by an authenticated staff member (waiter/cashier),
+ * immediately redirect to /pos so waiter tablets never get stuck in the customer view.
  */
 export default async function CustomerApp({ searchParams }: { searchParams: { t?: string } }) {
   const token = searchParams.t ?? null;
+
+  if (!token) {
+    const session = await getSession();
+    if (session) {
+      redirect('/pos');
+    }
+  }
+
   if (token) {
     const table = await resolveTable(token);
     if (table) {

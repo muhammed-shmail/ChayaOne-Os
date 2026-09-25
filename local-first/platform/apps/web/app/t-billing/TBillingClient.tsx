@@ -707,38 +707,80 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     };
   }, [previewOrderOverride, settledResult, selectedOrder, calculatedBill, outlet, payTab]);
 
+  // Deduplication guard for T-Billing print jobs
+  const tbPrintInFlight = useRef<boolean>(false);
+
   const handlePrintReceipt = async (receiptDataOverride?: any, widthOverride?: ReceiptPaperWidth) => {
+    // Deduplication: block if a print is already in flight
+    if (tbPrintInFlight.current) {
+      console.warn('[PRINT] T-Billing: Duplicate print blocked — already printing');
+      return;
+    }
+    tbPrintInFlight.current = true;
+
     const activeData = receiptDataOverride || previewData;
     const targetOrderId = previewOrderOverride ? (previewOrderOverride as any).orderId : (selectedOrder?.id || settledResult?.order?.id);
+    const paper = widthOverride || outlet.receipt.paperWidth || '80mm';
+    const jobId = `tbilling-${targetOrderId || 'unknown'}-${Date.now()}`;
 
-    const desktopOk = await LocalPrinterClient.requestPrint({
-      ...(activeData || {}),
-      paperWidth: widthOverride || outlet.receipt.paperWidth || '80mm',
-    }).catch(() => false);
+    console.log(`[PRINT] ── T-Billing handlePrintReceipt ──`);
+    console.log(`[PRINT] Job ID   : ${jobId}`);
+    console.log(`[PRINT] Order ID : ${targetOrderId || 'N/A'}`);
+    console.log(`[PRINT] Paper    : ${paper}`);
+    console.log(`[PRINT] Printer  : TVSE RP3200 Lite (configured receipt printer)`);
+    console.log(`[PRINT] Status   : QUEUED`);
 
-    let queueOk = false;
-    if (targetOrderId) {
-      try {
-        const res = await fetch('/api/print/reprint', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            orderId: targetOrderId,
-            type: 'RECEIPT',
-          }),
-        });
-        queueOk = res.ok;
-      } catch (err) {
-        console.warn('LAN print dispatch failed:', err);
+    try {
+      // Path 1: Desktop App ESC/POS direct print (preferred — no Windows dialog)
+      const desktopOk = await LocalPrinterClient.requestPrint({
+        ...(activeData || {}),
+        paperWidth: paper,
+        printerName: 'TVSE RP3200 Lite',
+      });
+
+      // Path 2: LAN print queue via API (server-side ESC/POS → network printer)
+      let queueOk = false;
+      if (targetOrderId) {
+        try {
+          console.log(`[PRINT] Dispatching LAN print queue job for order: ${targetOrderId}`);
+          const res = await fetch('/api/print/reprint', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ orderId: targetOrderId, type: 'RECEIPT' }),
+          });
+          queueOk = res.ok;
+          if (queueOk) {
+            console.log(`[PRINT] LAN print queue accepted job for order: ${targetOrderId}`);
+          } else {
+            console.warn(`[PRINT] LAN print queue returned HTTP ${res.status}`);
+          }
+        } catch (err) {
+          console.warn('[PRINT] LAN print dispatch failed:', err);
+        }
       }
-    }
 
-    if (desktopOk || queueOk) {
-      flash('Receipt sent to thermal printer 🖨️');
-    } else {
-      window.print();
+      if (desktopOk || queueOk) {
+        console.log(`[PRINT] Status   : PRINTING — Receipt sent to TVSE RP3200 Lite`);
+        console.log(`[PRINT] Method   : ${desktopOk ? 'Desktop App ESC/POS' : 'LAN queue'}`);
+        flash('Receipt sent to thermal printer 🖨️');
+      } else {
+        // Path 3: Fallback to OS print dialog (window.print)
+        console.warn(`[PRINT] Desktop App and LAN queue both unavailable — using OS print dialog`);
+        console.warn(`[PRINT] Job ID: ${jobId}`);
+        console.warn(`[PRINT] Please ensure TVSE RP3200 Lite is selected in the print dialog.`);
+        window.print();
+      }
+    } catch (err: any) {
+      // Show user-friendly message, log technical detail to console
+      console.error(`[PRINT ERROR] T-Billing print failed — Job ID: ${jobId}`);
+      console.error(`[PRINT ERROR] Error:`, err);
+      flash('Printer unavailable. Check TVSE RP3200 Lite connection and try again.');
+    } finally {
+      // Release dedup lock after a short delay (allow dialog to open)
+      setTimeout(() => { tbPrintInFlight.current = false; }, 2000);
     }
   };
+
 
   // ── Payment method icons & labels
   const payMethods = [

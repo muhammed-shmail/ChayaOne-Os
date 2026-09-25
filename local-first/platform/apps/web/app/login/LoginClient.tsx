@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { BrandMark } from '@/components/BrandMark';
 import { Delete, AlphaTag, Eye, EyeOff, WaveHand } from '@/components/ui';
 import { getGeoHeaders } from '@/lib/geo-client';
@@ -17,6 +17,10 @@ interface LoginClientProps {
 
 export default function LoginClient({ initialBusinessName, initialLogoUrl }: LoginClientProps = {}) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextParam = searchParams.get('next');
+  const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : null;
+
   const [businessName, setBusinessName] = useState<string>(initialBusinessName || '');
   const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl || null);
 
@@ -47,7 +51,13 @@ export default function LoginClient({ initialBusinessName, initialLogoUrl }: Log
   const [showPassword, setShowPassword] = useState(false); // reveal/hide the password field
   const [notice, setNotice] = useState<string | null>(null); // info hint, e.g. "use password"
 
-  const dest = staff?.role === 'owner' || staff?.role === 'manager' || staff?.role === 'cashier' || staff?.role === 'accountant' ? '/dashboard' : '/pos';
+  const dest =
+    safeNext ||
+    (staff?.role === 'kitchen'
+      ? '/kds'
+      : staff?.role === 'owner' || staff?.role === 'manager' || staff?.role === 'cashier' || staff?.role === 'accountant'
+      ? '/dashboard'
+      : '/pos');
 
   // shared post-login step: cookie is set — check today's attendance then show confirm
   async function enterWith(who: Staff) {
@@ -127,6 +137,7 @@ export default function LoginClient({ initialBusinessName, initialLogoUrl }: Log
       const who = data.staff;
       // Direct entrance into app without attendance gate
       const targetDest =
+        safeNext ||
         who?.targetDest ||
         (who?.role === 'kitchen'
           ? '/kds'

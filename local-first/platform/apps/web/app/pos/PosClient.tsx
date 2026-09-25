@@ -206,7 +206,9 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   const [settleBusy, setSettleBusy] = useState(false);
   const [askSettle, setAskSettle] = useState(false);
   const [billPrinted, setBillPrinted] = useState(false);
+  const [printedOrderIds, setPrintedOrderIds] = useState<Set<string>>(new Set());
   const canSettleBill = canSettle(currentStaff);
+  const canPrintBill = canSettleBill || hasRole(currentStaff, ['owner', 'manager', 'cashier', 'waiter']);
   // "Install the Staff App" entry — only when the cafe has the Staff App (PWA) offer
   // and the device can actually install (Android prompt ready, or iOS manual hint).
   const staffInstall = useStaffInstall();
@@ -296,6 +298,8 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     setTransferMode(startInTransfer); setSelectedDestTable(null); setTransferReason(''); setTransferSuccess(null); setTransferOccupiedError(null);
     const d = await fetch(`/api/tables/order?tableId=${t.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     setTableOrder(d);
+    const isAlreadyPrinted = Boolean(d?.billPrinted) || (d?.orders && d.orders.some((o: any) => printedOrderIds.has(o.id)));
+    if (isAlreadyPrinted) setBillPrinted(true);
   }
 
   async function executeTableTransfer() {
@@ -443,46 +447,280 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     } catch { flash('Network error'); } finally { setSettleBusy(false); }
   }
 
-  function printDoc(title: string, inner: string) {
-    // On phones a fixed-size pop-up is ignored/awkward — open a plain tab there.
-    const narrow = typeof window !== 'undefined' && window.innerWidth < 480;
-    const w = window.open('', '_blank', narrow ? '' : 'width=380,height=640');
-    if (!w) { flash('Allow pop-ups to print'); return; }
-    const close = '<' + '/script>';
-    w.document.write(`<html><head><title>${title}</title><style>
-      *{font-family:ui-monospace,Menlo,monospace;color:#000;box-sizing:border-box}
-      body{width:300px;margin:0 auto;padding:14px;font-size:12px}
-      h2{text-align:center;margin:0 0 2px;font-size:15px}
-      img{display:block;max-width:160px;max-height:80px;margin:0 auto 6px;object-fit:contain}
-      .muted{color:#555;text-align:center;font-size:11px;margin-bottom:10px}
-      table{width:100%;border-collapse:collapse}
-      td{padding:2px 0;vertical-align:top} .r{text-align:right}
-      .line{border-top:1px dashed #000;margin:8px 0}
-      .tot{font-weight:700;font-size:14px}
-    </style></head><body>${inner}<script>window.onload=function(){window.print();setTimeout(function(){window.close()},300)}${close}</body></html>`);
-    w.document.close();
+  // ─── PRINT JOB DEDUPLICATION GUARD ───────────────────────────────────────
+  // Prevents double-print from double-click, slow response, re-render, etc.
+  const activePrintJobs = useRef<Set<string>>(new Set());
+
+  function generatePrintJobId(type: string, ref: string): string {
+    return `${type}:${ref}:${Date.now()}`;
   }
 
-  // escape owner-entered receipt text + build the branded header shared by bill/receipt
-  const escRcpt = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
+  // ─── 80mm THERMAL PRINT ENGINE ───────────────────────────────────────────
+  // Uses a hidden iframe (not a popup) so clicking "Print bill" goes directly
+  // to the Windows Print dialog — no intermediate popup step.
+  function printThermal80mm(title: string, htmlBody: string, jobId?: string): void {
+    const jid = jobId || generatePrintJobId('thermal', title);
+
+    // Deduplication: block if same job is already in flight
+    if (activePrintJobs.current.has(jid)) {
+      console.warn(`[PRINT] Duplicate print blocked — Job ID: ${jid}`);
+      return;
+    }
+    activePrintJobs.current.add(jid);
+
+    console.log(`[PRINT] ── Job START ──`);
+    console.log(`[PRINT] Job ID   : ${jid}`);
+    console.log(`[PRINT] Title    : ${title}`);
+    console.log(`[PRINT] Printer  : ${outlet.receipt?.paperWidth || '80mm'} thermal (Windows dialog)`);
+    console.log(`[PRINT] Method   : hidden-iframe → window.print()`);
+    console.log(`[PRINT] Timestamp: ${new Date().toISOString()}`);
+
+    // Build the complete print document
+    // 80mm roll: ~72mm printable at 203dpi ≈ 574px at 96dpi screen preview
+    // We use 72mm with left/right 4mm margins each for the print media.
+    const html = `<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"/>
+<title>${title}</title>
+<style>
+  /* ─── 80mm thermal receipt optimised for TVSE RP3200 Lite ─── */
+  @page {
+    size: 80mm auto;
+    margin: 3mm 4mm;
+  }
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    width: 72mm;
+    font-family: 'Courier New', Courier, 'Lucida Console', monospace;
+    font-size: 11pt;
+    line-height: 1.35;
+    color: #000;
+    background: #fff;
+  }
+  .receipt {
+    width: 100%;
+    padding: 0;
+  }
+  /* ── Typography hierarchy ── */
+  .store-name {
+    text-align: center;
+    font-size: 15pt;
+    font-weight: 900;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    line-height: 1.2;
+    margin-bottom: 2pt;
+  }
+  .store-sub {
+    text-align: center;
+    font-size: 9pt;
+    color: #222;
+    line-height: 1.3;
+    margin-bottom: 1pt;
+  }
+  .doc-title {
+    text-align: center;
+    font-size: 10pt;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin: 3pt 0 2pt;
+  }
+  /* ── Dividers ── */
+  .div-solid  { border-top: 1.5px solid #000; margin: 3pt 0; }
+  .div-dashed { border-top: 1px dashed #000; margin: 3pt 0; }
+  /* ── Meta rows (table / date / cashier) ── */
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9pt;
+    line-height: 1.3;
+  }
+  .meta-row.bold { font-weight: 700; font-size: 9.5pt; }
+  /* ── Items table ── */
+  .items-hdr {
+    display: flex;
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding-bottom: 2pt;
+  }
+  .col-name   { flex: 1; }
+  .col-qty    { width: 22pt; text-align: center; }
+  .col-rate   { width: 30pt; text-align: right; }
+  .col-amt    { width: 36pt; text-align: right; }
+  .item-row {
+    display: flex;
+    font-size: 10pt;
+    line-height: 1.35;
+    padding: 1pt 0;
+    align-items: flex-start;
+  }
+  .item-name  { flex: 1; word-break: break-word; }
+  .item-note  { font-size: 8.5pt; color: #333; padding-left: 6pt; }
+  /* ── Totals ── */
+  .totals-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10pt;
+    line-height: 1.4;
+  }
+  .totals-row.grand {
+    font-size: 13pt;
+    font-weight: 900;
+    margin: 2pt 0;
+  }
+  .totals-row.discount { color: #1a7a1a; }
+  /* ── Payment info ── */
+  .pay-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10pt;
+    line-height: 1.4;
+  }
+  .pay-row.change { font-weight: 700; }
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    font-size: 9pt;
+    color: #333;
+    margin-top: 4pt;
+    line-height: 1.4;
+  }
+  .footer .thank-you {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #000;
+    margin-bottom: 2pt;
+  }
+  /* ── Watermarks ── */
+  .watermark {
+    text-align: center;
+    font-size: 10pt;
+    font-weight: 700;
+    letter-spacing: 1px;
+    border: 1.5px solid #000;
+    padding: 2pt 4pt;
+    margin-bottom: 3pt;
+  }
+  /* ── Logo ── */
+  .logo-wrap { text-align: center; margin-bottom: 3pt; }
+  .logo-wrap img { max-height: 14mm; max-width: 40mm; object-fit: contain; }
+  /* Screen preview only — not printed */
+  @media screen {
+    body { background: #f5f5f5; padding: 8px; }
+    .receipt { background: #fff; padding: 8px; box-shadow: 0 0 12px rgba(0,0,0,0.15); }
+  }
+</style>
+</head><body>
+<div class="receipt">
+${htmlBody}
+</div>
+<script>
+  window.onload = function() {
+    window.print();
+  };
+<\/script>
+</body></html>`;
+
+    // Use a hidden iframe instead of a popup window.
+    // This avoids the browser's pop-up blocker AND removes the intermediate
+    // "window opened" step — clicking Print Bill goes straight to the OS
+    // print dialog (same as the user's configured TVSE RP3200 Lite).
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;opacity:0;pointer-events:none;';
+    iframe.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) {
+      console.error(`[PRINT ERROR] Could not access iframe document. Job ID: ${jid}`);
+      flash('Print failed — could not open print frame');
+      activePrintJobs.current.delete(jid);
+      document.body.removeChild(iframe);
+      return;
+    }
+
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    // Wait for iframe content to load, then trigger the system print dialog
+    const iframeWin = iframe.contentWindow;
+    const doCleanup = () => {
+      activePrintJobs.current.delete(jid);
+      try { document.body.removeChild(iframe); } catch {}
+    };
+
+    if (iframeWin) {
+      const timer = setTimeout(() => {
+        try {
+          console.log(`[PRINT] Opening Windows print dialog for Job ID: ${jid}`);
+          iframeWin.focus();
+          iframeWin.print();
+          console.log(`[PRINT] Print dialog launched — Job ID: ${jid}`);
+        } catch (err: any) {
+          console.error(`[PRINT ERROR] Job ID: ${jid} — Error: ${err?.message || err}`);
+          flash('Print failed — please try again');
+        } finally {
+          setTimeout(doCleanup, 2000);
+        }
+      }, 350);
+
+      iframeWin.onbeforeunload = () => {
+        clearTimeout(timer);
+        doCleanup();
+      };
+    } else {
+      console.error(`[PRINT ERROR] iframe contentWindow unavailable — Job ID: ${jid}`);
+      flash('Print failed — please try again');
+      doCleanup();
+    }
+  }
+
+  // ─── HTML ESCAPE (safe for receipt text) ─────────────────────────────────
+  const escRcpt = (s: string) => s.replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[c] as string));
+
+  // ─── 80mm RECEIPT HEADER SECTION ─────────────────────────────────────────
   function receiptHeaderHtml() {
     const r = outlet.receipt;
     const isGst = outlet.gstEnabled && outlet.gstConfig?.enabled;
-    const title = isGst ? (outlet.gstConfig?.taxInvoiceTitle || 'TAX INVOICE') : 'INVOICE';
-    return [
-      r.showLogo && r.logoUrl ? `<img src="${r.logoUrl}" alt="" />` : '',
-      `<h2>${escRcpt((outlet.name.split('—')[0] ?? outlet.name).trim())}</h2>`,
-      `<div style="text-align:center;font-size:11px;font-weight:bold;letter-spacing:1px;margin-bottom:8px;">${title}</div>`,
-      r.header.trim() ? `<div class="muted">${escRcpt(r.header).replace(/\n/g, '<br/>')}</div>` : '',
-      r.phone.trim() ? `<div class="muted">☎ ${escRcpt(r.phone)}</div>` : '',
-      outlet.gstEnabled && outlet.gstConfig?.enabled && outlet.gstConfig?.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escRcpt(outlet.gstin)}</div>` : '',
-    ].filter(Boolean).join('\n');
+    const docTitle = isGst ? (outlet.gstConfig?.taxInvoiceTitle || 'TAX INVOICE') : 'INVOICE';
+    const storeName = escRcpt((outlet.name.split('—')[0] ?? outlet.name).trim().toUpperCase());
+    const addressRaw = outlet.address;
+    let addressLine = '';
+    if (r.showAddress && addressRaw) {
+      if (typeof addressRaw === 'string') addressLine = escRcpt(addressRaw.trim());
+      else if (typeof addressRaw === 'object') {
+        const parts = [addressRaw.line1, addressRaw.city, addressRaw.pincode].filter(Boolean).map(escRcpt);
+        addressLine = parts.join(', ');
+      }
+    }
+    const parts: string[] = [];
+    if (r.showLogo && r.logoUrl) {
+      parts.push(`<div class="logo-wrap"><img src="${r.logoUrl}" alt="logo" /></div>`);
+    }
+    parts.push(`<div class="store-name">${storeName}</div>`);
+    if (addressLine) parts.push(`<div class="store-sub">${addressLine}</div>`);
+    if (r.showPhone && r.phone.trim()) parts.push(`<div class="store-sub">Tel: ${escRcpt(r.phone)}</div>`);
+    if (outlet.gstEnabled && outlet.gstConfig?.enabled && outlet.gstConfig?.showGstin && outlet.gstin) {
+      parts.push(`<div class="store-sub">GSTIN: ${escRcpt(outlet.gstin)}</div>`);
+    }
+    if (r.header.trim()) parts.push(`<div class="store-sub">${escRcpt(r.header).replace(/\n/g, '<br/>')}</div>`);
+    parts.push(`<div class="doc-title">${docTitle}</div>`);
+    return parts.join('\n');
   }
+
   const receiptFooterText = () => {
     if (outlet.gstEnabled && outlet.gstConfig?.enabled && outlet.gstConfig?.receiptFooter) {
       return escRcpt(outlet.gstConfig.receiptFooter).replace(/\n/g, ' · ');
     }
-    return outlet.receipt.footer.trim() ? escRcpt(outlet.receipt.footer).replace(/\n/g, ' · ') : 'Thank you!';
+    return outlet.receipt.footer.trim() ? escRcpt(outlet.receipt.footer).replace(/\n/g, ' · ') : 'Thank you! Visit Again';
   };
 
   function taxSummaryTableHtml(billObj: any) {
@@ -541,101 +779,248 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     if (!tableOrder || billPrinted) return;
     const isGstConfig = outlet.gstEnabled && outlet.gstConfig?.enabled;
     const showHsn = isGstConfig && outlet.gstConfig?.showHsn;
+    const tableLabel = tableAction?.label ?? '';
+    const orderNum = tableOrder.number || tableOrder.orderNumber || '';
+    const jobId = `bill:table${tableLabel}:order${orderNum}`;
 
-    const rows = tableOrder.lines.map((l: any) => {
+    console.log(`[PRINT] ── Print Bill ──`);
+    console.log(`[PRINT] Bill ID  : ${jobId}`);
+    console.log(`[PRINT] Table    : ${tableLabel}`);
+    console.log(`[PRINT] Order #  : ${orderNum}`);
+    console.log(`[PRINT] Cashier  : ${currentStaff.name}`);
+    console.log(`[PRINT] Items    : ${tableOrder.lines?.length || 0}`);
+    console.log(`[PRINT] Total    : ${formatINR(tableOrder.totals?.totalPaise || 0)}`);
+
+    // Build item rows with proper 80mm column alignment
+    const now80 = new Date();
+    const dateStr = now80.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const timeStr = now80.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const itemRowsHtml = tableOrder.lines.map((l: any) => {
       const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId || it.name === l.name);
-      const hsnText = showHsn && dbItem?.hsnCode ? `<br/><span style="font-size:9px;color:#555;">HSN: ${dbItem.hsnCode}</span>` : '';
-      const noteText = l.notes ? `<br/><span style="font-size:10px;font-style:italic;color:#444;">↳ Note: ${escRcpt(l.notes)}</span>` : '';
-      return `<tr><td>${l.qty}× ${escRcpt(l.name)}${noteText}${hsnText}</td><td class="r">${formatINR(l.linePaise)}</td></tr>`;
+      const unitPrice = l.unitPricePaise ?? l.pricePaise ?? 0;
+      const lineTotal = l.linePaise ?? l.totalPaise ?? 0;
+      const hsnText = showHsn && dbItem?.hsnCode
+        ? `<div class="item-note">HSN: ${escRcpt(dbItem.hsnCode)}</div>` : '';
+      const noteText = l.notes
+        ? `<div class="item-note">Note: ${escRcpt(l.notes)}</div>` : '';
+      return `<div class="item-row">
+        <div class="col-name item-name">${escRcpt(l.name)}${noteText}${hsnText}</div>
+        <div class="col-qty">${l.qty}</div>
+        <div class="col-rate">${formatINR(unitPrice)}</div>
+        <div class="col-amt">${formatINR(lineTotal)}</div>
+      </div>`;
     }).join('');
-    const custLine = `${billCustomer}${custPhone.trim() ? ` · ${custPhone.trim()}` : ''}`;
-    printDoc(`Bill · ${tableAction?.label ?? ''}`, `
-      ${receiptHeaderHtml()}
-      <div class="muted">Table ${tableAction?.label} · Bill</div>
-      <div class="muted">👤 ${custLine}</div>
-      <table>${rows}</table><div class="line"></div>
-      <table>
-        <tr><td>Subtotal</td><td class="r">${formatINR(tableOrder.totals.subtotalPaise)}</td></tr>
-        ${tableOrder.totals.discountPaise > 0 ? `<tr><td>Discount</td><td class="r">− ${formatINR(tableOrder.totals.discountPaise)}</td></tr>` : ''}
-        ${isGstConfig && outlet.gstConfig?.showCgst && tableOrder.totals.cgstPaise > 0 ? `<tr><td>CGST</td><td class="r">${formatINR(tableOrder.totals.cgstPaise)}</td></tr>` : ''}
-        ${isGstConfig && outlet.gstConfig?.showSgst && tableOrder.totals.sgstPaise > 0 ? `<tr><td>SGST</td><td class="r">${formatINR(tableOrder.totals.sgstPaise)}</td></tr>` : ''}
-        ${isGstConfig && outlet.gstConfig?.showIgst && tableOrder.totals.igstPaise > 0 ? `<tr><td>IGST</td><td class="r">${formatINR(tableOrder.totals.igstPaise)}</td></tr>` : ''}
-        ${tableOrder.totals.serviceChargePaise > 0 ? `<tr><td>Service charge</td><td class="r">${formatINR(tableOrder.totals.serviceChargePaise)}</td></tr>` : ''}
-        <tr><td>Round-off</td><td class="r">${tableOrder.totals.roundOffPaise >= 0 ? '+' : '−'} ${formatINR(Math.abs(tableOrder.totals.roundOffPaise))}</td></tr>
-        <tr class="tot"><td>Total</td><td class="r">${formatINR(tableOrder.totals.totalPaise)}</td></tr>
-      </table>
-      ${taxSummaryTableHtml(tableOrder)}
-      <div class="line"></div><div class="muted">${receiptFooterText()} · Served by ${staff.name}</div>`);
-    // Mark bill as printed, free table on floor map, close modal
+
+    const totals = tableOrder.totals;
+    const orderTypeLabel = (tableOrder.type || 'DINE IN').toUpperCase().replace('_', ' ');
+    const custLine = billCustomer !== 'Customer' ? escRcpt(billCustomer) : '';
+    const custPhoneLine = custPhone.trim() ? escRcpt(custPhone.trim()) : '';
+
+    const htmlBody = `
+${receiptHeaderHtml()}
+<div class="div-dashed"></div>
+<div class="meta-row bold"><span>Table ${escRcpt(tableLabel)}</span><span>${orderTypeLabel}</span></div>
+${orderNum ? `<div class="meta-row"><span>Bill #${escRcpt(String(orderNum))}</span><span>${dateStr}</span></div>` : `<div class="meta-row"><span>${dateStr}</span><span></span></div>`}
+<div class="meta-row"><span>Cashier: ${escRcpt(currentStaff.name)}</span><span>${timeStr}</span></div>
+${custLine ? `<div class="meta-row"><span>Customer: ${custLine}${custPhoneLine ? ` · ${custPhoneLine}` : ''}</span></div>` : ''}
+<div class="div-solid"></div>
+<div class="items-hdr">
+  <div class="col-name">ITEM</div>
+  <div class="col-qty">QTY</div>
+  <div class="col-rate">RATE</div>
+  <div class="col-amt">AMT</div>
+</div>
+<div class="div-dashed"></div>
+${itemRowsHtml}
+<div class="div-solid"></div>
+<div class="totals-row"><span>Subtotal</span><span>${formatINR(totals.subtotalPaise)}</span></div>
+${totals.discountPaise > 0 ? `<div class="totals-row discount"><span>Discount</span><span>-${formatINR(totals.discountPaise)}</span></div>` : ''}
+${isGstConfig && outlet.gstConfig?.showCgst && totals.cgstPaise > 0 ? `<div class="totals-row"><span>CGST</span><span>${formatINR(totals.cgstPaise)}</span></div>` : ''}
+${isGstConfig && outlet.gstConfig?.showSgst && totals.sgstPaise > 0 ? `<div class="totals-row"><span>SGST</span><span>${formatINR(totals.sgstPaise)}</span></div>` : ''}
+${isGstConfig && outlet.gstConfig?.showIgst && totals.igstPaise > 0 ? `<div class="totals-row"><span>IGST</span><span>${formatINR(totals.igstPaise)}</span></div>` : ''}
+${totals.serviceChargePaise > 0 ? `<div class="totals-row"><span>Service Charge</span><span>${formatINR(totals.serviceChargePaise)}</span></div>` : ''}
+${Math.abs(totals.roundOffPaise || 0) > 0 ? `<div class="totals-row"><span>Round Off</span><span>${totals.roundOffPaise >= 0 ? '+' : '-'}${formatINR(Math.abs(totals.roundOffPaise))}</span></div>` : ''}
+${taxSummaryTableHtml(tableOrder)}
+<div class="div-solid"></div>
+<div class="totals-row grand"><span>TOTAL</span><span>${formatINR(totals.totalPaise)}</span></div>
+<div class="div-solid"></div>
+<div class="footer">
+  <div class="thank-you">${receiptFooterText()}</div>
+  <div>Served by ${escRcpt(currentStaff.name)}</div>
+</div>`;
+
+    console.log(`[PRINT] Sending bill to print dialog...`);
+    printThermal80mm(`Bill - Table ${tableLabel}`, htmlBody, jobId);
+    console.log(`[PRINT] Bill print dialog launched for Table ${tableLabel}`);
+
+    // 1. Immediately disable button and record printed locally
     setBillPrinted(true);
-    refreshTables();
-    setTimeout(() => closeTableActions(), 300);
+    const tableId = tableAction?.id;
+    const orderIds = (tableOrder?.orders || []).map((o: any) => o.id).concat(tableOrder?.id ? [tableOrder.id] : []);
+    if (orderIds.length > 0) {
+      setPrintedOrderIds((prev) => {
+        const next = new Set(prev);
+        orderIds.forEach((id: string) => next.add(id));
+        return next;
+      });
+    }
+
+    // 2. Immediately free table in local state so floor map updates with zero latency
+    if (tableId) {
+      setOccupied((prev) => {
+        const next = { ...prev };
+        delete next[tableId];
+        return next;
+      });
+    }
+
+    // 3. Mark table as free on server & broadcast realtime table.updated event
+    if (tableId) {
+      fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'print_bill',
+          tableId,
+          orderId: orderIds[0] || null,
+        }),
+      })
+        .then(() => refreshTables())
+        .catch((err) => console.error('[PRINT] Server free table failed:', err));
+    }
+
+    // 4. Smoothly close modal after user sees confirmation
+    setTimeout(() => closeTableActions(), 1000);
   }
 
   function printKOT() {
     if (!tableOrder) return;
-    const rows = tableOrder.lines.map((l: any) => `<tr><td>${l.qty}×</td><td>${escRcpt(l.name)}${l.notes ? `<div style="font-size:11px;font-weight:bold;color:#111;margin-top:2px;">↳ Note: ${escRcpt(l.notes)}</div>` : ''}</td><td class="r">${escRcpt(l.station ?? '')}</td></tr>`).join('');
-    printDoc(`KOT · ${tableAction?.label ?? ''}`, `
-      <h2>KOT · Table ${tableAction?.label}</h2>
-      <div class="muted">Kitchen Order Ticket</div>
-      <table>${rows}</table><div class="line"></div>
-      <div class="muted">${staff.name}</div>`);
+    const tableLabel = tableAction?.label ?? '';
+    const orderNum = tableOrder.number || tableOrder.orderNumber || '';
+    const when = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const rows = tableOrder.lines.map((l: any) =>
+      `<div class="item-row"><div class="col-qty" style="width:24pt;font-weight:700;">${l.qty}x</div><div class="col-name item-name" style="flex:1;font-size:12pt;font-weight:700;">${escRcpt(l.name)}${l.notes ? `<div class="item-note" style="font-size:9pt;">Note: ${escRcpt(l.notes)}</div>` : ''}${l.station ? `<div class="item-note" style="font-size:8.5pt;">[${escRcpt(l.station)}]</div>` : ''}</div></div>`
+    ).join('');
+    const htmlBody = `
+<div class="store-name">KOT</div>
+<div class="doc-title">KITCHEN ORDER TICKET</div>
+<div class="div-solid"></div>
+<div class="meta-row bold"><span>Table ${escRcpt(tableLabel)}</span><span>#${escRcpt(String(orderNum))}</span></div>
+<div class="meta-row"><span>${when}</span><span>${escRcpt(currentStaff.name)}</span></div>
+<div class="div-solid"></div>
+${rows}
+<div class="div-dashed"></div>
+<div class="footer"><div>** End of Order **</div></div>`;
+    printThermal80mm(`KOT - Table ${tableLabel}`, htmlBody);
   }
 
   // Auto-printed KOT for a just-sent POS order (Printed / Hybrid workflow). Reads
   // the current cart, so call it before clear(). Prints kotCopies copies in one
-  // window, page-broken so each copy tears off separately.
+  // document, page-broken so each copy tears off separately.
   function printKotFromCart(number: number, whereLabel: string) {
     const copies = Math.max(1, Math.min(4, outlet.kitchenWorkflow.kotCopies || 1));
     const when = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-    const rows = cart.map((l) => `<tr><td>${l.qty}×</td><td>${escRcpt(l.name)}${l.notes ? `<div style="font-size:11px;font-weight:bold;color:#111;margin-top:2px;">↳ Note: ${escRcpt(l.notes)}</div>` : ''}</td><td class="r">${escRcpt(l.station ?? '')}</td></tr>`).join('');
-    const one = `
-      <h2>KOT · #${number}</h2>
-      <div class="muted">${escRcpt(whereLabel)} · ${when}</div>
-      <table>${rows}</table><div class="line"></div>
-      <div class="muted">${escRcpt(staff.name)}</div>`;
-    const inner = Array.from({ length: copies }, (_, i) => (i === 0 ? one : `<div style="page-break-before:always"></div>${one}`)).join('');
-    printDoc(`KOT #${number}`, inner);
+    const rows = cart.map((l) =>
+      `<div class="item-row"><div class="col-qty" style="width:24pt;font-weight:700;">${l.qty}x</div><div class="col-name item-name" style="flex:1;font-size:12pt;font-weight:700;">${escRcpt(l.name)}${l.notes ? `<div class="item-note" style="font-size:9pt;">Note: ${escRcpt(l.notes)}</div>` : ''}${l.station ? `<div class="item-note" style="font-size:8.5pt;">[${escRcpt(l.station)}]</div>` : ''}</div></div>`
+    ).join('');
+
+    const oneKot = `
+<div class="store-name">KOT #${number}</div>
+<div class="doc-title">KITCHEN ORDER TICKET</div>
+<div class="div-solid"></div>
+<div class="meta-row bold"><span>${escRcpt(whereLabel)}</span><span>${when}</span></div>
+<div class="meta-row"><span>By: ${escRcpt(currentStaff.name)}</span></div>
+<div class="div-solid"></div>
+${rows}
+<div class="div-dashed"></div>
+<div class="footer"><div>** End of Order **</div></div>`;
+
+    const fullBody = Array.from({ length: copies }, (_, i) =>
+      i === 0 ? oneKot : `<div style="page-break-before:always;"></div>${oneKot}`
+    ).join('');
+
+    printThermal80mm(`KOT #${number}`, fullBody);
   }
 
-  // receipt for a just-charged POS order (cart/bill captured at confirm time)
+  // ─── PRINT RECEIPT (post-payment, for a just-charged POS order) ──────────
   function printReceipt(number: number, method: string, tipPaise: number, customer: { name: string; phone: string } | null) {
-    const esc = (s: string) => s.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
     const isGstConfig = outlet.gstEnabled && outlet.gstConfig?.enabled;
     const showHsn = isGstConfig && outlet.gstConfig?.showHsn;
+    const totalWithTip = bill.totalPaise + tipPaise;
+    const jobId = `receipt:${number}:${Date.now()}`;
 
-    const rows = cart.map((l) => {
+    console.log(`[PRINT] ── Print Receipt ──`);
+    console.log(`[PRINT] Receipt #: ${number}`);
+    console.log(`[PRINT] Job ID   : ${jobId}`);
+    console.log(`[PRINT] Method   : ${method.toUpperCase()}`);
+    console.log(`[PRINT] Total    : ${formatINR(totalWithTip)}`);
+    console.log(`[PRINT] Cashier  : ${currentStaff.name}`);
+
+    const now80 = new Date();
+    const dateStr = now80.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const timeStr = now80.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const itemRowsHtml = cart.map((l) => {
       const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId);
-      const hsnText = showHsn && dbItem?.hsnCode ? `<br/><span style="font-size:9px;color:#555;">HSN: ${dbItem.hsnCode}</span>` : '';
-      const noteText = l.notes ? `<br/><span style="font-size:10px;font-style:italic;color:#444;">↳ Note: ${esc(l.notes)}</span>` : '';
-      return `<tr><td>${l.qty}× ${esc(l.name)}${noteText}${hsnText}</td><td class="r">${formatINR(l.pricePaise * l.qty)}</td></tr>`;
+      const lineTotal = l.pricePaise * l.qty;
+      const hsnText = showHsn && dbItem?.hsnCode
+        ? `<div class="item-note">HSN: ${escRcpt(dbItem.hsnCode)}</div>` : '';
+      const noteText = l.notes
+        ? `<div class="item-note">Note: ${escRcpt(l.notes)}</div>` : '';
+      return `<div class="item-row">
+        <div class="col-name item-name">${escRcpt(l.name)}${noteText}${hsnText}</div>
+        <div class="col-qty">${l.qty}</div>
+        <div class="col-rate">${formatINR(l.pricePaise)}</div>
+        <div class="col-amt">${formatINR(lineTotal)}</div>
+      </div>`;
     }).join('');
-    const when = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-    const cust = customer && (customer.name || customer.phone)
-      ? `<div class="muted">${[esc(customer.name), esc(customer.phone)].filter(Boolean).join(' · ')}</div>` : '';
-    printDoc(`Receipt #${number}`, `
-      ${receiptHeaderHtml()}
-      <div class="muted">Receipt #${number} · ${when}</div>
-      ${cust}
-      <table>${rows}</table><div class="line"></div>
-      <table>
-        <tr><td>${outlet.gstEnabled && outlet.gstInclusive ? 'Taxable value' : 'Subtotal'}</td><td class="r">${formatINR(bill.subtotalPaise)}</td></tr>
-        ${bill.discountPaise > 0 ? `<tr><td>Discount${discountPct > 0 ? ` (${discountPct}%)` : ''}</td><td class="r">− ${formatINR(bill.discountPaise)}</td></tr>` : ''}
-        ${isGstConfig && outlet.gstConfig?.showCgst && bill.cgstPaise > 0 ? `<tr><td>CGST</td><td class="r">${formatINR(bill.cgstPaise)}</td></tr>` : ''}
-        ${isGstConfig && outlet.gstConfig?.showSgst && bill.sgstPaise > 0 ? `<tr><td>SGST</td><td class="r">${formatINR(bill.sgstPaise)}</td></tr>` : ''}
-        ${isGstConfig && outlet.gstConfig?.showIgst && bill.igstPaise > 0 ? `<tr><td>IGST</td><td class="r">${formatINR(bill.igstPaise)}</td></tr>` : ''}
-        ${scPct > 0 ? `<tr><td>Service charge</td><td class="r">${formatINR(bill.serviceChargePaise)}</td></tr>` : ''}
-        ${bill.deliveryChargePaise > 0 ? `<tr><td>Delivery charge</td><td class="r">${formatINR(bill.deliveryChargePaise)}</td></tr>` : ''}
-        ${bill.packagingChargePaise > 0 ? `<tr><td>Packaging charge</td><td class="r">${formatINR(bill.packagingChargePaise)}</td></tr>` : ''}
-        ${bill.convenienceFeePaise > 0 ? `<tr><td>Convenience fee</td><td class="r">${formatINR(bill.convenienceFeePaise)}</td></tr>` : ''}
-        <tr><td>Round-off</td><td class="r">${bill.roundOffPaise >= 0 ? '+' : '−'} ${formatINR(Math.abs(bill.roundOffPaise))}</td></tr>
-        ${tipPaise > 0 ? `<tr><td>Tip</td><td class="r">${formatINR(tipPaise)}</td></tr>` : ''}
-        <tr class="tot"><td>Total</td><td class="r">${formatINR(bill.totalPaise + tipPaise)}</td></tr>
-      </table>
-      ${taxSummaryTableHtml(bill)}
-      <div class="line"></div>
-      <div class="muted">Paid · ${method.toUpperCase()}</div>
-      <div class="muted">${receiptFooterText()} · Served by ${staff.name}</div>`);
+
+    const custName = customer?.name?.trim() || '';
+    const custPhoneStr = customer?.phone?.trim() || '';
+    const subtotalLabel = outlet.gstEnabled && outlet.gstInclusive ? 'Taxable Value' : 'Subtotal';
+
+    const htmlBody = `
+${receiptHeaderHtml()}
+<div class="div-dashed"></div>
+<div class="meta-row bold"><span>Receipt #${number}</span><span>${dateStr}</span></div>
+<div class="meta-row"><span>Cashier: ${escRcpt(currentStaff.name)}</span><span>${timeStr}</span></div>
+${custName || custPhoneStr ? `<div class="meta-row"><span>Customer: ${escRcpt(custName)}${custPhoneStr ? ` · ${escRcpt(custPhoneStr)}` : ''}</span></div>` : ''}
+<div class="div-solid"></div>
+<div class="items-hdr">
+  <div class="col-name">ITEM</div>
+  <div class="col-qty">QTY</div>
+  <div class="col-rate">RATE</div>
+  <div class="col-amt">AMT</div>
+</div>
+<div class="div-dashed"></div>
+${itemRowsHtml}
+<div class="div-solid"></div>
+<div class="totals-row"><span>${subtotalLabel}</span><span>${formatINR(bill.subtotalPaise)}</span></div>
+${bill.discountPaise > 0 ? `<div class="totals-row discount"><span>Discount${discountPct > 0 ? ` (${discountPct}%)` : ''}</span><span>-${formatINR(bill.discountPaise)}</span></div>` : ''}
+${isGstConfig && outlet.gstConfig?.showCgst && bill.cgstPaise > 0 ? `<div class="totals-row"><span>CGST</span><span>${formatINR(bill.cgstPaise)}</span></div>` : ''}
+${isGstConfig && outlet.gstConfig?.showSgst && bill.sgstPaise > 0 ? `<div class="totals-row"><span>SGST</span><span>${formatINR(bill.sgstPaise)}</span></div>` : ''}
+${isGstConfig && outlet.gstConfig?.showIgst && bill.igstPaise > 0 ? `<div class="totals-row"><span>IGST</span><span>${formatINR(bill.igstPaise)}</span></div>` : ''}
+${scPct > 0 ? `<div class="totals-row"><span>Service Charge</span><span>${formatINR(bill.serviceChargePaise)}</span></div>` : ''}
+${bill.deliveryChargePaise > 0 ? `<div class="totals-row"><span>Delivery Charge</span><span>${formatINR(bill.deliveryChargePaise)}</span></div>` : ''}
+${bill.packagingChargePaise > 0 ? `<div class="totals-row"><span>Packaging Charge</span><span>${formatINR(bill.packagingChargePaise)}</span></div>` : ''}
+${bill.convenienceFeePaise > 0 ? `<div class="totals-row"><span>Convenience Fee</span><span>${formatINR(bill.convenienceFeePaise)}</span></div>` : ''}
+${Math.abs(bill.roundOffPaise || 0) > 0 ? `<div class="totals-row"><span>Round Off</span><span>${bill.roundOffPaise >= 0 ? '+' : '-'}${formatINR(Math.abs(bill.roundOffPaise))}</span></div>` : ''}
+${tipPaise > 0 ? `<div class="totals-row"><span>Tip</span><span>${formatINR(tipPaise)}</span></div>` : ''}
+${taxSummaryTableHtml(bill)}
+<div class="div-solid"></div>
+<div class="totals-row grand"><span>TOTAL</span><span>${formatINR(totalWithTip)}</span></div>
+<div class="div-solid"></div>
+<div class="pay-row"><span>Payment</span><span>${escRcpt(method.toUpperCase())}</span></div>
+<div class="div-dashed"></div>
+<div class="footer">
+  <div class="thank-you">${receiptFooterText()}</div>
+  <div>Served by ${escRcpt(currentStaff.name)}</div>
+</div>`;
+
+    console.log(`[PRINT] Sending receipt to print dialog...`);
+    printThermal80mm(`Receipt #${number}`, htmlBody, jobId);
+    console.log(`[PRINT] Receipt #${number} print dialog launched successfully.`);
   }
 
   // count of QR orders awaiting approval (badge on the Approvals link)
@@ -1541,7 +1926,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                     >
                       <Receipt size={16} aria-hidden /> Print KOT
                     </button>
-                    {canSettleBill && (
+                    {canPrintBill && (
                       <button
                         onClick={printBill}
                         disabled={billPrinted}
@@ -1562,7 +1947,7 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
                     💳 Collect payment at the billing counter — use T-Billing to settle.
                   </p>
                 )}
-                {!canSettleBill && !billPrinted && <p className="text-[11px] mt-3 text-center" style={{ color: 'var(--ink-3)' }}>Bill printing & removing items need cashier, manager or owner access.</p>}
+                {!canPrintBill && !billPrinted && <p className="text-[11px] mt-3 text-center" style={{ color: 'var(--ink-3)' }}>Bill printing requires staff access.</p>}
               </div>
             )}
           </Modal>

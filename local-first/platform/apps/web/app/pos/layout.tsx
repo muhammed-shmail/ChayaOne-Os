@@ -7,12 +7,14 @@ import { getSession } from '@/lib/auth';
 import { tenantHasFeature } from '@/lib/features';
 import { LicenseService } from '@/lib/license/license-service';
 
-// Point this surface at the STAFF manifest so phones install the staff app
-// (own identity + start_url), not the customer app linked by the root layout.
+// Point this surface at the WAITER manifest so phones and tablets install the waiter app
+// (own identity + start_url), not the customer app.
 export const metadata: Metadata = {
-  applicationName: 'Cafe OS Staff',
-  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Cafe Staff' },
-  manifest: '/staff.webmanifest',
+  title: 'ChayaOne Waiter — POS & Table Orders',
+  applicationName: 'ChayaOne Waiter',
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'ChayaOne Waiter' },
+  manifest: '/manifest-waiter.json',
+  icons: { icon: '/icons/waiter-192.png', shortcut: '/icons/waiter-192.png', apple: '/icons/waiter-192.png' },
 };
 
 export default async function PosLayout({ children }: { children: React.ReactNode }) {

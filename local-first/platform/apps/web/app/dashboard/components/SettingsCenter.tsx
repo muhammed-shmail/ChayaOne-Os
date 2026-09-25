@@ -244,6 +244,7 @@ interface SettingsCenterProps {
   setReceiptForm: React.Dispatch<React.SetStateAction<any>>;
   handleSaveReceipt: (e: React.FormEvent) => Promise<void>;
   receiptSaving: boolean;
+  onTestPrint?: () => void;
 
   devices: Device[];
   setDevices: React.Dispatch<React.SetStateAction<Device[]>>;
@@ -314,6 +315,7 @@ export default function SettingsCenter({
   setReceiptForm,
   handleSaveReceipt,
   receiptSaving,
+  onTestPrint,
   devices,
   setDevices,
   handleSaveDevice,
@@ -4713,9 +4715,16 @@ export default function SettingsCenter({
                       </div>
                     </div>
 
-                    <button type="submit" disabled={receiptSaving} className="btn btn-primary self-end px-6">
-                      {receiptSaving ? 'Saving layout...' : 'Save Billing & Receipt Rules'}
-                    </button>
+                    <div className="flex gap-2 self-end">
+                      {onTestPrint && (
+                        <button type="button" onClick={onTestPrint} className="btn btn-secondary px-4">
+                          🖨️ Test Print
+                        </button>
+                      )}
+                      <button type="submit" disabled={receiptSaving} className="btn btn-primary px-6">
+                        {receiptSaving ? 'Saving layout...' : 'Save Billing & Receipt Rules'}
+                      </button>
+                    </div>
                   </form>
                 </div>
               )}

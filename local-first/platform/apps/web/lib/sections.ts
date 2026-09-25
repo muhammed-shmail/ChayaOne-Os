@@ -473,7 +473,7 @@ async function getMonitor(outletId: string, tenantId: string): Promise<MonitorDa
     prisma.$queryRaw<{ id: string; label: string; since: Date; bill: number }[]>`
       SELECT t.id::text AS id, t.label AS label, MIN(o."placedAt") AS since, COALESCE(SUM(o."totalPaise"),0)::int AS bill
       FROM tables_map t JOIN orders o ON o."tableId" = t.id AND o."type"='dine_in' AND o.status IN ('open','in_kitchen','ready','served') AND o."settledAt" IS NULL
-      WHERE t."outletId" = ${outletId}::uuid GROUP BY t.id, t.label`,
+      WHERE t."outletId" = ${outletId}::uuid AND t.state != 'free' GROUP BY t.id, t.label`,
     prisma.tableMap.count({ where: { outletId } }),
     prisma.attendance.count({ where: { outletId, clockOut: null } }),
     prisma.purchaseOrder.aggregate({ where: { outletId, status: { not: 'cancelled' } }, _sum: { totalPaise: true } }),
@@ -572,6 +572,7 @@ async function getTables(outletId: string): Promise<TablesData> {
         AND o."status" IN ('open', 'in_kitchen', 'ready', 'served', 'pending_approval')
         AND o."settledAt" IS NULL
       WHERE t."outletId" = ${outletId}::uuid
+        AND t.state != 'free'
       GROUP BY t.id, t.label
     `,
     // revenue per table over 30 days (settled orders)

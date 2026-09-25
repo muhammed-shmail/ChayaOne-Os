@@ -5,6 +5,7 @@ import path from 'node:path';
 import { getSession } from '@/lib/auth';
 import { hasRole, hasPermission } from '@/lib/rbac';
 import { putImage } from '@/lib/storage';
+import { prisma } from '@cafeos/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -87,6 +88,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden', message: 'Insufficient permissions' }, { status: 403 });
   }
 
+  // Resolve outletId — owner/manager accounts may not have one bound in their JWT
+  let outletId: string | null = session.outletId;
+  if (!outletId) {
+    const firstOutlet = await prisma.outlet.findFirst({
+      where: { tenantId: session.tenantId },
+      select: { id: true },
+    });
+    outletId = firstOutlet?.id ?? null;
+  }
+  if (!outletId) {
+    return NextResponse.json({ error: 'no_outlet', message: 'No outlet configured' }, { status: 400 });
+  }
+
   const form = await req.formData().catch(() => null);
   if (!form) {
     return NextResponse.json({ error: 'upload_failure', message: 'Invalid form-data payload' }, { status: 400 });
@@ -134,7 +148,7 @@ export async function POST(req: NextRequest) {
   }
 
   const name = `${crypto.randomUUID()}.${ext}`;
-  const key = `${session.outletId}/${name}`;
+  const key = `${outletId}/${name}`;
 
   let url: string;
   try {
@@ -143,7 +157,7 @@ export async function POST(req: NextRequest) {
       url = remoteUrl;
     } else {
       // Local persistent storage
-      const relativeUploadPath = path.join('uploads', session.outletId);
+      const relativeUploadPath = path.join('uploads', outletId);
       const primaryDir = path.join(process.cwd(), 'public', relativeUploadPath);
       await mkdir(primaryDir, { recursive: true });
       await writeFile(path.join(primaryDir, name), buf);
@@ -169,7 +183,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      url = `/uploads/${session.outletId}/${name}`;
+      url = `/uploads/${outletId}/${name}`;
     }
   } catch (err) {
     console.error('[upload] storage failed', err);

@@ -1324,22 +1324,106 @@ export default function DashboardClient({
   const receiptFooterText = () => (outlet.receipt.footer.trim() ? escHtml(outlet.receipt.footer).replace(/\n/g, ' · ') : 'Thank you!');
 
   function printOrderDoc(title: string, inner: string) {
-    const w = window.open('', '_blank', 'width=380,height=660');
-    if (!w) { flashMessage('Allow pop-ups to print'); return; }
-    const close = '<' + '/script>';
-    w.document.write(`<html><head><title>${title}</title><style>
-      *{font-family:ui-monospace,Menlo,monospace;color:#000;box-sizing:border-box}
-      body{width:300px;margin:0 auto;padding:14px;font-size:12px}
-      h2{text-align:center;margin:0 0 2px;font-size:15px}
-      img{display:block;max-width:160px;max-height:80px;margin:0 auto 6px;object-fit:contain}
-      .muted{color:#555;text-align:center;font-size:11px;margin-bottom:4px}
-      table{width:100%;border-collapse:collapse} td{padding:2px 0;vertical-align:top} .r{text-align:right}
-      .line{border-top:1px dashed #000;margin:8px 0} .tot{font-weight:700;font-size:14px}
-    </style></head><body>${inner}<script>window.onload=function(){window.print();setTimeout(function(){window.close()},300)}${close}</body></html>`);
-    w.document.close();
+    // Use hidden iframe to go directly to the OS print dialog (no intermediate popup).
+    const jid = `dashboard-${title.replace(/\s+/g, '-')}-${Date.now()}`;
+    console.log(`[PRINT] Dashboard printOrderDoc — Job: ${jid}`);
+
+    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title><style>
+  @page { size: 80mm auto; margin: 3mm 4mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { width: 72mm; font-family: 'Courier New', Courier, monospace; font-size: 11pt; line-height: 1.35; color: #000; background: #fff; }
+  .receipt { width: 100%; }
+  .store-name { text-align: center; font-size: 15pt; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; line-height: 1.2; margin-bottom: 2pt; }
+  .store-sub { text-align: center; font-size: 9pt; color: #222; line-height: 1.3; margin-bottom: 1pt; }
+  .doc-title { text-align: center; font-size: 10pt; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin: 3pt 0 2pt; }
+  .div-solid { border-top: 1.5px solid #000; margin: 3pt 0; }
+  .div-dashed { border-top: 1px dashed #000; margin: 3pt 0; }
+  .meta-row { display: flex; justify-content: space-between; font-size: 9pt; line-height: 1.3; }
+  .meta-row.bold { font-weight: 700; font-size: 9.5pt; }
+  .items-hdr { display: flex; font-size: 9pt; font-weight: 700; text-transform: uppercase; padding-bottom: 2pt; }
+  .col-name { flex: 1; } .col-qty { width: 22pt; text-align: center; } .col-amt { width: 40pt; text-align: right; }
+  .item-row { display: flex; font-size: 10pt; line-height: 1.35; padding: 1pt 0; align-items: flex-start; }
+  .item-name { flex: 1; word-break: break-word; }
+  .item-note { font-size: 8.5pt; color: #333; padding-left: 6pt; }
+  .totals-row { display: flex; justify-content: space-between; font-size: 10pt; line-height: 1.4; }
+  .totals-row.grand { font-size: 13pt; font-weight: 900; margin: 2pt 0; }
+  .totals-row.discount { color: #1a7a1a; }
+  .logo-wrap { text-align: center; margin-bottom: 3pt; }
+  .logo-wrap img { max-height: 14mm; max-width: 40mm; object-fit: contain; }
+  .footer { text-align: center; font-size: 9pt; color: #333; margin-top: 4pt; line-height: 1.4; }
+  .footer .thank-you { font-size: 11pt; font-weight: 700; color: #000; margin-bottom: 2pt; }
+  @media screen { body { background: #f5f5f5; padding: 8px; } .receipt { background: #fff; padding: 8px; box-shadow: 0 0 12px rgba(0,0,0,0.15); } }
+</style></head><body><div class="receipt">${inner}</div><script>window.onload=function(){window.print();}<\/script></body></html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;opacity:0;pointer-events:none;';
+    iframe.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) { flashMessage('Print failed — allow iframes'); document.body.removeChild(iframe); return; }
+    doc.open(); doc.write(html); doc.close();
+    const iframeWin = iframe.contentWindow;
+    const cleanup = () => { try { document.body.removeChild(iframe); } catch {} };
+    if (iframeWin) {
+      setTimeout(() => {
+        try { iframeWin.focus(); iframeWin.print(); console.log(`[PRINT] Dashboard dialog launched — ${jid}`); }
+        catch (e) { console.error(`[PRINT ERROR] ${jid}:`, e); flashMessage('Print failed'); }
+        finally { setTimeout(cleanup, 2000); }
+      }, 350);
+    } else { cleanup(); }
   }
 
+  // ── Test Receipt — prints a test page to TVSE RP3200 Lite ──
+  function printTestReceipt() {
+    const storeName = escHtml(outlet.brand || 'CHAYA ONE');
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const htmlBody = `
+<div class="store-name">${storeName}</div>
+<div class="div-solid"></div>
+<div class="doc-title">TEST RECEIPT</div>
+<div class="div-solid"></div>
+<div class="meta-row bold"><span>Printer:</span><span>TVSE RP3200 Lite</span></div>
+<div class="meta-row"><span>Paper:</span><span>80mm (72mm printable)</span></div>
+<div class="meta-row"><span>Date:</span><span>${dateStr}</span></div>
+<div class="meta-row"><span>Time:</span><span>${timeStr}</span></div>
+<div class="div-dashed"></div>
+<div class="meta-row bold"><span>COLUMN TEST</span></div>
+<div class="items-hdr"><div class="col-name">ITEM</div><div class="col-qty">QTY</div><div class="col-amt">AMOUNT</div></div>
+<div class="div-dashed"></div>
+<div class="item-row"><div class="col-name item-name">Masala Tea</div><div class="col-qty">2</div><div class="col-amt">Rs.80.00</div></div>
+<div class="item-row"><div class="col-name item-name">Chicken Cutlet (Large)</div><div class="col-qty">1</div><div class="col-amt">Rs.120.00</div></div>
+<div class="item-row"><div class="col-name item-name">Very Long Item Name That Should Wrap Correctly</div><div class="col-qty">3</div><div class="col-amt">Rs.450.00</div></div>
+<div class="div-solid"></div>
+<div class="totals-row"><span>Subtotal</span><span>Rs.650.00</span></div>
+<div class="totals-row grand"><span>TOTAL</span><span>Rs.650.00</span></div>
+<div class="div-solid"></div>
+<div class="meta-row"><span>FONT TEST</span></div>
+<div class="div-dashed"></div>
+<div style="font-size:9pt;">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
+<div style="font-size:9pt;">abcdefghijklmnopqrstuvwxyz</div>
+<div style="font-size:9pt;">0123456789 !@#$%^&amp;*()-=</div>
+<div style="font-size:10pt;font-weight:bold;">Rs. RUPEE SYMBOL: Rs.100 Rs.999</div>
+<div class="div-solid"></div>
+<div class="footer"><div class="thank-you">PRINT TEST SUCCESSFUL</div><div>chaya.one</div></div>`;
+    printOrderDoc('Test Receipt — TVSE RP3200 Lite', htmlBody);
+    flashMessage('Test receipt sent to printer');
+    console.log('[PRINT] Test receipt triggered for TVSE RP3200 Lite');
+  }
+
+  const [dashboardPrintedBills, setDashboardPrintedBills] = useState<Set<string>>(new Set());
+
   function printOrderBill(o: any) {
+    if (!o || dashboardPrintedBills.has(o.id)) return;
+    setDashboardPrintedBills((prev) => new Set(prev).add(o.id));
+    if (o.tableId) {
+      fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'print_bill', tableId: o.tableId, orderId: o.id }),
+      }).catch((err) => console.error('[PRINT] Dashboard free table failed:', err));
+    }
     const rows = o.items.map((i: any) => `<tr><td>${i.qty}× ${i.nameSnapshot}</td><td class="r">${formatINR(i.unitPricePaise * i.qty)}</td></tr>`).join('');
     const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
     printOrderDoc(`Bill #${o.number}`, `
@@ -4042,6 +4126,7 @@ export default function DashboardClient({
                 setReceiptForm={setReceiptForm}
                 handleSaveReceipt={handleSaveReceipt}
                 receiptSaving={receiptSaving}
+                onTestPrint={printTestReceipt}
                 devices={devices}
                 setDevices={setDevices}
                 handleSaveDevice={handleSaveDevice}
@@ -4837,7 +4922,13 @@ export default function DashboardClient({
                 </div>
               ) : null}
               <div className="flex flex-wrap gap-2 mt-5">
-                <button onClick={() => printOrderBill(orderDetail)} className="btn btn-primary flex-1 min-w-[100px]">🖨 Print bill</button>
+                <button
+                  onClick={() => printOrderBill(orderDetail)}
+                  disabled={dashboardPrintedBills.has(orderDetail.id)}
+                  className="btn btn-primary flex-1 min-w-[100px] disabled:opacity-40"
+                >
+                  {dashboardPrintedBills.has(orderDetail.id) ? '✓ Bill printed' : '🖨 Print bill'}
+                </button>
                 <button onClick={() => printOrderKOT(orderDetail)} className="btn flex-1 min-w-[100px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>🧾 Print KOT</button>
                 <button onClick={() => { setEditingDiscount(true); setEditDiscountPct('0'); setEditDiscountFlat('0'); }} className="btn flex-1 min-w-[100px]" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>✏️ Discount</button>
                 <button onClick={() => { setOrderDetail(null); setEditingDiscount(false); }} className="btn btn-dark flex-1 min-w-[80px]">Close</button>

@@ -1,4 +1,4 @@
-import { prisma } from '@cafeos/db';
+import { prisma, Prisma } from '@cafeos/db';
 import { DEFAULT_TIMEZONE, formatYmdInTz } from '../businessDay';
 import { FinancialYearService } from './financial-year.service';
 
@@ -73,8 +73,8 @@ export class ReportsService {
     const { startDate, endDate, staffId, orderType } = filter;
 
     // Filter conditions for orders
-    const staffFilterSql = staffId ? prisma.$queryRawUnsafe(`AND o."staffId" = '${staffId}'::uuid`) : prisma.$queryRawUnsafe('');
-    const typeFilterSql = orderType ? prisma.$queryRawUnsafe(`AND o."type" = '${orderType}'::text`) : prisma.$queryRawUnsafe('');
+    const staffFilterSql = staffId ? Prisma.sql`AND o."staffId" = ${staffId}::uuid` : Prisma.empty;
+    const typeFilterSql = orderType ? Prisma.sql`AND o."type" = ${orderType}::text` : Prisma.empty;
 
     const [dailyRows, refundRows] = await Promise.all([
       prisma.$queryRaw<
@@ -180,7 +180,7 @@ export class ReportsService {
   static async getItemsReport(outletId: string, tenantId: string, filter: ReportFilter, tz = DEFAULT_TIMEZONE) {
     const { startDate, endDate, category } = filter;
 
-    const catFilterSql = category ? prisma.$queryRawUnsafe(`AND (c."name" ILIKE '%${category}%' OR c."id"::text = '${category}')`) : prisma.$queryRawUnsafe('');
+    const catFilterSql = category ? Prisma.sql`AND (c."name" ILIKE ${`%${category}%`} OR c."id"::text = ${category})` : Prisma.empty;
 
     const rows = await prisma.$queryRaw<
       { itemId: string; name: string; category: string; qty: number; revenue: number; unitPrice: number }[]
@@ -391,7 +391,7 @@ export class ReportsService {
   static async getPaymentsReport(outletId: string, tenantId: string, filter: ReportFilter, tz = DEFAULT_TIMEZONE) {
     const { startDate, endDate, paymentMethod } = filter;
 
-    const methodFilterSql = paymentMethod ? prisma.$queryRawUnsafe(`AND p."method" = '${paymentMethod}'::text`) : prisma.$queryRawUnsafe('');
+    const methodFilterSql = paymentMethod ? Prisma.sql`AND p."method" = ${paymentMethod}::text` : Prisma.empty;
 
     const [payRows, refundRows] = await Promise.all([
       prisma.$queryRaw<{ method: string; count: number; gross: number }[]>`
@@ -536,7 +536,7 @@ export class ReportsService {
   static async getStaffReport(outletId: string, tenantId: string, filter: ReportFilter, tz = DEFAULT_TIMEZONE) {
     const { startDate, endDate, staffId } = filter;
 
-    const staffFilterSql = staffId ? prisma.$queryRawUnsafe(`AND s.id = '${staffId}'::uuid`) : prisma.$queryRawUnsafe('');
+    const staffFilterSql = staffId ? Prisma.sql`AND s.id = ${staffId}::uuid` : Prisma.empty;
 
     const [salesRows, refundRows, cancelRows] = await Promise.all([
       prisma.$queryRaw<
@@ -549,7 +549,7 @@ export class ReportsService {
           COUNT(o.id)::int AS orders,
           COALESCE(SUM(o."totalPaise"), 0)::int AS gross,
           COALESCE(SUM(o."discountPaise"), 0)::int AS discounts,
-          COALESCE(SUM(o."totalPaise" - ("o.cgstPaise" + "o.sgstPaise" + "o.igstPaise")), 0)::int AS net
+          COALESCE(SUM(o."totalPaise" - (o."cgstPaise" + o."sgstPaise" + o."igstPaise")), 0)::int AS net
         FROM staff_users s
         LEFT JOIN orders o ON o."staffId" = s.id
           AND o."outletId" = ${outletId}::uuid
@@ -631,7 +631,7 @@ export class ReportsService {
   static async getDiscountsReport(outletId: string, tenantId: string, filter: ReportFilter, tz = DEFAULT_TIMEZONE) {
     const { startDate, endDate, staffId } = filter;
 
-    const staffFilterSql = staffId ? prisma.$queryRawUnsafe(`AND o."staffId" = '${staffId}'::uuid`) : prisma.$queryRawUnsafe('');
+    const staffFilterSql = staffId ? Prisma.sql`AND o."staffId" = ${staffId}::uuid` : Prisma.empty;
 
     const [discountOrders, byTypeRows] = await Promise.all([
       prisma.$queryRaw<
@@ -761,7 +761,7 @@ export class ReportsService {
   static async getTablesReport(outletId: string, tenantId: string, filter: ReportFilter, tz = DEFAULT_TIMEZONE) {
     const { startDate, endDate, tableId } = filter;
 
-    const tableFilterSql = tableId ? prisma.$queryRawUnsafe(`AND t.id = '${tableId}'::uuid`) : prisma.$queryRawUnsafe('');
+    const tableFilterSql = tableId ? Prisma.sql`AND t.id = ${tableId}::uuid` : Prisma.empty;
 
     const rows = await prisma.$queryRaw<
       { tableId: string; label: string; seats: number; orders: number; sales: number; aov: number }[]
@@ -992,7 +992,7 @@ export class ReportsService {
   static async getOrdersReport(outletId: string, tenantId: string, filter: ReportFilter, tz = DEFAULT_TIMEZONE) {
     const { startDate, endDate, orderType } = filter;
 
-    const typeFilterSql = orderType ? prisma.$queryRawUnsafe(`AND o."type" = '${orderType}'::text`) : prisma.$queryRawUnsafe('');
+    const typeFilterSql = orderType ? Prisma.sql`AND o."type" = ${orderType}::text` : Prisma.empty;
 
     const [statusRows, typeRows, ordersList] = await Promise.all([
       prisma.$queryRaw<{ status: string; count: number; total: number }[]>`

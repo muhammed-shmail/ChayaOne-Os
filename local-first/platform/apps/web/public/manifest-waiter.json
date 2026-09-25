@@ -1,8 +1,12 @@
 {
+  "id": "/pos",
   "name": "ChayaOne Waiter",
   "short_name": "Waiter",
+  "description": "ChayaOne OS Waiter POS & Floor Ordering Terminal",
   "start_url": "/pos",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#14110F",
   "theme_color": "#E8902A",
   "icons": [
@@ -19,9 +23,21 @@
       "purpose": "any maskable"
     },
     {
-      "src": "/app.png",
+      "src": "/app.png?v=4",
       "sizes": "512x512",
       "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Waiter POS",
+      "short_name": "POS",
+      "url": "/pos"
+    },
+    {
+      "name": "Staff Login",
+      "short_name": "Login",
+      "url": "/login"
     }
   ]
 }

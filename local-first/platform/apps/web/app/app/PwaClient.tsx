@@ -161,10 +161,26 @@ export default function PwaClient({ qrToken }: { qrToken: string | null }) {
         <div className="reg">
           <BrandMark size={120} />
           <AlphaTag />
-          <h2 className="reg-h">Hmm, that didn’t load</h2>
-          <p className="reg-sub">{err}</p>
-          <div className="reg-form">
+          <h2 className="reg-h">Table Not Found</h2>
+          <p className="reg-sub">{err === 'table_not_found' ? 'Please scan the QR code located on your table to view the menu.' : err}</p>
+          <div className="reg-form" style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', maxWidth: '300px' }}>
             <button className="reg-btn" onClick={() => load()}>Try again</button>
+            <a
+              href="/pos"
+              className="reg-btn"
+              style={{
+                textDecoration: 'none',
+                textAlign: 'center',
+                background: '#15110D',
+                color: '#E8902A',
+                border: '1px solid #E8902A',
+                fontWeight: 600,
+                padding: '12px 16px',
+                borderRadius: '14px',
+              }}
+            >
+              👤 Staff / Waiter? Open Waiter POS →
+            </a>
           </div>
         </div>
       ) : (

@@ -6,12 +6,12 @@
      - everything else (dashboard / admin / API) goes straight to the network and
        is never cached.
    Read-only offline only (Phase 4 layers API GET caching on top of this). */
-const CACHE = 'cafeos-pwa-v3';
+const CACHE = 'cafeos-waiter-tablet-v2';
 // Public pages safe to precache at install (protected shells are cached at runtime
 // once an authenticated staff member loads them — precaching them would just cache
 // a /login redirect).
-const PRECACHE = ['/app', '/manifest.webmanifest', '/staff.webmanifest'];
-const SHELL_PREFIXES = ['/app', '/pos', '/kds'];
+const PRECACHE = ['/tables', '/waiter.webmanifest'];
+const SHELL_PREFIXES = ['/tables', '/order', '/requests', '/transfers'];
 
 function shellRoot(pathname) {
   for (const p of SHELL_PREFIXES) {
@@ -55,14 +55,14 @@ self.addEventListener('push', (event) => {
     tag: data.tag || 'cafeos',
     icon: '/app.png?v=3',
     badge: '/app.png?v=3',
-    data: { url: data.url || '/pos' },
+    data: { url: data.url || '/tables' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || '/pos';
+  const url = (event.notification.data && event.notification.data.url) || '/tables';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
       for (const w of wins) {

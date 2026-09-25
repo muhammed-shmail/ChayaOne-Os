@@ -64,9 +64,13 @@ export function PwaRegistration() {
 
     // 2. Dynamically set manifest link in <head> without polluting React VDOM
     try {
-      const manifestUrl = (pathname.startsWith('/pos') || pathname.startsWith('/approvals') || pathname.startsWith('/kds'))
-        ? '/manifest-waiter.json'
-        : '/manifest-customer.json';
+      const isCustomerSurface =
+        pathname.startsWith('/app') ||
+        pathname.startsWith('/customer') ||
+        pathname.startsWith('/t/') ||
+        pathname.startsWith('/download');
+
+      const manifestUrl = isCustomerSurface ? '/manifest-customer.json' : '/manifest-waiter.json';
 
       let link = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;
       if (!link) {

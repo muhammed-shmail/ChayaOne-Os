@@ -1,33 +1,43 @@
 export const dynamic = 'force-static';
 
 /**
- * Web app manifest for the STAFF PWA (installable POS) — separate from the
- * customer manifest at /manifest.webmanifest. Staff surfaces (/pos, /kds) link
- * this via `metadata.manifest` in their layouts, so a phone installs the staff
- * app — distinct identity (`id`), own start_url — rather than the guest app.
- *
- * `scope: '/'` so the same install also covers /kds (kitchen); role-based
- * routing sends each staff member to their landing screen after launch.
+ * Web app manifest for the STAFF PWA (installable POS).
+ * Staff surfaces (/pos, /kds, /waiter, /login) link this via metadata.manifest.
  */
 export function GET() {
   const manifest = {
     id: '/pos',
-    name: 'Cafe OS — Staff',
-    short_name: 'Cafe Staff',
-    description: 'Take orders, run the kitchen, and stay in sync — from your phone.',
+    name: 'ChayaOne Waiter',
+    short_name: 'Waiter',
+    description: 'ChayaOne OS Waiter POS & Floor Ordering Terminal',
     start_url: '/pos',
     scope: '/',
     display: 'standalone',
-    orientation: 'portrait',
-    background_color: '#0E0B08',
-    theme_color: '#0E0B08',
-    // app.png has a transparent background, so it is not declared `maskable`
-    // (Android would clip it against no fill). Single `any` icon at real size.
+    orientation: 'any',
+    background_color: '#14110F',
+    theme_color: '#E8902A',
     icons: [
-      { src: '/app.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      {
+        src: '/icons/waiter-192.png',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any maskable',
+      },
+      {
+        src: '/icons/waiter-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any maskable',
+      },
+      {
+        src: '/app.png?v=4',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any',
+      },
     ],
     shortcuts: [
-      { name: 'Floor / POS', short_name: 'POS', url: '/pos' },
+      { name: 'Waiter POS', short_name: 'POS', url: '/pos' },
       { name: 'Kitchen', short_name: 'KDS', url: '/kds' },
     ],
   };

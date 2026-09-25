@@ -36,10 +36,11 @@ export async function GET() {
   const tableFloors = readTableFloors(settings);
   const disabledTables = readDisabledTables(settings);
 
-  // fold the active orders into a per-table occupancy summary
+  // fold the active orders into a per-table occupancy summary (skip tables explicitly freed)
+  const freeTableIds = new Set(tables.filter((t) => t.state === 'free').map((t) => t.id));
   const occMap = new Map<string, { id: string; orderId: string; number: number; sinceMs: number; billPaise: number; orders: number; status: string }>();
   for (const o of activeOrders) {
-    if (!o.tableId) continue;
+    if (!o.tableId || freeTableIds.has(o.tableId)) continue;
     const cur = occMap.get(o.tableId);
     if (cur) {
       cur.billPaise += o.totalPaise;

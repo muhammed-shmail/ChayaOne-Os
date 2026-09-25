@@ -6,12 +6,12 @@
      - everything else (dashboard / admin / API) goes straight to the network and
        is never cached.
    Read-only offline only (Phase 4 layers API GET caching on top of this). */
-const CACHE = 'cafeos-pwa-v3';
+const CACHE = 'cafeos-waiter-pwa-v4';
 // Public pages safe to precache at install (protected shells are cached at runtime
 // once an authenticated staff member loads them — precaching them would just cache
 // a /login redirect).
-const PRECACHE = ['/app', '/manifest.webmanifest', '/staff.webmanifest'];
-const SHELL_PREFIXES = ['/app', '/pos', '/kds'];
+const PRECACHE = ['/pos', '/manifest.webmanifest', '/manifest-waiter.json', '/staff.webmanifest'];
+const SHELL_PREFIXES = ['/pos', '/waiter', '/app', '/kds'];
 
 function shellRoot(pathname) {
   for (const p of SHELL_PREFIXES) {

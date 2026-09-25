@@ -1,7 +1,10 @@
 {
+  "id": "/app",
   "name": "ChayaOne",
   "short_name": "ChayaOne",
+  "description": "Order, earn points, and play — right from your table.",
   "start_url": "/app",
+  "scope": "/app",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#D4AF37",
