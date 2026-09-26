@@ -80,6 +80,7 @@ export async function POST(req: NextRequest) {
       roundOffPaise: order.roundOffPaise,
       totalPaise: order.totalPaise,
       isReprint: true,
+      gstEnabled: (order.cgstPaise || 0) + (order.sgstPaise || 0) + (order.igstPaise || 0) > 0,
       isCancelled: order.status === 'cancelled',
       receiptConfig: rConfig,
       upiConfig,

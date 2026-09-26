@@ -7,7 +7,7 @@ import {
   Lock, Database, Sparkles, Cpu, Sliders, Calendar, DollarSign, UserCheck, RefreshCw,
   AlertCircle, Trash2, Plus, Check, Search, ChevronRight, ChevronLeft, Info, X, Key,
   Heart, AlertTriangle, Play, HelpCircle, Megaphone, Download, Layers, QrCode,
-  Wifi, Copy, ExternalLink, User, Server, CheckCircle2, Monitor, Moon, Edit2, Loader2
+  Wifi, Copy, ExternalLink, User, Server, CheckCircle2, Monitor, Moon, Edit2, Loader2, Upload
 } from 'lucide-react';
 import type { Kitchen } from '@/lib/kitchens';
 import type { Device } from '@/lib/devices';
@@ -368,6 +368,7 @@ export default function SettingsCenter({
   const [customWaiterName, setCustomWaiterName] = useState<string>('');
   const [waiterList, setWaiterList] = useState<{ id: string; name: string; role: string; assignedRoles?: string[]; displayRole?: string; brandName?: string }[]>([]);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
   const [customerPort, setCustomerPort] = useState<string>('3003');
   const [customerTableToken, setCustomerTableToken] = useState<string>('demo');
   const [deletingStationId, setDeletingStationId] = useState<string | null>(null);
@@ -1471,6 +1472,27 @@ export default function SettingsCenter({
     message: string;
     onConfirm: () => void;
   } | null>(null);
+
+  useEffect(() => {
+    if (!showConfirmModal?.show && !showAddStationModal && !showEditStationModal && !showStationRoutingModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showConfirmModal?.show) setShowConfirmModal(null);
+        if (showAddStationModal) {
+          setShowAddStationModal(false);
+          setNewStationModalName('');
+          setNewStationModalCode('');
+        }
+        if (showEditStationModal) {
+          setShowEditStationModal(false);
+          setEditingStationData(null);
+        }
+        if (showStationRoutingModal) setShowStationRoutingModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showConfirmModal?.show, showAddStationModal, showEditStationModal, showStationRoutingModal]);
 
   // Advanced GST configuration states
   const [gstConfig, setGstConfig] = useState<any>({
@@ -2695,13 +2717,14 @@ export default function SettingsCenter({
                   {/* Logo Config */}
                   <div className="flex flex-col gap-2.5">
                     <h4 className="font-bold text-sm">Store Brand Logo</h4>
-                    <p className="text-xs text-ink-3">Appears on receipt prints, invoices, and customer web applications. Square PNG/JPG formats recommended.</p>
+                    <p className="text-xs text-ink-3">Appears on receipt prints, invoices, and customer web applications. Any image format (PNG, JPG, WEBP, SVG, GIF, AVIF) supported.</p>
                     <div className="flex items-center gap-4">
                       {logoUrl ? (
                         <div className="relative group">
-                          <img src={logoUrl} alt="Store logo" className="rounded-xl border object-contain p-1 w-20 h-20 bg-white" />
+                          <img src={logoUrl} alt="Store logo" className="rounded-xl border object-contain p-1 w-20 h-20 bg-white shadow-sm" />
                           <button
                             type="button"
+                            title="Remove logo"
                             onClick={() => saveLogo(null)}
                             disabled={logoBusy}
                             className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-red-600 text-white flex items-center justify-center hover:bg-red-700 shadow-md transition-colors"
@@ -2710,16 +2733,46 @@ export default function SettingsCenter({
                           </button>
                         </div>
                       ) : (
-                        <div className="rounded-xl border grid place-items-center w-20 h-20 bg-paper-3 text-ink-3">
+                        <div className="rounded-xl border border-dashed grid place-items-center w-20 h-20 bg-paper-3 text-ink-3">
                           <Store size={28} />
                         </div>
                       )}
                       <div className="flex flex-col gap-1.5">
-                        <label className={`btn btn-sm cursor-pointer ${logoBusy ? 'opacity-60 pointer-events-none' : ''}`} style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
-                          {logoBusy ? 'Uploading...' : logoUrl ? 'Change Image' : 'Upload Image'}
-                          <input type="file" accept="image/png,image/jpeg,image/webp,image/jpg" className="hidden" disabled={logoBusy} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f); e.currentTarget.value = ''; }} />
-                        </label>
-                        <span className="text-[10px] text-ink-3">Max size: 5MB. Format: PNG, JPG, WEBP</span>
+                        <input
+                          ref={logoFileInputRef}
+                          type="file"
+                          accept="image/*,.png,.jpg,.jpeg,.webp,.svg,.gif,.ico,.bmp,.jfif,.avif"
+                          style={{ display: 'none' }}
+                          disabled={logoBusy}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleLogoFile(f);
+                            e.currentTarget.value = '';
+                          }}
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => logoFileInputRef.current?.click()}
+                            disabled={logoBusy}
+                            className={`btn btn-sm flex items-center gap-1.5 cursor-pointer ${logoBusy ? 'opacity-60 pointer-events-none' : ''}`}
+                            style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+                          >
+                            {logoBusy ? <Loader2 size={14} className="animate-spin text-accent" /> : <Upload size={14} />}
+                            <span>{logoBusy ? 'Uploading...' : logoUrl ? 'Change Image' : 'Upload Image'}</span>
+                          </button>
+                          {logoUrl && (
+                            <button
+                              type="button"
+                              onClick={() => saveLogo(null)}
+                              disabled={logoBusy}
+                              className="btn btn-sm btn-ghost text-red-600 hover:text-red-700 text-xs px-2"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-ink-3">Max size: 10MB. Format: PNG, JPG, WEBP, SVG, GIF</span>
                       </div>
                     </div>
                   </div>
@@ -4444,6 +4497,10 @@ export default function SettingsCenter({
                                     message: `Are you sure you want to remove the "${k.name}" preparation station? Menu items mapped to this station will revert to unassigned (no station).`,
                                     onConfirm: async () => {
                                       setDeletingStationId(k.id);
+                                       if (editingStationData?.id === k.id) {
+                                         setShowEditStationModal(false);
+                                         setEditingStationData(null);
+                                       }
                                       try {
                                         await kitchenApi({ action: 'kitchen_delete', id: k.id }, `Station "${k.name}" deleted`);
                                       } finally {
@@ -5008,7 +5065,7 @@ export default function SettingsCenter({
                           <span className="text-base">📍</span> STATION CONFIGURATION &amp; PRINTER ROUTING
                         </h4>
                         <p className="text-[11px] text-ink-3">
-                          One unified station registry. Orders split KOT items to each station's printer; waiter bills route to their station's printer.
+                          One unified station registry. Orders split KOT items to each station&apos;s printer; waiter bills route to their station&apos;s printer.
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -5182,6 +5239,10 @@ export default function SettingsCenter({
                                               message: `Are you sure you want to delete station "${st.code} · ${st.name}"? Menu items mapped to this station will revert to unassigned.`,
                                               onConfirm: async () => {
                                                 setDeletingStationId(st.id);
+                                                 if (editingStationData?.id === st.id) {
+                                                   setShowEditStationModal(false);
+                                                   setEditingStationData(null);
+                                                 }
                                                 try {
                                                   await kitchenApi({ action: 'kitchen_delete', id: st.id }, `Station "${st.code}" deleted`);
                                                 } finally {

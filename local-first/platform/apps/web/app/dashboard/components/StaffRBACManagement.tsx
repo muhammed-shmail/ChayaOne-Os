@@ -5,6 +5,8 @@ import { formatINR } from '@cafeos/core';
 import type { StaffRole } from '@cafeos/db';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, ALL_ROLES, PERMISSION_MODULES, PRESETS, resolvePrimaryRole, type PermissionItem } from '@/lib/rbac';
 import { DEFAULT_WAITER_STATIONS, type WaiterStation, formatStationBadge } from '@/lib/waiter-stations';
+import { ConfirmModal } from '@/components/ui';
+import StaffProfileView from './StaffProfileView';
 
 interface CustomSelectOption {
   value: string;
@@ -101,7 +103,8 @@ interface AuditLogEntry {
 const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [];
 
 export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: () => void }) {
-  const [activeSubTab, setActiveSubTab] = useState<'directory' | 'permissions' | 'audit'>('directory');
+  const [activeSubTab, setActiveSubTab] = useState<'directory' | 'profile' | 'permissions' | 'audit'>('directory');
+  const [profileInitialTab, setProfileInitialTab] = useState<'overview' | 'attendance' | 'shifts' | 'permissions' | 'security' | 'audit'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
@@ -109,6 +112,13 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   
   // Selected staff user for detail views
   const [selectedStaff, setSelectedStaff] = useState<any | null>(null);
+
+  // Helper to open staff profile with a specific tab
+  const openStaffProfile = (staffMember: any, tab: 'overview' | 'attendance' | 'shifts' | 'permissions' | 'security' | 'audit' = 'overview') => {
+    setSelectedStaff(staffMember);
+    setProfileInitialTab(tab);
+    setActiveSubTab('profile');
+  };
   
   // Permissions & configurations state for editing
   const [assignedRoles, setAssignedRoles] = useState<string[]>([]);
@@ -722,6 +732,11 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         })
       });
       if (res.ok) {
+        const updated = { ...m, active: nextActive };
+        setMembersList(prev => prev.map(item => item.id === m.id ? updated : item));
+        if (selectedStaff?.id === m.id) {
+          setSelectedStaff(updated);
+        }
         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
         refresh();
       }
@@ -773,7 +788,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       <div className="col-span-1 md:col-span-2 lg:col-span-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-line pb-2 gap-4 mt-2">
         <div className="flex gap-2 overflow-x-auto w-full sm:w-auto">
           <button
-            onClick={() => { setActiveSubTab('directory'); setSelectedStaff(null); }}
+            onClick={() => setActiveSubTab('directory')}
             className={`px-4 py-2 border-b-2 font-medium text-sm transition-all whitespace-nowrap capitalize ${
               activeSubTab === 'directory'
                 ? 'border-turmeric text-turmeric font-semibold'
@@ -784,6 +799,21 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           </button>
           {selectedStaff && (
             <button
+              onClick={() => setActiveSubTab('profile')}
+              className={`px-4 py-2 border-b-2 font-medium text-sm transition-all whitespace-nowrap capitalize flex items-center gap-1.5 ${
+                activeSubTab === 'profile'
+                  ? 'border-turmeric text-turmeric font-semibold'
+                  : 'border-transparent text-ink-3 hover:text-ink'
+              }`}
+            >
+              <span>Staff Profile</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-turmeric-l/20 text-turmeric font-bold">
+                {selectedStaff.name}
+              </span>
+            </button>
+          )}
+          {selectedStaff && (
+            <button
               onClick={() => setActiveSubTab('permissions')}
               className={`px-4 py-2 border-b-2 font-medium text-sm transition-all whitespace-nowrap capitalize ${
                 activeSubTab === 'permissions'
@@ -791,7 +821,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                   : 'border-transparent text-ink-3 hover:text-ink'
               }`}
             >
-              Configure permissions ({selectedStaff.name})
+              Configure Permissions ({selectedStaff.name})
             </button>
           )}
           <button
@@ -821,6 +851,23 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
       {/* Main Tab Rendering */}
       <div className="col-span-1 md:col-span-2 lg:col-span-4 mt-2">
+        {/* STAFF PROFILE VIEW */}
+        {activeSubTab === 'profile' && selectedStaff && (
+          <StaffProfileView
+            staff={selectedStaff}
+            onBack={() => setActiveSubTab('directory')}
+            onUpdateStaff={(updatedStaff) => {
+              setSelectedStaff(updatedStaff);
+              setMembersList(prev => prev.map(m => m.id === updatedStaff.id ? { ...m, ...updatedStaff } : m));
+            }}
+            onToggleStatus={handleToggleStatus}
+            initialTab={profileInitialTab}
+            waiterStations={waiterStations}
+            customRoles={customRoles}
+            refresh={refresh}
+          />
+        )}
+
         {/* DIRECTORY VIEW */}
         {activeSubTab === 'directory' && (
           <div className="space-y-4">
@@ -898,15 +945,20 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                         const shiftText = m.currentShift || (m.active ? 'Active Shift' : 'Off Shift');
 
                         return (
-                          <tr key={m.id} className="hover:bg-line/10 transition-colors">
+                          <tr
+                            key={m.id}
+                            onClick={() => openStaffProfile(m, 'overview')}
+                            className="hover:bg-turmeric/5 cursor-pointer transition-colors group"
+                            title={`Click to open ${m.name}'s Staff Profile`}
+                          >
                             {/* Employee profile column */}
                             <td className="p-4" data-label="Employee">
                               <div className="flex items-center gap-3">
-                                <span className="grid place-items-center w-8 h-8 rounded-full text-xs font-bold font-mono shrink-0" style={{ background: 'var(--turmeric-l)', color: '#2A1607' }}>
+                                <span className="grid place-items-center w-8 h-8 rounded-full text-xs font-bold font-mono shrink-0 group-hover:scale-105 transition-transform" style={{ background: 'var(--turmeric-l)', color: '#2A1607' }}>
                                   {m.name.slice(0, 2).toUpperCase()}
                                 </span>
                                 <div className="text-left">
-                                  <span className="font-semibold text-ink block leading-snug">{m.name}</span>
+                                  <span className="font-semibold text-ink block leading-snug group-hover:text-turmeric transition-colors">{m.name}</span>
                                   <span className="text-[10px] text-ink-3 font-mono block">Code: {m.employeeCode || '—'} · {m.phone || 'No Phone'}</span>
                                 </div>
                               </div>
@@ -959,16 +1011,26 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                             </td>
 
                             {/* Actions column */}
-                            <td className="p-4 text-right" data-label="Actions">
+                            <td className="p-4 text-right" data-label="Actions" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
-                                  onClick={() => selectStaffMember(m)}
+                                  type="button"
+                                  onClick={() => openStaffProfile(m, 'overview')}
+                                  className="px-2 py-1 rounded bg-turmeric/10 hover:bg-turmeric/20 text-xs font-semibold text-turmeric transition-all flex items-center gap-1"
+                                  title="Open Staff Profile & Attendance"
+                                >
+                                  👤 <span className="hidden sm:inline">Profile</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openStaffProfile(m, 'permissions')}
                                   className="px-2 py-1 rounded bg-paper-3 hover:bg-line text-xs font-semibold text-ink transition-all flex items-center gap-1"
                                   title="Configure RBAC Permissions"
                                 >
                                   🔑 <span className="hidden sm:inline">Permissions</span>
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => handleToggleStatus(m)}
                                   className={`px-2 py-1 rounded text-xs font-semibold transition-all ${
                                     m.active ? 'bg-red-950/20 hover:bg-red-950/40 text-red-500' : 'bg-green-950/20 hover:bg-green-950/40 text-green-500'
@@ -1132,7 +1194,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                       </div>
                     </div>
                     <p className="text-[10px] text-ink-3">
-                      Orders placed by this waiter will automatically print to this station's designated printer. Manage stations in Settings → Device Printers.
+                      Orders placed by this waiter will automatically print to this station&apos;s designated printer. Manage stations in Settings → Device Printers.
                     </p>
 
                     {showNewStationInput && (
@@ -1207,9 +1269,27 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                           >
                             <div className="flex items-center justify-between mb-1 gap-1">
                               <span className="font-mono text-[10px] uppercase font-bold">{st.code}</span>
-                              {isSel && (
-                                <span className="text-[10px] text-turmeric font-bold">✓</span>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {isSel && (
+                                  <span className="text-[10px] text-turmeric font-bold mr-0.5">✓</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleStartEditStation(st, e)}
+                                  className="opacity-0 group-hover:opacity-100 hover:text-turmeric text-ink-3 p-0.5 rounded transition-opacity text-[10px]"
+                                  title={`Edit station ${st.code}`}
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => promptDeleteStation(st, e)}
+                                  className="opacity-0 group-hover:opacity-100 hover:text-red-500 text-ink-3 p-0.5 rounded transition-opacity text-[10px]"
+                                  title={`Delete station ${st.code}`}
+                                >
+                                  🗑️
+                                </button>
+                              </div>
                             </div>
                             <span className="truncate text-ink font-semibold">{st.name}</span>
                           </div>
@@ -1633,7 +1713,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                         </span>
                       </div>
                       <p className="text-[11px] text-ink-3 mt-0.5">
-                        Assign this waiter to a floor section. Orders taken by this waiter will automatically print to that station's printer. Manage stations in Settings → Device Printers.
+                        Assign this waiter to a floor section. Orders taken by this waiter will automatically print to that station&apos;s printer. Manage stations in Settings → Device Printers.
                       </p>
                     </div>
                   </div>
@@ -1800,79 +1880,40 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
       {/* Standard Delete Station Confirmation Modal */}
       {stationToDelete && (
-        <div
-          onClick={() => !isDeletingStation && setStationToDelete(null)}
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-transparent animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-paper border border-line rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center animate-in zoom-in-95 duration-150 ring-1 ring-black/5"
-          >
-            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 mx-auto flex items-center justify-center text-xl mb-3.5">
-              🗑️
-            </div>
-            <h4 className="text-base font-bold text-ink mb-1.5">Delete Floor Station</h4>
-            <p className="text-xs text-ink-3 leading-relaxed mb-5">
+        <ConfirmModal
+          isOpen={!!stationToDelete}
+          title="Delete Floor Station"
+          message={
+            <span>
               Are you sure you want to delete station <b className="text-ink">{stationToDelete.code} ({stationToDelete.name})</b>?
-            </p>
-            <div className="flex gap-2 justify-center">
-              <button
-                type="button"
-                disabled={isDeletingStation}
-                onClick={() => setStationToDelete(null)}
-                className="px-4 py-2 rounded-xl border border-line text-xs font-semibold text-ink-2 hover:bg-paper-2 transition-all cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeletingStation}
-                onClick={handleConfirmDeleteStation}
-                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {isDeletingStation ? 'Deleting…' : 'Yes, Delete Station'}
-              </button>
-            </div>
-          </div>
-        </div>
+            </span>
+          }
+          confirmText="Yes, Delete Station"
+          isLoading={isDeletingStation}
+          onConfirm={handleConfirmDeleteStation}
+          onCancel={() => {
+            if (!isDeletingStation) setStationToDelete(null);
+          }}
+        />
       )}
 
+      {/* Standard Delete Staff Account Confirmation Modal */}
       {staffToDelete && (
-        <div
-          onClick={() => !isDeletingStaff && setStaffToDelete(null)}
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-transparent animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-paper border border-line rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center animate-in zoom-in-95 duration-150 ring-1 ring-black/5"
-          >
-            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 mx-auto flex items-center justify-center text-xl mb-3.5">
-              🗑️
-            </div>
-            <h4 className="text-base font-bold text-ink mb-1.5">Delete Staff Account</h4>
-            <p className="text-xs text-ink-3 leading-relaxed mb-5">
+        <ConfirmModal
+          isOpen={!!staffToDelete}
+          title="Delete Staff Account"
+          message={
+            <span>
               Are you sure you want to remove <b className="text-ink">{staffToDelete.name}</b> ({staffToDelete.role})? Historical sales and orders will be safely preserved.
-            </p>
-            <div className="flex gap-2 justify-center">
-              <button
-                type="button"
-                disabled={isDeletingStaff}
-                onClick={() => setStaffToDelete(null)}
-                className="px-4 py-2 rounded-xl border border-line text-xs font-semibold text-ink-2 hover:bg-paper-2 transition-all cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeletingStaff}
-                onClick={handleConfirmDeleteStaff}
-                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-              >
-                {isDeletingStaff ? 'Deleting…' : 'Yes, Delete Staff'}
-              </button>
-            </div>
-          </div>
-        </div>
+            </span>
+          }
+          confirmText="Yes, Delete Staff"
+          isLoading={isDeletingStaff}
+          onConfirm={handleConfirmDeleteStaff}
+          onCancel={() => {
+            if (!isDeletingStaff) setStaffToDelete(null);
+          }}
+        />
       )}
     </div>
   );

@@ -280,6 +280,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       paymentMethod,
       invoiceNo,
       isReprint: true,
+      gstEnabled: (order.cgstPaise || 0) + (order.sgstPaise || 0) > 0,
       receiptConfig: outlet.receipt,
       upiConfig: outlet.upiConfig,
     };
@@ -671,6 +672,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         roundOffPaise: r.roundOffPaise,
         totalPaise: r.totalPaise,
         paymentMethod: r.paymentMethod,
+        gstEnabled: r.gstEnabled !== undefined ? r.gstEnabled : ((r.cgstPaise || 0) + (r.sgstPaise || 0) > 0),
         receiptConfig: outlet.receipt,
         upiConfig: outlet.upiConfig,
       };
@@ -702,6 +704,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       roundOffPaise: calculatedBill.roundOffPaise,
       totalPaise: calculatedBill.totalPaise,
       paymentMethod: payTab.toUpperCase(),
+      gstEnabled: outlet.gstEnabled,
       receiptConfig: outlet.receipt,
       upiConfig: outlet.upiConfig,
     };
@@ -1225,7 +1228,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         boxShadow: '0 2px 8px color-mix(in srgb, var(--gold) 30%, transparent)',
                       }}
                     >
-                      View Today's Bills
+                      View Today&apos;s Bills
                     </button>
                   )}
                 </div>
@@ -2204,9 +2207,11 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                               discountPaise: h.discountPaise || 0,
                               cgstPaise: h.cgstPaise || 0,
                               sgstPaise: h.sgstPaise || 0,
+                              roundOffPaise: h.roundOffPaise || 0,
                               totalPaise: h.totalPaise,
                               paymentMethod: h.paymentMethods,
                               isReprint: true,
+                              gstEnabled: (h.cgstPaise || 0) + (h.sgstPaise || 0) > 0,
                               receiptConfig: outlet.receipt,
                               upiConfig: outlet.upiConfig,
                             };

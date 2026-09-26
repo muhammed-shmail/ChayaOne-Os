@@ -110,6 +110,22 @@ const takeawayBill = computeBill(
 );
 eq('takeaway overridden tax', takeawayBill.cgstPaise + takeawayBill.sgstPaise, 1200);
 
+// 5. Round off tests (enabled vs disabled)
+const roundedBill = computeBill([{ pricePaise: 28647, gstRate: 0, qty: 1 }], { gstEnabled: false, roundOff: true });
+eq('roundOff enabled rounds to nearest rupee', roundedBill.totalPaise, 28600);
+eq('roundOff enabled difference', roundedBill.roundOffPaise, -47);
+
+const unroundedBill = computeBill([{ pricePaise: 28647, gstRate: 0, qty: 1 }], { gstEnabled: false, roundOff: false });
+eq('roundOff disabled keeps exact paise', unroundedBill.totalPaise, 28647);
+eq('roundOff disabled has zero roundoff', unroundedBill.roundOffPaise, 0);
+
+// 6. GST OFF with Discount
+const gstOffDiscount = computeBill([{ pricePaise: 10000, gstRate: 18, qty: 1 }], { gstEnabled: false, discountPct: 20 });
+eq('GST OFF discount subtotal', gstOffDiscount.subtotalPaise, 10000);
+eq('GST OFF discount amount', gstOffDiscount.discountPaise, 2000);
+eq('GST OFF discount tax is 0', gstOffDiscount.cgstPaise + gstOffDiscount.sgstPaise + gstOffDiscount.igstPaise, 0);
+eq('GST OFF discount total', gstOffDiscount.totalPaise, 8000);
+
 console.log(`\nformatINR sample: ${formatINR(bill.totalPaise)}`);
 console.log(failed === 0 ? '\nALL PASS' : `\n${failed} FAILED`);
 if (failed) process.exit(1);

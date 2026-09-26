@@ -1148,16 +1148,24 @@ export default function DashboardClient({
 
   // escape owner-entered receipt text so it can't break the print markup
   const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Standard 2-decimal money format (e.g. ₹240.00)
+  const formatMoney = (paise: number) => {
+    const isNeg = paise < 0;
+    const abs = Math.abs(paise || 0);
+    return (isNeg ? '-' : '') + '₹' + (abs / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
   // build the branded header (logo + name + custom lines + phone) shared by bill/receipt
   function receiptHeaderHtml() {
     const r = outlet.receipt;
     const logo = logoUrl ?? r.logoUrl;
+    const hasLogo = Boolean(r.showLogo && logo);
+    const isGstOn = Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled);
     const parts = [
-      r.showLogo && logo ? `<img src="${logo}" alt="" />` : '',
-      `<h2>${escHtml(outlet.brand)}</h2>`,
-      r.header.trim() ? `<div class="muted">${escHtml(r.header).replace(/\n/g, '<br/>')}</div>` : '',
-      r.phone.trim() ? `<div class="muted">☎ ${escHtml(r.phone)}</div>` : '',
-      r.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escHtml(outlet.gstin)}</div>` : '',
+      hasLogo ? `<div style="text-align:center;margin-bottom:3pt;"><img src="${logo}" alt="Logo" style="display:block;max-width:50mm;max-height:22mm;margin:0 auto 3pt;object-fit:contain;filter:grayscale(100%) contrast(120%);" /></div>` : '',
+      `<div style="text-align:center;font-size:${hasLogo ? '10pt' : '11pt'};font-weight:700;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:1.5pt;">${escHtml(outlet.brand)}</div>`,
+      r.header.trim() ? `<div class="muted" style="text-align:center;font-size:8.5pt;margin-bottom:1pt;">${escHtml(r.header).replace(/\n/g, '<br/>')}</div>` : '',
+      r.phone.trim() ? `<div class="muted" style="text-align:center;font-size:8.5pt;margin-bottom:1pt;">Tel: ${escHtml(r.phone)}</div>` : '',
+      isGstOn && r.showGstin && outlet.gstin ? `<div class="muted" style="text-align:center;font-size:8.5pt;margin-bottom:1pt;">GSTIN: ${escHtml(outlet.gstin)}</div>` : '',
     ];
     return parts.filter(Boolean).join('\n');
   }
@@ -1168,35 +1176,57 @@ export default function DashboardClient({
     if (!w) { flashMessage('Allow pop-ups to print'); return; }
     const close = '<' + '/script>';
     w.document.write(`<html><head><title>${title}</title><style>
-      *{font-family:ui-monospace,Menlo,monospace;color:#000;box-sizing:border-box}
-      body{width:300px;margin:0 auto;padding:14px;font-size:12px}
-      h2{text-align:center;margin:0 0 2px;font-size:15px}
-      img{display:block;max-width:160px;max-height:80px;margin:0 auto 6px;object-fit:contain}
-      .muted{color:#555;text-align:center;font-size:11px;margin-bottom:4px}
-      table{width:100%;border-collapse:collapse} td{padding:2px 0;vertical-align:top} .r{text-align:right}
-      .line{border-top:1px dashed #000;margin:8px 0} .tot{font-weight:700;font-size:14px}
+      @page { size: 80mm auto; margin: 3mm 4mm; }
+      *{font-family:Consolas, 'SFMono-Regular', Menlo, Courier, monospace;color:#000;box-sizing:border-box}
+      body{width:72mm;margin:0 auto;padding:6px;font-size:9.5pt;line-height:1.3}
+      .muted{color:#333;font-size:8.5pt}
+      table{width:100%;border-collapse:collapse} td{padding:1.5pt 0;vertical-align:top} .r{text-align:right} .c{text-align:center}
+      .line{border-top:1px dashed #000;margin:3pt 0} .tot{font-weight:800;font-size:11pt}
+      .meta-row{display:flex;justify-content:space-between;align-items:center;font-size:8.5pt;padding:0.5pt 0}
+      .meta-row.bold{font-weight:700}
     </style></head><body>${inner}<script>window.onload=function(){window.print();setTimeout(function(){window.close()},300)}${close}</body></html>`);
     w.document.close();
   }
 
   function printOrderBill(o: any) {
-    const rows = o.items.map((i: any) => `<tr><td>${i.qty}× ${i.nameSnapshot}</td><td class="r">${formatINR(i.unitPricePaise * i.qty)}</td></tr>`).join('');
-    const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
+    const isGstOn = Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled);
+    const dateObj = new Date(o.placedAt || Date.now());
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const month = MONTHS[dateObj.getMonth()] || 'Jan';
+    const year = dateObj.getFullYear();
+    const dateStr = `${day} ${month} ${year}`;
+    const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const tableLabel = o.table?.label ? (String(o.table.label).toLowerCase().startsWith('table') ? o.table.label : `TABLE: ${o.table.label}`) : (o.type ? o.type.toUpperCase() : 'TABLE');
+
+    const rows = o.items.map((i: any) => `<tr><td style="text-align:left;">${escHtml(i.nameSnapshot || i.name)}</td><td class="c" style="width:28pt;">${i.qty}</td><td class="r" style="width:58pt;">${formatMoney((i.unitPricePaise || 0) * i.qty)}</td></tr>`).join('');
+    const row = (label: string, val: number, isDiscount = false) => `<tr><td>${label}:</td><td></td><td class="r"${isDiscount ? ' style="color:#1a7a1a;"' : ''}>${isDiscount ? '-' : ''}${formatMoney(Math.abs(val))}</td></tr>`;
+
     printOrderDoc(`Bill #${o.number}`, `
       ${receiptHeaderHtml()}
-      <div class="muted">Bill #${o.number} · ${o.table?.label ? 'Table ' + o.table.label : o.type} · ${new Date(o.placedAt).toLocaleString('en-IN')}</div>
-      <div class="line"></div><table>${rows}</table><div class="line"></div>
+      <div class="line"></div>
+      <div class="meta-row bold"><span>${escHtml(tableLabel)}</span><span>ORDER #${o.number}</span></div>
+      <div class="meta-row"><span>${dateStr}</span><span>${timeStr}</span></div>
+      <div class="line"></div>
+      <table>
+        <tr style="font-weight:700;font-size:8.5pt;border-bottom:1px solid #000;"><td style="text-align:left;">ITEM</td><td class="c" style="width:28pt;">QTY</td><td class="r" style="width:58pt;">AMOUNT</td></tr>
+        ${rows}
+      </table>
+      <div class="line"></div>
       <table>
         ${row('Subtotal', o.subtotalPaise)}
-        ${o.discountPaise > 0 ? row('Discount', -o.discountPaise) : ''}
-        ${o.cgstPaise > 0 ? row('CGST', o.cgstPaise) : ''}
-        ${o.sgstPaise > 0 ? row('SGST', o.sgstPaise) : ''}
-        ${o.igstPaise > 0 ? row('IGST', o.igstPaise) : ''}
+        ${o.discountPaise > 0 ? row('Discount', o.discountPaise, true) : ''}
+        ${isGstOn && o.cgstPaise > 0 ? row('CGST', o.cgstPaise) : ''}
+        ${isGstOn && o.sgstPaise > 0 ? row('SGST', o.sgstPaise) : ''}
+        ${isGstOn && o.igstPaise > 0 ? row('IGST', o.igstPaise) : ''}
         ${o.serviceChargePaise > 0 ? row('Service charge', o.serviceChargePaise) : ''}
-        ${row('Round off', o.roundOffPaise)}
-        <tr class="tot"><td>Total</td><td class="r">${formatINR(o.totalPaise)}</td></tr>
+        ${o.roundOffPaise && o.roundOffPaise !== 0 ? row('Round off', o.roundOffPaise) : ''}
+        <tr class="tot" style="border-top:1px dashed #000;border-bottom:1px dashed #000;"><td style="padding:2pt 0;">TOTAL:</td><td></td><td class="r" style="padding:2pt 0;">${formatMoney(o.totalPaise)}</td></tr>
       </table>
-      <div class="line"></div><div class="muted">Status: ${o.status} · ${receiptFooterText()}</div>`);
+      <div class="line"></div>
+      <div style="text-align:center;font-size:8.5pt;margin-top:2pt;">${receiptFooterText()}</div>
+      <div style="text-align:center;font-size:8pt;font-weight:700;margin-top:1pt;">chaya.one</div>`);
   }
 
   function printOrderKOT(o: any) {
@@ -1261,28 +1291,44 @@ export default function DashboardClient({
     const totals = computeQuickInvoiceTotals();
     if (totals.lines.length === 0) { flashMessage('Add at least one item'); return; }
 
-    const rows = totals.lines.map((l: any) => `<tr><td>${l.qty}× ${l.name || 'Untitled Item'}</td><td class="r">${formatINR(l.lineTotalPaise)}</td></tr>`).join('');
-    const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
-    
     const randomNum = Math.floor(Math.random() * 9000) + 1000;
-    const dateStr = new Date().toLocaleString('en-IN');
+    const dateObj = new Date();
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const month = MONTHS[dateObj.getMonth()] || 'Jan';
+    const year = dateObj.getFullYear();
+    const dateStr = `${day} ${month} ${year}`;
+    const timeStr = dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
     const custLine = quickInvoiceCustName.trim() || quickInvoiceCustPhone.trim()
-      ? `<div class="muted">👤 ${quickInvoiceCustName} ${quickInvoiceCustPhone}</div>`
+      ? `<div class="meta-row"><span>Customer:</span><span>${escHtml(quickInvoiceCustName)} ${escHtml(quickInvoiceCustPhone)}</span></div>`
       : '';
+
+    const rows = totals.lines.map((l: any) => `<tr><td style="text-align:left;">${escHtml(l.name || 'Untitled Item')}</td><td class="c" style="width:28pt;">${l.qty}</td><td class="r" style="width:58pt;">${formatMoney(l.lineTotalPaise)}</td></tr>`).join('');
+    const row = (label: string, val: number) => `<tr><td>${label}:</td><td></td><td class="r">${formatMoney(Math.abs(val))}</td></tr>`;
 
     printOrderDoc(`Quick Bill #${randomNum}`, `
       ${receiptHeaderHtml()}
-      <div class="muted">Quick Bill #${randomNum} · ${dateStr}</div>
+      <div class="line"></div>
+      <div class="meta-row bold"><span>TAKEAWAY</span><span>QUICK BILL #${randomNum}</span></div>
+      <div class="meta-row"><span>${dateStr}</span><span>${timeStr}</span></div>
       ${custLine}
-      <div class="line"></div><table>${rows}</table><div class="line"></div>
+      <div class="line"></div>
+      <table>
+        <tr style="font-weight:700;font-size:8.5pt;border-bottom:1px solid #000;"><td style="text-align:left;">ITEM</td><td class="c" style="width:28pt;">QTY</td><td class="r" style="width:58pt;">AMOUNT</td></tr>
+        ${rows}
+      </table>
+      <div class="line"></div>
       <table>
         ${row('Subtotal', totals.subtotalPaise)}
         ${totals.cgstPaise > 0 ? row('CGST', totals.cgstPaise) : ''}
         ${totals.sgstPaise > 0 ? row('SGST', totals.sgstPaise) : ''}
-        ${totals.roundOffPaise !== 0 ? row('Round off', totals.roundOffPaise) : ''}
-        <tr class="tot"><td>Total</td><td class="r">${formatINR(totals.totalPaise)}</td></tr>
+        ${totals.roundOffPaise && totals.roundOffPaise !== 0 ? row('Round off', totals.roundOffPaise) : ''}
+        <tr class="tot" style="border-top:1px dashed #000;border-bottom:1px dashed #000;"><td style="padding:2pt 0;">TOTAL:</td><td></td><td class="r" style="padding:2pt 0;">${formatMoney(totals.totalPaise)}</td></tr>
       </table>
-      <div class="line"></div><div class="muted">Status: PAID · ${receiptFooterText()}</div>`);
+      <div class="line"></div>
+      <div style="text-align:center;font-size:8.5pt;margin-top:2pt;">${receiptFooterText()}</div>
+      <div style="text-align:center;font-size:8pt;font-weight:700;margin-top:1pt;">chaya.one</div>`);
   };
 
   const handlePrintQuickKOT = () => {
@@ -1475,9 +1521,15 @@ export default function DashboardClient({
       const res = await fetch('/api/dashboard/upload', { method: 'POST', body: fd });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.url) return d.url as string;
-      flashMessage(`Upload failed (${d.error ?? 'error'})`);
+      const errMsg = d.message || d.error || 'Upload failed';
+      console.error('[uploadImage error]', res.status, d);
+      flashMessage(`Upload failed: ${errMsg}`);
       return null;
-    } catch { flashMessage('Upload failed'); return null; }
+    } catch (err) {
+      console.error('[uploadImage network error]', err);
+      flashMessage('Upload failed: Network error');
+      return null;
+    }
   };
 
   const handleSavePwa = async (cfg: PwaConfig) => {
@@ -1798,12 +1850,20 @@ export default function DashboardClient({
       // GST is managed in its own Tax & GST panel; profile save leaves it untouched.
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'outlet', name: profile.name, gstin: profile.gstin || null, stateCode: profile.stateCode || null, address: { line1: profile.line1, city: profile.city, pincode: profile.pincode } }),
+        body: JSON.stringify({
+          action: 'outlet',
+          name: profile.name,
+          gstin: profile.gstin || null,
+          stateCode: profile.stateCode || null,
+          address: { line1: profile.line1, city: profile.city, pincode: profile.pincode },
+          logoUrl: logoUrl,
+        }),
       });
       if (res.ok) { flashMessage('Store profile saved'); router.refresh(); }
       else flashMessage('Could not save profile');
     } catch (err) {
       console.error(err);
+      flashMessage('Could not save profile');
     }
   };
 

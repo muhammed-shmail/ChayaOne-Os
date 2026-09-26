@@ -84,7 +84,10 @@ export async function verifyRefresh(token: string): Promise<{ sid: string } | nu
 
 /** Read current session from cookies (server components / route handlers). */
 export async function getSession(): Promise<OwnerSession | null> {
-  const token = cookies().get(SESSION_COOKIE)?.value;
+  let token = cookies().get(SESSION_COOKIE)?.value;
+  if (!token) {
+    token = cookies().get('cafeos_session')?.value;
+  }
   if (!token) return null;
   return verifySession(token);
 }

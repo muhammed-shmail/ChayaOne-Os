@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { formatINR } from '@cafeos/core';
 import type { StaffRole } from '@cafeos/db';
-import { ROLE_LABELS, ALL_ROLES } from '@/lib/rbac';
+import { ROLE_LABELS, ROLE_DESCRIPTIONS, ALL_ROLES, PERMISSION_MODULES, PRESETS, resolvePrimaryRole, type PermissionItem } from '@/lib/rbac';
+import { DEFAULT_WAITER_STATIONS, type WaiterStation, formatStationBadge } from '@/lib/waiter-stations';
+import StaffProfileView from './StaffProfileView';
 
 interface CustomSelectOption {
   value: string;
@@ -74,291 +76,6 @@ function CustomSelect({
   );
 }
 
-
-// Let's define the 18 permission modules and their respective actions
-interface PermissionItem {
-  key: string;
-  label: string;
-  actions: ('view' | 'create' | 'edit' | 'delete' | 'approve' | 'export' | 'print')[];
-}
-
-const PERMISSION_MODULES: { category: string; permissions: PermissionItem[] }[] = [
-  {
-    category: '1. Dashboard',
-    permissions: [
-      { key: 'dashboard:view', label: 'View Dashboard', actions: ['view'] },
-      { key: 'dashboard:kpis', label: 'View KPIs', actions: ['view'] },
-      { key: 'dashboard:sales_summary', label: 'View Sales Summary', actions: ['view'] },
-      { key: 'dashboard:financial_summary', label: 'View Financial Summary', actions: ['view'] },
-    ],
-  },
-  {
-    category: '2. POS',
-    permissions: [
-      { key: 'pos:open', label: 'Open POS', actions: ['view'] },
-      { key: 'pos:t_billing', label: 'T-Billing', actions: ['view'] },
-      { key: 'pos:create_bill', label: 'Create Bill', actions: ['create'] },
-      { key: 'pos:edit_bill', label: 'Edit Bill', actions: ['edit'] },
-      { key: 'pos:hold_bill', label: 'Hold Bill', actions: ['create'] },
-      { key: 'pos:recall_bill', label: 'Recall Bill', actions: ['view'] },
-      { key: 'pos:split_bill', label: 'Split Bill', actions: ['edit'] },
-      { key: 'pos:merge_tables', label: 'Merge Tables', actions: ['edit'] },
-      { key: 'pos:transfer_table', label: 'Transfer Table', actions: ['edit'] },
-      { key: 'pos:apply_discount', label: 'Apply Discount', actions: ['create'] },
-      { key: 'pos:apply_manual_discount', label: 'Apply Manual Discount', actions: ['create'] },
-      { key: 'pos:cancel_item', label: 'Cancel Item', actions: ['delete'] },
-      { key: 'pos:void_bill', label: 'Void Bill', actions: ['delete'] },
-      { key: 'pos:refund_bill', label: 'Refund Bill', actions: ['delete'] },
-      { key: 'pos:reprint_bill', label: 'Reprint Bill', actions: ['print'] },
-      { key: 'pos:print_kot', label: 'Print KOT', actions: ['print'] },
-      { key: 'pos:open_cash_drawer', label: 'Open Cash Drawer', actions: ['approve'] },
-      { key: 'pos:close_shift', label: 'Close Shift', actions: ['edit'] },
-      { key: 'pos:view_shift_history', label: 'View Shift History', actions: ['view'] },
-    ],
-  },
-  {
-    category: '3. Orders',
-    permissions: [
-      { key: 'orders:view', label: 'View Orders', actions: ['view'] },
-      { key: 'orders:edit', label: 'Edit Orders', actions: ['edit'] },
-      { key: 'orders:cancel', label: 'Cancel Orders', actions: ['delete'] },
-      { key: 'orders:create', label: 'Create Orders', actions: ['create'] },
-      { key: 'orders:delivery', label: 'Delivery Orders', actions: ['view', 'edit'] },
-      { key: 'orders:online', label: 'Online Orders', actions: ['view', 'edit'] },
-      { key: 'orders:takeaway', label: 'Takeaway Orders', actions: ['view', 'edit'] },
-    ],
-  },
-  {
-    category: '4. Kitchen',
-    permissions: [
-      { key: 'kds:view', label: 'View KDS', actions: ['view'] },
-      { key: 'kds:accept', label: 'Accept Order', actions: ['edit'] },
-      { key: 'kds:complete', label: 'Complete Order', actions: ['edit'] },
-      { key: 'kds:recall', label: 'Recall Order', actions: ['edit'] },
-      { key: 'kds:print_ticket', label: 'Print Kitchen Ticket', actions: ['print'] },
-      { key: 'kds:manage_queue', label: 'Manage Queue', actions: ['edit'] },
-    ],
-  },
-  {
-    category: '5. Tables',
-    permissions: [
-      { key: 'tables:view', label: 'View Tables', actions: ['view'] },
-      { key: 'tables:merge', label: 'Merge Tables', actions: ['edit'] },
-      { key: 'tables:transfer', label: 'Transfer Tables', actions: ['edit'] },
-      { key: 'tables:reserve', label: 'Reserve Table', actions: ['create'] },
-      { key: 'tables:edit_reservations', label: 'Edit Reservations', actions: ['edit'] },
-    ],
-  },
-  {
-    category: '6. Customers',
-    permissions: [
-      { key: 'customers:view', label: 'View Customers', actions: ['view'] },
-      { key: 'customers:create', label: 'Create Customers', actions: ['create'] },
-      { key: 'customers:edit', label: 'Edit Customers', actions: ['edit'] },
-      { key: 'customers:delete', label: 'Delete Customers', actions: ['delete'] },
-      { key: 'customers:loyalty', label: 'Loyalty Management', actions: ['edit'] },
-      { key: 'customers:wallet', label: 'Wallet Management', actions: ['edit'] },
-      { key: 'customers:membership', label: 'Membership Management', actions: ['edit'] },
-    ],
-  },
-  {
-    category: '7. Inventory',
-    permissions: [
-      { key: 'inventory:view', label: 'View Stock', actions: ['view'] },
-      { key: 'inventory:create', label: 'Create Item', actions: ['create'] },
-      { key: 'inventory:edit', label: 'Edit Item', actions: ['edit'] },
-      { key: 'inventory:delete', label: 'Delete Item', actions: ['delete'] },
-      { key: 'inventory:adjust', label: 'Stock Adjustment', actions: ['edit'] },
-      { key: 'inventory:waste', label: 'Waste Entry', actions: ['create'] },
-      { key: 'inventory:recipes', label: 'Recipe Management', actions: ['edit'] },
-      { key: 'inventory:reports', label: 'Inventory Reports', actions: ['view'] },
-    ],
-  },
-  {
-    category: '8. Purchases',
-    permissions: [
-      { key: 'purchases:orders', label: 'Purchase Orders', actions: ['view', 'create', 'edit'] },
-      { key: 'purchases:suppliers', label: 'Suppliers', actions: ['view', 'create', 'edit'] },
-      { key: 'purchases:received', label: 'Goods Received', actions: ['create'] },
-      { key: 'purchases:invoices', label: 'Invoices', actions: ['view', 'create'] },
-      { key: 'purchases:returns', label: 'Returns', actions: ['create'] },
-      { key: 'purchases:approve', label: 'Approve Purchase', actions: ['approve'] },
-    ],
-  },
-  {
-    category: '9. Expenses',
-    permissions: [
-      { key: 'expenses:view', label: 'View Expenses', actions: ['view'] },
-      { key: 'expenses:create', label: 'Add Expense', actions: ['create'] },
-      { key: 'expenses:edit', label: 'Edit Expense', actions: ['edit'] },
-      { key: 'expenses:delete', label: 'Delete Expense', actions: ['delete'] },
-      { key: 'expenses:approve', label: 'Approve Expense', actions: ['approve'] },
-    ],
-  },
-  {
-    category: '10. Finance',
-    permissions: [
-      { key: 'finance:cash_flow', label: 'Cash Flow', actions: ['view'] },
-      { key: 'finance:income', label: 'Income', actions: ['view'] },
-      { key: 'finance:profit', label: 'Profit', actions: ['view'] },
-      { key: 'finance:loss', label: 'Loss', actions: ['view'] },
-      { key: 'finance:daily_summary', label: 'Daily Summary', actions: ['view'] },
-      { key: 'finance:tax_summary', label: 'Tax Summary', actions: ['view'] },
-      { key: 'finance:gst_reports', label: 'GST Reports', actions: ['view', 'export'] },
-      { key: 'finance:pl', label: 'Profit & Loss', actions: ['view'] },
-      { key: 'finance:balance_sheet', label: 'Balance Sheet', actions: ['view'] },
-    ],
-  },
-  {
-    category: '11. Reports',
-    permissions: [
-      { key: 'reports:sales', label: 'Sales Reports', actions: ['view'] },
-      { key: 'reports:products', label: 'Product Reports', actions: ['view'] },
-      { key: 'reports:customers', label: 'Customer Reports', actions: ['view'] },
-      { key: 'reports:employee', label: 'Employee Reports', actions: ['view'] },
-      { key: 'reports:inventory', label: 'Inventory Reports', actions: ['view'] },
-      { key: 'reports:financial', label: 'Financial Reports', actions: ['view'] },
-      { key: 'reports:export_csv', label: 'Export CSV', actions: ['export'] },
-      { key: 'reports:export_excel', label: 'Export Excel', actions: ['export'] },
-      { key: 'reports:print', label: 'Print Reports', actions: ['print'] },
-    ],
-  },
-  {
-    category: '12. Menu Management',
-    permissions: [
-      { key: 'menu:view', label: 'View Menu', actions: ['view'] },
-      { key: 'menu:create', label: 'Add Menu Item', actions: ['create'] },
-      { key: 'menu:edit', label: 'Edit Menu', actions: ['edit'] },
-      { key: 'menu:delete', label: 'Delete Menu', actions: ['delete'] },
-      { key: 'menu:categories', label: 'Category Management', actions: ['edit'] },
-      { key: 'menu:modifiers', label: 'Modifier Management', actions: ['edit'] },
-      { key: 'menu:combos', label: 'Combo Management', actions: ['edit'] },
-      { key: 'menu:pricing', label: 'Pricing Management', actions: ['edit'] },
-    ],
-  },
-  {
-    category: '13. Promotions',
-    permissions: [
-      { key: 'promotions:coupons', label: 'Coupons', actions: ['view', 'create', 'edit'] },
-      { key: 'promotions:offers', label: 'Offers', actions: ['view', 'create'] },
-      { key: 'promotions:rules', label: 'Discount Rules', actions: ['create', 'edit'] },
-      { key: 'promotions:loyalty_campaigns', label: 'Loyalty Campaigns', actions: ['create'] },
-      { key: 'promotions:happy_hour', label: 'Happy Hour', actions: ['create', 'edit'] },
-    ],
-  },
-  {
-    category: '14. Staff',
-    permissions: [
-      { key: 'staff:view', label: 'View Staff', actions: ['view'] },
-      { key: 'staff:create', label: 'Create Staff', actions: ['create'] },
-      { key: 'staff:edit', label: 'Edit Staff', actions: ['edit'] },
-      { key: 'staff:delete', label: 'Delete Staff', actions: ['delete'] },
-      { key: 'staff:attendance', label: 'Attendance', actions: ['view', 'edit'] },
-      { key: 'staff:payroll', label: 'Payroll', actions: ['view', 'edit', 'approve'] },
-      { key: 'staff:scheduling', label: 'Shift Scheduling', actions: ['view', 'edit'] },
-    ],
-  },
-  {
-    category: '15. Branch Management',
-    permissions: [
-      { key: 'branches:view', label: 'View Branches', actions: ['view'] },
-      { key: 'branches:create', label: 'Create Branch', actions: ['create'] },
-      { key: 'branches:edit', label: 'Edit Branch', actions: ['edit'] },
-      { key: 'branches:delete', label: 'Delete Branch', actions: ['delete'] },
-      { key: 'branches:transfer', label: 'Transfer Stock', actions: ['create', 'approve'] },
-      { key: 'branches:cross_reports', label: 'Cross Branch Reports', actions: ['view', 'export'] },
-    ],
-  },
-  {
-    category: '16. Integrations',
-    permissions: [
-      { key: 'integrations:printers', label: 'Printer Settings', actions: ['view', 'edit'] },
-      { key: 'integrations:payment_gateway', label: 'Payment Gateway', actions: ['edit'] },
-      { key: 'integrations:whatsapp', label: 'WhatsApp', actions: ['edit'] },
-      { key: 'integrations:sms', label: 'SMS', actions: ['edit'] },
-      { key: 'integrations:email', label: 'Email', actions: ['edit'] },
-      { key: 'integrations:api_keys', label: 'API Keys', actions: ['create', 'delete'] },
-      { key: 'integrations:apps', label: 'Third-party Apps', actions: ['view', 'edit'] },
-    ],
-  },
-  {
-    category: '17. Settings',
-    permissions: [
-      { key: 'settings:general', label: 'General Settings', actions: ['view', 'edit'] },
-      { key: 'settings:tax', label: 'Tax Settings', actions: ['view', 'edit'] },
-      { key: 'settings:billing', label: 'Billing Settings', actions: ['view', 'edit'] },
-      { key: 'settings:kitchen', label: 'Kitchen Settings', actions: ['view', 'edit'] },
-      { key: 'settings:printers', label: 'Printer Settings', actions: ['view', 'edit'] },
-      { key: 'settings:pos', label: 'POS Settings', actions: ['view', 'edit'] },
-      { key: 'settings:security', label: 'Security Settings', actions: ['view', 'edit'] },
-      { key: 'settings:permissions', label: 'Permission Settings', actions: ['view', 'edit'] },
-      { key: 'settings:backup', label: 'Backup', actions: ['create'] },
-      { key: 'settings:restore', label: 'Restore', actions: ['approve'] },
-    ],
-  },
-  {
-    category: '18. Owner Only',
-    permissions: [
-      { key: 'owner:subscription', label: 'Subscription', actions: ['view', 'edit'] },
-      { key: 'owner:billing', label: 'Billing', actions: ['view'] },
-      { key: 'owner:upgrade', label: 'Plan Upgrade', actions: ['edit'] },
-      { key: 'owner:license', label: 'License', actions: ['view', 'edit'] },
-      { key: 'owner:delete_restaurant', label: 'Delete Restaurant', actions: ['delete'] },
-      { key: 'owner:danger_zone', label: 'Danger Zone', actions: ['delete', 'approve'] },
-    ],
-  },
-];
-
-// Reusable permission presets
-const PRESETS: Record<string, string[]> = {
-  owner: PERMISSION_MODULES.flatMap(cat => cat.permissions.flatMap(p => p.actions.map(act => `${p.key}:${act}`))),
-  admin: PERMISSION_MODULES.flatMap(cat => cat.permissions.flatMap(p => {
-    if (cat.category.includes('18. Owner Only')) return [];
-    return p.actions.map(act => `${p.key}:${act}`);
-  })),
-  manager: [
-    ...PERMISSION_MODULES.flatMap(cat => {
-      if (['10. Finance', '15. Branch Management', '16. Integrations', '17. Settings', '18. Owner Only'].some(term => cat.category.includes(term))) return [];
-      return cat.permissions.flatMap(p => p.actions.map(act => `${p.key}:${act}`));
-    }),
-    'staff:view:view', 'staff:attendance:view', 'staff:attendance:edit', 'staff:scheduling:view', 'staff:scheduling:edit'
-  ],
-  cashier: [
-    'pos:open:view', 'pos:t_billing:view', 'pos:create_bill:create', 'pos:edit_bill:edit', 'pos:hold_bill:create', 'pos:recall_bill:view',
-    'pos:reprint_bill:print', 'pos:print_kot:print', 'pos:close_shift:edit', 'pos:view_shift_history:view',
-    'orders:view:view', 'orders:create:create', 'orders:takeaway:view', 'orders:takeaway:edit',
-    'kds:view:view', 'tables:view:view', 'customers:view:view', 'customers:create:create'
-  ],
-  accountant: [
-    ...PERMISSION_MODULES.flatMap(cat => {
-      if (cat.category.includes('10. Finance') || cat.category.includes('9. Expenses') || cat.category.includes('11. Reports')) {
-        return cat.permissions.flatMap(p => p.actions.map(act => `${p.key}:${act}`));
-      }
-      return [];
-    }),
-    'dashboard:view:view', 'dashboard:kpis:view', 'dashboard:financial_summary:view', 'staff:payroll:view', 'staff:payroll:edit'
-  ],
-  waiter: [
-    'pos:open:view', 'pos:t_billing:view', 'pos:create_bill:create', 'pos:hold_bill:create', 'pos:recall_bill:view', 'pos:print_kot:print',
-    'orders:view:view', 'orders:create:create', 'tables:view:view', 'tables:reserve:create',
-    'customers:view:view', 'customers:create:create'
-  ],
-  kitchen: [
-    'kds:view:view', 'kds:accept:edit', 'kds:complete:edit', 'kds:recall:edit', 'kds:print_ticket:print', 'kds:manage_queue:edit'
-  ],
-  delivery: [
-    'orders:view:view', 'orders:delivery:view', 'orders:delivery:edit'
-  ],
-  inventory: [
-    ...PERMISSION_MODULES.flatMap(cat => {
-      if (cat.category.includes('7. Inventory') || cat.category.includes('8. Purchases')) {
-        return cat.permissions.flatMap(p => p.actions.map(act => `${p.key}:${act}`));
-      }
-      return [];
-    })
-  ]
-};
-
 const DATA_RESTRICTION_OPTIONS = [
   { key: 'own_sales', label: 'View only own sales' },
   { key: 'own_shift', label: 'View own shift logs' },
@@ -385,7 +102,8 @@ interface AuditLogEntry {
 const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [];
 
 export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: () => void }) {
-  const [activeSubTab, setActiveSubTab] = useState<'directory' | 'permissions' | 'audit'>('directory');
+  const [activeSubTab, setActiveSubTab] = useState<'directory' | 'profile' | 'permissions' | 'audit'>('directory');
+  const [profileInitialTab, setProfileInitialTab] = useState<'overview' | 'attendance' | 'shifts' | 'permissions' | 'security' | 'audit'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
@@ -393,6 +111,13 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   
   // Selected staff user for detail views
   const [selectedStaff, setSelectedStaff] = useState<any | null>(null);
+
+  // Helper to open staff profile with a specific tab
+  const openStaffProfile = (staffMember: any, tab: 'overview' | 'attendance' | 'shifts' | 'permissions' | 'security' | 'audit' = 'overview') => {
+    setSelectedStaff(staffMember);
+    setProfileInitialTab(tab);
+    setActiveSubTab('profile');
+  };
   
   // Permissions & configurations state for editing
   const [assignedRoles, setAssignedRoles] = useState<string[]>([]);
@@ -415,47 +140,64 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   const [newStaffPhone, setNewStaffPhone] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
   const [newStaffCode, setNewStaffCode] = useState('');
-  const [newStaffPin, setNewStaffPin] = useState('');
   const [newStaffPassword, setNewStaffPassword] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<string>('waiter');
+  const [newStaffPin, setNewStaffPin] = useState('');
+  const [newStaffPayType, setNewStaffPayType] = useState<'monthly' | 'hourly' | ''>('');
+  const [newStaffPayRate, setNewStaffPayRate] = useState('');
+  const [newStaffDesignation, setNewStaffDesignation] = useState('');
+  const [newStaffJoiningDate, setNewStaffJoiningDate] = useState('');
+
+  // Re-usable custom roles
+  const [customRoles, setCustomRoles] = useState<{ id: string; name: string; baseRole?: string }[]>([]);
+  const [showNewRoleInput, setShowNewRoleInput] = useState(false);
+  const [newRoleName, setNewRoleName] = useState('');
+  const [newRoleBase, setNewRoleBase] = useState<string>('waiter');
+  const [isCreatingRole, setIsCreatingRole] = useState(false);
+
+  // Waiter section / station arrangement (P1 Lower, P2 Upper, and custom stations)
+  const [waiterStations, setWaiterStations] = useState<WaiterStation[]>(DEFAULT_WAITER_STATIONS);
+  const [selectedStation, setSelectedStation] = useState<string>('p1');
+  const [showNewStationInput, setShowNewStationInput] = useState(false);
+  const [newStationCode, setNewStationCode] = useState('');
+  const [newStationName, setNewStationName] = useState('');
+  const [isCreatingStation, setIsCreatingStation] = useState(false);
+  const [editingStationId, setEditingStationId] = useState<string | null>(null);
+  const [stationToDelete, setStationToDelete] = useState<WaiterStation | null>(null);
+  const [isDeletingStation, setIsDeletingStation] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState<any | null>(null);
+  const [isDeletingStaff, setIsDeletingStaff] = useState(false);
 
   // Local copy of members with nested metadata parsing
   const [membersList, setMembersList] = useState<any[]>([]);
-  const [staffToDelete, setStaffToDelete] = useState<{ id: string; name: string; role?: string } | null>(null);
-  const [isDeletingStaff, setIsDeletingStaff] = useState(false);
 
-  const handleConfirmDeleteStaff = async () => {
-    if (!staffToDelete) return;
-    const sId = staffToDelete.id;
-    setIsDeletingStaff(true);
-    // Optimistic removal immediately so UI does not freeze
-    setMembersList(prev => prev.filter(m => m.id !== sId));
-    if (selectedStaff?.id === sId) {
-      setSelectedStaff(null);
+  useEffect(() => {
+    if (d?.customRoles && Array.isArray(d.customRoles)) {
+      setCustomRoles(d.customRoles.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        baseRole: (typeof r.permissions === 'object' && r.permissions?.baseRole) || 'waiter',
+      })));
     }
-    setStaffToDelete(null);
-    try {
-      const res = await fetch(`/api/staff?id=${encodeURIComponent(sId)}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!res.ok) {
-        await fetch('/api/staff', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'remove', id: sId }),
-        });
-      }
-      refresh();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('staff:changed'));
-      }
-    } catch (e) {
-      console.error('Failed to remove staff:', e);
-      refresh();
-    } finally {
-      setIsDeletingStaff(false);
+  }, [d?.customRoles]);
+
+  useEffect(() => {
+    if (d?.waiterStations && Array.isArray(d.waiterStations)) {
+      setWaiterStations(d.waiterStations.length > 0 ? d.waiterStations : DEFAULT_WAITER_STATIONS);
     }
-  };
+  }, [d?.waiterStations]);
+
+  useEffect(() => {
+    const handleStationsChanged = (e: any) => {
+      if (e.detail?.waiterStations && Array.isArray(e.detail.waiterStations)) {
+        setWaiterStations(e.detail.waiterStations.length > 0 ? e.detail.waiterStations : DEFAULT_WAITER_STATIONS);
+      } else {
+        refresh();
+      }
+    };
+    window.addEventListener('stations:changed', handleStationsChanged);
+    return () => window.removeEventListener('stations:changed', handleStationsChanged);
+  }, [refresh]);
 
   useEffect(() => {
     if (d?.members) {
@@ -475,7 +217,9 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           assignedRoles: permissionsObj.assignedRoles || [m.role],
           branchAccess: permissionsObj.branchAccess || ['main-branch'],
           overrides: permissionsObj.overrides || {},
-          dataRestrictions: permissionsObj.dataRestrictions || []
+          dataRestrictions: permissionsObj.dataRestrictions || [],
+          station: (permissionsObj as any).station || (m as any).station || null,
+          stationName: (permissionsObj as any).stationName || (m as any).stationName || null,
         };
       });
       setMembersList(formatted);
@@ -487,6 +231,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     setSelectedStaff(m);
     setAssignedRoles(m.assignedRoles || [m.role]);
     setBranchAccess(m.branchAccess || ['main-branch']);
+    setSelectedStation(m.station || m.permissions?.station || 'p1');
     
     // Resolve resolved check state
     const resolvedChecklist: string[] = [];
@@ -639,11 +384,17 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       }
     });
 
+    const primaryRole = resolvePrimaryRole(assignedRoles, selectedStaff.role);
+    const isWaiter = primaryRole.toLowerCase() === 'waiter' || assignedRoles.includes('waiter');
+    const stationLabel = waiterStations.find((s) => s.id === selectedStation)?.label || selectedStation;
+
     const permissionsPayload = {
       assignedRoles,
       branchAccess,
       overrides,
-      dataRestrictions
+      dataRestrictions,
+      station: isWaiter ? selectedStation : undefined,
+      stationName: isWaiter ? stationLabel : undefined,
     };
 
     try {
@@ -653,8 +404,10 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         body: JSON.stringify({
           action: 'update',
           id: selectedStaff.id,
-          role: assignedRoles[0] || selectedStaff.role, // primary fallback role
-          permissions: permissionsPayload
+          role: primaryRole,
+          permissions: permissionsPayload,
+          station: isWaiter ? selectedStation : undefined,
+          stationName: isWaiter ? stationLabel : undefined,
         })
       });
       const data = await res.json();
@@ -666,14 +419,17 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       // Update local state row
       setMembersList(prev => prev.map(m => m.id === selectedStaff.id ? {
         ...m,
-        role: assignedRoles[0] || m.role,
+        role: primaryRole,
         assignedRoles,
         branchAccess,
         overrides,
-        dataRestrictions
+        dataRestrictions,
+        station: isWaiter ? selectedStation : m.station,
+        stationName: isWaiter ? stationLabel : m.stationName,
       } : m));
 
       // Refresh layout data
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
       setTimeout(() => refresh(), 1000);
     } catch (e: any) {
       setErrorMessage(e.message || 'Error occurred while saving modifications.');
@@ -682,12 +438,228 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
     }
   };
 
+  // Create Re-usable Custom Role Action
+  const handleCreateCustomRole = async () => {
+    if (!newRoleName.trim()) {
+      setErrorMessage('Custom role name cannot be empty');
+      return;
+    }
+    setIsCreatingRole(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create_custom_role',
+          name: newRoleName.trim(),
+          baseRole: newRoleBase,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || 'Failed to create custom role');
+      const created = data.role;
+      const roleItem = {
+        id: created.id,
+        name: created.name,
+        baseRole: newRoleBase,
+      };
+      setCustomRoles(prev => [...prev.filter(r => r.name.toLowerCase() !== created.name.toLowerCase()), roleItem]);
+      setNewStaffRole(created.name);
+      setNewRoleName('');
+      setShowNewRoleInput(false);
+      refresh();
+    } catch (e: any) {
+      setErrorMessage(e.message || 'Error occurred while saving role');
+    } finally {
+      setIsCreatingRole(false);
+    }
+  };
+
+  const handleStartEditStation = (st: WaiterStation, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingStationId(st.id);
+    setNewStationCode(st.code);
+    setNewStationName(st.name);
+    setShowNewStationInput(true);
+  };
+
+  const handleCancelStationForm = () => {
+    setShowNewStationInput(false);
+    setEditingStationId(null);
+    setNewStationCode('');
+    setNewStationName('');
+  };
+
+  const promptDeleteStation = (st: WaiterStation, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setStationToDelete(st);
+  };
+
+  const handleConfirmDeleteStation = async () => {
+    if (!stationToDelete) return;
+    const stId = stationToDelete.id;
+    setIsDeletingStation(true);
+    try {
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_waiter_station',
+          id: stId,
+        }),
+      });
+      const data = await res.json();
+      const nextList: WaiterStation[] = Array.isArray(data.waiterStations) && data.waiterStations.length > 0
+        ? data.waiterStations
+        : waiterStations.filter((s) => s.id !== stId);
+
+      setWaiterStations(nextList);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('stations:changed', { detail: { waiterStations: nextList } }));
+      }
+      if (selectedStation === stId) {
+        setSelectedStation(nextList[0]?.id || 'p1');
+      }
+      if (editingStationId === stId) {
+        handleCancelStationForm();
+      }
+    } catch (err: any) {
+      const nextList = waiterStations.filter((s) => s.id !== stId);
+      setWaiterStations(nextList);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('stations:changed', { detail: { waiterStations: nextList } }));
+      }
+      if (selectedStation === stId) {
+        setSelectedStation(nextList[0]?.id || 'p1');
+      }
+      if (editingStationId === stId) {
+        handleCancelStationForm();
+      }
+    } finally {
+      setIsDeletingStation(false);
+      setStationToDelete(null);
+    }
+  };
+
+  // Delete Staff Account — optimistic removal to prevent UI freeze
+  const handleConfirmDeleteStaff = async () => {
+    if (!staffToDelete) return;
+    const sId = staffToDelete.id;
+    setIsDeletingStaff(true);
+    // Optimistic removal so UI updates instantly with 0ms freeze
+    setMembersList(prev => prev.filter(m => m.id !== sId));
+    if (selectedStaff?.id === sId) {
+      setSelectedStaff(null);
+      setActiveSubTab('directory');
+    }
+    try {
+      await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'remove', id: sId }),
+      });
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
+      refresh();
+    } catch (err) {
+      console.error('Error deleting staff:', err);
+      refresh();
+    } finally {
+      setIsDeletingStaff(false);
+      setStaffToDelete(null);
+    }
+  };
+
+  // Create or Update Custom Waiter Station
+  const handleCreateCustomStation = async () => {
+    if (!newStationName.trim()) return;
+    setIsCreatingStation(true);
+    setErrorMessage(null);
+
+    const rawCode = (newStationCode || newStationName.slice(0, 4)).trim().toUpperCase();
+    const id = rawCode.toLowerCase();
+    const cleanName = newStationName.trim();
+    const isEditing = !!editingStationId;
+    const originalId = editingStationId;
+
+    const savedStation: WaiterStation = {
+      id,
+      code: rawCode,
+      name: cleanName,
+      label: `${rawCode} (${cleanName})`,
+      desc: 'Floor Section Station',
+      isCustom: true,
+    };
+
+    try {
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: isEditing ? 'update_waiter_station' : 'create_waiter_station',
+          originalId: originalId || undefined,
+          code: rawCode,
+          name: cleanName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.message || data.error || 'Failed to save station');
+
+      const updatedList = Array.isArray(data.waiterStations) && data.waiterStations.length > 0
+        ? data.waiterStations
+        : [
+            ...waiterStations.filter((s) => s.id !== originalId && s.id !== id),
+            savedStation,
+          ];
+
+      setWaiterStations(updatedList);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('stations:changed', { detail: { waiterStations: updatedList } }));
+      }
+      if (selectedStation === originalId || !selectedStation) {
+        setSelectedStation(id);
+      }
+      handleCancelStationForm();
+    } catch (err: any) {
+      // Fallback: persist in local state so UI is never blocked
+      const fallbackList = [
+        ...waiterStations.filter((s) => s.id !== originalId && s.id !== id),
+        savedStation,
+      ];
+      setWaiterStations(fallbackList);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('stations:changed', { detail: { waiterStations: fallbackList } }));
+      }
+      if (selectedStation === originalId || !selectedStation) {
+        setSelectedStation(id);
+      }
+      handleCancelStationForm();
+    } finally {
+      setIsCreatingStation(false);
+    }
+  };
+
   // Create Staff Action
   const handleCreateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     if (!newStaffName.trim()) return setErrorMessage('Full Name is required');
-    if (!/^\d{4,6}$/.test(newStaffPin)) return setErrorMessage('PIN must be 4 to 6 numeric digits');
+    if (!newStaffEmail.trim()) return setErrorMessage('Username / Email is required');
+    if (!newStaffPassword || newStaffPassword.length < 6) return setErrorMessage('Password must be at least 6 characters');
+    if (newStaffPin && !/^\d{4,6}$/.test(newStaffPin)) return setErrorMessage('PIN must be 4–6 digits');
+
+    // Build pay rate in paise (100 paise = ₹1)
+    const payRatePaise = newStaffPayRate && newStaffPayType
+      ? Math.round(parseFloat(newStaffPayRate) * 100)
+      : null;
+
+    const isCustom = !ALL_ROLES.includes(newStaffRole as StaffRole);
+    const customRoleObj = customRoles.find(r => r.name.toLowerCase() === newStaffRole.toLowerCase());
+    const baseRole = isCustom ? (customRoleObj?.baseRole || 'waiter') : newStaffRole;
+
+    const isWaiter = baseRole.toLowerCase() === 'waiter' || newStaffRole.toLowerCase() === 'waiter';
+    const assignedStation = isWaiter ? selectedStation : undefined;
+    const assignedStationLabel = isWaiter ? (waiterStations.find(s => s.id === selectedStation)?.label || selectedStation) : undefined;
 
     try {
       const res = await fetch('/api/staff', {
@@ -696,16 +668,33 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         body: JSON.stringify({
           action: 'create',
           name: newStaffName,
-          role: 'waiter', // default role, customizable immediately after
+          role: newStaffRole,
+          baseRole: baseRole,
+          customRole: isCustom ? newStaffRole : undefined,
           phone: newStaffPhone || null,
-          pin: newStaffPin,
           employeeCode: newStaffCode || null,
-          username: newStaffEmail || null,
-          password: newStaffPassword || null
+          username: newStaffEmail.trim(),
+          password: newStaffPassword,
+          pin: newStaffPin || null,
+          payType: newStaffPayType || null,
+          payRatePaise,
+          designation: newStaffDesignation || null,
+          joiningDate: newStaffJoiningDate || null,
+          station: assignedStation,
+          stationName: assignedStationLabel,
+          permissions: {
+            assignedRoles: isCustom ? [newStaffRole, baseRole] : [newStaffRole],
+            baseRole,
+            branchAccess: ['main-branch'],
+            overrides: {},
+            dataRestrictions: [],
+            station: assignedStation,
+            stationName: assignedStationLabel,
+          }
         })
       });
       const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'Conflict saving employee');
+      if (!res.ok || data.error) throw new Error(data.message || data.error || 'Error saving staff member');
 
       setShowAddModal(false);
       // Reset form states
@@ -713,9 +702,15 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       setNewStaffPhone('');
       setNewStaffEmail('');
       setNewStaffCode('');
-      setNewStaffPin('');
       setNewStaffPassword('');
+      setNewStaffRole('waiter');
+      setNewStaffPin('');
+      setNewStaffPayType('');
+      setNewStaffPayRate('');
+      setNewStaffDesignation('');
+      setNewStaffJoiningDate('');
       
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
       refresh();
     } catch (e: any) {
       setErrorMessage(e.message || 'Verification failed while saving.');
@@ -736,6 +731,12 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         })
       });
       if (res.ok) {
+        const updated = { ...m, active: nextActive };
+        setMembersList(prev => prev.map(item => item.id === m.id ? updated : item));
+        if (selectedStaff?.id === m.id) {
+          setSelectedStaff(updated);
+        }
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
         refresh();
       }
     } catch (e) {
@@ -786,7 +787,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       <div className="col-span-1 md:col-span-2 lg:col-span-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-line pb-2 gap-4 mt-2">
         <div className="flex gap-2 overflow-x-auto w-full sm:w-auto">
           <button
-            onClick={() => { setActiveSubTab('directory'); setSelectedStaff(null); }}
+            onClick={() => setActiveSubTab('directory')}
             className={`px-4 py-2 border-b-2 font-medium text-sm transition-all whitespace-nowrap capitalize ${
               activeSubTab === 'directory'
                 ? 'border-turmeric text-turmeric font-semibold'
@@ -797,6 +798,21 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           </button>
           {selectedStaff && (
             <button
+              onClick={() => setActiveSubTab('profile')}
+              className={`px-4 py-2 border-b-2 font-medium text-sm transition-all whitespace-nowrap capitalize flex items-center gap-1.5 ${
+                activeSubTab === 'profile'
+                  ? 'border-turmeric text-turmeric font-semibold'
+                  : 'border-transparent text-ink-3 hover:text-ink'
+              }`}
+            >
+              <span>Staff Profile</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-turmeric-l/20 text-turmeric font-bold">
+                {selectedStaff.name}
+              </span>
+            </button>
+          )}
+          {selectedStaff && (
+            <button
               onClick={() => setActiveSubTab('permissions')}
               className={`px-4 py-2 border-b-2 font-medium text-sm transition-all whitespace-nowrap capitalize ${
                 activeSubTab === 'permissions'
@@ -804,7 +820,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                   : 'border-transparent text-ink-3 hover:text-ink'
               }`}
             >
-              Configure permissions ({selectedStaff.name})
+              Configure Permissions ({selectedStaff.name})
             </button>
           )}
           <button
@@ -834,6 +850,23 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
       {/* Main Tab Rendering */}
       <div className="col-span-1 md:col-span-2 lg:col-span-4 mt-2">
+        {/* STAFF PROFILE VIEW */}
+        {activeSubTab === 'profile' && selectedStaff && (
+          <StaffProfileView
+            staff={selectedStaff}
+            onBack={() => setActiveSubTab('directory')}
+            onUpdateStaff={(updatedStaff) => {
+              setSelectedStaff(updatedStaff);
+              setMembersList(prev => prev.map(m => m.id === updatedStaff.id ? { ...m, ...updatedStaff } : m));
+            }}
+            onToggleStatus={handleToggleStatus}
+            initialTab={profileInitialTab}
+            waiterStations={waiterStations}
+            customRoles={customRoles}
+            refresh={refresh}
+          />
+        )}
+
         {/* DIRECTORY VIEW */}
         {activeSubTab === 'directory' && (
           <div className="space-y-4">
@@ -856,7 +889,8 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                   { value: 'all', label: 'All Roles' },
                   ...ALL_ROLES.map(r => ({ value: r, label: ROLE_LABELS[r as StaffRole] || r })),
                   { value: 'delivery', label: 'Delivery Staff' },
-                  { value: 'inventory', label: 'Inventory Manager' }
+                  { value: 'inventory', label: 'Inventory Manager' },
+                  ...customRoles.map(cr => ({ value: cr.name, label: cr.name }))
                 ]}
                 label="Filter Role"
               />
@@ -910,15 +944,20 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                         const shiftText = m.currentShift || (m.active ? 'Active Shift' : 'Off Shift');
 
                         return (
-                          <tr key={m.id} className="hover:bg-line/10 transition-colors">
+                          <tr
+                            key={m.id}
+                            onClick={() => openStaffProfile(m, 'overview')}
+                            className="hover:bg-turmeric/5 cursor-pointer transition-colors group"
+                            title={`Click to open ${m.name}'s Staff Profile`}
+                          >
                             {/* Employee profile column */}
                             <td className="p-4" data-label="Employee">
                               <div className="flex items-center gap-3">
-                                <span className="grid place-items-center w-8 h-8 rounded-full text-xs font-bold font-mono shrink-0" style={{ background: 'var(--turmeric-l)', color: '#2A1607' }}>
+                                <span className="grid place-items-center w-8 h-8 rounded-full text-xs font-bold font-mono shrink-0 group-hover:scale-105 transition-transform" style={{ background: 'var(--turmeric-l)', color: '#2A1607' }}>
                                   {m.name.slice(0, 2).toUpperCase()}
                                 </span>
                                 <div className="text-left">
-                                  <span className="font-semibold text-ink block leading-snug">{m.name}</span>
+                                  <span className="font-semibold text-ink block leading-snug group-hover:text-turmeric transition-colors">{m.name}</span>
                                   <span className="text-[10px] text-ink-3 font-mono block">Code: {m.employeeCode || '—'} · {m.phone || 'No Phone'}</span>
                                 </div>
                               </div>
@@ -926,12 +965,18 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
                             {/* Roles badges column */}
                             <td className="p-4" data-label="Roles">
-                              <div className="flex gap-1 flex-wrap">
+                              <div className="flex gap-1 flex-wrap items-center">
                                 {m.assignedRoles.map((roleKey: string) => (
                                   <span key={roleKey} className="text-[10px] px-2 py-0.5 rounded-md bg-paper-3 border border-line font-medium capitalize text-ink-2">
                                     {ROLE_LABELS[roleKey as StaffRole] || roleKey}
                                   </span>
                                 ))}
+                                {m.station && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1" title="Assigned Waiter Floor Section / Station">
+                                    <span>📍</span>
+                                    <span>{m.stationName || formatStationBadge(m.station, waiterStations)}</span>
+                                  </span>
+                                )}
                               </div>
                             </td>
 
@@ -965,16 +1010,26 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                             </td>
 
                             {/* Actions column */}
-                            <td className="p-4 text-right" data-label="Actions">
+                            <td className="p-4 text-right" data-label="Actions" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
-                                  onClick={() => selectStaffMember(m)}
+                                  type="button"
+                                  onClick={() => openStaffProfile(m, 'overview')}
+                                  className="px-2 py-1 rounded bg-turmeric/10 hover:bg-turmeric/20 text-xs font-semibold text-turmeric transition-all flex items-center gap-1"
+                                  title="Open Staff Profile & Attendance"
+                                >
+                                  👤 <span className="hidden sm:inline">Profile</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openStaffProfile(m, 'permissions')}
                                   className="px-2 py-1 rounded bg-paper-3 hover:bg-line text-xs font-semibold text-ink transition-all flex items-center gap-1"
                                   title="Configure RBAC Permissions"
                                 >
                                   🔑 <span className="hidden sm:inline">Permissions</span>
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => handleToggleStatus(m)}
                                   className={`px-2 py-1 rounded text-xs font-semibold transition-all ${
                                     m.active ? 'bg-red-950/20 hover:bg-red-950/40 text-red-500' : 'bg-green-950/20 hover:bg-green-950/40 text-green-500'
@@ -984,7 +1039,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setStaffToDelete({ id: m.id, name: m.name, role: m.role })}
+                                  onClick={() => setStaffToDelete(m)}
                                   className="px-2 py-1 rounded hover:bg-red-500/10 text-ink-3 hover:text-red-500 transition-all text-xs cursor-pointer"
                                   title="Delete Staff Account"
                                 >
@@ -1126,6 +1181,104 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                     Cumulative Perms: Checked boxes from active roles will automatically merge.
                   </span>
                 </div>
+
+                {assignedRoles.includes('waiter') && (
+                  <div className="border-t border-line/50 pt-4 space-y-2.5 animate-in fade-in duration-150">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs">📍</span>
+                        <span className="block text-xs font-bold text-turmeric uppercase tracking-wide">
+                          Floor Section / Station
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-ink-3">
+                      Orders placed by this waiter will automatically print to this station&apos;s designated printer. Manage stations in Settings → Device Printers.
+                    </p>
+
+                    {showNewStationInput && (
+                      <div className="p-2.5 rounded-lg border border-turmeric/40 bg-turmeric-l/5 space-y-2 mb-2 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-ink">
+                            {editingStationId ? `Edit Station (${newStationCode || 'Selected'})` : 'Add Custom Floor Station'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleCancelStationForm}
+                            className="text-ink-3 hover:text-ink text-xs p-0.5 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <input
+                            type="text"
+                            value={newStationCode}
+                            onChange={(e) => setNewStationCode(e.target.value)}
+                            placeholder="Code (e.g. P1)"
+                            maxLength={8}
+                            className="px-2 py-1 rounded bg-paper-3 border border-line text-xs uppercase font-bold text-ink"
+                          />
+                          <input
+                            type="text"
+                            value={newStationName}
+                            onChange={(e) => setNewStationName(e.target.value)}
+                            placeholder="Name (e.g. Terrace)"
+                            className="px-2 py-1 rounded bg-paper-3 border border-line text-xs text-ink"
+                          />
+                        </div>
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={handleCancelStationForm}
+                            className="px-2 py-1 text-[10px] text-ink-3 hover:text-ink cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isCreatingStation || !newStationName.trim()}
+                            onClick={handleCreateCustomStation}
+                            className="px-2.5 py-1 rounded bg-turmeric text-[#2A1607] font-bold text-[10px] disabled:opacity-50 cursor-pointer"
+                          >
+                            {isCreatingStation ? 'Saving…' : (editingStationId ? 'Update' : 'Save')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {waiterStations.map((st) => {
+                        const isSel = selectedStation.toLowerCase() === st.id.toLowerCase();
+                        const isBeingDeleted = isDeletingStation && stationToDelete?.id === st.id;
+                        return (
+                          <div
+                            key={st.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                              setSelectedStation(st.id);
+                              setIsModified(true);
+                            }}
+                            className={`group relative p-2 rounded-lg border text-left text-xs transition-all flex flex-col justify-between cursor-pointer select-none ${
+                              isSel
+                                ? 'bg-turmeric-l/10 border-turmeric text-turmeric font-bold ring-1 ring-turmeric/30'
+                                : 'bg-paper-3 border-line text-ink-3 hover:border-ink-3 hover:text-ink'
+                            } ${isBeingDeleted ? 'opacity-40 pointer-events-none' : ''}`}
+                          >
+                            <div className="flex items-center justify-between mb-1 gap-1">
+                              <span className="font-mono text-[10px] uppercase font-bold">{st.code}</span>
+                              {isSel && (
+                                <span className="text-[10px] text-turmeric font-bold">✓</span>
+                              )}
+                            </div>
+                            <span className="truncate text-ink font-semibold">{st.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div className="border-t border-line/50 pt-4 space-y-3">
                   <span className="block text-xs font-bold text-ink-2 uppercase tracking-wide">Branch-Level Access Mapping</span>
@@ -1352,14 +1505,17 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         >
           <div 
             onClick={(e) => e.stopPropagation()}
-            className="bg-paper-3 border border-line rounded-xl shadow-2xl w-full max-w-lg p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            className="bg-paper-3 border border-line rounded-xl shadow-2xl w-full max-w-xl p-6 overflow-y-auto max-h-[90vh] animate-in fade-in zoom-in-95 duration-200"
           >
             {/* Header */}
-            <div className="flex justify-between items-center border-b border-line pb-3 mb-4">
-              <h3 className="font-bold text-lg">Add New Staff Member</h3>
+            <div className="flex justify-between items-center border-b border-line pb-3 mb-5">
+              <div>
+                <h3 className="font-bold text-lg">Add New Staff Member</h3>
+                <p className="text-xs text-ink-3 mt-0.5">Fill required fields and set role — permissions can be tuned after.</p>
+              </div>
               <button 
                 onClick={() => setShowAddModal(false)}
-                className="text-ink-3 hover:text-ink transition-all"
+                className="text-ink-3 hover:text-ink transition-all flex-shrink-0 ml-4"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -1375,94 +1531,326 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
             )}
 
             {/* Form body */}
-            <form onSubmit={handleCreateStaff} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-ink-2">Full Name *</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={newStaffName} 
-                    onChange={(e) => setNewStaffName(e.target.value)}
-                    placeholder="Staff member full name"
-                    className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-ink-2">Employee ID Code</label>
-                  <input 
-                    type="text" 
-                    value={newStaffCode} 
-                    onChange={(e) => setNewStaffCode(e.target.value)}
-                    placeholder="e.g. ST-01"
-                    className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
-                  />
-                </div>
-              </div>
+            <form onSubmit={handleCreateStaff} className="space-y-5">
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-ink-2">Phone Number</label>
-                  <input 
-                    type="tel" 
-                    value={newStaffPhone} 
-                    onChange={(e) => setNewStaffPhone(e.target.value)}
-                    placeholder="10-digit phone number"
-                    className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1 text-ink-2">Login PIN * (4-6 digits)</label>
-                  <input 
-                    type="password" 
-                    required
-                    value={newStaffPin} 
-                    onChange={(e) => setNewStaffPin(e.target.value)}
-                    placeholder="••••"
-                    className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink font-mono text-sm focus:outline-none focus:border-turmeric"
-                  />
-                </div>
-              </div>
-
-              <div className="border-t border-line/50 pt-4">
-                <span className="block text-xs font-bold text-ink-2 uppercase tracking-wide mb-3">Login Credentials (Optional Dashboard Access)</span>
-                
-                <div className="grid grid-cols-2 gap-4">
+              {/* ── SECTION 1: Basic Info ── */}
+              <div>
+                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-3">Basic Information</span>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold mb-1 text-ink-2">Email / Username</label>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Full Name *</label>
                     <input 
                       type="text" 
+                      required
+                      value={newStaffName} 
+                      onChange={(e) => setNewStaffName(e.target.value)}
+                      placeholder="Staff member full name"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Employee ID Code</label>
+                    <input 
+                      type="text" 
+                      value={newStaffCode} 
+                      onChange={(e) => setNewStaffCode(e.target.value)}
+                      placeholder="e.g. ST-01"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Phone Number</label>
+                    <input 
+                      type="tel" 
+                      value={newStaffPhone} 
+                      onChange={(e) => setNewStaffPhone(e.target.value)}
+                      placeholder="10-digit phone number"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Login PIN <span className="font-normal text-ink-3">(4–6 digits, POS access)</span></label>
+                    <input 
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={newStaffPin} 
+                      onChange={(e) => setNewStaffPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="• • • •"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric tracking-widest"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── SECTION 2: Role ── */}
+              <div className="border-t border-line/50 pt-4">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest">Role *</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewRoleInput(!showNewRoleInput)}
+                    className="text-xs font-semibold text-turmeric hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>+ Add Custom Role</span>
+                  </button>
+                </div>
+
+                {/* Inline Add Custom Role Form */}
+                {showNewRoleInput && (
+                  <div className="p-3 mb-3 rounded-xl border border-turmeric/40 bg-turmeric-l/5 space-y-2.5 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-ink">Create Re-usable Custom Role</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowNewRoleInput(false)}
+                        className="text-ink-3 hover:text-ink text-xs"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-ink-3 mb-1">Custom Role Name *</label>
+                        <input
+                          type="text"
+                          value={newRoleName}
+                          onChange={(e) => setNewRoleName(e.target.value)}
+                          placeholder="e.g. Floor Captain"
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink focus:outline-none focus:border-turmeric"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-ink-3 mb-1">Base System Access</label>
+                        <select
+                          value={newRoleBase}
+                          onChange={(e) => setNewRoleBase(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-paper-3 border border-line text-xs text-ink focus:outline-none focus:border-turmeric cursor-pointer"
+                        >
+                          <option value="none">None (No System Access)</option>
+                          <option value="waiter">Waiter (POS & Floor Orders)</option>
+                          <option value="cashier">Cashier (Billing & Till)</option>
+                          <option value="kitchen">Kitchen (KDS & Station)</option>
+                          <option value="manager">Administrator (Manager)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        disabled={isCreatingRole || !newRoleName.trim()}
+                        onClick={handleCreateCustomRole}
+                        className="px-3 py-1.5 rounded-lg bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isCreatingRole ? 'Saving...' : 'Save & Select Role'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    ...ALL_ROLES.map(r => ({ id: r, label: ROLE_LABELS[r] })),
+                    ...customRoles.map(cr => ({ id: cr.name, label: cr.name, isCustom: true }))
+                  ].map((r) => {
+                    const isSelected = newStaffRole.toLowerCase() === r.id.toLowerCase();
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setNewStaffRole(r.id)}
+                        className={`relative px-3 py-2.5 rounded-lg border text-xs font-semibold text-left transition-all ${
+                          isSelected
+                            ? 'border-turmeric bg-turmeric/10 text-turmeric'
+                            : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
+                        }`}
+                      >
+                        <span className="block capitalize truncate">{r.label}</span>
+                        {isSelected && (
+                          <span className="absolute top-1.5 right-2 text-[9px] text-turmeric">✓</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-ink-3 mt-2">
+                  {ROLE_DESCRIPTIONS[newStaffRole as StaffRole] || 
+                   (customRoles.find(cr => cr.name.toLowerCase() === newStaffRole.toLowerCase())
+                     ? `Custom role based on ${customRoles.find(cr => cr.name.toLowerCase() === newStaffRole.toLowerCase())?.baseRole || 'waiter'}. Reusable across your team.`
+                     : 'Point of sale and QR order approvals.')}
+                </p>
+              </div>
+
+              {/* ── SECTION 2B: Waiter Floor Section / Station Arrangement (Only for Waiter) ── */}
+              {(newStaffRole.toLowerCase() === 'waiter' ||
+                customRoles.find((c) => c.name.toLowerCase() === newStaffRole.toLowerCase())?.baseRole === 'waiter') && (
+                <div className="border-t border-line/50 pt-4 animate-in fade-in duration-200">
+                  <div className="flex justify-between items-center mb-2.5">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm">📍</span>
+                        <span className="block text-[10px] font-bold text-turmeric uppercase tracking-widest">
+                          Floor Section / Station Assignment *
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-ink-3 mt-0.5">
+                        Assign this waiter to a floor section. Orders taken by this waiter will automatically print to that station&apos;s printer. Manage stations in Settings → Device Printers.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Station Selector Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {waiterStations.map((st) => {
+                      const isSel = selectedStation.toLowerCase() === st.id.toLowerCase();
+                      return (
+                        <div
+                          key={st.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedStation(st.id)}
+                          className={`group relative p-3 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer select-none ${
+                            isSel
+                              ? 'border-turmeric bg-turmeric/10 text-ink ring-2 ring-turmeric/30'
+                              : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1 gap-1">
+                            <span className="font-mono text-xs font-black uppercase px-2 py-0.5 rounded bg-turmeric/20 text-turmeric-d border border-turmeric/30">
+                              {st.code}
+                            </span>
+                            {isSel && (
+                              <span className="text-xs text-turmeric font-bold ml-0.5">✓</span>
+                            )}
+                          </div>
+                          <div>
+                            <b className="text-xs block font-bold text-ink truncate">{st.name}</b>
+                            <span className="text-[10px] text-ink-3 block truncate">{st.desc || st.label}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ── SECTION 3: Payment (Optional) ── */}
+              <div className="border-t border-line/50 pt-4">
+                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-3">Payment <span className="normal-case font-normal">(Optional)</span></span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Pay Type</label>
+                    <div className="flex gap-2">
+                      {(['monthly', 'hourly'] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setNewStaffPayType(prev => prev === t ? '' : t)}
+                          className={`flex-1 py-2 rounded-lg border text-xs font-semibold capitalize transition-all ${
+                            newStaffPayType === t
+                              ? 'border-turmeric bg-turmeric/10 text-turmeric'
+                              : 'border-line bg-paper-2 text-ink-2 hover:border-ink-3 hover:text-ink'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">
+                      Rate (₹){newStaffPayType === 'monthly' ? ' / month' : newStaffPayType === 'hourly' ? ' / hr' : ''}
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3 text-xs font-bold">₹</span>
+                      <input 
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={newStaffPayRate} 
+                        onChange={(e) => setNewStaffPayRate(e.target.value)}
+                        placeholder={newStaffPayType === 'hourly' ? '150.00' : '20000'}
+                        disabled={!newStaffPayType}
+                        className="w-full pl-7 pr-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric disabled:opacity-40"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── SECTION 4: Login Credentials ── */}
+              <div className="border-t border-line/50 pt-4">
+                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-1">Dashboard Login Credentials *</span>
+                <p className="text-[10px] text-ink-3 mb-3">Required for dashboard access. The username must be unique across your team.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Email / Username *</label>
+                    <input 
+                      type="text" 
+                      required
                       value={newStaffEmail} 
                       onChange={(e) => setNewStaffEmail(e.target.value)}
                       placeholder="username"
-                      className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold mb-1 text-ink-2">Dashboard Password</label>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Dashboard Password *</label>
                     <input 
                       type="password" 
+                      required
+                      minLength={6}
                       value={newStaffPassword} 
                       onChange={(e) => setNewStaffPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full px-3 py-2 rounded bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-4 border-t border-line mt-4">
+              {/* ── SECTION 5: Other Details (Optional) ── */}
+              <div className="border-t border-line/50 pt-4">
+                <span className="block text-[10px] font-bold text-ink-3 uppercase tracking-widest mb-3">Other Details <span className="normal-case font-normal">(Optional)</span></span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Designation / Title</label>
+                    <input 
+                      type="text" 
+                      value={newStaffDesignation} 
+                      onChange={(e) => setNewStaffDesignation(e.target.value)}
+                      placeholder="e.g. Head Waiter"
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1 text-ink-2">Joining Date</label>
+                    <input 
+                      type="date" 
+                      value={newStaffJoiningDate} 
+                      onChange={(e) => setNewStaffJoiningDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-paper-2 border border-line text-ink text-sm focus:outline-none focus:border-turmeric"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Actions ── */}
+              <div className="flex justify-end gap-2 pt-4 border-t border-line">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded bg-paper-2 hover:bg-line text-xs font-semibold transition-all"
+                  className="px-4 py-2 rounded-lg bg-paper-2 hover:bg-line text-xs font-semibold transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 transition-all"
+                  className="px-5 py-2 rounded-lg bg-turmeric text-[#2A1607] font-bold text-xs hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5"
                 >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+                  </svg>
                   Create & Setup RBAC
                 </button>
               </div>
@@ -1470,7 +1858,46 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           </div>
         </div>
       )}
-      {/* Clean standard confirmation popup (no dark black scrim) */}
+
+      {/* Standard Delete Station Confirmation Modal */}
+      {stationToDelete && (
+        <div
+          onClick={() => !isDeletingStation && setStationToDelete(null)}
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-transparent animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-paper border border-line rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center animate-in zoom-in-95 duration-150 ring-1 ring-black/5"
+          >
+            <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 mx-auto flex items-center justify-center text-xl mb-3.5">
+              🗑️
+            </div>
+            <h4 className="text-base font-bold text-ink mb-1.5">Delete Floor Station</h4>
+            <p className="text-xs text-ink-3 leading-relaxed mb-5">
+              Are you sure you want to delete station <b className="text-ink">{stationToDelete.code} ({stationToDelete.name})</b>?
+            </p>
+            <div className="flex gap-2 justify-center">
+              <button
+                type="button"
+                disabled={isDeletingStation}
+                onClick={() => setStationToDelete(null)}
+                className="px-4 py-2 rounded-xl border border-line text-xs font-semibold text-ink-2 hover:bg-paper-2 transition-all cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingStation}
+                onClick={handleConfirmDeleteStation}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isDeletingStation ? 'Deleting…' : 'Yes, Delete Station'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {staffToDelete && (
         <div
           onClick={() => !isDeletingStaff && setStaffToDelete(null)}

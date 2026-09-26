@@ -279,6 +279,7 @@ export async function POST(req: NextRequest) {
     paymentMethod: paymentList.map((p) => p.method.toUpperCase()).join(' + '),
     paidAmountPaise: paidTotal,
     changePaise: Math.max(0, paidTotal - bill.totalPaise),
+    gstEnabled: gst.enabled,
     receiptConfig,
     upiConfig,
   };

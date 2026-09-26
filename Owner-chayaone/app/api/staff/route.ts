@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHash, randomBytes, scryptSync } from 'crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 
@@ -17,6 +17,15 @@ function hashPassword(pw: string): string {
   return `scrypt$${salt.toString('hex')}$${dk.toString('hex')}`;
 }
 
+function verifyPassword(pw: string, stored: string): boolean {
+  const parts = stored.split('$');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+  const salt = Buffer.from(parts[1]!, 'hex');
+  const want = Buffer.from(parts[2]!, 'hex');
+  const got = scryptSync(pw, salt, want.length || 64);
+  return want.length === got.length && timingSafeEqual(want, got);
+}
+
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -30,6 +39,7 @@ export async function GET() {
         name: true,
         role: true,
         phone: true,
+        email: true,
         active: true,
         employeeCode: true,
         payType: true,
@@ -38,6 +48,7 @@ export async function GET() {
         username: true,
         passwordHash: true,
         permissions: true,
+        createdAt: true,
       },
     }),
     prisma.role.findMany({
@@ -202,19 +213,42 @@ export async function POST(req: NextRequest) {
     const data: any = {};
     if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim();
     if (body.phone !== undefined) data.phone = body.phone ? String(body.phone).trim() : null;
+    if (body.email !== undefined) data.email = body.email ? String(body.email).trim().toLowerCase() : null;
     if (body.employeeCode !== undefined) data.employeeCode = body.employeeCode ? String(body.employeeCode).trim() : null;
     if (body.role !== undefined && isRole(body.role)) data.role = body.role;
     if (body.active !== undefined) {
       if (id === session.staffId && body.active === false) return NextResponse.json({ error: 'cannot_deactivate_self' }, { status: 400 });
       data.active = !!body.active;
     }
-    if (body.permissions !== undefined) data.permissions = body.permissions;
+    if (body.username !== undefined && String(body.username).trim()) {
+      const u = String(body.username).trim().toLowerCase();
+      if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username', message: 'Username must be 2–60 characters' }, { status: 400 });
+      const clash = await prisma.staffUser.findFirst({ where: { tenantId: session.tenantId, username: u, NOT: { id } }, select: { id: true } });
+      if (clash) return NextResponse.json({ error: 'username_in_use', message: `Username "${u}" is already in use` }, { status: 409 });
+      data.username = u;
+    }
+    if (body.designation !== undefined || body.joiningDate !== undefined || body.branchAccess !== undefined) {
+      const prevPerms = (typeof (body.permissions || target.permissions) === 'object' && (body.permissions || target.permissions)
+        ? (body.permissions || target.permissions)
+        : {}) as Record<string, any>;
+      data.permissions = {
+        ...prevPerms,
+        ...(body.designation !== undefined ? { designation: body.designation ? String(body.designation).trim() : null } : {}),
+        ...(body.joiningDate !== undefined ? { joiningDate: body.joiningDate ? String(body.joiningDate).trim() : null } : {}),
+        ...(body.branchAccess !== undefined ? { branchAccess: Array.isArray(body.branchAccess) ? body.branchAccess : [body.branchAccess] } : {}),
+      };
+    } else if (body.permissions !== undefined) {
+      data.permissions = body.permissions;
+    }
 
     const updated = await prisma.staffUser.update({
       where: { id },
       data,
-      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, permissions: true },
+      select: { id: true, name: true, role: true, phone: true, email: true, active: true, employeeCode: true, payType: true, payRatePaise: true, username: true, permissions: true, createdAt: true },
     });
+    await prisma.auditLog.create({
+      data: { outletId: session.outletId, actorId: session.staffId, action: 'staff.updated', entity: 'staff_user', entityId: id, after: { name: updated.name, role: updated.role, active: updated.active } }
+    }).catch(() => {});
     return NextResponse.json({ ok: true, member: { ...updated, hasPin: !!target.pinHash, hasLogin: !!target.passwordHash } });
   }
 
@@ -237,6 +271,63 @@ export async function POST(req: NextRequest) {
     }
     await prisma.staffUser.update({ where: { id }, data });
     return NextResponse.json({ ok: true });
+  }
+
+  // Change staff password
+  if (action === 'change_password') {
+    const isSelf = id === session.staffId;
+    const currentPassword = String(body.currentPassword ?? '');
+    const newPassword = String(body.newPassword ?? '');
+    const confirmPassword = String(body.confirmPassword ?? '');
+
+    if (!newPassword || newPassword.length < 6) {
+      return NextResponse.json({ error: 'password_too_short', message: 'New password must be at least 6 characters long.' }, { status: 400 });
+    }
+    if (newPassword !== confirmPassword) {
+      return NextResponse.json({ error: 'password_mismatch', message: 'Passwords do not match.' }, { status: 400 });
+    }
+
+    if (isSelf && target.passwordHash) {
+      if (!currentPassword) {
+        return NextResponse.json({ error: 'current_password_required', message: 'Current password is required.' }, { status: 400 });
+      }
+      const isValid = verifyPassword(currentPassword, target.passwordHash);
+      if (!isValid) {
+        return NextResponse.json({ error: 'invalid_current_password', message: 'Current password is incorrect.' }, { status: 400 });
+      }
+    } else if (!isSelf) {
+      if (session.role !== 'owner' && session.role !== 'manager') {
+        return NextResponse.json({ error: 'forbidden', message: 'Unauthorized to change staff password.' }, { status: 403 });
+      }
+    }
+
+    const passwordHash = hashPassword(newPassword);
+    await prisma.staffUser.update({ where: { id }, data: { passwordHash } });
+    await prisma.auditLog.create({
+      data: { outletId: session.outletId, actorId: session.staffId, action: isSelf ? 'staff.password_changed' : 'staff.password_reset', entity: 'staff_user', entityId: id, after: { targetName: target.name } }
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, message: 'Password updated successfully.' });
+  }
+
+  // Admin password reset
+  if (action === 'reset_password') {
+    if (session.role !== 'owner' && session.role !== 'manager') {
+      return NextResponse.json({ error: 'forbidden', message: 'Unauthorized to reset staff password.' }, { status: 403 });
+    }
+    const newPassword = String(body.newPassword ?? '');
+    const confirmPassword = String(body.confirmPassword ?? '');
+    if (!newPassword || newPassword.length < 6) {
+      return NextResponse.json({ error: 'password_too_short', message: 'New password must be at least 6 characters long.' }, { status: 400 });
+    }
+    if (newPassword !== confirmPassword) {
+      return NextResponse.json({ error: 'password_mismatch', message: 'Passwords do not match.' }, { status: 400 });
+    }
+    const passwordHash = hashPassword(newPassword);
+    await prisma.staffUser.update({ where: { id }, data: { passwordHash } });
+    await prisma.auditLog.create({
+      data: { outletId: session.outletId, actorId: session.staffId, action: 'staff.password_reset', entity: 'staff_user', entityId: id, after: { targetName: target.name, resetBy: session.staffId } }
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, message: 'Password reset successfully.' });
   }
 
   if (action === 'setpin') {

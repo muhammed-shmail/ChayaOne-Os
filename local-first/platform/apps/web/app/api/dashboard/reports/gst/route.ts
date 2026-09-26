@@ -110,14 +110,16 @@ export async function GET(req: NextRequest) {
 
         const lineTaxable = itemLineTotal - lineTax;
 
-        // Populate rate summary
-        if (!rateSummary[rate]) {
-          rateSummary[rate] = { taxable: 0, cgst: 0, sgst: 0, igst: 0 };
+        // Populate rate summary (only for GST-active orders)
+        if (orderTaxAmt > 0) {
+          if (!rateSummary[rate]) {
+            rateSummary[rate] = { taxable: 0, cgst: 0, sgst: 0, igst: 0 };
+          }
+          rateSummary[rate].taxable += lineTaxable;
+          rateSummary[rate].cgst += lineCgst;
+          rateSummary[rate].sgst += lineSgst;
+          rateSummary[rate].igst += lineIgst;
         }
-        rateSummary[rate].taxable += lineTaxable;
-        rateSummary[rate].cgst += lineCgst;
-        rateSummary[rate].sgst += lineSgst;
-        rateSummary[rate].igst += lineIgst;
 
         // Populate HSN summary
         if (!hsnSummary[hsn]) {

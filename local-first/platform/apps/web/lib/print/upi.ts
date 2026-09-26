@@ -101,48 +101,67 @@ export function generateAuthoritativeUpiUri(params: BuildUpiUriParams): UpiValid
   const amountFormatted = formatUpiAmount(params.amountPaise);
 
   if (params.isCancelled) {
+    const reason = 'UPI QR skipped: Order is cancelled or voided';
+    console.warn(`[UPI QR] ${reason}`);
     return {
       valid: false,
       uri: null,
       amountFormatted,
-      reason: 'UPI QR skipped: Order is cancelled or voided',
+      reason,
     };
   }
 
   const upiId = (params.upiId || '').trim();
   if (!upiId) {
+    const reason = 'UPI QR skipped - invalid/incomplete UPI configuration (UPI ID missing)';
+    console.warn(`[UPI QR] ${reason}`);
     return {
       valid: false,
       uri: null,
       amountFormatted,
-      reason: 'UPI QR skipped: UPI ID not configured',
+      reason,
     };
   }
 
   // Basic VPA validation: must contain @ and non-empty handle/provider
   if (!upiId.includes('@') || upiId.startsWith('@') || upiId.endsWith('@')) {
+    const reason = `UPI QR skipped - invalid/incomplete UPI configuration (Invalid UPI ID format: ${upiId})`;
+    console.warn(`[UPI QR] ${reason}`);
     return {
       valid: false,
       uri: null,
       amountFormatted,
-      reason: `UPI QR skipped: Invalid UPI ID format (${upiId})`,
+      reason,
     };
   }
 
-  if (params.amountPaise <= 0) {
+  const businessName = (params.businessName || params.payeeName || '').trim();
+  if (!businessName) {
+    const reason = 'UPI QR skipped - invalid/incomplete UPI configuration (Merchant name missing)';
+    console.warn(`[UPI QR] ${reason}`);
     return {
       valid: false,
       uri: null,
       amountFormatted,
-      reason: 'UPI QR skipped: Payable amount must be greater than zero',
+      reason,
     };
   }
 
-  const businessName = (params.businessName || params.payeeName || 'Chaya Cafe').trim();
+  if (!Number.isFinite(params.amountPaise) || params.amountPaise <= 0) {
+    const reason = 'UPI QR skipped: Payable amount must be greater than zero';
+    console.warn(`[UPI QR] ${reason}`);
+    return {
+      valid: false,
+      uri: null,
+      amountFormatted,
+      reason,
+    };
+  }
+
   const encodedName = encodeURIComponent(businessName);
   const encodedPa = encodeURIComponent(upiId);
 
-  // Construct NPCI standard UPI URI
+  // Construct NPCI standard UPI URI: upi://pay?pa={VPA}&pn={MERCHANT_NAME}&am={FINAL_AMOUNT}&cu=INR
   let uri = `upi://pay?pa=${encodedPa}&pn=${encodedName}&am=${amountFormatted}&cu=INR`;
 
   if (params.merchantCode) {
@@ -151,10 +170,13 @@ export function generateAuthoritativeUpiUri(params: BuildUpiUriParams): UpiValid
   if (params.transactionRef) {
     uri += `&tr=${encodeURIComponent(params.transactionRef)}`;
   }
-  if (params.notes || params.orderNumber !== undefined) {
-    const noteText = params.notes || `Order #${params.orderNumber}`;
-    uri += `&tn=${encodeURIComponent(noteText)}`;
+  if (params.notes) {
+    uri += `&tn=${encodeURIComponent(params.notes)}`;
   }
+
+  console.log('[UPI QR] Enabled: true');
+  console.log(`[UPI QR] Amount: ${amountFormatted}`);
+  console.log('[UPI QR] URI generated successfully');
 
   return {
     valid: true,

@@ -1,0 +1,2041 @@
+{
+  "categories": [
+    "Chaya",
+    "Black Tea",
+    "Fresh Juice",
+    "Lime",
+    "Mojito",
+    "Malba",
+    "Healthy Juices",
+    "Dry Fruit Drinks",
+    "Chocolate Drinks",
+    "Momos",
+    "Chats",
+    "Eats",
+    "Burger",
+    "Starters",
+    "Pasta",
+    "Kaawa Arabic Shawarma",
+    "Lassi",
+    "Fruit Shake",
+    "Kuluki Sharbat",
+    "Tender Special",
+    "Sundae",
+    "Soda"
+  ],
+  "items": [
+    {
+      "category": "Chaya",
+      "name": "Tea",
+      "price": 15.0,
+      "pricePaise": 1500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Kaawa Signature Tea",
+      "price": 20.0,
+      "pricePaise": 2000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Cinnamon Tea",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Saffron Tea",
+      "price": 40.0,
+      "pricePaise": 4000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Badam Tea",
+      "price": 40.0,
+      "pricePaise": 4000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Mitti Chaya",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Masala Tea",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Hyderabadi Kadak Tea",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Cardamom Tea",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Ginger Tea",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Bamboo Tea",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Chiratta Chaya",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Bombay Tea",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Boost",
+      "price": 25.0,
+      "pricePaise": 2500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Jaggery Tea",
+      "price": 25.0,
+      "pricePaise": 2500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Coffee",
+      "price": 25.0,
+      "pricePaise": 2500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Kashmiri Chaya",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chaya",
+      "name": "Horlicks",
+      "price": 25.0,
+      "pricePaise": 2500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Normal Black Tea",
+      "price": 12.0,
+      "pricePaise": 1200,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Inji Kattan",
+      "price": 15.0,
+      "pricePaise": 1500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Thulasi Kattan",
+      "price": 15.0,
+      "pricePaise": 1500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Pepper Kattan",
+      "price": 15.0,
+      "pricePaise": 1500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Ela Kattan",
+      "price": 20.0,
+      "pricePaise": 2000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Patta (Cinnamon) Kattan",
+      "price": 20.0,
+      "pricePaise": 2000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Masala Kattan",
+      "price": 20.0,
+      "pricePaise": 2000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Mint Kattan",
+      "price": 15.0,
+      "pricePaise": 1500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Pineapple Kattan",
+      "price": 25.0,
+      "pricePaise": 2500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Munthiri Kattan",
+      "price": 25.0,
+      "pricePaise": 2500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Special Lime Tea",
+      "price": 20.0,
+      "pricePaise": 2000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Normal Lime Tea",
+      "price": 15.0,
+      "pricePaise": 1500,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Inji-Kurumulak Kattan",
+      "price": 20.0,
+      "pricePaise": 2000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Black Tea",
+      "name": "Brazilian Tea",
+      "price": 40.0,
+      "pricePaise": 4000,
+      "station": "P1",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Orange",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Mosambi",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Pineapple",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Grape",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Papaya",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Mango",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Anar",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Carrot",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Strawberry",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Watermelon",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Tender",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Apple",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fresh Juice",
+      "name": "Shamam",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lime",
+      "name": "Lime",
+      "price": 25.0,
+      "pricePaise": 2500,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lime",
+      "name": "Mint Lime",
+      "price": 35.0,
+      "pricePaise": 3500,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lime",
+      "name": "Ginger Lime",
+      "price": 35.0,
+      "pricePaise": 3500,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lime",
+      "name": "Pineapple Lime",
+      "price": 40.0,
+      "pricePaise": 4000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lime",
+      "name": "Grape Lime",
+      "price": 40.0,
+      "pricePaise": 4000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lime",
+      "name": "Mango Lime",
+      "price": 50.0,
+      "pricePaise": 5000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Mojito",
+      "name": "Blue Current",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Mojito",
+      "name": "Passion Fruit",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Mojito",
+      "name": "Mango",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Mojito",
+      "name": "Green Apple",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Mojito",
+      "name": "Mint",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Mojito",
+      "name": "Chilli",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Malba",
+      "name": "Tender Malba",
+      "price": 120.0,
+      "pricePaise": 12000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Malba",
+      "name": "Chikku Malba",
+      "price": 120.0,
+      "pricePaise": 12000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Malba",
+      "name": "Apple Malba",
+      "price": 130.0,
+      "pricePaise": 13000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Malba",
+      "name": "Mango Malba",
+      "price": 130.0,
+      "pricePaise": 13000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Malba",
+      "name": "Strawberry Malba",
+      "price": 120.0,
+      "pricePaise": 12000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Malba",
+      "name": "Seetha Malba",
+      "price": 130.0,
+      "pricePaise": 13000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Malba",
+      "name": "Butter Malba",
+      "price": 130.0,
+      "pricePaise": 13000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Healthy Juices",
+      "name": "ABC",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Healthy Juices",
+      "name": "Orange Carrot",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Healthy Juices",
+      "name": "ACP",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Healthy Juices",
+      "name": "Pineapple Carrot",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Healthy Juices",
+      "name": "OCA",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Healthy Juices",
+      "name": "Anar Punch (Pure)",
+      "price": 170.0,
+      "pricePaise": 17000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Healthy Juices",
+      "name": "Orange Punch (Pure)",
+      "price": 130.0,
+      "pricePaise": 13000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Healthy Juices",
+      "name": "Mosambi Punch (Pure)",
+      "price": 130.0,
+      "pricePaise": 13000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Dry Fruit Drinks",
+      "name": "Dry Fruit Shake",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Dry Fruit Drinks",
+      "name": "Khajoor",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Dry Fruit Drinks",
+      "name": "Badam",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Dry Fruit Drinks",
+      "name": "Cashew",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Dry Fruit Drinks",
+      "name": "Almond Cashew",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Dry Fruit Drinks",
+      "name": "Khajoor Cashew",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Dry Fruit Drinks",
+      "name": "Peanut Butter",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Dry Fruit Drinks",
+      "name": "Kaawa Special",
+      "price": 130.0,
+      "pricePaise": 13000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Cold Coffee",
+      "price": 50.0,
+      "pricePaise": 5000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Cold Boost",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Cold Horlicks",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Oreo Chocolate",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Kitkat",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Snickers",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Choco Pie",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Brownie Shake",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Nutella",
+      "price": 140.0,
+      "pricePaise": 14000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Brownie with Ice Cream",
+      "price": 120.0,
+      "pricePaise": 12000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Sizzling Brownie",
+      "price": 160.0,
+      "pricePaise": 16000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chocolate Drinks",
+      "name": "Chocolate Shake with Ice Cream",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Momos",
+      "name": "Steamed Momos (5 pcs)",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Momos",
+      "name": "Steamed Momos (10 pcs)",
+      "price": 150.0,
+      "pricePaise": 15000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Momos",
+      "name": "Fried Momos (5 pcs)",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Momos",
+      "name": "Fried Momos (10 pcs)",
+      "price": 160.0,
+      "pricePaise": 16000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Momos",
+      "name": "Schezwan Momos (5 pcs)",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Momos",
+      "name": "Schezwan Momos (10 pcs)",
+      "price": 170.0,
+      "pricePaise": 17000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chats",
+      "name": "Pani Puri",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Chats",
+      "name": "Dahi Puri",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Eats",
+      "name": "Veg Sandwich",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Eats",
+      "name": "Chicken Sandwich",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Eats",
+      "name": "Samoona Veg",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Eats",
+      "name": "Samoona Chicken",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Burger",
+      "name": "Veg Burger",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Burger",
+      "name": "Chicken Burger",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Burger",
+      "name": "Classic Burger",
+      "price": 120.0,
+      "pricePaise": 12000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Burger",
+      "name": "Zinger Burger",
+      "price": 160.0,
+      "pricePaise": 16000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Burger",
+      "name": "Tikkaburger",
+      "price": 150.0,
+      "pricePaise": 15000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Starters",
+      "name": "Chicken Nuggets",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Starters",
+      "name": "Chicken Strips",
+      "price": 140.0,
+      "pricePaise": 14000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Starters",
+      "name": "French Fries",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Starters",
+      "name": "French Fries (Masala)",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Starters",
+      "name": "Loaded Fries",
+      "price": 140.0,
+      "pricePaise": 14000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Starters",
+      "name": "Classic Cheese Loaded Fries",
+      "price": 180.0,
+      "pricePaise": 18000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Pasta",
+      "name": "Alferdo Pasta",
+      "price": 170.0,
+      "pricePaise": 17000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Pasta",
+      "name": "Classic Red Sauce Pasta",
+      "price": 190.0,
+      "pricePaise": 19000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Kaawa Arabic Shawarma",
+      "name": "Kubooz",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Kaawa Arabic Shawarma",
+      "name": "Kubooz (Full Meat)",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Kaawa Arabic Shawarma",
+      "name": "Mexican Kubooz",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Kaawa Arabic Shawarma",
+      "name": "Peri Peri Kubooz",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Kaawa Arabic Shawarma",
+      "name": "Rumali",
+      "price": 130.0,
+      "pricePaise": 13000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Kaawa Arabic Shawarma",
+      "name": "Rumali (Full Meat)",
+      "price": 150.0,
+      "pricePaise": 15000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Kaawa Arabic Shawarma",
+      "name": "Mexican Rumali",
+      "price": 150.0,
+      "pricePaise": 15000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Kaawa Arabic Shawarma",
+      "name": "Peri Peri Rumali",
+      "price": 150.0,
+      "pricePaise": 15000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "nonveg"
+      ]
+    },
+    {
+      "category": "Lassi",
+      "name": "Sweet Lassi",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lassi",
+      "name": "Fruit Lassi",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lassi",
+      "name": "Mango Lassi",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lassi",
+      "name": "Vanilla Lassi",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lassi",
+      "name": "Dry Fruit Lassi",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lassi",
+      "name": "Tender Lassi",
+      "price": 120.0,
+      "pricePaise": 12000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lassi",
+      "name": "Chocolate Lassi",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lassi",
+      "name": "Custard Lassi",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Lassi",
+      "name": "Special Mango Lassi",
+      "price": 120.0,
+      "pricePaise": 12000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Chikoo",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Papaya",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Grape",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Shamam",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Shariah",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Mango",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Apple",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Tender",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Anar",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Avocado",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Strawberry",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Fruit Shake",
+      "name": "Seetha",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Kuluki Sharbat",
+      "name": "Orange",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Kuluki Sharbat",
+      "name": "Musambi",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Kuluki Sharbat",
+      "name": "Pineapple",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Kuluki Sharbat",
+      "name": "Grape",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Kuluki Sharbat",
+      "name": "Raw Mango",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Kuluki Sharbat",
+      "name": "Passion Fruit",
+      "price": 70.0,
+      "pricePaise": 7000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Kuluki Sharbat",
+      "name": "Boost",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Kuluki Sharbat",
+      "name": "Horlicks",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Khajoor",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Chikku",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Cashew",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Mango",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Butter",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Strawberry",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Seetha",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Papaya",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Fruit",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Dry Fruit",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Oreo",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Snickers",
+      "price": 110.0,
+      "pricePaise": 11000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Boost",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Tender Special",
+      "name": "Tender Horlicks",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Sundae",
+      "name": "Fruit Salad",
+      "price": 80.0,
+      "pricePaise": 8000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Sundae",
+      "name": "Royal Falooda",
+      "price": 100.0,
+      "pricePaise": 10000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Sundae",
+      "name": "Special Falooda",
+      "price": 140.0,
+      "pricePaise": 14000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Sundae",
+      "name": "Tender Falooda",
+      "price": 160.0,
+      "pricePaise": 16000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Sundae",
+      "name": "Arabian Falooda",
+      "price": 160.0,
+      "pricePaise": 16000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Sundae",
+      "name": "Normal Falooda",
+      "price": 90.0,
+      "pricePaise": 9000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Soda",
+      "name": "Lime Soda",
+      "price": 25.0,
+      "pricePaise": 2500,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Soda",
+      "name": "Chilli Soda",
+      "price": 30.0,
+      "pricePaise": 3000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Soda",
+      "name": "Orange Soda",
+      "price": 50.0,
+      "pricePaise": 5000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Soda",
+      "name": "Pineapple Soda",
+      "price": 50.0,
+      "pricePaise": 5000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Soda",
+      "name": "Grape Soda",
+      "price": 50.0,
+      "pricePaise": 5000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Soda",
+      "name": "Passion Fruit Soda",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Soda",
+      "name": "Raw Mango Soda",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Soda",
+      "name": "Blue Lime Soda",
+      "price": 60.0,
+      "pricePaise": 6000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    },
+    {
+      "category": "Soda",
+      "name": "Kanthari Soda",
+      "price": 50.0,
+      "pricePaise": 5000,
+      "station": "P2",
+      "isAvailable": true,
+      "tags": [
+        "veg"
+      ]
+    }
+  ]
+}

@@ -46,11 +46,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }
 
+  // Resolve outletId — owner/manager accounts may not have one bound in their JWT
+  let outletId: string | null = session.outletId;
+  if (!outletId) {
+    const firstOutlet = await prisma.outlet.findFirst({
+      where: { tenantId: session.tenantId },
+      select: { id: true },
+    });
+    outletId = firstOutlet?.id ?? null;
+  }
+  // Local-first single outlet fallback
+  if (!outletId) {
+    const fallbackOutlet = await prisma.outlet.findFirst({ select: { id: true } });
+    outletId = fallbackOutlet?.id ?? null;
+  }
+  if (!outletId) return NextResponse.json({ error: 'no_outlet', message: 'No outlet configured in database' }, { status: 400 });
+
   const body = await req.json().catch(() => ({}));
 
   // ---- Module Management & Business Profile ----
   if (body.action === 'modules_get') {
-    const payload = await getModuleStatePayload(session.outletId);
+    const payload = await getModuleStatePayload(outletId);
     return NextResponse.json({ ok: true, ...payload });
   }
 
@@ -59,7 +75,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'forbidden', message: 'Only store owners or managers can modify modules.' }, { status: 403 });
     }
     try {
-      const updated = await setModuleConfig(session.outletId, {
+      const updated = await setModuleConfig(outletId, {
         businessType: body.businessType,
         enabledModules: body.enabledModules,
         moduleSettings: body.moduleSettings,
@@ -93,7 +109,7 @@ export async function POST(req: NextRequest) {
       if (!stateCode) return NextResponse.json({ error: 'missing_state_code', message: 'State code is required.' }, { status: 400 });
     }
 
-    const currentOutlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true, gstin: true, stateCode: true } });
+    const currentOutlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true, gstin: true, stateCode: true } });
     const settings = (currentOutlet?.settings as Record<string, unknown>) ?? {};
     
     // Save previous GST for audit
@@ -102,7 +118,7 @@ export async function POST(req: NextRequest) {
     // Check duplicate GSTIN across other outlets (excluding this one)
     if (enabled && gstin) {
       const duplicate = await prisma.outlet.findFirst({
-        where: { gstin, id: { not: session.outletId } },
+        where: { gstin, id: { not: outletId } },
         select: { id: true, name: true }
       });
       if (duplicate) {
@@ -174,7 +190,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.$transaction([
       prisma.outlet.update({
-        where: { id: session.outletId },
+        where: { id: outletId },
         data: {
           // Keep outlet-level gstin/stateCode columns even when GST is disabled:
           // POS receipt, T-billing, and state-routing logic read these columns
@@ -186,11 +202,11 @@ export async function POST(req: NextRequest) {
       }),
       prisma.auditLog.create({
         data: {
-          outletId: session.outletId,
+          outletId,
           actorId: session.staffId,
           action: 'gst.updated',
           entity: 'gst_config',
-          entityId: session.outletId,
+          entityId: outletId,
           before: { gst: prevGst } as Prisma.InputJsonValue,
           after: {
             gst: nextGst,
@@ -209,7 +225,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === 'gst_reset') {
-    const currentOutlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const currentOutlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
     const settings = (currentOutlet?.settings as Record<string, unknown>) ?? {};
     const prevGst = settings.gst ?? {};
     
@@ -231,7 +247,7 @@ export async function POST(req: NextRequest) {
 
     await prisma.$transaction([
       prisma.outlet.update({
-        where: { id: session.outletId },
+        where: { id: outletId },
         data: {
           gstin: null,
           stateCode: null,
@@ -240,11 +256,11 @@ export async function POST(req: NextRequest) {
       }),
       prisma.auditLog.create({
         data: {
-          outletId: session.outletId,
+          outletId,
           actorId: session.staffId,
           action: 'gst.reset',
           entity: 'gst_config',
-          entityId: session.outletId,
+          entityId: outletId,
           before: { gst: prevGst } as Prisma.InputJsonValue,
           after: {
             gst: settings.gst,
@@ -323,7 +339,7 @@ export async function POST(req: NextRequest) {
       station: entry.station,
     });
 
-    const current = readDevices((await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } }))?.settings);
+    const current = readDevices((await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }))?.settings);
     const idx = current.findIndex((x) => x.id === entry.id);
     if (idx >= 0) current[idx] = entry; else current.push(entry);
 
@@ -337,18 +353,18 @@ export async function POST(req: NextRequest) {
     }
 
     const next = normalizeDefaults(current, entry.isDefault ? entry.id : undefined);
-    await saveDevices(session.outletId, next);
+    await saveDevices(outletId, next);
     await prisma.auditLog.create({
-      data: { outletId: session.outletId, actorId: session.staffId, action: 'device.saved', entity: 'device', entityId: entry.id, after: entry as unknown as Prisma.InputJsonValue },
+      data: { outletId, actorId: session.staffId, action: 'device.saved', entity: 'device', entityId: entry.id, after: entry as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
     return NextResponse.json({ ok: true, devices: next });
   }
 
   if (body.action === 'device_delete') {
     if (!body.id) return NextResponse.json({ error: 'missing_id' }, { status: 400 });
-    const current = readDevices((await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } }))?.settings);
+    const current = readDevices((await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }))?.settings);
     const next = current.filter((x) => x.id !== body.id);
-    await saveDevices(session.outletId, next);
+    await saveDevices(outletId, next);
     return NextResponse.json({ ok: true, devices: next });
   }
 
@@ -386,7 +402,7 @@ export async function POST(req: NextRequest) {
     // Optionally update device's lastKnownStatus in database if registered printerId is supplied
     if (result.printerId) {
       try {
-        const current = readDevices((await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } }))?.settings);
+        const current = readDevices((await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }))?.settings);
         const idx = current.findIndex((x) => x.id === result.printerId);
         const targetDev = current[idx];
         if (targetDev) {
@@ -394,7 +410,7 @@ export async function POST(req: NextRequest) {
           targetDev.lastCheckedAt = result.checkedAt;
           targetDev.lastLatencyMs = result.latencyMs;
           targetDev.lastError = result.errorCode;
-          await saveDevices(session.outletId, current);
+          await saveDevices(outletId, current);
         }
       } catch (err) {
         console.warn('[PRINTER:API] Could not persist device lastKnownStatus:', err);
@@ -409,8 +425,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === 'device_health_check_all') {
-    console.log('[PRINTER:API] Received batch health check request for outlet', session.outletId);
-    const current = readDevices((await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } }))?.settings);
+    console.log('[PRINTER:API] Received batch health check request for outlet', outletId);
+    const current = readDevices((await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } }))?.settings);
     const results = await checkAllPrintersHealth(current);
 
     // Persist live statuses back into DB
@@ -428,7 +444,7 @@ export async function POST(req: NextRequest) {
       }
     }
     if (changed) {
-      await saveDevices(session.outletId, current).catch(() => {});
+      await saveDevices(outletId, current).catch(() => {});
     }
 
     return NextResponse.json({
@@ -490,7 +506,7 @@ export async function POST(req: NextRequest) {
     const job = await prisma.$transaction(async (tx) => {
       return await createPrintJob(tx, {
         tenantId: session.tenantId,
-        outletId: session.outletId,
+        outletId,
         printerId,
         stationId: stationName,
         jobType: PrintJobType.KOT,
@@ -537,7 +553,7 @@ export async function POST(req: NextRequest) {
     body.action === 'kitchen_delete' ||
     body.action === 'station_delete'
   ) {
-    const outlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const outlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
     const settings = (outlet?.settings as Record<string, unknown>) ?? {};
     const currentKitchens = readKitchens(settings);
     const currentWaiters = readWaiterStations(settings);
@@ -604,9 +620,9 @@ export async function POST(req: NextRequest) {
       waiterStations: nextWaiters,
       stations: nextWaiters,
     };
-    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
     await prisma.auditLog.create({
-      data: { outletId: session.outletId, actorId: session.staffId, action: `station.${body.action}`, entity: 'outlet', entityId: session.outletId, after: { waiterStations: nextWaiters } as unknown as Prisma.InputJsonValue },
+      data: { outletId, actorId: session.staffId, action: `station.${body.action}`, entity: 'outlet', entityId: outletId, after: { waiterStations: nextWaiters } as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
     return NextResponse.json({ ok: true, kitchens: nextKitchens, waiterStations: nextWaiters, stations: nextWaiters });
   }
@@ -615,7 +631,7 @@ export async function POST(req: NextRequest) {
   if (body.action === 'station_assign_printer') {
     const { stationId, printerId } = body;
     if (!stationId) return NextResponse.json({ error: 'missing_station_id' }, { status: 400 });
-    const outlet = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const outlet = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
     const current = readDevices(outlet?.settings);
     const stClean = String(stationId).trim().toLowerCase();
 
@@ -629,7 +645,7 @@ export async function POST(req: NextRequest) {
       return d;
     });
 
-    await saveDevices(session.outletId, next);
+    await saveDevices(outletId, next);
     return NextResponse.json({ ok: true, devices: next });
   }
 
@@ -656,12 +672,12 @@ export async function POST(req: NextRequest) {
       paperWidth: r.paperWidth === '58mm' ? '58mm' : '80mm',
       qrSize: r.qrSize === 'small' || r.qrSize === 'large' ? r.qrSize : 'medium',
     };
-    const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
     const settings = (current?.settings as Record<string, unknown>) ?? {};
     const merged = { ...settings, receipt };
-    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
     await prisma.auditLog.create({
-      data: { outletId: session.outletId, actorId: session.staffId, action: 'receipt.updated', entity: 'outlet', entityId: session.outletId, after: receipt as unknown as Prisma.InputJsonValue },
+      data: { outletId, actorId: session.staffId, action: 'receipt.updated', entity: 'outlet', entityId: outletId, after: receipt as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
     return NextResponse.json({ ok: true, receipt: readReceiptConfig(merged) });
   }
@@ -669,7 +685,7 @@ export async function POST(req: NextRequest) {
   // ---- payment / UPI settings (stored in Outlet.settings.payment) ----
   if (body.action === 'payment') {
     const p = (body.payment ?? {}) as Record<string, unknown>;
-    const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { name: true, settings: true } });
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { name: true, settings: true } });
     const settings = (current?.settings as Record<string, unknown>) ?? {};
     const existingPayment = (settings.payment as Record<string, unknown> | undefined) ?? {};
 
@@ -686,9 +702,9 @@ export async function POST(req: NextRequest) {
     };
 
     const merged = { ...settings, payment: updatedPayment };
-    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
     await prisma.auditLog.create({
-      data: { outletId: session.outletId, actorId: session.staffId, action: 'payment.updated', entity: 'outlet', entityId: session.outletId, after: updatedPayment as unknown as Prisma.InputJsonValue },
+      data: { outletId, actorId: session.staffId, action: 'payment.updated', entity: 'outlet', entityId: outletId, after: updatedPayment as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
     return NextResponse.json({ ok: true, payment: readUpiConfig(merged, current?.name) });
   }
@@ -699,12 +715,12 @@ export async function POST(req: NextRequest) {
   // client value can never break the KDS render.
   if (body.action === 'kitchen_workflow') {
     const kitchenWorkflow = normalizeKitchenWorkflowInput(body.workflow ?? {});
-    const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
     const settings = (current?.settings as Record<string, unknown>) ?? {};
     const merged = { ...settings, kitchenWorkflow };
-    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
     await prisma.auditLog.create({
-      data: { outletId: session.outletId, actorId: session.staffId, action: 'kitchen.workflow_updated', entity: 'outlet', entityId: session.outletId, after: kitchenWorkflow as unknown as Prisma.InputJsonValue },
+      data: { outletId, actorId: session.staffId, action: 'kitchen.workflow_updated', entity: 'outlet', entityId: outletId, after: kitchenWorkflow as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
     return NextResponse.json({ ok: true, kitchenWorkflow: readKitchenWorkflow(merged) });
   }
@@ -715,12 +731,12 @@ export async function POST(req: NextRequest) {
   if (body.action === 'location') {
     if (session.role !== 'owner') return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     const location = normalizeLocationInput(body.location);
-    const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
     const settings = (current?.settings as Record<string, unknown>) ?? {};
     const merged = { ...settings, location };
-    await prisma.outlet.update({ where: { id: session.outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
     await prisma.auditLog.create({
-      data: { outletId: session.outletId, actorId: session.staffId, action: 'outlet.location_updated', entity: 'outlet', entityId: session.outletId, after: location as unknown as Prisma.InputJsonValue },
+      data: { outletId, actorId: session.staffId, action: 'outlet.location_updated', entity: 'outlet', entityId: outletId, after: location as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
     return NextResponse.json({ ok: true, location });
   }
@@ -753,7 +769,7 @@ export async function POST(req: NextRequest) {
   // GST config + store logo URL live in Outlet.settings (merged, not columns —
   // keeps existing outlets untouched). Read once, apply both, write once.
   if (body.gstEnabled !== undefined || body.gstRate !== undefined || body.gstType !== undefined || body.logoUrl !== undefined) {
-    const current = await prisma.outlet.findUnique({ where: { id: session.outletId }, select: { settings: true } });
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true, tenantId: true } });
     const settings = (current?.settings as Record<string, unknown>) ?? {};
     if (body.gstEnabled !== undefined || body.gstRate !== undefined || body.gstType !== undefined) {
       const gst = (settings.gst as Record<string, unknown>) ?? {};
@@ -769,12 +785,20 @@ export async function POST(req: NextRequest) {
       const cleanLogoUrl = body.logoUrl ? String(body.logoUrl).trim().slice(0, 1000) : null;
       settings.logoUrl = cleanLogoUrl;
 
+      // Sync into receipt layout settings so thermal bill and receipt preview immediately display the logo
+      const receipt = (settings.receipt as Record<string, unknown>) ?? {};
+      receipt.logoUrl = cleanLogoUrl;
+      settings.receipt = receipt;
+
       // Sync to TenantBranding so tenant-level brand fallback receives the logo
-      await prisma.tenantBranding.upsert({
-        where: { tenantId: session.tenantId },
-        create: { tenantId: session.tenantId, logoUrl: cleanLogoUrl },
-        update: { logoUrl: cleanLogoUrl },
-      }).catch((err) => console.warn('[settings] TenantBranding sync error:', err));
+      const targetTenantId = session.tenantId || current?.tenantId;
+      if (targetTenantId) {
+        await prisma.tenantBranding.upsert({
+          where: { tenantId: targetTenantId },
+          create: { tenantId: targetTenantId, logoUrl: cleanLogoUrl },
+          update: { logoUrl: cleanLogoUrl },
+        }).catch((err) => console.warn('[settings] TenantBranding sync error:', err));
+      }
     }
     data.settings = settings as Prisma.InputJsonValue;
   }
@@ -782,7 +806,7 @@ export async function POST(req: NextRequest) {
   if (Object.keys(data).length === 0) return NextResponse.json({ error: 'nothing_to_update' }, { status: 400 });
 
   const outlet = await prisma.outlet.update({
-    where: { id: session.outletId },
+    where: { id: outletId },
     data,
     select: { name: true, gstin: true, stateCode: true, address: true, timezone: true, settings: true },
   });
@@ -790,15 +814,15 @@ export async function POST(req: NextRequest) {
   const updatedLogoUrl = (outlet.settings as any)?.logoUrl || null;
 
   if (body.logoUrl !== undefined) {
-    publishLocalRealtimeEvent(session.outletId, {
+    publishLocalRealtimeEvent(outletId, {
       type: 'outlet.updated',
-      outletId: session.outletId,
+      outletId,
       logoUrl: updatedLogoUrl,
     });
   }
 
   await prisma.auditLog.create({
-    data: { outletId: session.outletId, actorId: session.staffId, action: 'outlet.updated', entity: 'outlet', entityId: session.outletId, after: data as Prisma.InputJsonValue },
+    data: { outletId, actorId: session.staffId, action: 'outlet.updated', entity: 'outlet', entityId: outletId, after: data as Prisma.InputJsonValue },
   }).catch(() => {});
 
   return NextResponse.json({

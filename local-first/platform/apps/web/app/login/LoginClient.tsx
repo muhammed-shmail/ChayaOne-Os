@@ -15,21 +15,19 @@ interface LoginClientProps {
   initialLogoUrl?: string | null;
 }
 
-export default function LoginClient({ initialBusinessName, initialLogoUrl }: LoginClientProps = {}) {
+export default function LoginClient({ initialBusinessName }: LoginClientProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextParam = searchParams.get('next');
   const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : null;
 
   const [businessName, setBusinessName] = useState<string>(initialBusinessName || '');
-  const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl || null);
 
   useEffect(() => {
     fetch('/api/auth/store-info')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (d?.name) setBusinessName(d.name);
-        if (d?.logoUrl) setLogoUrl(d.logoUrl);
       })
       .catch(() => {});
   }, []);
@@ -305,7 +303,7 @@ export default function LoginClient({ initialBusinessName, initialLogoUrl }: Log
             className="mb-1.5 disabled:opacity-50 flex justify-center items-center w-full"
             style={{ background: 'none', border: 'none', padding: 0, lineHeight: 0, cursor: 'pointer' }}
           >
-            <img src={logoUrl || "/logo chaya one.png"} alt={businessName || "ChayaOne"} style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="brand-logo object-contain mx-auto block" />
+            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="brand-logo object-contain mx-auto block" />
           </button>
           <AlphaTag />
           <h1 className="font-display text-[40px] leading-none mt-3.5">{businessName || 'ChayaOne'}</h1>

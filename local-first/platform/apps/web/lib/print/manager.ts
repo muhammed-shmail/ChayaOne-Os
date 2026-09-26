@@ -5,6 +5,7 @@ import { sendNetworkPrintJob } from './network';
 import { readDevices } from '../devices';
 import { readReceiptConfig } from '../receipt';
 import { readUpiConfig } from './upi';
+import { readGstConfig } from '../tax';
 import { resolveReceiptPrinter } from './router';
 import { readWaiterStations, isStationMatch } from '../waiter-stations';
 
@@ -161,8 +162,13 @@ export async function processPrintQueueBatch(batchSize = 10) {
             }
             const receiptConfig = readReceiptConfig(outlet?.settings);
             const upiConfig = readUpiConfig(outlet?.settings, outlet?.name || 'Chaya Cafe');
+            const gstConfig = readGstConfig(outlet?.settings);
+
             receiptPayload.receiptConfig = { ...receiptConfig, ...receiptPayload.receiptConfig };
             receiptPayload.upiConfig = { ...upiConfig, ...receiptPayload.upiConfig };
+            if (receiptPayload.gstEnabled === undefined && !receiptPayload.isReprint) {
+              receiptPayload.gstEnabled = gstConfig.enabled;
+            }
             if (!receiptPayload.storeName) {
               receiptPayload.storeName = outlet?.name || 'CHAYA CAFE';
             }

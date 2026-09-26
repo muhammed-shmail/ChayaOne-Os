@@ -129,7 +129,7 @@ export async function findOrCreateCustomerByPhone(
     }
     const now = new Date();
     const created = await prisma.customer.create({
-      data: { tenantId, name, phone, phoneHash, source: 'manual', firstVisit: now, lastVisit: now },
+      data: { tenantId, name: name || `Customer ${phone.slice(-4)}`, phone, phoneHash, source: 'manual', firstVisit: now, lastVisit: now },
       select: { id: true },
     });
     await bumpUsage(tenantId, 'customers').catch(() => {});

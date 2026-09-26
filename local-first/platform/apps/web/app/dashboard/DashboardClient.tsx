@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { formatINR } from '@cafeos/core';
+import { computeBill, formatINR, type BillLine } from '@cafeos/core';
 import { BrandMark } from '@/components/BrandMark';
 import { CountUp } from '@/components/ui/motion';
 import { TeaLoader } from '@/components/ui/TeaLoader';
@@ -18,6 +18,7 @@ import { DEVICE_TYPES, DEVICE_CONNECTIONS, type Device } from '@/lib/devices';
 import type { ReceiptConfig } from '@/lib/receipt';
 import { type KitchenWorkflowConfig, KITCHEN_WORKFLOW_DEFAULTS, AUTO_CLEAR_OPTIONS, DELAY_THRESHOLD_OPTIONS, SORT_OPTIONS, THEME_OPTIONS, FONT_SIZE_OPTIONS } from '@/lib/kitchenWorkflow';
 import { tableOrderUrl, tableQrImageUrl } from '@/lib/qr';
+import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
 import { FEATURED_LABELS, DEFAULT_GAME_KEYS, DEFAULT_PWA, type PwaConfig } from '@/lib/pwa';
 import type { OutletLocation } from '@/lib/geo';
 import { subscribeStaff } from '@/lib/realtime-client';
@@ -28,7 +29,7 @@ import {
   ThemeToggle, Bell, Table2, LogOut, LayoutDashboard, Wifi, ChefHat, Menu,
   ClipboardList, UtensilsCrossed, Package, Truck, Users, User, Settings, type LucideIcon,
   Percent, Printer, Smartphone, Store, BarChart3, ImageIcon, Download, X, MapPin, Megaphone, FileSpreadsheet,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, useConfirm,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import { BusinessDayPrompt, BusinessDayHeaderBadge } from '@/components/BusinessDayPrompt';
@@ -92,57 +93,6 @@ function auditDiff(before: Record<string, unknown> | null, after: Record<string,
     .map((k) => ({ key: k, before: fmt(b[k]), after: fmt(a[k]) }));
 }
 
-/** Titles + icons for the Settings popup window, keyed by panel. */
-const SETTINGS_TITLE: Record<string, string> = {
-  general: 'General',
-  tax: 'Tax & GST',
-  floor: 'Floor & QR',
-  kitchen: 'Kitchen Workflow',
-  pwa: 'PWA Settings',
-  location: 'Location Gate',
-  devices: 'Devices & Printers',
-  audit: 'Audit Logs',
-  multibranch: 'Multi Branch',
-  app_qrs: 'App QR Codes',
-};
-const SETTINGS_ICON: Record<string, LucideIcon> = {
-  general: Settings,
-  tax: Percent,
-  floor: Table2,
-  kitchen: ChefHat,
-  pwa: Smartphone,
-  location: MapPin,
-  devices: Printer,
-  audit: ClipboardList,
-  multibranch: Store,
-  app_qrs: Smartphone,
-};
-
-/** A focused popup window that hosts one settings panel. Closes on ✕, backdrop click or Esc. */
-function SettingsModal({ title, icon: Icon, onClose, children }: { title: string; icon?: LucideIcon; onClose: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [onClose]);
-  return (
-    <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="presentation" className="scrim anim-fade z-[8500] flex items-start sm:items-center justify-center overflow-y-auto p-3 sm:p-6">
-      <div role="dialog" aria-modal="true" aria-label={title} className="anim-pop my-auto w-full max-w-2xl" style={{ background: 'var(--paper-2)', borderRadius: 22, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b sticky top-0 z-10" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)', borderTopLeftRadius: 22, borderTopRightRadius: 22 }}>
-          <h2 className="font-display text-lg font-bold flex items-center gap-2.5">
-            {Icon && <span className="grid place-items-center rounded-xl shrink-0" style={{ width: 34, height: 34, background: 'var(--paper-3)', color: 'var(--turmeric)' }}><Icon size={18} aria-hidden /></span>}
-            {title}
-          </h2>
-          <button onClick={onClose} aria-label="Close" className="btn btn-icon btn-sm btn-ghost"><X size={18} aria-hidden /></button>
-        </div>
-        <div className="p-4 sm:p-5 flex flex-col gap-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 export default function DashboardClient({
   outlet,
   staff,
@@ -157,6 +107,7 @@ export default function DashboardClient({
   initialModuleConfig?: ModuleSystemConfig;
 }) {
   const router = useRouter();
+  const { confirm: confirmAction, ConfirmDialog } = useConfirm();
 
   const [currentStaff, setCurrentStaff] = useState(staff);
   useEffect(() => {
@@ -898,7 +849,11 @@ export default function DashboardClient({
   // refresh live occupancy every 20s globally as fallback (updates the header stats & floor map)
   useEffect(() => {
     loadTables();
-    const t = setInterval(loadTables, 20000);
+    const t = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadTables();
+      }
+    }, 20000);
     return () => clearInterval(t);
   }, []);
 
@@ -1027,7 +982,11 @@ export default function DashboardClient({
   useEffect(() => {
     if (activeMenu !== 'staff') return;
     loadStaffBoard();
-    const t = setInterval(loadStaffBoard, 20000); // live-ish refresh
+    const t = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadStaffBoard();
+      }
+    }, 20000); // live-ish refresh
     return () => clearInterval(t);
   }, [activeMenu]);
 
@@ -1096,7 +1055,13 @@ export default function DashboardClient({
   };
 
   const handleRemoveUser = async (id: string, name: string) => {
-    if (!confirm(`Remove ${name}? They will no longer be able to log in. History is preserved.`)) return;
+    const ok = await confirmAction({
+      title: 'Remove Staff Member',
+      message: `Remove ${name}? They will no longer be able to log in. History is preserved.`,
+      confirmText: 'Remove Staff',
+      isDestructive: true,
+    });
+    if (!ok) return;
     setStaffMembers((prev: any[]) => prev.filter((m: any) => m.id !== id));
     try {
       const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'remove', id }) });
@@ -1278,7 +1243,6 @@ export default function DashboardClient({
       const d = await res.json().catch(() => ({}));
       if (res.ok) {
         flashMessage('Category deleted! Items moved to Uncategorised.');
-        setDeleteConfirmCatId(null);
         await loadInventoryData();
       } else {
         flashMessage(d.error || 'Could not delete category');
@@ -1287,6 +1251,7 @@ export default function DashboardClient({
       console.error(err);
       flashMessage('Failed to delete category');
     } finally {
+      setDeleteConfirmCatId(null);
       setCategorySaving(false);
     }
   };
@@ -1387,7 +1352,13 @@ export default function DashboardClient({
   };
 
   const handleDeleteProduct = async (itemId: string, name: string) => {
-    if (!window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
+    const ok = await confirmAction({
+      title: 'Delete Product',
+      message: `Delete "${name}"? This cannot be undone.`,
+      confirmText: 'Delete Product',
+      isDestructive: true,
+    });
+    if (!ok) return;
     try {
       const res = await fetch('/api/dashboard/menu', {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -1436,8 +1407,7 @@ export default function DashboardClient({
       r.showLogo && logo ? `<img src="${logo}" alt="" />` : '',
       `<h2>${escHtml(outlet.brand)}</h2>`,
       r.header.trim() ? `<div class="muted">${escHtml(r.header).replace(/\n/g, '<br/>')}</div>` : '',
-      r.phone.trim() ? `<div class="muted">☎ ${escHtml(r.phone)}</div>` : '',
-      r.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escHtml(outlet.gstin)}</div>` : '',
+      Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled ?? (outlet as any)?.settings?.gst?.enabled) && r.showGstin && outlet.gstin ? `<div class="muted">GSTIN ${escHtml(outlet.gstin)}</div>` : '',
     ];
     return parts.filter(Boolean).join('\n');
   }
@@ -1448,7 +1418,9 @@ export default function DashboardClient({
     const jid = `dashboard-${title.replace(/\s+/g, '-')}-${Date.now()}`;
     console.log(`[PRINT] Dashboard printOrderDoc — Job: ${jid}`);
 
-    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title><style>
+    const html = inner.trim().startsWith('<!DOCTYPE html>')
+      ? inner
+      : `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title><style>
   @page { size: 80mm auto; margin: 3mm 4mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { width: 72mm; font-family: 'Courier New', Courier, monospace; font-size: 11pt; line-height: 1.35; color: #000; background: #fff; }
@@ -1544,23 +1516,39 @@ export default function DashboardClient({
         body: JSON.stringify({ action: 'print_bill', tableId: o.tableId, orderId: o.id }),
       }).catch((err) => console.error('[PRINT] Dashboard free table failed:', err));
     }
-    const rows = o.items.map((i: any) => `<tr><td>${i.qty}× ${i.nameSnapshot}</td><td class="r">${formatINR(i.unitPricePaise * i.qty)}</td></tr>`).join('');
-    const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
-    printOrderDoc(`Bill #${o.number}`, `
-      ${receiptHeaderHtml()}
-      <div class="muted">Bill #${o.number} · ${o.table?.label ? 'Table ' + o.table.label : o.type} · ${new Date(o.placedAt).toLocaleString('en-IN')}</div>
-      <div class="line"></div><table>${rows}</table><div class="line"></div>
-      <table>
-        ${row('Subtotal', o.subtotalPaise)}
-        ${o.discountPaise > 0 ? row('Discount', -o.discountPaise) : ''}
-        ${o.cgstPaise > 0 ? row('CGST', o.cgstPaise) : ''}
-        ${o.sgstPaise > 0 ? row('SGST', o.sgstPaise) : ''}
-        ${o.igstPaise > 0 ? row('IGST', o.igstPaise) : ''}
-        ${o.serviceChargePaise > 0 ? row('Service charge', o.serviceChargePaise) : ''}
-        ${row('Round off', o.roundOffPaise)}
-        <tr class="tot"><td>Total</td><td class="r">${formatINR(o.totalPaise)}</td></tr>
-      </table>
-      <div class="line"></div><div class="muted">Status: ${o.status} · ${receiptFooterText()}</div>`);
+    const receiptData: ReceiptInputData = {
+      storeName: outlet.brand || outlet.name || 'CHAYA ONE',
+      logoUrl: logoUrl ?? outlet.receipt?.logoUrl ?? (outlet as any)?.settings?.logoUrl ?? null,
+      header: outlet.receipt?.header ?? null,
+      footer: outlet.receipt?.footer ?? null,
+      phone: (outlet as any).phone ?? outlet.receipt?.phone ?? null,
+      gstin: outlet.gstin ?? (outlet as any).settings?.gstin ?? null,
+      timezone: 'Asia/Kolkata',
+      orderNumber: o.number,
+      tableLabel: o.table?.label ?? null,
+      orderType: o.type,
+      placedAt: o.placedAt,
+      items: (o.items || []).map((i: any) => ({
+        name: i.nameSnapshot || i.name,
+        qty: i.qty,
+        unitPricePaise: i.unitPricePaise ?? 0,
+        totalPaise: (i.unitPricePaise ?? 0) * i.qty,
+      })),
+      subtotalPaise: o.subtotalPaise,
+      discountPaise: o.discountPaise,
+      cgstPaise: o.cgstPaise,
+      sgstPaise: o.sgstPaise,
+      igstPaise: o.igstPaise,
+      serviceChargePaise: o.serviceChargePaise,
+      roundOffPaise: o.roundOffPaise,
+      totalPaise: o.totalPaise,
+      paymentMethod: o.paymentMethod ?? null,
+      gstEnabled: Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled ?? (outlet as any)?.settings?.gst?.enabled),
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig ?? (outlet as any).settings?.upi ?? null,
+    };
+    const htmlBill = formatReceiptHtml(receiptData, '80mm', { autoPrint: false });
+    printOrderDoc(`Bill #${o.number}`, htmlBill);
   }
 
   function printOrderKOT(o: any) {
@@ -1582,42 +1570,34 @@ export default function DashboardClient({
   };
 
   const computeQuickInvoiceTotals = () => {
-    let subtotalPaise = 0;
-    let cgstPaise = 0;
-    let sgstPaise = 0;
+    const isGst = Boolean(profile.gstEnabled);
+    const billLines: BillLine[] = quickInvoiceLines.map((l) => ({
+      pricePaise: Math.round((parseFloat(l.price) || 0) * 100),
+      gstRate: parseFloat(l.gst) || 0,
+      qty: parseInt(l.qty) || 1,
+    }));
 
-    const computedLines = quickInvoiceLines.map((l) => {
-      const priceVal = parseFloat(l.price) || 0;
-      const pricePaise = Math.round(priceVal * 100);
-      const qtyVal = parseInt(l.qty) || 1;
-      const lineTotalPaise = pricePaise * qtyVal;
+    const bill = computeBill(billLines, { gstEnabled: isGst, roundOff: true });
 
-      const gstRate = parseFloat(l.gst) || 0;
-      const gstAmountPaise = Math.round((lineTotalPaise * gstRate) / 100);
-
-      subtotalPaise += lineTotalPaise;
-      cgstPaise += Math.round(gstAmountPaise / 2);
-      sgstPaise += Math.round(gstAmountPaise / 2);
-
+    const computedLines = quickInvoiceLines.map((l, idx) => {
+      const bl = billLines[idx];
+      const pPaise = bl?.pricePaise ?? 0;
+      const qVal = bl?.qty ?? 1;
       return {
         ...l,
-        pricePaise,
-        qty: qtyVal,
-        lineTotalPaise,
+        pricePaise: pPaise,
+        qty: qVal,
+        lineTotalPaise: pPaise * qVal,
       };
     });
 
-    const totalBeforeRoundPaise = subtotalPaise + cgstPaise + sgstPaise;
-    const finalTotalPaise = Math.round(totalBeforeRoundPaise / 100) * 100;
-    const roundOffPaise = finalTotalPaise - totalBeforeRoundPaise;
-
     return {
       lines: computedLines,
-      subtotalPaise,
-      cgstPaise,
-      sgstPaise,
-      roundOffPaise,
-      totalPaise: finalTotalPaise,
+      subtotalPaise: bill.subtotalPaise,
+      cgstPaise: bill.cgstPaise,
+      sgstPaise: bill.sgstPaise,
+      roundOffPaise: bill.roundOffPaise,
+      totalPaise: bill.finalPayablePaise,
     };
   };
 
@@ -1629,24 +1609,36 @@ export default function DashboardClient({
     const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
     
     const randomNum = Math.floor(Math.random() * 9000) + 1000;
-    const dateStr = new Date().toLocaleString('en-IN');
-    const custLine = quickInvoiceCustName.trim() || quickInvoiceCustPhone.trim()
-      ? `<div class="muted">👤 ${quickInvoiceCustName} ${quickInvoiceCustPhone}</div>`
-      : '';
-
-    printOrderDoc(`Quick Bill #${randomNum}`, `
-      ${receiptHeaderHtml()}
-      <div class="muted">Quick Bill #${randomNum} · ${dateStr}</div>
-      ${custLine}
-      <div class="line"></div><table>${rows}</table><div class="line"></div>
-      <table>
-        ${row('Subtotal', totals.subtotalPaise)}
-        ${totals.cgstPaise > 0 ? row('CGST', totals.cgstPaise) : ''}
-        ${totals.sgstPaise > 0 ? row('SGST', totals.sgstPaise) : ''}
-        ${totals.roundOffPaise !== 0 ? row('Round off', totals.roundOffPaise) : ''}
-        <tr class="tot"><td>Total</td><td class="r">${formatINR(totals.totalPaise)}</td></tr>
-      </table>
-      <div class="line"></div><div class="muted">Status: PAID · ${receiptFooterText()}</div>`);
+    const receiptData: ReceiptInputData = {
+      storeName: outlet.brand || outlet.name || 'CHAYA ONE',
+      logoUrl: logoUrl ?? outlet.receipt?.logoUrl ?? (outlet as any)?.settings?.logoUrl ?? null,
+      header: outlet.receipt?.header ?? null,
+      footer: outlet.receipt?.footer ?? null,
+      phone: (outlet as any).phone ?? outlet.receipt?.phone ?? null,
+      gstin: outlet.gstin ?? (outlet as any).settings?.gstin ?? null,
+      timezone: 'Asia/Kolkata',
+      orderNumber: randomNum,
+      customerName: quickInvoiceCustName.trim() || null,
+      customerPhone: quickInvoiceCustPhone.trim() || null,
+      orderType: 'Takeaway',
+      placedAt: new Date(),
+      items: totals.lines.map((l: any) => ({
+        name: l.name || 'Item',
+        qty: l.qty,
+        unitPricePaise: l.pricePaise || 0,
+        totalPaise: (l.pricePaise || 0) * l.qty,
+      })),
+      subtotalPaise: totals.subtotalPaise,
+      cgstPaise: totals.cgstPaise,
+      sgstPaise: totals.sgstPaise,
+      roundOffPaise: totals.roundOffPaise,
+      totalPaise: totals.totalPaise,
+      gstEnabled: Boolean(profile.gstEnabled),
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig ?? (outlet as any).settings?.upi ?? null,
+    };
+    const htmlBill = formatReceiptHtml(receiptData, '80mm', { autoPrint: false });
+    printOrderDoc(`Quick Bill #${randomNum}`, htmlBill);
   };
 
   const handlePrintQuickKOT = () => {
@@ -1839,9 +1831,15 @@ export default function DashboardClient({
       const res = await fetch('/api/dashboard/upload', { method: 'POST', body: fd });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.url) return d.url as string;
-      flashMessage(`Upload failed (${d.error ?? 'error'})`);
+      const errMsg = d.message || d.error || 'Upload failed';
+      console.error('[uploadImage error]', res.status, d);
+      flashMessage(`Upload failed: ${errMsg}`);
       return null;
-    } catch { flashMessage('Upload failed'); return null; }
+    } catch (err) {
+      console.error('[uploadImage network error]', err);
+      flashMessage('Upload failed: Network error');
+      return null;
+    }
   };
 
   const handleSavePwa = async (cfg: PwaConfig) => {
@@ -1890,6 +1888,10 @@ export default function DashboardClient({
     } catch (err) { console.error(err); }
   };
 
+  const handleFloorUpdated = useCallback(async () => {
+    await Promise.all([loadProfile(), loadTables()]);
+  }, []);
+
   // --- Floor & QR actions ---------------------------------------------------
   const ERR_MSG: Record<string, string> = {
     duplicate_label: 'A table with that name already exists.',
@@ -1936,10 +1938,16 @@ export default function DashboardClient({
     if (!editFloorName.trim()) { flashMessage('Enter a floor name'); return; }
     if (await floorApi({ action: 'floor_rename', floorId, name: editFloorName.trim() }, 'Floor renamed')) setEditFloorId(null);
   };
-  const handleDeleteFloor = (f: Floor) => {
+  const handleDeleteFloor = async (f: Floor) => {
     const n = floorTables.filter((t) => t.floorId === f.id).length;
-    if (!window.confirm(`Delete floor “${f.name}”?${n ? ` Its ${n} table${n === 1 ? '' : 's'} will become Unassigned.` : ''}`)) return;
-    floorApi({ action: 'floor_delete', floorId: f.id }, `Floor “${f.name}” deleted`);
+    const ok = await confirmAction({
+      title: 'Delete Floor',
+      message: `Delete floor "${f.name}"?${n ? ` Its ${n} table${n === 1 ? '' : 's'} will become Unassigned.` : ''}`,
+      confirmText: 'Delete Floor',
+      isDestructive: true,
+    });
+    if (!ok) return;
+    await floorApi({ action: 'floor_delete', floorId: f.id }, `Floor “${f.name}” deleted`);
   };
 
   // --- Kitchens / prep stations (Outlet.settings.kitchens) ---
@@ -1979,10 +1987,16 @@ export default function DashboardClient({
     if (!editKitchenName.trim()) { flashMessage('Enter a kitchen name'); return; }
     if (await kitchenApi({ action: 'kitchen_rename', id, name: editKitchenName.trim() }, 'Kitchen renamed')) setEditKitchenId(null);
   };
-  const handleDeleteKitchen = (k: Kitchen) => {
+  const handleDeleteKitchen = async (k: Kitchen) => {
     if (kitchenBusy) return;
-    if (!window.confirm(`Delete kitchen “${k.name}”? Items routed here keep their tag until you reassign them.`)) return;
-    kitchenApi({ action: 'kitchen_delete', id: k.id }, `Kitchen “${k.name}” deleted`);
+    const ok = await confirmAction({
+      title: 'Delete Kitchen',
+      message: `Delete kitchen "${k.name}"? Items routed here keep their tag until you reassign them.`,
+      confirmText: 'Delete Kitchen',
+      isDestructive: true,
+    });
+    if (!ok) return;
+    await kitchenApi({ action: 'kitchen_delete', id: k.id }, `Kitchen “${k.name}” deleted`);
   };
   const handleAssignFloor = (tableId: string, floorId: string) => {
     floorApi({ action: 'assign', id: tableId, floorId: floorId || undefined }, 'Table moved');
@@ -2041,13 +2055,26 @@ export default function DashboardClient({
       setEditTableId(null);
     }
   };
-  const handleDeleteTable = (t: FloorTable) => {
-    if (!window.confirm(`Delete table “${t.label}”? This can’t be undone.`)) return;
-    floorApi({ action: 'delete', id: t.id }, `Table ${t.label} deleted`);
+  const handleDeleteTable = async (t: FloorTable) => {
+    const ok = await confirmAction({
+      title: 'Delete Table',
+      message: `Delete table "${t.label}"? This can't be undone.`,
+      confirmText: 'Delete Table',
+      isDestructive: true,
+    });
+    if (!ok) return;
+    await floorApi({ action: 'delete', id: t.id }, `Table ${t.label} deleted`);
   };
-  const handleRegenerateQr = (t: FloorTable) => {
-    if (!window.confirm(`Rotate the QR for “${t.label}”? Any printed code for this table will stop working.`)) return;
-    floorApi({ action: 'regenerate', id: t.id }, `New QR generated for ${t.label}`).then((ok) => { if (ok) setQrTable(null); });
+  const handleRegenerateQr = async (t: FloorTable) => {
+    const ok = await confirmAction({
+      title: 'Rotate QR Code',
+      message: `Rotate the QR for "${t.label}"? Any printed code for this table will stop working.`,
+      confirmText: 'Rotate QR',
+      isDestructive: true,
+    });
+    if (!ok) return;
+    const okGen = await floorApi({ action: 'regenerate', id: t.id }, `New QR generated for ${t.label}`);
+    if (okGen) setQrTable(null);
   };
   const copyTableLink = async (t: FloorTable) => {
     try { await navigator.clipboard.writeText(tableOrderUrl(t.qrToken)); flashMessage(`Link for ${t.label} copied`); }
@@ -2132,7 +2159,15 @@ export default function DashboardClient({
   };
 
   const handleDeleteDevice = async (id: string, name: string, skipConfirm = false) => {
-    if (!skipConfirm && !window.confirm(`Remove “${name}”?`)) return;
+    if (!skipConfirm) {
+      const ok = await confirmAction({
+        title: 'Remove Device',
+        message: `Remove "${name}"?`,
+        confirmText: 'Remove Device',
+        isDestructive: true,
+      });
+      if (!ok) return;
+    }
     setDevices((prev) => prev.filter((d) => d.id !== id));
     try {
       const res = await fetch('/api/dashboard/settings', {
@@ -2162,12 +2197,20 @@ export default function DashboardClient({
       // GST is managed in its own Tax & GST panel; profile save leaves it untouched.
       const res = await fetch('/api/dashboard/settings', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'outlet', name: profile.name, gstin: profile.gstin || null, stateCode: profile.stateCode || null, address: { line1: profile.line1, city: profile.city, pincode: profile.pincode } }),
+        body: JSON.stringify({
+          action: 'outlet',
+          name: profile.name,
+          gstin: profile.gstin || null,
+          stateCode: profile.stateCode || null,
+          address: { line1: profile.line1, city: profile.city, pincode: profile.pincode },
+          logoUrl: logoUrl,
+        }),
       });
       if (res.ok) { flashMessage('Store profile saved'); router.refresh(); }
       else flashMessage('Could not save profile');
     } catch (err) {
       console.error(err);
+      flashMessage('Could not save profile');
     }
   };
 
@@ -4266,9 +4309,7 @@ export default function DashboardClient({
                 openDeviceForm={openDeviceForm}
                 floors={floors}
                 floorTables={floorTables}
-                onFloorUpdated={async () => {
-                  await Promise.all([loadProfile(), loadTables()]);
-                }}
+                onFloorUpdated={handleFloorUpdated}
                 kitchens={kitchens}
                 setKitchens={setKitchens}
                 kitchenApi={kitchenApi}
@@ -5708,6 +5749,9 @@ export default function DashboardClient({
 
       {/* Midnight / Business Day Extension Prompt */}
       <BusinessDayPrompt currentStaff={staff} />
+
+      {/* Confirmation Dialog Modal */}
+      <ConfirmDialog />
     </div>
   );
 }

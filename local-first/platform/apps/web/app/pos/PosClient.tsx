@@ -6,13 +6,14 @@ import { STAGES, posStageOf } from '@/lib/orderStatus';
 import type { Floor } from '@/lib/floors';
 import type { ReceiptConfig } from '@/lib/receipt';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
-import { ThemeToggle } from '@/components/ui';
+import { ThemeToggle, useConfirm } from '@/components/ui';
 import {
   Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
   Plus, Minus, X, Printer, Receipt, Smartphone, Banknote, CreditCard,
   CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
-  ShoppingCart, ChevronUp, Menu, Search, Download, LogOut, type LucideIcon,
+  ShoppingCart, ChevronUp, ChevronDown, Menu, Search, Download, LogOut, type LucideIcon,
   ArrowLeftRight, ArrowRight, CircleAlert, FileText, Edit3,
+  Citrus, GlassWater, Leaf, Wine, Milk, Sparkles, Sandwich, Pizza, IceCream, Bean, Utensils,
 } from 'lucide-react';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import { ServerSyncCard } from '@/components/ServerSyncCard';
@@ -26,12 +27,278 @@ import { getGeoHeaders } from '@/lib/geo-client';
 
 import { generateAuthoritativeUpiUri } from '@/lib/print/upi';
 import { generateQrDataUrl } from '@/lib/print/qr';
+import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
 import { hasRole, hasPermission, canAccess, canSettle } from '@/lib/rbac';
 
-/** Category → SVG icon (replaces structural emoji; food glyph stays decorative). */
-const CAT_ICON: Record<string, LucideIcon> = {
-  Coffee, 'Chai & Tea': Soup, Coolers: CupSoda, 'All-Day': UtensilsCrossed, Bakery: Croissant, Desserts: Cake,
-};
+/** Bespoke Vector SVGs tailored for Cafe & Beverage domains */
+export function ChaiCupIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M4 9h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V9z" />
+      <path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16" />
+      <path d="M2 19h16" />
+      <path d="M7 3.5c0 1.5 1 2 1 3" />
+      <path d="M11 2.5c0 2 1 2.5 1 4" />
+    </svg>
+  );
+}
+export const ChaiIcon = ChaiCupIcon;
+
+export function BlackTeaCupIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M4 10h11a3.5 3.5 0 0 1 3.5 3.5v.5a4 4 0 0 1-4 4H7.5A3.5 3.5 0 0 1 4 14.5V10z" />
+      <path d="M18.5 11.5a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2" />
+      <path d="M2 19h17" />
+      <path d="M8 5c1-1 3-1 3.5 1s-1 3-3.5 1z" />
+      <path d="M8 7c1 1 2.5 1.5 3.5 1" />
+    </svg>
+  );
+}
+
+export function CoffeeCupIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+      <path d="M3 8h14v7a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8z" />
+      <path d="M6 2v3" />
+      <path d="M10 2v3" />
+      <path d="M14 2v3" />
+      <line x1="2" y1="21" x2="18" y2="21" />
+    </svg>
+  );
+}
+
+export function JuiceGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 4h12l-1.6 15.5a2 2 0 0 1-2 1.5H9.6a2 2 0 0 1-2-1.5L6 4z" />
+      <path d="M6.6 9.5h10.8" />
+      <path d="M15 1.5l-3.5 8" />
+      <circle cx="10" cy="14" r="1" fill="currentColor" />
+      <circle cx="13.5" cy="16.5" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function SodaGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 5h12l-1.5 14.5a2 2 0 0 1-2 1.5H9.5a2 2 0 0 1-2-1.5L6 5z" />
+      <path d="M6.5 9h11" />
+      <path d="M16 2l-3.5 7" />
+      <circle cx="9.5" cy="13" r="1" />
+      <circle cx="14" cy="14.5" r="1.2" />
+      <circle cx="11" cy="17" r="1" />
+    </svg>
+  );
+}
+
+export function LimeGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 7h12l-1.6 13.5a2 2 0 0 1-2 1.5H9.6a2 2 0 0 1-2-1.5L6 7z" />
+      <path d="M6.8 11.5h10.4" />
+      <circle cx="8" cy="6" r="4" />
+      <path d="M8 2v8" />
+      <path d="M4 6h8" />
+    </svg>
+  );
+}
+
+export function MojitoGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M7 6h10l-1.2 14.5a2 2 0 0 1-2 1.5H10.2a2 2 0 0 1-2-1.5L7 6z" />
+      <path d="M7.5 11h9" />
+      <path d="M16 2.5l-4 8.5" />
+      <path d="M10 3c-1.5 0-3 1.5-3 3s1.5 2 3 2c0-2.5 1-4 0-5z" />
+    </svg>
+  );
+}
+
+export function ShakeGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6.5 8h11c-.5 4-2 6-2 9h-7c0-3-1.5-5-2-9z" />
+      <path d="M10 17v3h4v-3" />
+      <path d="M8 20h8" />
+      <path d="M7 8c0-2.5 2-4.5 5-4.5s5 2 5 4.5" />
+      <path d="M14 1l-1.5 3.5" />
+    </svg>
+  );
+}
+
+export function LassiGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M5.5 5h13l-1.8 14.5a2 2 0 0 1-2 1.5H9.3a2 2 0 0 1-2-1.5L5.5 5z" />
+      <path d="M5 5c1-1 3-1.5 7-1.5s6 .5 7 1.5" />
+      <path d="M6.5 9.5h11" />
+      <path d="M8.5 13.5h7" />
+      <circle cx="12" cy="17" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function SundaeGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M4 11h16a8 8 0 0 1-8 8 8 8 0 0 1-8-8z" />
+      <path d="M12 19v3" />
+      <path d="M8 22h8" />
+      <path d="M6 11c0-2.5 2-4 4-4s4 1.5 4 4" />
+      <path d="M12 7c0-2 1.5-3.5 3.5-3.5S19 5 19 7" />
+      <circle cx="12" cy="4" r="1.5" />
+    </svg>
+  );
+}
+
+export function ChocoDrinkIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M17 9h1.5a3.5 3.5 0 0 1 0 7H17" />
+      <path d="M3 9h14v7a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9z" />
+      <path d="M3 9c1.5 1.5 3 0 5 1.5s3.5 0 5 1.5 2.5 0 4-1" />
+      <path d="M7 4v2" />
+      <path d="M11 3v3" />
+      <path d="M2 20h16" />
+    </svg>
+  );
+}
+
+export function DryFruitDrinkIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 6h12l-1.5 13.5a2 2 0 0 1-2 1.5H9.5a2 2 0 0 1-2-1.5L6 6z" />
+      <path d="M6.5 10.5h11" />
+      <path d="M10 14c0-1.5 1-2.5 2-2.5s2 1 2 2.5c0 1.8-1 3-2 3s-2-1.2-2-3z" />
+      <path d="M12 11.5v5" />
+    </svg>
+  );
+}
+
+export function TenderSpecialIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M12 4c-5.5 0-9 4-9 9.5 0 4.5 3.5 7.5 9 7.5s9-3 9-7.5C21 8 17.5 4 12 4z" />
+      <path d="M7.5 8c2.5-1.5 6.5-1.5 9 0" />
+      <path d="M15 1.5l-2.5 6" />
+    </svg>
+  );
+}
+
+export function KulukiSharbatIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 5h12l-1.5 14.5a2 2 0 0 1-2 1.5H9.5a2 2 0 0 1-2-1.5L6 5z" />
+      <path d="M6.5 10h11" />
+      <path d="M11 13c1.5 0 2.5 1.5 2 3.5-.3 1-1.2 1.5-1.5 2" />
+      <circle cx="15" cy="13.5" r="1" />
+      <circle cx="9.5" cy="16.5" r="0.9" />
+    </svg>
+  );
+}
+
+export function MomoIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M4 14c0 4.5 3.5 6 8 6s8-1.5 8-6c0-4-3.5-7-8-7s-8 3-8 7z" />
+      <path d="M12 7c-2 2-3 4-3 7" />
+      <path d="M12 7c2 2 3 4 3 7" />
+      <path d="M12 7v7" />
+      <path d="M12 3v2" />
+    </svg>
+  );
+}
+
+export function BurgerIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M4 11h16a8 8 0 0 0-16 0z" />
+      <path d="M3 14h18" />
+      <path d="M5 18h14a2 2 0 0 1 2 2v0a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v0a2 2 0 0 1 2-2z" />
+      <path d="M4 14c1 1.5 2.5 1.5 4 0s2.5-1.5 4 0 2.5 1.5 4 0 2.5-1.5 4 0" />
+      <circle cx="8" cy="7" r=".7" fill="currentColor" />
+      <circle cx="12" cy="6" r=".7" fill="currentColor" />
+      <circle cx="16" cy="7" r=".7" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function ShawarmaIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M7 19l11-11a3 3 0 0 0-4.2-4.2L2.8 14.8a3 3 0 0 0 4.2 4.2z" />
+      <path d="M6 16l4-4" />
+      <path d="M9 13l4-4" />
+      <path d="M14 8l3-3" />
+      <path d="M16.5 4.5c1 1 1 2.5 0 3.5" />
+    </svg>
+  );
+}
+
+export function PastaIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M2 13h20a9 9 0 0 1-9 8h-2a9 9 0 0 1-9-8z" />
+      <path d="M5 13c1-3 3-5 7-5s6 2 7 5" />
+      <path d="M8 10c1-2 2-3 4-3s3 1 4 3" />
+      <line x1="1" y1="21" x2="23" y2="21" />
+    </svg>
+  );
+}
+
+export function StartersIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M12 4L3 17a2 2 0 0 0 1.7 3h14.6a2 2 0 0 0 1.7-3L12 4z" />
+      <path d="M9 16c1.5-1 4.5-1 6 0" />
+      <path d="M12 9v3" />
+    </svg>
+  );
+}
+
+/** Category → Dynamic Icon resolver matching cafe domains */
+export function getCategoryIcon(catName: string): React.ComponentType<any> {
+  const n = (catName || '').toLowerCase().trim();
+
+  // 1. Chaya & Teas
+  if (n === 'chaya' || n.includes('chaya') || n === 'chai') return ChaiCupIcon;
+  if (n.includes('black tea') || n.includes('sulaimani') || n.includes('green tea') || n.includes('herbal tea') || n.includes('lemon tea')) return BlackTeaCupIcon;
+  if (n.includes('tea')) return BlackTeaCupIcon;
+
+  // 2. Coffee
+  if (n.includes('coffee') || n.includes('espresso') || n.includes('cappuccino') || n.includes('latte') || n.includes('kaapi')) return CoffeeCupIcon;
+
+  // 3. Juices & Coolers
+  if (n.includes('fresh juice') || n.includes('healthy juice') || n.includes('healthy juices') || n === 'juice' || n.endsWith('juice') || n.endsWith('juices')) return JuiceGlassIcon;
+  if (n.includes('kuluki') || n.includes('sharbat')) return KulukiSharbatIcon;
+  if (n.includes('soda')) return SodaGlassIcon;
+  if (n.includes('lime') || n.includes('lemon')) return LimeGlassIcon;
+  if (n.includes('mojito') || n.includes('mocktail') || n.includes('cooler')) return MojitoGlassIcon;
+  if (n.includes('fruit shake') || n.includes('shake') || n.includes('smoothie')) return ShakeGlassIcon;
+  if (n.includes('lassi')) return LassiGlassIcon;
+  if (n.includes('tender')) return TenderSpecialIcon;
+  if (n.includes('chocolate') || n.includes('choco')) return ChocoDrinkIcon;
+  if (n.includes('dry fruit') || n.includes('nut')) return DryFruitDrinkIcon;
+  if (n.includes('malba') || n.includes('sundae') || n.includes('falooda') || n.includes('ice cream')) return SundaeGlassIcon;
+
+  // 4. Food, Starters & Snacks
+  if (n.includes('momo') || n.includes('dumpling')) return MomoIcon;
+  if (n.includes('shawarma') || n.includes('arabic')) return ShawarmaIcon;
+  if (n.includes('burger')) return BurgerIcon;
+  if (n.includes('pasta') || n.includes('noodle') || n.includes('maggi') || n.includes('spaghetti')) return PastaIcon;
+  if (n.includes('starter') || n.includes('chat') || n.includes('eat') || n.includes('snack') || n.includes('samosa') || n.includes('finger food')) return StartersIcon;
+  if (n.includes('sandwich') || n.includes('toast')) return Sandwich;
+  if (n.includes('pizza')) return Pizza;
+  if (n.includes('bakery') || n.includes('bread') || n.includes('puff') || n.includes('croissant')) return Croissant;
+  if (n.includes('dessert') || n.includes('cake') || n.includes('pastry') || n.includes('sweet')) return Cake;
+  if (n.includes('meal') || n.includes('rice') || n.includes('biryani') || n.includes('soup') || n.includes('food')) return UtensilsCrossed;
+
+  return CoffeeCupIcon;
+}
+
 const PAY_ICON: Record<'cash' | 'upi' | 'card', LucideIcon> = { cash: Banknote, upi: Smartphone, card: CreditCard };
 
 export type MenuItemDto = {
@@ -78,14 +345,40 @@ type Line = {
   station: MenuItemDto['station'];
   qty: number;
   notes?: string;
+  catName?: string;
 };
 
 /** an order this POS has fired, tracked live as the kitchen works it */
 type LiveTicket = { id: string; number: number; where: string; status: string; placedAt: number };
 
-const EMOJI: Record<string, string> = {
-  Coffee: '☕', 'Chai & Tea': '🍵', Coolers: '🥤', 'All-Day': '🍳', Bakery: '🥐', Desserts: '🍰',
-};
+export function getItemEmoji(catName: string, _itemName?: string): string {
+  const cat = (catName || '').toLowerCase().trim();
+
+  // Strictly category-based unified emoji fallback
+  if (cat.includes('black tea') || cat.includes('green tea') || cat.includes('sulaimani') || cat.includes('herbal')) return '🫖';
+  if (cat.includes('chaya') || cat.includes('chai') || cat.includes('tea')) return '☕';
+  if (cat.includes('coffee')) return '☕';
+  if (cat.includes('fresh juice') || cat.includes('healthy juice') || cat.includes('juice')) return '🧃';
+  if (cat.includes('kuluki') || cat.includes('soda')) return '🥤';
+  if (cat.includes('lime') || cat.includes('lemon')) return '🍋';
+  if (cat.includes('mojito') || cat.includes('mocktail') || cat.includes('cooler')) return '🍹';
+  if (cat.includes('fruit shake') || cat.includes('shake') || cat.includes('lassi')) return '🥛';
+  if (cat.includes('malba') || cat.includes('falooda') || cat.includes('sundae') || cat.includes('ice cream')) return '🍨';
+  if (cat.includes('chocolate') || cat.includes('choco')) return '🍫';
+  if (cat.includes('dry fruit') || cat.includes('nut')) return '🥜';
+  if (cat.includes('momo') || cat.includes('dumpling')) return '🥟';
+  if (cat.includes('burger')) return '🍔';
+  if (cat.includes('shawarma') || cat.includes('arabic')) return '🌯';
+  if (cat.includes('pasta') || cat.includes('noodle')) return '🍝';
+  if (cat.includes('starter') || cat.includes('chat') || cat.includes('eat') || cat.includes('snack') || cat.includes('samosa')) return '🥟';
+  if (cat.includes('sandwich') || cat.includes('toast')) return '🥪';
+  if (cat.includes('pizza')) return '🍕';
+  if (cat.includes('bakery') || cat.includes('bread') || cat.includes('puff') || cat.includes('croissant')) return '🥐';
+  if (cat.includes('dessert') || cat.includes('cake') || cat.includes('pastry') || cat.includes('sweet')) return '🍰';
+  if (cat.includes('meal') || cat.includes('food') || cat.includes('rice') || cat.includes('biryani')) return '🍛';
+
+  return '☕';
+}
 
 /** Floor-map status by order workflow stage (Free → Order → KOT → Ready → Served). */
 const TABLE_STAGES = {
@@ -119,7 +412,40 @@ function generateClientUuid(): string {
   });
 }
 
-export default function PosClient({ outlet, staff, menu, tables, floors, staffAppEnabled = false, locationGate = false }: { outlet: Outlet; staff: Staff; menu: MenuCategory[]; tables: TableDto[]; floors: Floor[]; staffAppEnabled?: boolean; locationGate?: boolean }) {
+export default function PosClient({ outlet: initialOutlet, staff, menu, tables, floors, staffAppEnabled = false, locationGate = false }: { outlet: Outlet; staff: Staff; menu: MenuCategory[]; tables: TableDto[]; floors: Floor[]; staffAppEnabled?: boolean; locationGate?: boolean }) {
+  const { confirm: confirmAction, ConfirmDialog } = useConfirm();
+  const [outlet, setOutlet] = useState<Outlet>(initialOutlet);
+  useEffect(() => {
+    setOutlet(initialOutlet);
+  }, [initialOutlet]);
+
+  const isGstActive = Boolean(outlet.gstEnabled && (outlet.gstConfig?.enabled ?? true));
+
+  // Live GST / Settings change listener: recalculates current cart immediately (Requirement 24)
+  useEffect(() => {
+    const handleSettingsUpdate = (e: any) => {
+      try {
+        const updated = e?.detail || JSON.parse(localStorage.getItem('cafeos_settings') || '{}');
+        if (updated && (updated.gst !== undefined || updated.gstEnabled !== undefined)) {
+          const gstEnabled = updated.gst?.enabled !== undefined ? Boolean(updated.gst.enabled) : Boolean(updated.gstEnabled);
+          console.log(`[BILLING] Live GST setting update detected: gstEnabled = ${gstEnabled}`);
+          setOutlet((prev) => ({
+            ...prev,
+            gstEnabled,
+            gstConfig: { ...prev.gstConfig, enabled: gstEnabled, ...(updated.gst || {}) },
+          }));
+        }
+      } catch {}
+    };
+
+    window.addEventListener('settings.updated', handleSettingsUpdate);
+    window.addEventListener('storage', handleSettingsUpdate);
+    return () => {
+      window.removeEventListener('settings.updated', handleSettingsUpdate);
+      window.removeEventListener('storage', handleSettingsUpdate);
+    };
+  }, []);
+
   const [currentStaff, setCurrentStaff] = useState<Staff>(staff);
   useEffect(() => {
     setCurrentStaff(staff);
@@ -223,6 +549,35 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
   // Order-level customer field visibility (desktop right rail + mobile cart sheet)
   const [showOrderCust, setShowOrderCust] = useState(false);
 
+  // Category scroll navigation controls
+  const categoryListRef = useRef<HTMLDivElement>(null);
+  const [canScrollCatUp, setCanScrollCatUp] = useState(false);
+  const [canScrollCatDown, setCanScrollCatDown] = useState(false);
+
+  const updateCatScroll = () => {
+    const el = categoryListRef.current;
+    if (!el) return;
+    setCanScrollCatUp(el.scrollTop > 4);
+    setCanScrollCatDown(el.scrollTop + el.clientHeight < el.scrollHeight - 4);
+  };
+
+  useEffect(() => {
+    updateCatScroll();
+    const el = categoryListRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', updateCatScroll, { passive: true });
+    window.addEventListener('resize', updateCatScroll);
+    return () => {
+      el.removeEventListener('scroll', updateCatScroll);
+      window.removeEventListener('resize', updateCatScroll);
+    };
+  }, [menu]);
+
+  const scrollCategories = (dir: 'up' | 'down') => {
+    if (!categoryListRef.current) return;
+    categoryListRef.current.scrollBy({ top: dir === 'up' ? -160 : 160, behavior: 'smooth' });
+  };
+
   // Listen for close-t-billing message from embedded T-Billing iframe
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
@@ -298,8 +653,33 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     setTransferMode(startInTransfer); setSelectedDestTable(null); setTransferReason(''); setTransferSuccess(null); setTransferOccupiedError(null);
     const d = await fetch(`/api/tables/order?tableId=${t.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     setTableOrder(d);
+    if (d?.customer) {
+      setCustName(d.customer.name || '');
+      setCustPhone(d.customer.phone || '');
+    }
     const isAlreadyPrinted = Boolean(d?.billPrinted) || (d?.orders && d.orders.some((o: any) => printedOrderIds.has(o.id)));
     if (isAlreadyPrinted) setBillPrinted(true);
+  }
+
+  async function saveTableCustomer(name?: string, phone?: string) {
+    if (!tableAction) return;
+    const n = (name !== undefined ? name : custName).trim();
+    const p = (phone !== undefined ? phone : custPhone).trim();
+    if (!n && !p) return;
+    try {
+      await fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_customer',
+          tableId: tableAction.id,
+          customer: { name: n || undefined, phone: p || undefined },
+        }),
+      });
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('pos-entry-sync'));
+    } catch (e) {
+      console.error('[POS] Failed to save table customer:', e);
+    }
   }
 
   async function executeTableTransfer() {
@@ -346,6 +726,10 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     if (!tableAction) return null;
     const d = await fetch(`/api/tables/order?tableId=${tableAction.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     setTableOrder(d);
+    if (d?.customer && !custName && !custPhone) {
+      setCustName(d.customer.name || '');
+      setCustPhone(d.customer.phone || '');
+    }
     return d;
   }
 
@@ -405,7 +789,13 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
 
   async function voidLine(l: { id: string; orderId: string; name: string }) {
     if (isOffline()) { flash(OFFLINE_ORDER_MSG); return; }
-    if (!window.confirm(`Remove “${l.name}” from this table? Stock will be restored.`)) return;
+    const ok = await confirmAction({
+      title: 'Remove Item',
+      message: `Remove "${l.name}" from this table? Stock will be restored.`,
+      confirmText: 'Remove Item',
+      isDestructive: true,
+    });
+    if (!ok) return;
     setVoidBusyId(l.id);
     try {
       const r = await fetch('/api/tables/order', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'void_item', orderId: l.orderId, itemId: l.id }) });
@@ -476,9 +866,11 @@ export default function PosClient({ outlet, staff, menu, tables, floors, staffAp
     console.log(`[PRINT] Timestamp: ${new Date().toISOString()}`);
 
     // Build the complete print document
-    // 80mm roll: ~72mm printable at 203dpi ≈ 574px at 96dpi screen preview
-    // We use 72mm with left/right 4mm margins each for the print media.
-    const html = `<!DOCTYPE html><html lang="en"><head>
+    // Build the complete print document
+    // If a full HTML receipt document is passed, use it directly.
+    const html = htmlBody.startsWith('<!DOCTYPE html>')
+      ? htmlBody
+      : `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"/>
 <title>${title}</title>
 <style>
@@ -789,66 +1181,42 @@ ${htmlBody}
     console.log(`[PRINT] Order #  : ${orderNum}`);
     console.log(`[PRINT] Cashier  : ${currentStaff.name}`);
     console.log(`[PRINT] Items    : ${tableOrder.lines?.length || 0}`);
-    console.log(`[PRINT] Total    : ${formatINR(tableOrder.totals?.totalPaise || 0)}`);
+    const totals = tableOrder.totals || {};
+    const receiptData: ReceiptInputData = {
+      storeName: outlet.name,
+      logoUrl: outlet.receipt?.showLogo !== false ? outlet.receipt?.logoUrl : null,
+      address: outlet.address,
+      phone: outlet.receipt?.phone,
+      gstin: outlet.gstin,
+      orderNumber: orderNum,
+      orderType: tableOrder.type || 'dine_in',
+      tableLabel: tableLabel,
+      placedAt: tableOrder.placedAt || new Date(),
+      items: (tableOrder.lines || []).map((l: any) => ({
+        name: l.name,
+        qty: l.qty,
+        unitPricePaise: l.unitPricePaise ?? l.pricePaise ?? 0,
+        totalPaise: l.linePaise ?? l.totalPaise ?? ((l.unitPricePaise ?? l.pricePaise ?? 0) * l.qty),
+        notes: l.notes,
+      })),
+      subtotalPaise: totals.subtotalPaise || 0,
+      discountPaise: totals.discountPaise || 0,
+      cgstPaise: totals.cgstPaise || 0,
+      sgstPaise: totals.sgstPaise || 0,
+      igstPaise: totals.igstPaise || 0,
+      serviceChargePaise: totals.serviceChargePaise || 0,
+      roundOffPaise: totals.roundOffPaise || 0,
+      totalPaise: totals.totalPaise || 0,
+      gstEnabled: isGstActive,
+      cashierName: currentStaff.name,
+      customerName: billCustomer !== 'Customer' ? billCustomer : undefined,
+      customerPhone: custPhone.trim() || undefined,
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig,
+    };
 
-    // Build item rows with proper 80mm column alignment
-    const now80 = new Date();
-    const dateStr = now80.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const timeStr = now80.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-    const itemRowsHtml = tableOrder.lines.map((l: any) => {
-      const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId || it.name === l.name);
-      const unitPrice = l.unitPricePaise ?? l.pricePaise ?? 0;
-      const lineTotal = l.linePaise ?? l.totalPaise ?? 0;
-      const hsnText = showHsn && dbItem?.hsnCode
-        ? `<div class="item-note">HSN: ${escRcpt(dbItem.hsnCode)}</div>` : '';
-      const noteText = l.notes
-        ? `<div class="item-note">Note: ${escRcpt(l.notes)}</div>` : '';
-      return `<div class="item-row">
-        <div class="col-name item-name">${escRcpt(l.name)}${noteText}${hsnText}</div>
-        <div class="col-qty">${l.qty}</div>
-        <div class="col-rate">${formatINR(unitPrice)}</div>
-        <div class="col-amt">${formatINR(lineTotal)}</div>
-      </div>`;
-    }).join('');
-
-    const totals = tableOrder.totals;
-    const orderTypeLabel = (tableOrder.type || 'DINE IN').toUpperCase().replace('_', ' ');
-    const custLine = billCustomer !== 'Customer' ? escRcpt(billCustomer) : '';
-    const custPhoneLine = custPhone.trim() ? escRcpt(custPhone.trim()) : '';
-
-    const htmlBody = `
-${receiptHeaderHtml()}
-<div class="div-dashed"></div>
-<div class="meta-row bold"><span>Table ${escRcpt(tableLabel)}</span><span>${orderTypeLabel}</span></div>
-${orderNum ? `<div class="meta-row"><span>Bill #${escRcpt(String(orderNum))}</span><span>${dateStr}</span></div>` : `<div class="meta-row"><span>${dateStr}</span><span></span></div>`}
-<div class="meta-row"><span>Cashier: ${escRcpt(currentStaff.name)}</span><span>${timeStr}</span></div>
-${custLine ? `<div class="meta-row"><span>Customer: ${custLine}${custPhoneLine ? ` · ${custPhoneLine}` : ''}</span></div>` : ''}
-<div class="div-solid"></div>
-<div class="items-hdr">
-  <div class="col-name">ITEM</div>
-  <div class="col-qty">QTY</div>
-  <div class="col-rate">RATE</div>
-  <div class="col-amt">AMT</div>
-</div>
-<div class="div-dashed"></div>
-${itemRowsHtml}
-<div class="div-solid"></div>
-<div class="totals-row"><span>Subtotal</span><span>${formatINR(totals.subtotalPaise)}</span></div>
-${totals.discountPaise > 0 ? `<div class="totals-row discount"><span>Discount</span><span>-${formatINR(totals.discountPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showCgst && totals.cgstPaise > 0 ? `<div class="totals-row"><span>CGST</span><span>${formatINR(totals.cgstPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showSgst && totals.sgstPaise > 0 ? `<div class="totals-row"><span>SGST</span><span>${formatINR(totals.sgstPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showIgst && totals.igstPaise > 0 ? `<div class="totals-row"><span>IGST</span><span>${formatINR(totals.igstPaise)}</span></div>` : ''}
-${totals.serviceChargePaise > 0 ? `<div class="totals-row"><span>Service Charge</span><span>${formatINR(totals.serviceChargePaise)}</span></div>` : ''}
-${Math.abs(totals.roundOffPaise || 0) > 0 ? `<div class="totals-row"><span>Round Off</span><span>${totals.roundOffPaise >= 0 ? '+' : '-'}${formatINR(Math.abs(totals.roundOffPaise))}</span></div>` : ''}
-${taxSummaryTableHtml(tableOrder)}
-<div class="div-solid"></div>
-<div class="totals-row grand"><span>TOTAL</span><span>${formatINR(totals.totalPaise)}</span></div>
-<div class="div-solid"></div>
-<div class="footer">
-  <div class="thank-you">${receiptFooterText()}</div>
-  <div>Served by ${escRcpt(currentStaff.name)}</div>
-</div>`;
+    const paperWidth = outlet.receipt?.paperWidth === '58mm' ? '58mm' : '80mm';
+    const htmlBody = formatReceiptHtml(receiptData, paperWidth);
 
     const waiterStation = (currentStaff.permissions as any)?.station || (currentStaff as any)?.station || null;
     console.log(`[PRINT] Sending bill directly to ${waiterStation ? waiterStation.toUpperCase() + ' station printer' : 'station printer'} (no popup)...`);
@@ -885,6 +1253,7 @@ ${taxSummaryTableHtml(tableOrder)}
           orderId: orderIds[0] || null,
           waiterStation,
           staffName: currentStaff.name,
+          customer: (custName.trim() || custPhone.trim()) ? { name: custName.trim() || undefined, phone: custPhone.trim() || undefined } : undefined,
         }),
       })
         .then(async (res) => {
@@ -954,7 +1323,7 @@ ${rows}
 
   // ─── PRINT RECEIPT (post-payment, for a just-charged POS order) ──────────
   function printReceipt(number: number, method: string, tipPaise: number, customer: { name: string; phone: string } | null) {
-    const isGstConfig = outlet.gstEnabled && outlet.gstConfig?.enabled;
+    const isGstConfig = isGstActive;
     const showHsn = isGstConfig && outlet.gstConfig?.showHsn;
     const totalWithTip = bill.totalPaise + tipPaise;
     const jobId = `receipt:${number}:${Date.now()}`;
@@ -964,68 +1333,43 @@ ${rows}
     console.log(`[PRINT] Job ID   : ${jobId}`);
     console.log(`[PRINT] Method   : ${method.toUpperCase()}`);
     console.log(`[PRINT] Total    : ${formatINR(totalWithTip)}`);
-    console.log(`[PRINT] Cashier  : ${currentStaff.name}`);
+    const receiptData: ReceiptInputData = {
+      storeName: outlet.name,
+      logoUrl: outlet.receipt?.showLogo !== false ? outlet.receipt?.logoUrl : null,
+      address: outlet.address,
+      phone: outlet.receipt?.phone,
+      gstin: outlet.gstin,
+      orderNumber: number,
+      orderType: orderType,
+      tableLabel: tableId ? (tables.find(t => t.id === tableId)?.label || null) : null,
+      placedAt: new Date(),
+      settledAt: new Date(),
+      items: cart.map(l => ({
+        name: l.name,
+        qty: l.qty,
+        unitPricePaise: l.pricePaise,
+        totalPaise: l.pricePaise * l.qty,
+        notes: l.notes,
+      })),
+      subtotalPaise: bill.subtotalPaise,
+      discountPaise: bill.discountPaise,
+      cgstPaise: bill.cgstPaise,
+      sgstPaise: bill.sgstPaise,
+      igstPaise: bill.igstPaise,
+      serviceChargePaise: bill.serviceChargePaise,
+      roundOffPaise: bill.roundOffPaise,
+      totalPaise: totalWithTip,
+      paymentMethod: method,
+      gstEnabled: isGstActive,
+      cashierName: currentStaff.name,
+      customerName: customer?.name,
+      customerPhone: customer?.phone,
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig,
+    };
 
-    const now80 = new Date();
-    const dateStr = now80.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const timeStr = now80.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-    const itemRowsHtml = cart.map((l) => {
-      const dbItem = menu.flatMap(c => c.items).find(it => it.id === l.itemId);
-      const lineTotal = l.pricePaise * l.qty;
-      const hsnText = showHsn && dbItem?.hsnCode
-        ? `<div class="item-note">HSN: ${escRcpt(dbItem.hsnCode)}</div>` : '';
-      const noteText = l.notes
-        ? `<div class="item-note">Note: ${escRcpt(l.notes)}</div>` : '';
-      return `<div class="item-row">
-        <div class="col-name item-name">${escRcpt(l.name)}${noteText}${hsnText}</div>
-        <div class="col-qty">${l.qty}</div>
-        <div class="col-rate">${formatINR(l.pricePaise)}</div>
-        <div class="col-amt">${formatINR(lineTotal)}</div>
-      </div>`;
-    }).join('');
-
-    const custName = customer?.name?.trim() || '';
-    const custPhoneStr = customer?.phone?.trim() || '';
-    const subtotalLabel = outlet.gstEnabled && outlet.gstInclusive ? 'Taxable Value' : 'Subtotal';
-
-    const htmlBody = `
-${receiptHeaderHtml()}
-<div class="div-dashed"></div>
-<div class="meta-row bold"><span>Receipt #${number}</span><span>${dateStr}</span></div>
-<div class="meta-row"><span>Cashier: ${escRcpt(currentStaff.name)}</span><span>${timeStr}</span></div>
-${custName || custPhoneStr ? `<div class="meta-row"><span>Customer: ${escRcpt(custName)}${custPhoneStr ? ` · ${escRcpt(custPhoneStr)}` : ''}</span></div>` : ''}
-<div class="div-solid"></div>
-<div class="items-hdr">
-  <div class="col-name">ITEM</div>
-  <div class="col-qty">QTY</div>
-  <div class="col-rate">RATE</div>
-  <div class="col-amt">AMT</div>
-</div>
-<div class="div-dashed"></div>
-${itemRowsHtml}
-<div class="div-solid"></div>
-<div class="totals-row"><span>${subtotalLabel}</span><span>${formatINR(bill.subtotalPaise)}</span></div>
-${bill.discountPaise > 0 ? `<div class="totals-row discount"><span>Discount${discountPct > 0 ? ` (${discountPct}%)` : ''}</span><span>-${formatINR(bill.discountPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showCgst && bill.cgstPaise > 0 ? `<div class="totals-row"><span>CGST</span><span>${formatINR(bill.cgstPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showSgst && bill.sgstPaise > 0 ? `<div class="totals-row"><span>SGST</span><span>${formatINR(bill.sgstPaise)}</span></div>` : ''}
-${isGstConfig && outlet.gstConfig?.showIgst && bill.igstPaise > 0 ? `<div class="totals-row"><span>IGST</span><span>${formatINR(bill.igstPaise)}</span></div>` : ''}
-${scPct > 0 ? `<div class="totals-row"><span>Service Charge</span><span>${formatINR(bill.serviceChargePaise)}</span></div>` : ''}
-${bill.deliveryChargePaise > 0 ? `<div class="totals-row"><span>Delivery Charge</span><span>${formatINR(bill.deliveryChargePaise)}</span></div>` : ''}
-${bill.packagingChargePaise > 0 ? `<div class="totals-row"><span>Packaging Charge</span><span>${formatINR(bill.packagingChargePaise)}</span></div>` : ''}
-${bill.convenienceFeePaise > 0 ? `<div class="totals-row"><span>Convenience Fee</span><span>${formatINR(bill.convenienceFeePaise)}</span></div>` : ''}
-${Math.abs(bill.roundOffPaise || 0) > 0 ? `<div class="totals-row"><span>Round Off</span><span>${bill.roundOffPaise >= 0 ? '+' : '-'}${formatINR(Math.abs(bill.roundOffPaise))}</span></div>` : ''}
-${tipPaise > 0 ? `<div class="totals-row"><span>Tip</span><span>${formatINR(tipPaise)}</span></div>` : ''}
-${taxSummaryTableHtml(bill)}
-<div class="div-solid"></div>
-<div class="totals-row grand"><span>TOTAL</span><span>${formatINR(totalWithTip)}</span></div>
-<div class="div-solid"></div>
-<div class="pay-row"><span>Payment</span><span>${escRcpt(method.toUpperCase())}</span></div>
-<div class="div-dashed"></div>
-<div class="footer">
-  <div class="thank-you">${receiptFooterText()}</div>
-  <div>Served by ${escRcpt(currentStaff.name)}</div>
-</div>`;
+    const paperWidth = outlet.receipt?.paperWidth === '58mm' ? '58mm' : '80mm';
+    const htmlBody = formatReceiptHtml(receiptData, paperWidth);
 
     console.log(`[PRINT] Sending receipt to print dialog...`);
     printThermal80mm(`Receipt #${number}`, htmlBody, jobId);
@@ -1109,9 +1453,21 @@ ${taxSummaryTableHtml(bill)}
   }, [q, menu, cat]);
 
   const bill = useMemo(() => {
-    const lines: BillLine[] = cart.map((l) => ({ pricePaise: l.pricePaise, gstRate: l.gstRate, qty: l.qty }));
-    return computeBill(lines, { discountPct, discountFlatPaise, serviceChargePct: scPct, gstEnabled: outlet.gstEnabled, gstRateOverride: outlet.gstRate, gstInclusive: outlet.gstInclusive });
-  }, [cart, discountPct, discountFlatPaise, scPct, outlet.gstEnabled, outlet.gstRate, outlet.gstInclusive]);
+    const lines: BillLine[] = cart.map((l) => ({ pricePaise: l.pricePaise, gstRate: isGstActive ? l.gstRate : 0, qty: l.qty }));
+    const b = computeBill(lines, {
+      discountPct,
+      discountFlatPaise,
+      serviceChargePct: scPct,
+      gstEnabled: isGstActive,
+      gstRateOverride: isGstActive ? outlet.gstRate : 0,
+      gstInclusive: outlet.gstInclusive,
+      roundOff: outlet.gstConfig?.roundOff !== false && (outlet.receipt as any)?.roundOff !== false,
+    });
+    if (lines.length > 0) {
+      console.log(`[BILLING]\nGST enabled: ${isGstActive}\nSubtotal: ${(b.subtotalPaise / 100).toFixed(2)}\nDiscount: ${(b.discountPaise / 100).toFixed(2)}\nTax: ${(b.taxPaise / 100).toFixed(2)}\nRound-off: ${(b.roundOffPaise / 100).toFixed(2)}\nFinal payable: ${(b.finalPayablePaise / 100).toFixed(2)}`);
+    }
+    return b;
+  }, [cart, discountPct, discountFlatPaise, scPct, isGstActive, outlet.gstRate, outlet.gstInclusive, outlet.gstConfig?.roundOff, (outlet.receipt as any)?.roundOff]);
 
   function flash(msg: string) {
     setToast(msg);
@@ -1128,10 +1484,11 @@ ${taxSummaryTableHtml(bill)}
         return;
       }
     }
+    const catName = (item as any).catName || menu.find((c) => c.items.some((it) => it.id === item.id))?.name || '';
     setCart((c) => {
       const ex = c.find((l) => l.itemId === item.id);
       if (ex) return c.map((l) => (l.itemId === item.id ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { key: item.id, itemId: item.id, name: item.name, pricePaise: item.pricePaise, gstRate: item.gstRate, station: item.station, qty: 1 }];
+      return [...c, { key: item.id, itemId: item.id, name: item.name, pricePaise: item.pricePaise, gstRate: item.gstRate, station: item.station, qty: 1, catName }];
     });
   }
   function bump(key: string, d: number) {
@@ -1187,7 +1544,7 @@ ${taxSummaryTableHtml(bill)}
           nameSnapshot: l.name,
           qty: l.qty,
           unitPricePaise: l.pricePaise,
-          gstRate: l.gstRate,
+          gstRate: isGstActive ? l.gstRate : 0,
           station: l.station,
           modifiers: [],
           notes: l.notes || undefined,
@@ -1271,206 +1628,308 @@ ${taxSummaryTableHtml(bill)}
         </div>
         <div className="subtabs px-3 pb-2">
           {menu.map((c) => {
-            const Ic = CAT_ICON[c.name] ?? Coffee;
+            const Ic = getCategoryIcon(c.name);
             const on = c.id === activeCat && !q;
             return (
               <button key={c.id} onClick={() => { setActiveCat(c.id); setSearch(''); }} aria-pressed={on}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border font-bold text-[13px] whitespace-nowrap transition"
                 style={on ? { background: 'var(--ink)', color: 'var(--paper-3)', borderColor: 'var(--ink)' } : { background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
-                <Ic size={15} aria-hidden />{c.name}
+                <Ic size={15} aria-hidden className="shrink-0" />{c.name}
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[180px_1fr_300px] lg:grid-cols-[232px_1fr_360px] gap-4 h-auto md:h-screen p-4 pt-3 md:pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-        <aside className="hidden md:flex flex-col gap-3.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-              <img
-                src="/logo chaya one.png"
-                alt="ChayaOne"
-                className="brand-logo h-8 lg:h-9 w-auto object-contain shrink-0"
-              />
-            </div>
-            <div className="flex items-center gap-1">
-              {canAccess(currentStaff, 'dashboard') && (
-                <a
-                  href="/dashboard"
-                  onClick={handleDashboardClick}
-                  title="Go to Dashboard"
-                  className="btn btn-icon btn-sm btn-ghost"
-                  style={{ color: 'var(--ink-2)' }}
-                >
-                  <LayoutDashboard size={18} aria-hidden />
-                </a>
-              )}
-              <StaffBell role={currentStaff.role} staffId={currentStaff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
-              <ThemeToggle />
-            </div>
-          </div>
-          <div className="flex items-center gap-2 px-1 -mt-1">
-            <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{currentStaff.name[0]}</span>
-            <span className="text-[12.5px] font-bold">{currentStaff.name}</span>
-            <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>
-              {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
-            </span>
-          </div>
-          <div className="px-1 flex flex-col gap-1.5">
-            <ShiftStatus />
-            <BusinessDayHeaderBadge />
-          </div>
-          <div className="flex rounded-full p-[3px] border" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
-            {(['dine_in', 'takeaway'] as const).map((t) => (
-              <button key={t} onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
-                className="flex-1 py-2 rounded-full font-bold text-[13px] transition"
-                style={orderType === t ? { background: 'var(--ink)', color: 'var(--paper-2)' } : { color: 'var(--ink-2)' }}>
-                {t === 'dine_in' ? 'Dine-in' : 'Takeaway'}
+      {/* Desktop Top Header (hidden on mobile) */}
+      <header className="hidden md:flex items-center justify-between px-4 py-2 shrink-0 border-b z-20" style={{ background: 'var(--paper)', borderColor: 'var(--line)', minHeight: '52px', maxHeight: '52px' }}>
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/logo chaya one.png"
+            alt="ChayaOne"
+            className="brand-logo h-7 lg:h-8 w-auto object-contain shrink-0"
+          />
+          {canAccess(currentStaff, 'dashboard') && (
+            <a
+              href="/dashboard"
+              onClick={handleDashboardClick}
+              title="Go to Dashboard"
+              className="btn btn-icon btn-sm btn-ghost"
+              style={{ color: 'var(--ink-2)' }}
+            >
+              <LayoutDashboard size={18} aria-hidden />
+            </a>
+          )}
+          <StaffBell role={currentStaff.role} staffId={currentStaff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
+          <ThemeToggle />
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          {/* Search menu */}
+          <div className="relative w-56 lg:w-64">
+            <Search size={15} aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-3)' }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search menu…"
+              aria-label="Search menu"
+              type="search"
+              className="w-full pl-8 pr-8 py-1.5 rounded-full border text-xs lg:text-sm outline-none"
+              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 grid place-items-center"
+                style={{ color: 'var(--ink-3)' }}
+              >
+                <X size={14} aria-hidden />
               </button>
-            ))}
+            )}
           </div>
-          <div className="flex flex-col gap-1.5 overflow-auto flex-1">
+
+          {/* Floor map & tables */}
+          <button
+            type="button"
+            onClick={() => setFloorOpen(true)}
+            title="Open Floor Map & Tables"
+            className="pill shrink-0 inline-flex items-center gap-1.5 cursor-pointer font-bold text-xs transition hover:opacity-85"
+            style={{
+              background: selectedTable ? 'color-mix(in srgb, var(--turmeric) 16%, var(--paper-2))' : 'var(--paper-2)',
+              border: selectedTable ? '1.5px solid var(--turmeric)' : '1px solid var(--line)',
+              color: selectedTable ? 'var(--turmeric-d)' : 'var(--ink-2)',
+            }}
+          >
+            <Table2 size={14} aria-hidden className={selectedTable ? 'text-[var(--turmeric-d)]' : ''} />
+            <span>{selectedTable ? `Table ${selectedTable.label}` : 'Floor map & tables'}</span>
+          </button>
+
+          {/* Small Sync Button in Top Bar */}
+          <div className="relative shrink-0">
+            <button
+              id="topbar-sync-btn"
+              data-testid="topbar-sync-btn"
+              type="button"
+              onClick={() => setSyncOpen((o) => !o)}
+              title="Server Connection & Sync Settings"
+              className="pill flex items-center gap-1.5 cursor-pointer font-bold text-xs hover:opacity-85 transition"
+              style={{
+                background: syncOpen ? 'var(--paper-3)' : 'var(--paper-2)',
+                border: '1px solid var(--line)',
+                color: 'var(--ink-2)',
+              }}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <RefreshCw size={13} className={syncOpen ? 'text-emerald-500' : ''} />
+              <span>Sync</span>
+            </button>
+
+            {syncOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setSyncOpen(false)} />
+                <div
+                  className="absolute right-0 mt-2 w-[340px] z-50 rounded-2xl p-2.5 shadow-2xl"
+                  style={{
+                    background: 'var(--paper)',
+                    border: '1px solid var(--line-2)',
+                    boxShadow: 'var(--sh-3)',
+                  }}
+                >
+                  <div className="flex items-center justify-between px-2.5 py-1.5 border-b mb-2" style={{ borderColor: 'var(--line)' }}>
+                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>Server &amp; Sync Control</span>
+                    <button
+                      type="button"
+                      onClick={() => setSyncOpen(false)}
+                      className="btn btn-ghost btn-xs w-6 h-6 p-0 grid place-items-center rounded-lg cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <ServerSyncCard onManualSync={refreshTables} compact />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* POS WORKSPACE */}
+      <div className="grid grid-cols-1 md:grid-cols-[190px_1fr_310px] lg:grid-cols-[216px_1fr_336px] xl:grid-cols-[232px_1fr_360px] gap-3.5 p-3.5 flex-1 min-h-0 overflow-hidden">
+        {/* LEFT COLUMN: STAFF / CATEGORIES */}
+        <aside className="hidden md:flex flex-col h-full min-h-0 overflow-hidden gap-2">
+          {/* Staff profile & shift status */}
+          <div className="flex flex-col gap-2 shrink-0">
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white shrink-0" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{currentStaff.name[0]}</span>
+              <span className="text-[12.5px] font-bold truncate">{currentStaff.name}</span>
+              <span className="pill shrink-0" style={{ padding: '2px 7px', fontSize: '10px', textTransform: 'capitalize' }}>
+                {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
+              </span>
+            </div>
+            <div className="px-1 flex flex-col gap-1">
+              <ShiftStatus />
+              <BusinessDayHeaderBadge />
+            </div>
+            <div className="flex rounded-full p-[3px] border shrink-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
+              {(['dine_in', 'takeaway'] as const).map((t) => (
+                <button key={t} onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
+                  className="flex-1 py-1.5 rounded-full font-bold text-[12.5px] transition"
+                  style={orderType === t ? { background: 'var(--ink)', color: 'var(--paper-2)' } : { color: 'var(--ink-2)' }}>
+                  {t === 'dine_in' ? 'Dine-in' : 'Takeaway'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Compact scroll-up indicator/button */}
+          {canScrollCatUp && (
+            <button
+              type="button"
+              onClick={() => scrollCategories('up')}
+              aria-label="Scroll categories up"
+              className="w-full py-1 grid place-items-center text-xs font-bold rounded-lg border transition shrink-0 hover:bg-[var(--paper-3)]"
+              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}
+            >
+              <ChevronUp size={14} />
+            </button>
+          )}
+
+          {/* Category list - internal scroll */}
+          <div ref={categoryListRef} className="flex flex-col gap-1.5 overflow-y-auto overflow-x-hidden flex-1 min-h-0 pr-1 select-none pos-scroll">
             {menu.map((c) => {
-              const Ic = CAT_ICON[c.name] ?? Coffee;
+              const Ic = getCategoryIcon(c.name);
               const on = c.id === activeCat && !q;
               return (
                 <button key={c.id} onClick={() => { setActiveCat(c.id); setSearch(''); }} aria-pressed={on}
-                  className="flex items-center gap-3 px-3 py-3 rounded-[14px] border font-bold text-sm transition text-left"
+                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-[12px] border font-bold text-[13px] transition text-left shrink-0 cursor-pointer"
                   style={on ? { background: 'var(--ink)', color: 'var(--paper-3)', borderColor: 'var(--ink)' } : { background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
-                  <Ic size={18} aria-hidden className="shrink-0" />{c.name}
-                  <span className="ml-auto text-[11px] opacity-60 tnum">{c.items.length}</span>
+                  <Ic size={16} aria-hidden className="shrink-0" />
+                  <span className="truncate">{c.name}</span>
+                  <span className="ml-auto text-[11px] opacity-60 tnum shrink-0">{c.items.length}</span>
                 </button>
               );
             })}
           </div>
-          <button onClick={() => setFloorOpen(true)} className="flex items-center justify-center gap-2 py-3 rounded-[14px] border-[1.5px] border-dashed font-bold text-[13.5px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
-            <Table2 size={17} aria-hidden /> Floor map &amp; tables
-          </button>
-          <button
-            type="button"
-            disabled
-            title="QR Approvals is currently disabled"
-            className="relative flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] opacity-40 cursor-not-allowed select-none"
-            style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
-          >
-            <ClipboardList size={17} aria-hidden /> QR Approvals
-            {pendingApprovals > 0 && (
-              <span className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum opacity-60" style={{ background: 'var(--ink-3)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
-            )}
-          </button>
-          {showInstallApp && (
-            <button onClick={() => staffInstall.promptInstall()} className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-              <Download size={17} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
+
+          {/* Compact scroll-down indicator/button */}
+          {canScrollCatDown && (
+            <button
+              type="button"
+              onClick={() => scrollCategories('down')}
+              aria-label="Scroll categories down"
+              className="w-full py-1 grid place-items-center text-xs font-bold rounded-lg border transition shrink-0 hover:bg-[var(--paper-3)]"
+              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}
+            >
+              <ChevronDown size={14} />
             </button>
           )}
-          <a href="/api/auth/logout" className="flex items-center justify-center gap-2 py-2.5 rounded-[14px] font-bold text-[13px] transition hover:bg-[var(--paper-3)] mt-auto" style={{ color: 'var(--ink-3)' }}>
-            <LogOut size={16} aria-hidden /> Logout
-          </a>
+
+          {/* Bottom fixed controls */}
+          <div className="flex flex-col gap-1 shrink-0 pt-1 border-t" style={{ borderColor: 'var(--line)' }}>
+            <button
+              type="button"
+              disabled
+              title="QR Approvals is currently disabled"
+              className="relative flex items-center justify-center gap-2 py-2 rounded-[10px] font-bold text-xs opacity-40 cursor-not-allowed select-none"
+              style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
+            >
+              <ClipboardList size={15} aria-hidden /> QR Approvals
+              {pendingApprovals > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-4.5 px-1 grid place-items-center rounded-full text-[10px] font-extrabold text-white tnum opacity-60" style={{ background: 'var(--ink-3)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
+              )}
+            </button>
+            {showInstallApp && (
+              <button onClick={() => staffInstall.promptInstall()} className="flex items-center justify-center gap-1.5 py-1.5 rounded-[10px] font-bold text-xs transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                <Download size={14} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install Staff App'}
+              </button>
+            )}
+            <a href="/api/auth/logout" className="flex items-center justify-center gap-1.5 py-1.5 rounded-[10px] font-bold text-xs transition hover:bg-[var(--paper-3)]" style={{ color: 'var(--ink-3)' }}>
+              <LogOut size={14} aria-hidden /> Logout
+            </a>
+          </div>
         </aside>
 
-        <section className="flex flex-col min-w-0 pb-[calc(120px_+_env(safe-area-inset-bottom))] md:pb-0">
-          <div className="flex items-center gap-3 mb-3.5">
-            <h2 className="text-2xl md:text-[28px] shrink-0">{q ? `“${search.trim()}”` : cat?.name}</h2>
-            <div className="relative ml-auto hidden md:block w-full max-w-[240px]">
-              <Search size={16} aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-3)' }} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search menu…" aria-label="Search menu" type="search"
-                className="w-full pl-9 pr-9 py-2 rounded-full border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }} />
-              {search && <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center" style={{ color: 'var(--ink-3)' }}><X size={15} aria-hidden /></button>}
-            </div>
-            <span className="pill shrink-0 hidden lg:inline-flex">{outlet.stateCode} · GST intra-state</span>
-
-            {/* Small Sync Button in Top Bar */}
-            <div className="relative shrink-0 hidden md:block">
-              <button
-                id="topbar-sync-btn"
-                data-testid="topbar-sync-btn"
-                type="button"
-                onClick={() => setSyncOpen((o) => !o)}
-                title="Server Connection & Sync Settings"
-                className="pill flex items-center gap-1.5 cursor-pointer font-bold text-xs hover:opacity-85 transition"
-                style={{
-                  background: syncOpen ? 'var(--paper-3)' : 'var(--paper-2)',
-                  border: '1px solid var(--line)',
-                  color: 'var(--ink-2)',
-                }}
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <RefreshCw size={13} className={syncOpen ? 'text-emerald-500' : ''} />
-                <span>Sync</span>
-              </button>
-
-              {syncOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setSyncOpen(false)} />
-                  <div
-                    className="absolute right-0 mt-2 w-[340px] z-50 rounded-2xl p-2.5 shadow-2xl"
-                    style={{
-                      background: 'var(--paper)',
-                      border: '1px solid var(--line-2)',
-                      boxShadow: 'var(--sh-3)',
-                    }}
-                  >
-                    <div className="flex items-center justify-between px-2.5 py-1.5 border-b mb-2" style={{ borderColor: 'var(--line)' }}>
-                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>Server &amp; Sync Control</span>
-                      <button
-                        type="button"
-                        onClick={() => setSyncOpen(false)}
-                        className="btn btn-ghost btn-xs w-6 h-6 p-0 grid place-items-center rounded-lg cursor-pointer"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <ServerSyncCard onManualSync={refreshTables} compact />
-                  </div>
-                </>
-              )}
-            </div>
+        {/* CENTER COLUMN: PRODUCTS */}
+        <section className="flex flex-col min-w-0 h-full min-h-0 overflow-hidden pb-[calc(120px_+_env(safe-area-inset-bottom))] md:pb-0">
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <h2 className="text-xl md:text-2xl font-bold truncate">{q ? `“${search.trim()}”` : cat?.name}</h2>
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0" style={{ background: 'var(--paper-3)', color: 'var(--ink-3)' }}>
+              {shownItems.length} item{shownItems.length === 1 ? '' : 's'}
+            </span>
           </div>
 
           {live.length > 0 && <LiveOrders tickets={live} now={now} />}
 
-          <div className="grid gap-3 overflow-visible md:overflow-auto content-start pr-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px,1fr))' }}>
+          <div className="grid gap-3 overflow-y-auto overflow-x-hidden content-start pr-1 flex-1 min-h-0 pos-scroll" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(136px,1fr))' }}>
             {shownItems.length === 0 ? (
               <div className="col-span-full grid place-content-center text-center gap-2 py-12" style={{ color: 'var(--ink-3)' }}>
                 <Search size={34} className="mx-auto opacity-40" aria-hidden />
                 <p>{q ? `No items match “${search.trim()}”.` : 'No items in this category.'}</p>
               </div>
-            ) : shownItems.map((m) => (
-              <button key={m.id} onClick={() => add(m)}
-                className="relative text-left p-3.5 rounded-[14px] border flex flex-col gap-2 transition hover:-translate-y-0.5"
-                style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', boxShadow: 'var(--sh-1)' }}>
-                {m.tags.includes('bestseller') && <span className="absolute top-0 left-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--turmeric-d)', borderRadius: '14px 0 14px 0' }}>★ Bestseller</span>}
-                {(() => {
-                  const limitTag = m.tags.find((t) => t.startsWith('limit:'));
-                  const limitVal = limitTag ? parseInt(limitTag.split(':')[1] ?? '0') : null;
-                  if (limitVal !== null) {
-                    return (
-                      <span className="absolute top-0 right-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--clay)', borderRadius: '0 14px 0 14px' }}>
-                        {limitVal} left
-                      </span>
-                    );
-                  }
-                  return null;
-                })()}
-                <div className="text-3xl" aria-hidden>{EMOJI[m.catName] ?? '🍽'}</div>
-                <div className="font-bold text-sm leading-tight">{m.name}</div>
-                {q && <div className="text-[10.5px] font-bold" style={{ color: 'var(--ink-3)' }}>{m.catName}</div>}
-                <div className="flex items-center justify-between mt-auto">
-                  <span className="tnum text-sm" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(m.pricePaise)}</span>
-                  <span className="text-[10px] font-bold" style={{ color: 'var(--ink-3)' }}>GST {m.gstRate}%</span>
-                </div>
-              </button>
-            ))}
+            ) : shownItems.map((m) => {
+              const CatIcon = getCategoryIcon(m.catName);
+              const limitTag = m.tags.find((t) => t.startsWith('limit:'));
+              const limitVal = limitTag ? parseInt(limitTag.split(':')[1] ?? '0') : null;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => add(m)}
+                  className="group relative text-left p-3.5 rounded-[16px] border flex flex-col justify-between min-h-[154px] transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md cursor-pointer select-none"
+                  style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', boxShadow: 'var(--sh-1)' }}
+                >
+                  {m.tags.includes('bestseller') && (
+                    <span
+                      className="absolute top-0 left-0 text-[9.5px] font-extrabold text-white px-2 py-0.5 z-10"
+                      style={{ background: 'var(--turmeric-d)', borderRadius: '16px 0 12px 0' }}
+                    >
+                      ★ Bestseller
+                    </span>
+                  )}
+                  {limitVal !== null && (
+                    <span
+                      className="absolute top-0 right-0 text-[9.5px] font-extrabold text-white px-2 py-0.5 z-10"
+                      style={{ background: 'var(--clay)', borderRadius: '0 16px 0 12px' }}
+                    >
+                      {limitVal} left
+                    </span>
+                  )}
+                  <div className="flex flex-col gap-2.5">
+                    <div
+                      className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-150 group-hover:scale-105"
+                      style={{
+                        background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-3))',
+                        border: '1px solid color-mix(in srgb, var(--turmeric) 22%, var(--line))',
+                        color: 'var(--turmeric-d, #b45309)',
+                      }}
+                      aria-hidden="true"
+                    >
+                      <CatIcon size={24} className="stroke-[1.85]" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-sm leading-snug line-clamp-2 text-[var(--ink)]">{m.name}</div>
+                      {q && <div className="text-[10.5px] font-semibold mt-0.5 text-[var(--ink-3)]">{m.catName}</div>}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-auto pt-2 border-t" style={{ borderColor: 'color-mix(in srgb, var(--line) 50%, transparent)' }}>
+                    <span className="tnum font-bold text-sm" style={{ fontFamily: 'var(--font-mono)', color: 'var(--ink)' }}>{formatINR(m.pricePaise)}</span>
+                    {isGstActive && (
+                      <span className="text-[10px] font-bold text-[var(--ink-3)]">GST {m.gstRate}%</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
 
-        <aside className="card hidden md:flex flex-col p-[18px] min-h-0">
-          <div className="flex justify-between items-start mb-3.5">
+        {/* RIGHT COLUMN: CURRENT TICKET */}
+        <aside className="card hidden md:flex flex-col p-3.5 w-full h-full min-h-0 overflow-hidden">
+          <div className="flex justify-between items-start mb-2 shrink-0">
             <div>
-              <h3 className="text-[19px]">Current ticket</h3>
+              <h3 className="text-[18px]">Current ticket</h3>
               {orderType === 'dine_in' ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mt-0.5">
                   <button onClick={() => setFloorOpen(true)} title="Change table" className="text-[12.5px] font-bold underline-offset-2 hover:underline" style={{ color: !tableId ? 'var(--clay)' : 'var(--cardamom-d)' }}>
                     {selectedTable ? `Table ${selectedTable.label}` : 'Pick a table'}
                   </button>
@@ -1486,10 +1945,10 @@ ${taxSummaryTableHtml(bill)}
                   )}
                 </div>
               ) : (
-                <span className="text-[12.5px] font-bold" style={{ color: 'var(--cardamom-d)' }}>Takeaway</span>
+                <span className="text-[12.5px] font-bold mt-0.5 block" style={{ color: 'var(--cardamom-d)' }}>Takeaway</span>
               )}
             </div>
-            <button onClick={clear} disabled={!cart.length} title="Clear ticket" aria-label="Clear ticket" className="btn btn-icon btn-sm btn-ghost"><RefreshCw size={16} aria-hidden /></button>
+            <button onClick={clear} disabled={!cart.length} title="Clear ticket" aria-label="Clear ticket" className="btn btn-icon btn-sm btn-ghost"><RefreshCw size={15} aria-hidden /></button>
           </div>
 
           <CartBody
@@ -1513,15 +1972,18 @@ ${taxSummaryTableHtml(bill)}
           />
 
           {cart.length > 0 && (
-            <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
-              setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
+            <div className="shrink-0 mt-2">
+              <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
+                setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
+            </div>
           )}
 
-          <div className="grid grid-cols-[1fr_1.2fr] gap-2.5 mt-3.5">
+          <div className="grid grid-cols-[1fr_1.2fr] gap-2.5 mt-auto pt-2 shrink-0">
             <button disabled={!cart.length || busy} onClick={() => submit(null)} className="btn btn-dark">Send to KOT</button>
             <button disabled={!cart.length || busy} onClick={startCharge} className="btn btn-primary">Charge →</button>
           </div>
         </aside>
+      </div>
 
         {/* floor modal */}
         {floorOpen && (() => {
@@ -1907,13 +2369,23 @@ ${taxSummaryTableHtml(bill)}
                     <span className="inline-flex items-center gap-1.5 text-[12.5px] font-bold" style={{ color: custName.trim() ? 'var(--ink-2)' : 'var(--ink-3)' }}>
                       <User size={14} aria-hidden /> {billCustomer}{custPhone.trim() ? ` · ${custPhone.trim()}` : ''}
                     </span>
-                    <button onClick={() => setShowCust((v) => !v)} className="ml-auto text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>
+                    <button onClick={() => {
+                      if (showCust) {
+                        saveTableCustomer(custName, custPhone);
+                        setShowCust(false);
+                      } else {
+                        setShowCust(true);
+                      }
+                    }} className="ml-auto text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>
                       {showCust ? 'Done' : custName.trim() ? 'Edit' : '＋ Add customer'}
                     </button>
                   </div>
                   {showCust && (
                     <CustomerField name={custName} phone={custPhone} open={showCust}
-                      setName={setCustName} setPhone={setCustPhone} setOpen={setShowCust} compact />
+                      setName={setCustName} setPhone={setCustPhone} setOpen={(v) => {
+                        setShowCust(v);
+                        if (!v) saveTableCustomer(custName, custPhone);
+                      }} compact />
                   )}
                 </div>
 
@@ -1976,7 +2448,6 @@ ${taxSummaryTableHtml(bill)}
             {toast}
           </div>
         )}
-      </div>
 
       {/* ── Mobile sticky cart bar — taps open the bottom-sheet (phones only) ── */}
       {!cartSheetOpen && cartCount > 0 && (
@@ -2212,6 +2683,7 @@ ${taxSummaryTableHtml(bill)}
 
       {/* Midnight / Business Day Extension Prompt */}
       <BusinessDayPrompt currentStaff={currentStaff} />
+      <ConfirmDialog />
     </>
   );
 }
@@ -2246,6 +2718,7 @@ function CartBody({
   quickNotes: string[];
 }) {
   const DISC_PRESETS = [0, 10];
+  const isGstActive = Boolean(outlet.gstEnabled && (outlet.gstConfig?.enabled ?? true));
   // discount-entry unit: percentage vs a flat ₹ amount (selector sits by the field)
   const [discMode, setDiscMode] = useState<'pct' | 'amt'>(discountFlatPaise > 0 ? 'amt' : 'pct');
   // presets are % → clear any flat amount; % clamps 0–100, flat clamps 0–subtotal
@@ -2258,112 +2731,134 @@ function CartBody({
     setDiscMode(m);
   }
   return (
-    <>
-      <div className="flex-1 overflow-auto flex flex-col gap-2 min-h-0">
-        {!cart.length ? (
-          <div className="grid place-content-center text-center h-full gap-2 py-8" style={{ color: 'var(--ink-3)' }}>
-            <Coffee size={40} className="mx-auto opacity-40" aria-hidden /><p>Tap items to build the ticket.</p>
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      {!cart.length ? (
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center py-6 text-center select-none" style={{ color: 'var(--ink-3)' }}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-2.5" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
+            <Coffee size={28} className="opacity-45" aria-hidden />
           </div>
-        ) : cart.map((l) => (
-          <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
-              <div className="min-w-0 pr-1">
-                <div className="font-bold text-[13.5px] leading-tight truncate">{l.name}</div>
-                {l.notes && editingNoteKey !== l.key && (
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
-                      ↳ {l.notes}
-                    </span>
-                    <button type="button" onClick={() => openNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
-                    <button type="button" onClick={() => removeNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
+          <p className="text-sm font-bold text-[var(--ink-2)]">Tap items to build ticket</p>
+          <p className="text-xs text-[var(--ink-3)] mt-0.5">Select a category and tap items to begin</p>
+        </div>
+      ) : (
+        <div className="overflow-y-auto flex flex-col gap-2 min-h-0 flex-1 pr-1 pos-scroll">
+          {cart.map((l) => {
+            const CatIcon = l.catName ? getCategoryIcon(l.catName) : null;
+            return (
+            <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border shrink-0" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+              <div className={`grid ${CatIcon ? 'grid-cols-[auto_1fr_auto_auto]' : 'grid-cols-[1fr_auto_auto]'} gap-2.5 items-center`}>
+                {CatIcon && (
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                    style={{
+                      background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))',
+                      border: '1px solid color-mix(in srgb, var(--turmeric) 20%, var(--line))',
+                      color: 'var(--turmeric-d, #b45309)',
+                    }}
+                    aria-hidden="true"
+                  >
+                    <CatIcon size={16} className="stroke-[1.85]" />
                   </div>
                 )}
-                {!l.notes && editingNoteKey !== l.key && (
-                  <button type="button" onClick={() => openNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
-                    <Plus size={11} /> <span>Add note (e.g. without sugar)</span>
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => bump(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
-                <span className="font-bold w-6 text-center tnum">{l.qty}</span>
-                <button onClick={() => bump(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
-              </div>
-              <span className="text-[13.5px] tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
-            </div>
-
-            {editingNoteKey === l.key && (
-              <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
-                <div className="flex flex-wrap gap-1">
-                  {quickNotes.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setNoteDraft(preset)}
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
-                      style={{
-                        background: noteDraft === preset ? 'var(--turmeric)' : 'var(--paper)',
-                        color: noteDraft === preset ? '#2A1607' : 'var(--ink-2)',
-                        borderColor: 'var(--line-2)',
-                      }}
-                    >
-                      {preset}
+                <div className="min-w-0 pr-1">
+                  <div className="font-bold text-[13.5px] leading-tight truncate">{l.name}</div>
+                  {l.notes && editingNoteKey !== l.key && (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
+                        ↳ {l.notes}
+                      </span>
+                      <button type="button" onClick={() => openNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
+                      <button type="button" onClick={() => removeNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
+                    </div>
+                  )}
+                  {!l.notes && editingNoteKey !== l.key && (
+                    <button type="button" onClick={() => openNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
+                      <Plus size={11} /> <span>Add note (e.g. without sugar)</span>
                     </button>
-                  ))}
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    value={noteDraft}
-                    onChange={(e) => setNoteDraft(e.target.value)}
-                    placeholder="e.g. without sugar, extra hot..."
-                    className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
-                    style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveNote(l.key);
-                      if (e.key === 'Escape') removeNote(l.key);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => saveNote(l.key)}
-                    className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0"
-                    style={{ background: 'var(--turmeric-d)' }}
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!l.notes) removeNote(l.key);
-                      else openNoteEdit({ ...l, notes: l.notes });
-                    }}
-                    className="px-2 py-1 text-xs font-medium rounded-lg shrink-0"
-                    style={{ color: 'var(--ink-3)' }}
-                  >
-                    Cancel
-                  </button>
+                  <button onClick={() => bump(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
+                  <span className="font-bold w-6 text-center tnum">{l.qty}</span>
+                  <button onClick={() => bump(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
                 </div>
+                <span className="text-[13.5px] tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+
+              {editingNoteKey === l.key && (
+                <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
+                  <div className="flex flex-wrap gap-1">
+                    {quickNotes.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setNoteDraft(preset)}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
+                        style={{
+                          background: noteDraft === preset ? 'var(--turmeric)' : 'var(--paper)',
+                          color: noteDraft === preset ? '#2A1607' : 'var(--ink-2)',
+                          borderColor: 'var(--line-2)',
+                        }}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={noteDraft}
+                      onChange={(e) => setNoteDraft(e.target.value)}
+                      placeholder="e.g. without sugar, extra hot..."
+                      className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
+                      style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveNote(l.key);
+                        if (e.key === 'Escape') removeNote(l.key);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => saveNote(l.key)}
+                      className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0"
+                      style={{ background: 'var(--turmeric-d)' }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!l.notes) removeNote(l.key);
+                        else openNoteEdit({ ...l, notes: l.notes });
+                      }}
+                      className="px-2 py-1 text-xs font-medium rounded-lg shrink-0"
+                      style={{ color: 'var(--ink-3)' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            );
+          })}
+        </div>
+      )}
 
       {cart.length > 0 && (
-        <div className="border-t border-dashed mt-3 pt-3" style={{ borderColor: 'var(--line-2)' }}>
-          <Row label={outlet.gstEnabled && outlet.gstInclusive ? 'Taxable value' : 'Subtotal'} val={formatINR(bill.subtotalPaise)} />
+        <div className="border-t border-dashed mt-2.5 pt-2 shrink-0" style={{ borderColor: 'var(--line-2)' }}>
+          <Row label={isGstActive && outlet.gstInclusive ? 'Taxable value' : 'Subtotal'} val={formatINR(bill.subtotalPaise)} />
           {bill.discountPaise > 0 && <Row label={discountPct > 0 ? `Discount (${discountPct}%)` : 'Discount'} val={`− ${formatINR(bill.discountPaise)}`} accent />}
-          {outlet.gstEnabled && <Row label="CGST" val={formatINR(bill.cgstPaise)} sub />}
-          {outlet.gstEnabled && <Row label="SGST" val={formatINR(bill.sgstPaise)} sub />}
-          {outlet.gstEnabled && outlet.gstInclusive && <div className="text-[10px] mt-0.5" style={{ color: 'var(--ink-3)' }}>Menu prices include GST</div>}
+          {isGstActive && <Row label="CGST" val={formatINR(bill.cgstPaise)} sub />}
+          {isGstActive && <Row label="SGST" val={formatINR(bill.sgstPaise)} sub />}
+          {isGstActive && outlet.gstInclusive && <div className="text-[10px] mt-0.5" style={{ color: 'var(--ink-3)' }}>Menu prices include GST</div>}
           {scPct > 0 && <Row label="Service charge" val={formatINR(bill.serviceChargePaise)} />}
           <Row label="Round-off" val={`${bill.roundOffPaise >= 0 ? '+' : '−'} ${formatINR(Math.abs(bill.roundOffPaise))}`} sub />
-          <div className="flex justify-between font-extrabold font-display text-[19px] mt-2 pt-2 border-t" style={{ borderColor: 'var(--line)' }}>
+          <div className="flex justify-between font-extrabold font-display text-[18px] mt-1.5 pt-1.5 border-t" style={{ borderColor: 'var(--line)' }}>
             <span>Total</span><span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(bill.totalPaise)}</span>
           </div>
-          <div className="mt-3 flex flex-col gap-2">
+          <div className="mt-2 flex flex-col gap-1.5">
             {/* quick presets + service charge */}
             <div className="flex flex-wrap gap-1.5 items-center">
               {DISC_PRESETS.map((d) => <Chip key={d} on={d === discountPct && discountFlatPaise === 0} onClick={() => applyPreset(d)}>{d ? `${d}% off` : 'No disc.'}</Chip>)}
@@ -2371,29 +2866,29 @@ function CartBody({
             </div>
             {/* discount entry — label left, compact field + %/₹ selector aligned right */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[13.5px]" style={{ color: 'var(--ink-2)' }}>Discount</span>
+              <span className="text-[13px]" style={{ color: 'var(--ink-2)' }}>Discount</span>
               <div className="flex items-center gap-1.5 shrink-0">
-                <div className="relative w-[88px]">
+                <div className="relative w-[84px]">
                   {discMode === 'amt' && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] font-bold" style={{ color: 'var(--ink-3)' }}>₹</span>}
                   {discMode === 'pct' ? (
                     <input key="pct" type="number" min={0} max={100} step={1} inputMode="numeric"
                       value={discountPct || ''} onChange={(e) => setDiscountPct(clampPct(e.target.value))}
                       placeholder="0" aria-label="Discount percent"
-                      className="w-full pl-2.5 pr-2.5 py-1.5 rounded-[9px] border text-[13.5px] outline-none tnum text-right"
+                      className="w-full pl-2.5 pr-2.5 py-1 rounded-[8px] border text-[13px] outline-none tnum text-right"
                       style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }} />
                   ) : (
                     <input key="amt" type="number" min={0} step="0.01" inputMode="decimal"
                       value={discountFlatPaise ? discountFlatPaise / 100 : ''} onChange={(e) => setDiscountFlatPaise(clampFlat(e.target.value))}
                       placeholder="0" aria-label="Discount amount in rupees"
-                      className="w-full pl-6 pr-2.5 py-1.5 rounded-[9px] border text-[13.5px] outline-none tnum text-right"
+                      className="w-full pl-6 pr-2.5 py-1 rounded-[8px] border text-[13px] outline-none tnum text-right"
                       style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }} />
                   )}
                 </div>
                 {/* %/₹ unit selector */}
-                <div className="flex rounded-[9px] p-[2px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}>
+                <div className="flex rounded-[8px] p-[2px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}>
                   {(['pct', 'amt'] as const).map((m) => (
                     <button key={m} onClick={() => pickMode(m)} aria-pressed={discMode === m} aria-label={m === 'pct' ? 'Discount by percent' : 'Discount by amount'}
-                      className="w-7 py-1 rounded-[6px] text-xs font-extrabold transition"
+                      className="w-6 py-0.5 rounded-[5px] text-[11px] font-extrabold transition"
                       style={discMode === m ? { background: 'var(--turmeric)', color: '#2a1607' } : { color: 'var(--ink-3)' }}>
                       {m === 'pct' ? '%' : '₹'}
                     </button>
@@ -2404,7 +2899,7 @@ function CartBody({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
