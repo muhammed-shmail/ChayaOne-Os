@@ -30,22 +30,35 @@ import { generateQrDataUrl } from '@/lib/print/qr';
 import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
 import { hasRole, hasPermission, canAccess, canSettle } from '@/lib/rbac';
 
-/** Authentic SVGs tailored for cafe items */
-function ChaiIcon({ size = 18, className = '', ...props }: any) {
+/** Bespoke Vector SVGs tailored for Cafe & Beverage domains */
+export function ChaiCupIcon({ size = 20, className = '', ...props }: any) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-      {...props}
-    >
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M4 9h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V9z" />
+      <path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16" />
+      <path d="M2 19h16" />
+      <path d="M7 3.5c0 1.5 1 2 1 3" />
+      <path d="M11 2.5c0 2 1 2.5 1 4" />
+    </svg>
+  );
+}
+export const ChaiIcon = ChaiCupIcon;
+
+export function BlackTeaCupIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M4 10h11a3.5 3.5 0 0 1 3.5 3.5v.5a4 4 0 0 1-4 4H7.5A3.5 3.5 0 0 1 4 14.5V10z" />
+      <path d="M18.5 11.5a2 2 0 0 1 2 2v0a2 2 0 0 1-2 2" />
+      <path d="M2 19h17" />
+      <path d="M8 5c1-1 3-1 3.5 1s-1 3-3.5 1z" />
+      <path d="M8 7c1 1 2.5 1.5 3.5 1" />
+    </svg>
+  );
+}
+
+export function CoffeeCupIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
       <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
       <path d="M3 8h14v7a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8z" />
       <path d="M6 2v3" />
@@ -56,43 +69,140 @@ function ChaiIcon({ size = 18, className = '', ...props }: any) {
   );
 }
 
-function JuiceGlassIcon({ size = 18, className = '', ...props }: any) {
+export function JuiceGlassIcon({ size = 20, className = '', ...props }: any) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-      {...props}
-    >
-      <path d="M6 3h12l-1.8 16.2a2 2 0 0 1-2 1.8H9.8a2 2 0 0 1-2-1.8L6 3z" />
-      <path d="M7 9h10" />
-      <path d="M15 1l-3 8" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 4h12l-1.6 15.5a2 2 0 0 1-2 1.5H9.6a2 2 0 0 1-2-1.5L6 4z" />
+      <path d="M6.6 9.5h10.8" />
+      <path d="M15 1.5l-3.5 8" />
+      <circle cx="10" cy="14" r="1" fill="currentColor" />
+      <circle cx="13.5" cy="16.5" r="1" fill="currentColor" />
     </svg>
   );
 }
 
-function MomoIcon({ size = 18, className = '', ...props }: any) {
+export function SodaGlassIcon({ size = 20, className = '', ...props }: any) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-      {...props}
-    >
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 5h12l-1.5 14.5a2 2 0 0 1-2 1.5H9.5a2 2 0 0 1-2-1.5L6 5z" />
+      <path d="M6.5 9h11" />
+      <path d="M16 2l-3.5 7" />
+      <circle cx="9.5" cy="13" r="1" />
+      <circle cx="14" cy="14.5" r="1.2" />
+      <circle cx="11" cy="17" r="1" />
+    </svg>
+  );
+}
+
+export function LimeGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 7h12l-1.6 13.5a2 2 0 0 1-2 1.5H9.6a2 2 0 0 1-2-1.5L6 7z" />
+      <path d="M6.8 11.5h10.4" />
+      <circle cx="8" cy="6" r="4" />
+      <path d="M8 2v8" />
+      <path d="M4 6h8" />
+    </svg>
+  );
+}
+
+export function MojitoGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M7 6h10l-1.2 14.5a2 2 0 0 1-2 1.5H10.2a2 2 0 0 1-2-1.5L7 6z" />
+      <path d="M7.5 11h9" />
+      <path d="M16 2.5l-4 8.5" />
+      <path d="M10 3c-1.5 0-3 1.5-3 3s1.5 2 3 2c0-2.5 1-4 0-5z" />
+    </svg>
+  );
+}
+
+export function ShakeGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6.5 8h11c-.5 4-2 6-2 9h-7c0-3-1.5-5-2-9z" />
+      <path d="M10 17v3h4v-3" />
+      <path d="M8 20h8" />
+      <path d="M7 8c0-2.5 2-4.5 5-4.5s5 2 5 4.5" />
+      <path d="M14 1l-1.5 3.5" />
+    </svg>
+  );
+}
+
+export function LassiGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M5.5 5h13l-1.8 14.5a2 2 0 0 1-2 1.5H9.3a2 2 0 0 1-2-1.5L5.5 5z" />
+      <path d="M5 5c1-1 3-1.5 7-1.5s6 .5 7 1.5" />
+      <path d="M6.5 9.5h11" />
+      <path d="M8.5 13.5h7" />
+      <circle cx="12" cy="17" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function SundaeGlassIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M4 11h16a8 8 0 0 1-8 8 8 8 0 0 1-8-8z" />
+      <path d="M12 19v3" />
+      <path d="M8 22h8" />
+      <path d="M6 11c0-2.5 2-4 4-4s4 1.5 4 4" />
+      <path d="M12 7c0-2 1.5-3.5 3.5-3.5S19 5 19 7" />
+      <circle cx="12" cy="4" r="1.5" />
+    </svg>
+  );
+}
+
+export function ChocoDrinkIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M17 9h1.5a3.5 3.5 0 0 1 0 7H17" />
+      <path d="M3 9h14v7a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9z" />
+      <path d="M3 9c1.5 1.5 3 0 5 1.5s3.5 0 5 1.5 2.5 0 4-1" />
+      <path d="M7 4v2" />
+      <path d="M11 3v3" />
+      <path d="M2 20h16" />
+    </svg>
+  );
+}
+
+export function DryFruitDrinkIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 6h12l-1.5 13.5a2 2 0 0 1-2 1.5H9.5a2 2 0 0 1-2-1.5L6 6z" />
+      <path d="M6.5 10.5h11" />
+      <path d="M10 14c0-1.5 1-2.5 2-2.5s2 1 2 2.5c0 1.8-1 3-2 3s-2-1.2-2-3z" />
+      <path d="M12 11.5v5" />
+    </svg>
+  );
+}
+
+export function TenderSpecialIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M12 4c-5.5 0-9 4-9 9.5 0 4.5 3.5 7.5 9 7.5s9-3 9-7.5C21 8 17.5 4 12 4z" />
+      <path d="M7.5 8c2.5-1.5 6.5-1.5 9 0" />
+      <path d="M15 1.5l-2.5 6" />
+    </svg>
+  );
+}
+
+export function KulukiSharbatIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M6 5h12l-1.5 14.5a2 2 0 0 1-2 1.5H9.5a2 2 0 0 1-2-1.5L6 5z" />
+      <path d="M6.5 10h11" />
+      <path d="M11 13c1.5 0 2.5 1.5 2 3.5-.3 1-1.2 1.5-1.5 2" />
+      <circle cx="15" cy="13.5" r="1" />
+      <circle cx="9.5" cy="16.5" r="0.9" />
+    </svg>
+  );
+}
+
+export function MomoIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
       <path d="M4 14c0 4.5 3.5 6 8 6s8-1.5 8-6c0-4-3.5-7-8-7s-8 3-8 7z" />
       <path d="M12 7c-2 2-3 4-3 7" />
       <path d="M12 7c2 2 3 4 3 7" />
@@ -102,26 +212,91 @@ function MomoIcon({ size = 18, className = '', ...props }: any) {
   );
 }
 
+export function BurgerIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M4 11h16a8 8 0 0 0-16 0z" />
+      <path d="M3 14h18" />
+      <path d="M5 18h14a2 2 0 0 1 2 2v0a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v0a2 2 0 0 1 2-2z" />
+      <path d="M4 14c1 1.5 2.5 1.5 4 0s2.5-1.5 4 0 2.5 1.5 4 0 2.5-1.5 4 0" />
+      <circle cx="8" cy="7" r=".7" fill="currentColor" />
+      <circle cx="12" cy="6" r=".7" fill="currentColor" />
+      <circle cx="16" cy="7" r=".7" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function ShawarmaIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M7 19l11-11a3 3 0 0 0-4.2-4.2L2.8 14.8a3 3 0 0 0 4.2 4.2z" />
+      <path d="M6 16l4-4" />
+      <path d="M9 13l4-4" />
+      <path d="M14 8l3-3" />
+      <path d="M16.5 4.5c1 1 1 2.5 0 3.5" />
+    </svg>
+  );
+}
+
+export function PastaIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M2 13h20a9 9 0 0 1-9 8h-2a9 9 0 0 1-9-8z" />
+      <path d="M5 13c1-3 3-5 7-5s6 2 7 5" />
+      <path d="M8 10c1-2 2-3 4-3s3 1 4 3" />
+      <line x1="1" y1="21" x2="23" y2="21" />
+    </svg>
+  );
+}
+
+export function StartersIcon({ size = 20, className = '', ...props }: any) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true" {...props}>
+      <path d="M12 4L3 17a2 2 0 0 0 1.7 3h14.6a2 2 0 0 0 1.7-3L12 4z" />
+      <path d="M9 16c1.5-1 4.5-1 6 0" />
+      <path d="M12 9v3" />
+    </svg>
+  );
+}
+
 /** Category → Dynamic Icon resolver matching cafe domains */
 export function getCategoryIcon(catName: string): React.ComponentType<any> {
   const n = (catName || '').toLowerCase().trim();
+
+  // 1. Chaya & Teas
+  if (n === 'chaya' || n.includes('chaya') || n === 'chai') return ChaiCupIcon;
+  if (n.includes('black tea') || n.includes('sulaimani') || n.includes('green tea') || n.includes('herbal tea') || n.includes('lemon tea')) return BlackTeaCupIcon;
+  if (n.includes('tea')) return BlackTeaCupIcon;
+
+  // 2. Coffee
+  if (n.includes('coffee') || n.includes('espresso') || n.includes('cappuccino') || n.includes('latte') || n.includes('kaapi')) return CoffeeCupIcon;
+
+  // 3. Juices & Coolers
+  if (n.includes('fresh juice') || n.includes('healthy juice') || n.includes('healthy juices') || n === 'juice' || n.endsWith('juice') || n.endsWith('juices')) return JuiceGlassIcon;
+  if (n.includes('kuluki') || n.includes('sharbat')) return KulukiSharbatIcon;
+  if (n.includes('soda')) return SodaGlassIcon;
+  if (n.includes('lime') || n.includes('lemon')) return LimeGlassIcon;
+  if (n.includes('mojito') || n.includes('mocktail') || n.includes('cooler')) return MojitoGlassIcon;
+  if (n.includes('fruit shake') || n.includes('shake') || n.includes('smoothie')) return ShakeGlassIcon;
+  if (n.includes('lassi')) return LassiGlassIcon;
+  if (n.includes('tender')) return TenderSpecialIcon;
+  if (n.includes('chocolate') || n.includes('choco')) return ChocoDrinkIcon;
+  if (n.includes('dry fruit') || n.includes('nut')) return DryFruitDrinkIcon;
+  if (n.includes('malba') || n.includes('sundae') || n.includes('falooda') || n.includes('ice cream')) return SundaeGlassIcon;
+
+  // 4. Food, Starters & Snacks
   if (n.includes('momo') || n.includes('dumpling')) return MomoIcon;
-  if (n.includes('lime') || n.includes('lemon')) return Citrus;
-  if (n.includes('fresh juice') || n.includes('healthy juice') || n.includes('juice')) return JuiceGlassIcon;
-  if (n.includes('mojito') || n.includes('mocktail') || n.includes('cooler') || n.includes('soda')) return CupSoda;
-  if (n.includes('black tea') || n.includes('green tea') || n.includes('sulaimani') || n.includes('herbal')) return Leaf;
-  if (n.includes('chaya') || n.includes('chai') || n.includes('tea')) return ChaiIcon;
-  if (n.includes('coffee')) return Coffee;
-  if (n.includes('malba') || n.includes('falooda') || n.includes('sundae') || n.includes('ice cream')) return IceCream;
-  if (n.includes('chocolate') || n.includes('choco')) return Milk;
-  if (n.includes('dry fruit') || n.includes('nut')) return Bean;
-  if (n.includes('bakery') || n.includes('bread') || n.includes('croissant') || n.includes('puff')) return Croissant;
-  if (n.includes('dessert') || n.includes('cake') || n.includes('sweet') || n.includes('pastry')) return Cake;
-  if (n.includes('sandwich') || n.includes('toast') || n.includes('burger')) return Sandwich;
+  if (n.includes('shawarma') || n.includes('arabic')) return ShawarmaIcon;
+  if (n.includes('burger')) return BurgerIcon;
+  if (n.includes('pasta') || n.includes('noodle') || n.includes('maggi') || n.includes('spaghetti')) return PastaIcon;
+  if (n.includes('starter') || n.includes('chat') || n.includes('eat') || n.includes('snack') || n.includes('samosa') || n.includes('finger food')) return StartersIcon;
+  if (n.includes('sandwich') || n.includes('toast')) return Sandwich;
   if (n.includes('pizza')) return Pizza;
-  if (n.includes('snack') || n.includes('starter') || n.includes('fast food')) return Utensils;
-  if (n.includes('soup') || n.includes('meal') || n.includes('all-day') || n.includes('food')) return UtensilsCrossed;
-  return Coffee;
+  if (n.includes('bakery') || n.includes('bread') || n.includes('puff') || n.includes('croissant')) return Croissant;
+  if (n.includes('dessert') || n.includes('cake') || n.includes('pastry') || n.includes('sweet')) return Cake;
+  if (n.includes('meal') || n.includes('rice') || n.includes('biryani') || n.includes('soup') || n.includes('food')) return UtensilsCrossed;
+
+  return CoffeeCupIcon;
 }
 
 const PAY_ICON: Record<'cash' | 'upi' | 'card', LucideIcon> = { cash: Banknote, upi: Smartphone, card: CreditCard };
@@ -170,65 +345,37 @@ type Line = {
   station: MenuItemDto['station'];
   qty: number;
   notes?: string;
+  catName?: string;
 };
 
 /** an order this POS has fired, tracked live as the kitchen works it */
 type LiveTicket = { id: string; number: number; where: string; status: string; placedAt: number };
 
-export function getItemEmoji(catName: string, itemName: string): string {
-  const item = (itemName || '').toLowerCase();
-  const cat = (catName || '').toLowerCase();
+export function getItemEmoji(catName: string, _itemName?: string): string {
+  const cat = (catName || '').toLowerCase().trim();
 
-  // 1. Specific item keywords
-  if (item.includes('coffee') || item.includes('espresso') || item.includes('cappuccino') || item.includes('latte')) return '☕';
-  if (item.includes('cold coffee') || item.includes('frappe')) return '🧋';
-  if (item.includes('boost') || item.includes('horlicks') || item.includes('bournvita') || item.includes('badam')) return '🥛';
-  if (item.includes('black tea') || item.includes('sulaimani') || item.includes('green tea') || item.includes('lemon tea')) return '🫖';
-  if (item.includes('chaya') || item.includes('chai') || item.includes('tea') || item.includes('kadak')) return '☕';
-
-  if (item.includes('orange') || item.includes('mosambi') || item.includes('santura')) return '🍊';
-  if (item.includes('apple')) return '🍎';
-  if (item.includes('mango')) return '🥭';
-  if (item.includes('watermelon')) return '🍉';
-  if (item.includes('pineapple')) return '🍍';
-  if (item.includes('grape')) return '🍇';
-  if (item.includes('banana')) return '🍌';
-  if (item.includes('pomegranate') || item.includes('anaar')) return '🫐';
-  if (item.includes('strawberry')) return '🍓';
-  if (item.includes('papaya')) return '🍈';
-  if (item.includes('avocado') || item.includes('butter fruit')) return '🥑';
-  if (item.includes('lime') || item.includes('lemon')) return '🍋';
-  if (item.includes('mint')) return '🌿';
-  if (item.includes('ginger')) return '🫚';
-
-  if (item.includes('mojito')) return '🍹';
-  if (item.includes('chocolate') || item.includes('choco') || item.includes('oreo') || item.includes('kitkat')) return '🍫';
-  if (item.includes('momo') || item.includes('dumpling')) return '🥟';
-  if (item.includes('malba') || item.includes('falooda') || item.includes('sundae') || item.includes('ice cream')) return '🍨';
-  if (item.includes('dry fruit') || item.includes('kaju') || item.includes('almond') || item.includes('pista') || item.includes('cashew') || item.includes('anjeer')) return '🥜';
-  if (item.includes('sandwich') || item.includes('toast')) return '🥪';
-  if (item.includes('burger')) return '🍔';
-  if (item.includes('pizza')) return '🍕';
-  if (item.includes('cake') || item.includes('pastry') || item.includes('brownie')) return '🍰';
-  if (item.includes('croissant') || item.includes('puff') || item.includes('cookie') || item.includes('bun') || item.includes('samosa')) return '🥐';
-  if (item.includes('noodle') || item.includes('maggi') || item.includes('pasta')) return '🍜';
-  if (item.includes('rice') || item.includes('biryani')) return '🍚';
-
-  // 2. Category-based fallback
-  if (cat.includes('black tea') || cat.includes('green tea') || cat.includes('sulaimani')) return '🫖';
+  // Strictly category-based unified emoji fallback
+  if (cat.includes('black tea') || cat.includes('green tea') || cat.includes('sulaimani') || cat.includes('herbal')) return '🫖';
   if (cat.includes('chaya') || cat.includes('chai') || cat.includes('tea')) return '☕';
   if (cat.includes('coffee')) return '☕';
   if (cat.includes('fresh juice') || cat.includes('healthy juice') || cat.includes('juice')) return '🧃';
+  if (cat.includes('kuluki') || cat.includes('soda')) return '🥤';
   if (cat.includes('lime') || cat.includes('lemon')) return '🍋';
   if (cat.includes('mojito') || cat.includes('mocktail') || cat.includes('cooler')) return '🍹';
-  if (cat.includes('malba') || cat.includes('falooda') || cat.includes('dessert')) return '🍨';
-  if (cat.includes('chocolate')) return '🍫';
-  if (cat.includes('dry fruit')) return '🥜';
-  if (cat.includes('momo')) return '🥟';
-  if (cat.includes('bakery')) return '🥐';
-  if (cat.includes('desserts') || cat.includes('sweet')) return '🍰';
-  if (cat.includes('snack')) return '🥪';
-  if (cat.includes('all-day') || cat.includes('food') || cat.includes('meal')) return '🍳';
+  if (cat.includes('fruit shake') || cat.includes('shake') || cat.includes('lassi')) return '🥛';
+  if (cat.includes('malba') || cat.includes('falooda') || cat.includes('sundae') || cat.includes('ice cream')) return '🍨';
+  if (cat.includes('chocolate') || cat.includes('choco')) return '🍫';
+  if (cat.includes('dry fruit') || cat.includes('nut')) return '🥜';
+  if (cat.includes('momo') || cat.includes('dumpling')) return '🥟';
+  if (cat.includes('burger')) return '🍔';
+  if (cat.includes('shawarma') || cat.includes('arabic')) return '🌯';
+  if (cat.includes('pasta') || cat.includes('noodle')) return '🍝';
+  if (cat.includes('starter') || cat.includes('chat') || cat.includes('eat') || cat.includes('snack') || cat.includes('samosa')) return '🥟';
+  if (cat.includes('sandwich') || cat.includes('toast')) return '🥪';
+  if (cat.includes('pizza')) return '🍕';
+  if (cat.includes('bakery') || cat.includes('bread') || cat.includes('puff') || cat.includes('croissant')) return '🥐';
+  if (cat.includes('dessert') || cat.includes('cake') || cat.includes('pastry') || cat.includes('sweet')) return '🍰';
+  if (cat.includes('meal') || cat.includes('food') || cat.includes('rice') || cat.includes('biryani')) return '🍛';
 
   return '☕';
 }
@@ -1271,10 +1418,11 @@ ${rows}
         return;
       }
     }
+    const catName = (item as any).catName || menu.find((c) => c.items.some((it) => it.id === item.id))?.name || '';
     setCart((c) => {
       const ex = c.find((l) => l.itemId === item.id);
       if (ex) return c.map((l) => (l.itemId === item.id ? { ...l, qty: l.qty + 1 } : l));
-      return [...c, { key: item.id, itemId: item.id, name: item.name, pricePaise: item.pricePaise, gstRate: item.gstRate, station: item.station, qty: 1 }];
+      return [...c, { key: item.id, itemId: item.id, name: item.name, pricePaise: item.pricePaise, gstRate: item.gstRate, station: item.station, qty: 1, catName }];
     });
   }
   function bump(key: string, d: number) {
@@ -1602,34 +1750,59 @@ ${rows}
                 <Search size={34} className="mx-auto opacity-40" aria-hidden />
                 <p>{q ? `No items match “${search.trim()}”.` : 'No items in this category.'}</p>
               </div>
-            ) : shownItems.map((m) => (
-              <button key={m.id} onClick={() => add(m)}
-                className="relative text-left p-3.5 rounded-[14px] border flex flex-col gap-2 transition hover:-translate-y-0.5"
-                style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', boxShadow: 'var(--sh-1)' }}>
-                {m.tags.includes('bestseller') && <span className="absolute top-0 left-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--turmeric-d)', borderRadius: '14px 0 14px 0' }}>★ Bestseller</span>}
-                {(() => {
-                  const limitTag = m.tags.find((t) => t.startsWith('limit:'));
-                  const limitVal = limitTag ? parseInt(limitTag.split(':')[1] ?? '0') : null;
-                  if (limitVal !== null) {
-                    return (
-                      <span className="absolute top-0 right-0 text-[9.5px] font-extrabold text-white px-2 py-0.5" style={{ background: 'var(--clay)', borderRadius: '0 14px 0 14px' }}>
-                        {limitVal} left
-                      </span>
-                    );
-                  }
-                  return null;
-                })()}
-                <div className="text-3xl" aria-hidden>{getItemEmoji(m.catName, m.name)}</div>
-                <div className="font-bold text-sm leading-tight">{m.name}</div>
-                {q && <div className="text-[10.5px] font-bold" style={{ color: 'var(--ink-3)' }}>{m.catName}</div>}
-                <div className="flex items-center justify-between mt-auto">
-                  <span className="tnum text-sm" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(m.pricePaise)}</span>
-                  {isGstActive && (
-                    <span className="text-[10px] font-bold" style={{ color: 'var(--ink-3)' }}>GST {m.gstRate}%</span>
+            ) : shownItems.map((m) => {
+              const CatIcon = getCategoryIcon(m.catName);
+              const limitTag = m.tags.find((t) => t.startsWith('limit:'));
+              const limitVal = limitTag ? parseInt(limitTag.split(':')[1] ?? '0') : null;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => add(m)}
+                  className="group relative text-left p-3.5 rounded-[16px] border flex flex-col justify-between min-h-[154px] transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md cursor-pointer select-none"
+                  style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', boxShadow: 'var(--sh-1)' }}
+                >
+                  {m.tags.includes('bestseller') && (
+                    <span
+                      className="absolute top-0 left-0 text-[9.5px] font-extrabold text-white px-2 py-0.5 z-10"
+                      style={{ background: 'var(--turmeric-d)', borderRadius: '16px 0 12px 0' }}
+                    >
+                      ★ Bestseller
+                    </span>
                   )}
-                </div>
-              </button>
-            ))}
+                  {limitVal !== null && (
+                    <span
+                      className="absolute top-0 right-0 text-[9.5px] font-extrabold text-white px-2 py-0.5 z-10"
+                      style={{ background: 'var(--clay)', borderRadius: '0 16px 0 12px' }}
+                    >
+                      {limitVal} left
+                    </span>
+                  )}
+                  <div className="flex flex-col gap-2.5">
+                    <div
+                      className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-150 group-hover:scale-105"
+                      style={{
+                        background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-3))',
+                        border: '1px solid color-mix(in srgb, var(--turmeric) 22%, var(--line))',
+                        color: 'var(--turmeric-d, #b45309)',
+                      }}
+                      aria-hidden="true"
+                    >
+                      <CatIcon size={24} className="stroke-[1.85]" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-sm leading-snug line-clamp-2 text-[var(--ink)]">{m.name}</div>
+                      {q && <div className="text-[10.5px] font-semibold mt-0.5 text-[var(--ink-3)]">{m.catName}</div>}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-auto pt-2 border-t" style={{ borderColor: 'color-mix(in srgb, var(--line) 50%, transparent)' }}>
+                    <span className="tnum font-bold text-sm" style={{ fontFamily: 'var(--font-mono)', color: 'var(--ink)' }}>{formatINR(m.pricePaise)}</span>
+                    {isGstActive && (
+                      <span className="text-[10px] font-bold text-[var(--ink-3)]">GST {m.gstRate}%</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
 
@@ -2434,9 +2607,24 @@ function CartBody({
             <Coffee size={28} className="opacity-40" aria-hidden />
             <p className="text-xs font-semibold">Tap items to build ticket</p>
           </div>
-        ) : cart.map((l) => (
+        ) : cart.map((l) => {
+          const CatIcon = l.catName ? getCategoryIcon(l.catName) : null;
+          return (
           <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+            <div className={`grid ${CatIcon ? 'grid-cols-[auto_1fr_auto_auto]' : 'grid-cols-[1fr_auto_auto]'} gap-2.5 items-center`}>
+              {CatIcon && (
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                  style={{
+                    background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))',
+                    border: '1px solid color-mix(in srgb, var(--turmeric) 20%, var(--line))',
+                    color: 'var(--turmeric-d, #b45309)',
+                  }}
+                  aria-hidden="true"
+                >
+                  <CatIcon size={16} className="stroke-[1.85]" />
+                </div>
+              )}
               <div className="min-w-0 pr-1">
                 <div className="font-bold text-[13.5px] leading-tight truncate">{l.name}</div>
                 {l.notes && editingNoteKey !== l.key && (
@@ -2518,7 +2706,8 @@ function CartBody({
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {cart.length > 0 && (
