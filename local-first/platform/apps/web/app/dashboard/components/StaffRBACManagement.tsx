@@ -5,6 +5,7 @@ import { formatINR } from '@cafeos/core';
 import type { StaffRole } from '@cafeos/db';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, ALL_ROLES, PERMISSION_MODULES, PRESETS, resolvePrimaryRole, type PermissionItem } from '@/lib/rbac';
 import { DEFAULT_WAITER_STATIONS, type WaiterStation, formatStationBadge } from '@/lib/waiter-stations';
+import StaffProfileView from './StaffProfileView';
 
 interface CustomSelectOption {
   value: string;
@@ -101,7 +102,8 @@ interface AuditLogEntry {
 const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [];
 
 export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: () => void }) {
-  const [activeSubTab, setActiveSubTab] = useState<'directory' | 'permissions' | 'audit'>('directory');
+  const [activeSubTab, setActiveSubTab] = useState<'directory' | 'profile' | 'permissions' | 'audit'>('directory');
+  const [profileInitialTab, setProfileInitialTab] = useState<'overview' | 'attendance' | 'shifts' | 'permissions' | 'security' | 'audit'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [branchFilter, setBranchFilter] = useState('all');
@@ -109,6 +111,13 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
   
   // Selected staff user for detail views
   const [selectedStaff, setSelectedStaff] = useState<any | null>(null);
+
+  // Helper to open staff profile with a specific tab
+  const openStaffProfile = (staffMember: any, tab: 'overview' | 'attendance' | 'shifts' | 'permissions' | 'security' | 'audit' = 'overview') => {
+    setSelectedStaff(staffMember);
+    setProfileInitialTab(tab);
+    setActiveSubTab('profile');
+  };
   
   // Permissions & configurations state for editing
   const [assignedRoles, setAssignedRoles] = useState<string[]>([]);
@@ -722,6 +731,11 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
         })
       });
       if (res.ok) {
+        const updated = { ...m, active: nextActive };
+        setMembersList(prev => prev.map(item => item.id === m.id ? updated : item));
+        if (selectedStaff?.id === m.id) {
+          setSelectedStaff(updated);
+        }
         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('staff:changed'));
         refresh();
       }
@@ -773,7 +787,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
       <div className="col-span-1 md:col-span-2 lg:col-span-4 flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-line pb-2 gap-4 mt-2">
         <div className="flex gap-2 overflow-x-auto w-full sm:w-auto">
           <button
-            onClick={() => { setActiveSubTab('directory'); setSelectedStaff(null); }}
+            onClick={() => setActiveSubTab('directory')}
             className={`px-4 py-2 border-b-2 font-medium text-sm transition-all whitespace-nowrap capitalize ${
               activeSubTab === 'directory'
                 ? 'border-turmeric text-turmeric font-semibold'
@@ -784,6 +798,21 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
           </button>
           {selectedStaff && (
             <button
+              onClick={() => setActiveSubTab('profile')}
+              className={`px-4 py-2 border-b-2 font-medium text-sm transition-all whitespace-nowrap capitalize flex items-center gap-1.5 ${
+                activeSubTab === 'profile'
+                  ? 'border-turmeric text-turmeric font-semibold'
+                  : 'border-transparent text-ink-3 hover:text-ink'
+              }`}
+            >
+              <span>Staff Profile</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-turmeric-l/20 text-turmeric font-bold">
+                {selectedStaff.name}
+              </span>
+            </button>
+          )}
+          {selectedStaff && (
+            <button
               onClick={() => setActiveSubTab('permissions')}
               className={`px-4 py-2 border-b-2 font-medium text-sm transition-all whitespace-nowrap capitalize ${
                 activeSubTab === 'permissions'
@@ -791,7 +820,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                   : 'border-transparent text-ink-3 hover:text-ink'
               }`}
             >
-              Configure permissions ({selectedStaff.name})
+              Configure Permissions ({selectedStaff.name})
             </button>
           )}
           <button
@@ -821,6 +850,23 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
 
       {/* Main Tab Rendering */}
       <div className="col-span-1 md:col-span-2 lg:col-span-4 mt-2">
+        {/* STAFF PROFILE VIEW */}
+        {activeSubTab === 'profile' && selectedStaff && (
+          <StaffProfileView
+            staff={selectedStaff}
+            onBack={() => setActiveSubTab('directory')}
+            onUpdateStaff={(updatedStaff) => {
+              setSelectedStaff(updatedStaff);
+              setMembersList(prev => prev.map(m => m.id === updatedStaff.id ? { ...m, ...updatedStaff } : m));
+            }}
+            onToggleStatus={handleToggleStatus}
+            initialTab={profileInitialTab}
+            waiterStations={waiterStations}
+            customRoles={customRoles}
+            refresh={refresh}
+          />
+        )}
+
         {/* DIRECTORY VIEW */}
         {activeSubTab === 'directory' && (
           <div className="space-y-4">
@@ -898,15 +944,20 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                         const shiftText = m.currentShift || (m.active ? 'Active Shift' : 'Off Shift');
 
                         return (
-                          <tr key={m.id} className="hover:bg-line/10 transition-colors">
+                          <tr
+                            key={m.id}
+                            onClick={() => openStaffProfile(m, 'overview')}
+                            className="hover:bg-turmeric/5 cursor-pointer transition-colors group"
+                            title={`Click to open ${m.name}'s Staff Profile`}
+                          >
                             {/* Employee profile column */}
                             <td className="p-4" data-label="Employee">
                               <div className="flex items-center gap-3">
-                                <span className="grid place-items-center w-8 h-8 rounded-full text-xs font-bold font-mono shrink-0" style={{ background: 'var(--turmeric-l)', color: '#2A1607' }}>
+                                <span className="grid place-items-center w-8 h-8 rounded-full text-xs font-bold font-mono shrink-0 group-hover:scale-105 transition-transform" style={{ background: 'var(--turmeric-l)', color: '#2A1607' }}>
                                   {m.name.slice(0, 2).toUpperCase()}
                                 </span>
                                 <div className="text-left">
-                                  <span className="font-semibold text-ink block leading-snug">{m.name}</span>
+                                  <span className="font-semibold text-ink block leading-snug group-hover:text-turmeric transition-colors">{m.name}</span>
                                   <span className="text-[10px] text-ink-3 font-mono block">Code: {m.employeeCode || '—'} · {m.phone || 'No Phone'}</span>
                                 </div>
                               </div>
@@ -959,16 +1010,26 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                             </td>
 
                             {/* Actions column */}
-                            <td className="p-4 text-right" data-label="Actions">
+                            <td className="p-4 text-right" data-label="Actions" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
-                                  onClick={() => selectStaffMember(m)}
+                                  type="button"
+                                  onClick={() => openStaffProfile(m, 'overview')}
+                                  className="px-2 py-1 rounded bg-turmeric/10 hover:bg-turmeric/20 text-xs font-semibold text-turmeric transition-all flex items-center gap-1"
+                                  title="Open Staff Profile & Attendance"
+                                >
+                                  👤 <span className="hidden sm:inline">Profile</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openStaffProfile(m, 'permissions')}
                                   className="px-2 py-1 rounded bg-paper-3 hover:bg-line text-xs font-semibold text-ink transition-all flex items-center gap-1"
                                   title="Configure RBAC Permissions"
                                 >
                                   🔑 <span className="hidden sm:inline">Permissions</span>
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => handleToggleStatus(m)}
                                   className={`px-2 py-1 rounded text-xs font-semibold transition-all ${
                                     m.active ? 'bg-red-950/20 hover:bg-red-950/40 text-red-500' : 'bg-green-950/20 hover:bg-green-950/40 text-green-500'
@@ -1132,7 +1193,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                       </div>
                     </div>
                     <p className="text-[10px] text-ink-3">
-                      Orders placed by this waiter will automatically print to this station's designated printer. Manage stations in Settings → Device Printers.
+                      Orders placed by this waiter will automatically print to this station&apos;s designated printer. Manage stations in Settings → Device Printers.
                     </p>
 
                     {showNewStationInput && (
@@ -1633,7 +1694,7 @@ export default function StaffRBACManagement({ d, refresh }: { d: any; refresh: (
                         </span>
                       </div>
                       <p className="text-[11px] text-ink-3 mt-0.5">
-                        Assign this waiter to a floor section. Orders taken by this waiter will automatically print to that station's printer. Manage stations in Settings → Device Printers.
+                        Assign this waiter to a floor section. Orders taken by this waiter will automatically print to that station&apos;s printer. Manage stations in Settings → Device Printers.
                       </p>
                     </div>
                   </div>

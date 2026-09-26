@@ -1228,7 +1228,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         boxShadow: '0 2px 8px color-mix(in srgb, var(--gold) 30%, transparent)',
                       }}
                     >
-                      View Today's Bills
+                      View Today&apos;s Bills
                     </button>
                   )}
                 </div>

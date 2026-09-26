@@ -18,6 +18,7 @@ import { DEVICE_TYPES, DEVICE_CONNECTIONS, type Device } from '@/lib/devices';
 import type { ReceiptConfig } from '@/lib/receipt';
 import { type KitchenWorkflowConfig, KITCHEN_WORKFLOW_DEFAULTS, AUTO_CLEAR_OPTIONS, DELAY_THRESHOLD_OPTIONS, SORT_OPTIONS, THEME_OPTIONS, FONT_SIZE_OPTIONS } from '@/lib/kitchenWorkflow';
 import { tableOrderUrl, tableQrImageUrl } from '@/lib/qr';
+import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
 import { FEATURED_LABELS, DEFAULT_GAME_KEYS, DEFAULT_PWA, type PwaConfig } from '@/lib/pwa';
 import type { OutletLocation } from '@/lib/geo';
 import { subscribeStaff } from '@/lib/realtime-client';
@@ -1447,7 +1448,9 @@ export default function DashboardClient({
     const jid = `dashboard-${title.replace(/\s+/g, '-')}-${Date.now()}`;
     console.log(`[PRINT] Dashboard printOrderDoc — Job: ${jid}`);
 
-    const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title><style>
+    const html = inner.trim().startsWith('<!DOCTYPE html>')
+      ? inner
+      : `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title><style>
   @page { size: 80mm auto; margin: 3mm 4mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { width: 72mm; font-family: 'Courier New', Courier, monospace; font-size: 11pt; line-height: 1.35; color: #000; background: #fff; }
@@ -1543,23 +1546,39 @@ export default function DashboardClient({
         body: JSON.stringify({ action: 'print_bill', tableId: o.tableId, orderId: o.id }),
       }).catch((err) => console.error('[PRINT] Dashboard free table failed:', err));
     }
-    const rows = o.items.map((i: any) => `<tr><td>${i.qty}× ${i.nameSnapshot}</td><td class="r">${formatINR(i.unitPricePaise * i.qty)}</td></tr>`).join('');
-    const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
-    printOrderDoc(`Bill #${o.number}`, `
-      ${receiptHeaderHtml()}
-      <div class="muted">Bill #${o.number} · ${o.table?.label ? 'Table ' + o.table.label : o.type} · ${new Date(o.placedAt).toLocaleString('en-IN')}</div>
-      <div class="line"></div><table>${rows}</table><div class="line"></div>
-      <table>
-        ${row('Subtotal', o.subtotalPaise)}
-        ${o.discountPaise > 0 ? row('Discount', -o.discountPaise) : ''}
-        ${o.cgstPaise > 0 ? row('CGST', o.cgstPaise) : ''}
-        ${o.sgstPaise > 0 ? row('SGST', o.sgstPaise) : ''}
-        ${o.igstPaise > 0 ? row('IGST', o.igstPaise) : ''}
-        ${o.serviceChargePaise > 0 ? row('Service charge', o.serviceChargePaise) : ''}
-        ${row('Round off', o.roundOffPaise)}
-        <tr class="tot"><td>Total</td><td class="r">${formatINR(o.totalPaise)}</td></tr>
-      </table>
-      <div class="line"></div><div class="muted">Status: ${o.status} · ${receiptFooterText()}</div>`);
+    const receiptData: ReceiptInputData = {
+      storeName: outlet.brand || outlet.name || 'CHAYA ONE',
+      logoUrl: logoUrl ?? outlet.receipt?.logoUrl ?? (outlet as any)?.settings?.logoUrl ?? null,
+      header: outlet.receipt?.header ?? null,
+      footer: outlet.receipt?.footer ?? null,
+      phone: (outlet as any).phone ?? outlet.receipt?.phone ?? null,
+      gstin: outlet.gstin ?? (outlet as any).settings?.gstin ?? null,
+      timezone: 'Asia/Kolkata',
+      orderNumber: o.number,
+      tableLabel: o.table?.label ?? null,
+      orderType: o.type,
+      placedAt: o.placedAt,
+      items: (o.items || []).map((i: any) => ({
+        name: i.nameSnapshot || i.name,
+        qty: i.qty,
+        unitPricePaise: i.unitPricePaise ?? 0,
+        totalPaise: (i.unitPricePaise ?? 0) * i.qty,
+      })),
+      subtotalPaise: o.subtotalPaise,
+      discountPaise: o.discountPaise,
+      cgstPaise: o.cgstPaise,
+      sgstPaise: o.sgstPaise,
+      igstPaise: o.igstPaise,
+      serviceChargePaise: o.serviceChargePaise,
+      roundOffPaise: o.roundOffPaise,
+      totalPaise: o.totalPaise,
+      paymentMethod: o.paymentMethod ?? null,
+      gstEnabled: Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled ?? (outlet as any)?.settings?.gst?.enabled),
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig ?? (outlet as any).settings?.upi ?? null,
+    };
+    const htmlBill = formatReceiptHtml(receiptData, '80mm', { autoPrint: false });
+    printOrderDoc(`Bill #${o.number}`, htmlBill);
   }
 
   function printOrderKOT(o: any) {
@@ -1620,24 +1639,36 @@ export default function DashboardClient({
     const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
     
     const randomNum = Math.floor(Math.random() * 9000) + 1000;
-    const dateStr = new Date().toLocaleString('en-IN');
-    const custLine = quickInvoiceCustName.trim() || quickInvoiceCustPhone.trim()
-      ? `<div class="muted">👤 ${quickInvoiceCustName} ${quickInvoiceCustPhone}</div>`
-      : '';
-
-    printOrderDoc(`Quick Bill #${randomNum}`, `
-      ${receiptHeaderHtml()}
-      <div class="muted">Quick Bill #${randomNum} · ${dateStr}</div>
-      ${custLine}
-      <div class="line"></div><table>${rows}</table><div class="line"></div>
-      <table>
-        ${row('Subtotal', totals.subtotalPaise)}
-        ${profile.gstEnabled && totals.cgstPaise > 0 ? row('CGST', totals.cgstPaise) : ''}
-        ${profile.gstEnabled && totals.sgstPaise > 0 ? row('SGST', totals.sgstPaise) : ''}
-        ${totals.roundOffPaise !== 0 ? row('Round off', totals.roundOffPaise) : ''}
-        <tr class="tot"><td>Total</td><td class="r">${formatINR(totals.totalPaise)}</td></tr>
-      </table>
-      <div class="line"></div><div class="muted">Status: PAID · ${receiptFooterText()}</div>`);
+    const receiptData: ReceiptInputData = {
+      storeName: outlet.brand || outlet.name || 'CHAYA ONE',
+      logoUrl: logoUrl ?? outlet.receipt?.logoUrl ?? (outlet as any)?.settings?.logoUrl ?? null,
+      header: outlet.receipt?.header ?? null,
+      footer: outlet.receipt?.footer ?? null,
+      phone: (outlet as any).phone ?? outlet.receipt?.phone ?? null,
+      gstin: outlet.gstin ?? (outlet as any).settings?.gstin ?? null,
+      timezone: 'Asia/Kolkata',
+      orderNumber: randomNum,
+      customerName: quickInvoiceCustName.trim() || null,
+      customerPhone: quickInvoiceCustPhone.trim() || null,
+      orderType: 'Takeaway',
+      placedAt: new Date(),
+      items: totals.lines.map((l: any) => ({
+        name: l.name || 'Item',
+        qty: l.qty,
+        unitPricePaise: l.pricePaise || 0,
+        totalPaise: (l.pricePaise || 0) * l.qty,
+      })),
+      subtotalPaise: totals.subtotalPaise,
+      cgstPaise: totals.cgstPaise,
+      sgstPaise: totals.sgstPaise,
+      roundOffPaise: totals.roundOffPaise,
+      totalPaise: totals.totalPaise,
+      gstEnabled: Boolean(profile.gstEnabled),
+      receiptConfig: outlet.receipt,
+      upiConfig: outlet.upiConfig ?? (outlet as any).settings?.upi ?? null,
+    };
+    const htmlBill = formatReceiptHtml(receiptData, '80mm', { autoPrint: false });
+    printOrderDoc(`Quick Bill #${randomNum}`, htmlBill);
   };
 
   const handlePrintQuickKOT = () => {

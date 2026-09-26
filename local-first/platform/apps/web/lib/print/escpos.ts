@@ -45,6 +45,7 @@ export interface KotPrintPayload {
 
 import {
   formatReceiptModel,
+  formatItemRowMono,
   alignLeftRight,
   alignCenter,
   type ReceiptInputData,
@@ -270,6 +271,7 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
       upiConfig: payload.upiConfig,
     },
     resolvedPaperWidth,
+    { useRsFallback: true },
   );
 
   const width = model.charsPerLine;
@@ -287,19 +289,15 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   }
   if (model.isCancelled) {
     add(COMMANDS.ALIGN_CENTER);
-    add(COMMANDS.DOUBLE_HEIGHT);
     add(COMMANDS.BOLD_ON);
     add('*** CANCELLED / VOID ***');
-    add(COMMANDS.NORMAL);
     add(COMMANDS.BOLD_OFF);
   }
 
-  // Header: Shop Name & Details
+  // Header: Shop Name & Details (standard thermal typography, never oversized)
   add(COMMANDS.ALIGN_CENTER);
-  add(COMMANDS.DOUBLE_HEIGHT);
   add(COMMANDS.BOLD_ON);
   add(model.storeName);
-  add(COMMANDS.NORMAL);
   add(COMMANDS.BOLD_OFF);
 
   if (model.addressText) {
@@ -319,15 +317,16 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   add(model.dateTimeRow);
   add(divider);
 
-  // Column Headers
-  const colHeaderRight = resolvedPaperWidth === '58mm' ? 'QTY AMOUNT' : 'QTY    AMOUNT';
-  add(alignLeftRight('ITEM', colHeaderRight, width));
+  // Column Headers (ITEM left, QTY center, AMOUNT right)
+  const colHeader = width === 32
+    ? 'ITEM'.padEnd(17, ' ') + ' ' + 'QTY '.padEnd(4, ' ') + 'AMOUNT'.padStart(10, ' ')
+    : 'ITEM'.padEnd(24, ' ') + ' ' + ' QTY '.padEnd(5, ' ') + 'AMOUNT'.padStart(12, ' ');
+  add(colHeader);
   add(divider);
 
   // Items
   for (const line of model.itemLines) {
-    const mainRow = alignLeftRight(line.name, `${line.qtyText} ${line.amountText}`, width);
-    add(mainRow);
+    add(formatItemRowMono(line.name, line.qty, line.amountText, width));
     for (const extra of line.extraLines) {
       add(extra);
     }
@@ -335,27 +334,29 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
 
   // Subtotal, Discounts, Taxes
   add(divider);
-  add(alignLeftRight('Subtotal', model.subtotalText, width));
-
-  for (const tax of model.taxBreakdown) {
-    add(alignLeftRight(tax.label, tax.amountText, width));
-  }
+  add(alignLeftRight('Subtotal:', model.subtotalText, width));
 
   if (model.discountText) {
-    add(alignLeftRight('Discount', model.discountText, width));
+    add(alignLeftRight('Discount:', model.discountText, width));
+  }
+
+  for (const tax of model.taxBreakdown) {
+    add(alignLeftRight(`${tax.label}:`, tax.amountText, width));
+  }
+
+  if (model.serviceChargeText) {
+    add(alignLeftRight('Service Charge:', model.serviceChargeText, width));
   }
 
   if (model.roundOffText) {
-    add(alignLeftRight('Round Off', model.roundOffText, width));
+    add(alignLeftRight('Round Off:', model.roundOffText, width));
   }
 
-  // Final Total (Emphasized bold / double height)
+  // Final Total (Emphasized bold, standard font size to maintain column alignment)
   add(divider);
   add(COMMANDS.ALIGN_LEFT);
   add(COMMANDS.BOLD_ON);
-  add(COMMANDS.DOUBLE_HEIGHT);
-  add(alignLeftRight('TOTAL', model.totalText, Math.floor(width / (resolvedPaperWidth === '58mm' ? 1 : 1))));
-  add(COMMANDS.NORMAL);
+  add(alignLeftRight('TOTAL:', model.totalText, width));
   add(COMMANDS.BOLD_OFF);
   add(divider);
 
@@ -393,8 +394,7 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   }
   add(model.brandingText);
 
-  // Feed & Cut
-  add(COMMANDS.LINE_FEED);
+  // Feed & Cut (compact feed, no excessive blank paper)
   add(COMMANDS.LINE_FEED);
   add(COMMANDS.LINE_FEED);
   add(COMMANDS.CASH_DRAWER);

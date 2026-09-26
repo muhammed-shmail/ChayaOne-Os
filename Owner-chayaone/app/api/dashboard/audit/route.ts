@@ -2,18 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { listAuditLogs, getAuditFilterOptions } from '@/lib/audit';
 
-import { canManageStaff, hasPermission } from '@/lib/rbac';
-
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * GET /api/dashboard/audit — audit trail for Settings → Audit Logs and Staff Profile → Audit Logs.
- *
- * Scoped to the session's outlet.
- * Global logs require owner or admin permissions.
- * Staff-specific logs (?staffId=...) require owner, manager, or staff:view permission.
- */
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -27,7 +18,7 @@ export async function GET(req: NextRequest) {
 
   if (staffId) {
     const isSelf = staffId === session.staffId;
-    if (!isSelf && session.role !== 'owner' && !canManageStaff(session) && !hasPermission(session, 'staff:view')) {
+    if (!isSelf && session.role !== 'owner' && session.role !== 'manager') {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
   } else {

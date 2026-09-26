@@ -13,6 +13,7 @@ import {
   CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
   ShoppingCart, ChevronUp, Menu, Search, Download, LogOut, type LucideIcon,
   ArrowLeftRight, ArrowRight, CircleAlert, FileText, Edit3,
+  Citrus, GlassWater, Leaf, Wine, Milk, Sparkles, Sandwich, Pizza, IceCream, Bean, Utensils,
 } from 'lucide-react';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import { ServerSyncCard } from '@/components/ServerSyncCard';
@@ -29,10 +30,100 @@ import { generateQrDataUrl } from '@/lib/print/qr';
 import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
 import { hasRole, hasPermission, canAccess, canSettle } from '@/lib/rbac';
 
-/** Category → SVG icon (replaces structural emoji; food glyph stays decorative). */
-const CAT_ICON: Record<string, LucideIcon> = {
-  Coffee, 'Chai & Tea': Soup, Coolers: CupSoda, 'All-Day': UtensilsCrossed, Bakery: Croissant, Desserts: Cake,
-};
+/** Authentic SVGs tailored for cafe items */
+function ChaiIcon({ size = 18, className = '', ...props }: any) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M17 8h1a4 4 0 1 1 0 8h-1" />
+      <path d="M3 8h14v7a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8z" />
+      <path d="M6 2v3" />
+      <path d="M10 2v3" />
+      <path d="M14 2v3" />
+      <line x1="2" y1="21" x2="18" y2="21" />
+    </svg>
+  );
+}
+
+function JuiceGlassIcon({ size = 18, className = '', ...props }: any) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M6 3h12l-1.8 16.2a2 2 0 0 1-2 1.8H9.8a2 2 0 0 1-2-1.8L6 3z" />
+      <path d="M7 9h10" />
+      <path d="M15 1l-3 8" />
+    </svg>
+  );
+}
+
+function MomoIcon({ size = 18, className = '', ...props }: any) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+      {...props}
+    >
+      <path d="M4 14c0 4.5 3.5 6 8 6s8-1.5 8-6c0-4-3.5-7-8-7s-8 3-8 7z" />
+      <path d="M12 7c-2 2-3 4-3 7" />
+      <path d="M12 7c2 2 3 4 3 7" />
+      <path d="M12 7v7" />
+      <path d="M12 3v2" />
+    </svg>
+  );
+}
+
+/** Category → Dynamic Icon resolver matching cafe domains */
+export function getCategoryIcon(catName: string): React.ComponentType<any> {
+  const n = (catName || '').toLowerCase().trim();
+  if (n.includes('momo') || n.includes('dumpling')) return MomoIcon;
+  if (n.includes('lime') || n.includes('lemon')) return Citrus;
+  if (n.includes('fresh juice') || n.includes('healthy juice') || n.includes('juice')) return JuiceGlassIcon;
+  if (n.includes('mojito') || n.includes('mocktail') || n.includes('cooler') || n.includes('soda')) return CupSoda;
+  if (n.includes('black tea') || n.includes('green tea') || n.includes('sulaimani') || n.includes('herbal')) return Leaf;
+  if (n.includes('chaya') || n.includes('chai') || n.includes('tea')) return ChaiIcon;
+  if (n.includes('coffee')) return Coffee;
+  if (n.includes('malba') || n.includes('falooda') || n.includes('sundae') || n.includes('ice cream')) return IceCream;
+  if (n.includes('chocolate') || n.includes('choco')) return Milk;
+  if (n.includes('dry fruit') || n.includes('nut')) return Bean;
+  if (n.includes('bakery') || n.includes('bread') || n.includes('croissant') || n.includes('puff')) return Croissant;
+  if (n.includes('dessert') || n.includes('cake') || n.includes('sweet') || n.includes('pastry')) return Cake;
+  if (n.includes('sandwich') || n.includes('toast') || n.includes('burger')) return Sandwich;
+  if (n.includes('pizza')) return Pizza;
+  if (n.includes('snack') || n.includes('starter') || n.includes('fast food')) return Utensils;
+  if (n.includes('soup') || n.includes('meal') || n.includes('all-day') || n.includes('food')) return UtensilsCrossed;
+  return Coffee;
+}
+
 const PAY_ICON: Record<'cash' | 'upi' | 'card', LucideIcon> = { cash: Banknote, upi: Smartphone, card: CreditCard };
 
 export type MenuItemDto = {
@@ -84,9 +175,63 @@ type Line = {
 /** an order this POS has fired, tracked live as the kitchen works it */
 type LiveTicket = { id: string; number: number; where: string; status: string; placedAt: number };
 
-const EMOJI: Record<string, string> = {
-  Coffee: '☕', 'Chai & Tea': '🍵', Coolers: '🥤', 'All-Day': '🍳', Bakery: '🥐', Desserts: '🍰',
-};
+export function getItemEmoji(catName: string, itemName: string): string {
+  const item = (itemName || '').toLowerCase();
+  const cat = (catName || '').toLowerCase();
+
+  // 1. Specific item keywords
+  if (item.includes('coffee') || item.includes('espresso') || item.includes('cappuccino') || item.includes('latte')) return '☕';
+  if (item.includes('cold coffee') || item.includes('frappe')) return '🧋';
+  if (item.includes('boost') || item.includes('horlicks') || item.includes('bournvita') || item.includes('badam')) return '🥛';
+  if (item.includes('black tea') || item.includes('sulaimani') || item.includes('green tea') || item.includes('lemon tea')) return '🫖';
+  if (item.includes('chaya') || item.includes('chai') || item.includes('tea') || item.includes('kadak')) return '☕';
+
+  if (item.includes('orange') || item.includes('mosambi') || item.includes('santura')) return '🍊';
+  if (item.includes('apple')) return '🍎';
+  if (item.includes('mango')) return '🥭';
+  if (item.includes('watermelon')) return '🍉';
+  if (item.includes('pineapple')) return '🍍';
+  if (item.includes('grape')) return '🍇';
+  if (item.includes('banana')) return '🍌';
+  if (item.includes('pomegranate') || item.includes('anaar')) return '🫐';
+  if (item.includes('strawberry')) return '🍓';
+  if (item.includes('papaya')) return '🍈';
+  if (item.includes('avocado') || item.includes('butter fruit')) return '🥑';
+  if (item.includes('lime') || item.includes('lemon')) return '🍋';
+  if (item.includes('mint')) return '🌿';
+  if (item.includes('ginger')) return '🫚';
+
+  if (item.includes('mojito')) return '🍹';
+  if (item.includes('chocolate') || item.includes('choco') || item.includes('oreo') || item.includes('kitkat')) return '🍫';
+  if (item.includes('momo') || item.includes('dumpling')) return '🥟';
+  if (item.includes('malba') || item.includes('falooda') || item.includes('sundae') || item.includes('ice cream')) return '🍨';
+  if (item.includes('dry fruit') || item.includes('kaju') || item.includes('almond') || item.includes('pista') || item.includes('cashew') || item.includes('anjeer')) return '🥜';
+  if (item.includes('sandwich') || item.includes('toast')) return '🥪';
+  if (item.includes('burger')) return '🍔';
+  if (item.includes('pizza')) return '🍕';
+  if (item.includes('cake') || item.includes('pastry') || item.includes('brownie')) return '🍰';
+  if (item.includes('croissant') || item.includes('puff') || item.includes('cookie') || item.includes('bun') || item.includes('samosa')) return '🥐';
+  if (item.includes('noodle') || item.includes('maggi') || item.includes('pasta')) return '🍜';
+  if (item.includes('rice') || item.includes('biryani')) return '🍚';
+
+  // 2. Category-based fallback
+  if (cat.includes('black tea') || cat.includes('green tea') || cat.includes('sulaimani')) return '🫖';
+  if (cat.includes('chaya') || cat.includes('chai') || cat.includes('tea')) return '☕';
+  if (cat.includes('coffee')) return '☕';
+  if (cat.includes('fresh juice') || cat.includes('healthy juice') || cat.includes('juice')) return '🧃';
+  if (cat.includes('lime') || cat.includes('lemon')) return '🍋';
+  if (cat.includes('mojito') || cat.includes('mocktail') || cat.includes('cooler')) return '🍹';
+  if (cat.includes('malba') || cat.includes('falooda') || cat.includes('dessert')) return '🍨';
+  if (cat.includes('chocolate')) return '🍫';
+  if (cat.includes('dry fruit')) return '🥜';
+  if (cat.includes('momo')) return '🥟';
+  if (cat.includes('bakery')) return '🥐';
+  if (cat.includes('desserts') || cat.includes('sweet')) return '🍰';
+  if (cat.includes('snack')) return '🥪';
+  if (cat.includes('all-day') || cat.includes('food') || cat.includes('meal')) return '🍳';
+
+  return '☕';
+}
 
 /** Floor-map status by order workflow stage (Free → Order → KOT → Ready → Served). */
 const TABLE_STAGES = {
@@ -125,6 +270,8 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   useEffect(() => {
     setOutlet(initialOutlet);
   }, [initialOutlet]);
+
+  const isGstActive = Boolean(outlet.gstEnabled && (outlet.gstConfig?.enabled ?? true));
 
   // Live GST / Settings change listener: recalculates current cart immediately (Requirement 24)
   useEffect(() => {
@@ -848,7 +995,7 @@ ${htmlBody}
       serviceChargePaise: totals.serviceChargePaise || 0,
       roundOffPaise: totals.roundOffPaise || 0,
       totalPaise: totals.totalPaise || 0,
-      gstEnabled: outlet.gstEnabled,
+      gstEnabled: isGstActive,
       cashierName: currentStaff.name,
       customerName: billCustomer !== 'Customer' ? billCustomer : undefined,
       customerPhone: custPhone.trim() || undefined,
@@ -963,7 +1110,7 @@ ${rows}
 
   // ─── PRINT RECEIPT (post-payment, for a just-charged POS order) ──────────
   function printReceipt(number: number, method: string, tipPaise: number, customer: { name: string; phone: string } | null) {
-    const isGstConfig = outlet.gstEnabled && outlet.gstConfig?.enabled;
+    const isGstConfig = isGstActive;
     const showHsn = isGstConfig && outlet.gstConfig?.showHsn;
     const totalWithTip = bill.totalPaise + tipPaise;
     const jobId = `receipt:${number}:${Date.now()}`;
@@ -1000,7 +1147,7 @@ ${rows}
       roundOffPaise: bill.roundOffPaise,
       totalPaise: totalWithTip,
       paymentMethod: method,
-      gstEnabled: outlet.gstEnabled,
+      gstEnabled: isGstActive,
       cashierName: currentStaff.name,
       customerName: customer?.name,
       customerPhone: customer?.phone,
@@ -1093,21 +1240,21 @@ ${rows}
   }, [q, menu, cat]);
 
   const bill = useMemo(() => {
-    const lines: BillLine[] = cart.map((l) => ({ pricePaise: l.pricePaise, gstRate: l.gstRate, qty: l.qty }));
+    const lines: BillLine[] = cart.map((l) => ({ pricePaise: l.pricePaise, gstRate: isGstActive ? l.gstRate : 0, qty: l.qty }));
     const b = computeBill(lines, {
       discountPct,
       discountFlatPaise,
       serviceChargePct: scPct,
-      gstEnabled: outlet.gstEnabled,
-      gstRateOverride: outlet.gstRate,
+      gstEnabled: isGstActive,
+      gstRateOverride: isGstActive ? outlet.gstRate : 0,
       gstInclusive: outlet.gstInclusive,
       roundOff: outlet.gstConfig?.roundOff !== false && (outlet.receipt as any)?.roundOff !== false,
     });
     if (lines.length > 0) {
-      console.log(`[BILLING]\nGST enabled: ${outlet.gstEnabled}\nSubtotal: ${(b.subtotalPaise / 100).toFixed(2)}\nDiscount: ${(b.discountPaise / 100).toFixed(2)}\nTax: ${(b.taxPaise / 100).toFixed(2)}\nRound-off: ${(b.roundOffPaise / 100).toFixed(2)}\nFinal payable: ${(b.finalPayablePaise / 100).toFixed(2)}`);
+      console.log(`[BILLING]\nGST enabled: ${isGstActive}\nSubtotal: ${(b.subtotalPaise / 100).toFixed(2)}\nDiscount: ${(b.discountPaise / 100).toFixed(2)}\nTax: ${(b.taxPaise / 100).toFixed(2)}\nRound-off: ${(b.roundOffPaise / 100).toFixed(2)}\nFinal payable: ${(b.finalPayablePaise / 100).toFixed(2)}`);
     }
     return b;
-  }, [cart, discountPct, discountFlatPaise, scPct, outlet.gstEnabled, outlet.gstRate, outlet.gstInclusive, outlet.gstConfig?.roundOff, (outlet.receipt as any)?.roundOff]);
+  }, [cart, discountPct, discountFlatPaise, scPct, isGstActive, outlet.gstRate, outlet.gstInclusive, outlet.gstConfig?.roundOff, (outlet.receipt as any)?.roundOff]);
 
   function flash(msg: string) {
     setToast(msg);
@@ -1183,7 +1330,7 @@ ${rows}
           nameSnapshot: l.name,
           qty: l.qty,
           unitPricePaise: l.pricePaise,
-          gstRate: l.gstRate,
+          gstRate: isGstActive ? l.gstRate : 0,
           station: l.station,
           modifiers: [],
           notes: l.notes || undefined,
@@ -1267,13 +1414,13 @@ ${rows}
         </div>
         <div className="subtabs px-3 pb-2">
           {menu.map((c) => {
-            const Ic = CAT_ICON[c.name] ?? Coffee;
+            const Ic = getCategoryIcon(c.name);
             const on = c.id === activeCat && !q;
             return (
               <button key={c.id} onClick={() => { setActiveCat(c.id); setSearch(''); }} aria-pressed={on}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border font-bold text-[13px] whitespace-nowrap transition"
                 style={on ? { background: 'var(--ink)', color: 'var(--paper-3)', borderColor: 'var(--ink)' } : { background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
-                <Ic size={15} aria-hidden />{c.name}
+                <Ic size={15} aria-hidden className="shrink-0" />{c.name}
               </button>
             );
           })}
@@ -1326,9 +1473,21 @@ ${rows}
               </button>
             ))}
           </div>
+          <button
+            onClick={() => setFloorOpen(true)}
+            className="flex items-center justify-center gap-2 py-2.5 rounded-[14px] border-[1.5px] border-dashed font-bold text-[13px] shrink-0 transition hover:bg-[var(--paper-3)]"
+            style={{
+              borderColor: selectedTable ? 'var(--turmeric)' : 'var(--line-2)',
+              color: selectedTable ? 'var(--turmeric-d)' : 'var(--ink-2)',
+              background: selectedTable ? 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))' : 'var(--paper-2)',
+            }}
+          >
+            <Table2 size={16} aria-hidden className={selectedTable ? 'text-[var(--turmeric-d)]' : ''} />
+            <span>{selectedTable ? `Table ${selectedTable.label}` : 'Floor map & tables'}</span>
+          </button>
           <div className="flex flex-col gap-1.5 overflow-auto flex-1">
             {menu.map((c) => {
-              const Ic = CAT_ICON[c.name] ?? Coffee;
+              const Ic = getCategoryIcon(c.name);
               const on = c.id === activeCat && !q;
               return (
                 <button key={c.id} onClick={() => { setActiveCat(c.id); setSearch(''); }} aria-pressed={on}
@@ -1340,9 +1499,6 @@ ${rows}
               );
             })}
           </div>
-          <button onClick={() => setFloorOpen(true)} className="flex items-center justify-center gap-2 py-3 rounded-[14px] border-[1.5px] border-dashed font-bold text-[13.5px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
-            <Table2 size={17} aria-hidden /> Floor map &amp; tables
-          </button>
           <button
             type="button"
             disabled
@@ -1374,7 +1530,21 @@ ${rows}
                 className="w-full pl-9 pr-9 py-2 rounded-full border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }} />
               {search && <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center" style={{ color: 'var(--ink-3)' }}><X size={15} aria-hidden /></button>}
             </div>
-            <span className="pill shrink-0 hidden lg:inline-flex">{outlet.stateCode} · GST intra-state</span>
+            {/* Floor Map & Tables in top bar (where unwanted GST badge was located) */}
+            <button
+              type="button"
+              onClick={() => setFloorOpen(true)}
+              title="Open Floor Map & Tables"
+              className="pill shrink-0 hidden md:inline-flex items-center gap-1.5 cursor-pointer font-bold text-xs transition hover:opacity-85"
+              style={{
+                background: selectedTable ? 'color-mix(in srgb, var(--turmeric) 16%, var(--paper-2))' : 'var(--paper-2)',
+                border: selectedTable ? '1.5px solid var(--turmeric)' : '1px solid var(--line)',
+                color: selectedTable ? 'var(--turmeric-d)' : 'var(--ink-2)',
+              }}
+            >
+              <Table2 size={14} aria-hidden className={selectedTable ? 'text-[var(--turmeric-d)]' : ''} />
+              <span>{selectedTable ? `Table ${selectedTable.label}` : 'Floor map & tables'}</span>
+            </button>
 
             {/* Small Sync Button in Top Bar */}
             <div className="relative shrink-0 hidden md:block">
@@ -1449,20 +1619,22 @@ ${rows}
                   }
                   return null;
                 })()}
-                <div className="text-3xl" aria-hidden>{EMOJI[m.catName] ?? '🍽'}</div>
+                <div className="text-3xl" aria-hidden>{getItemEmoji(m.catName, m.name)}</div>
                 <div className="font-bold text-sm leading-tight">{m.name}</div>
                 {q && <div className="text-[10.5px] font-bold" style={{ color: 'var(--ink-3)' }}>{m.catName}</div>}
                 <div className="flex items-center justify-between mt-auto">
                   <span className="tnum text-sm" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(m.pricePaise)}</span>
-                  <span className="text-[10px] font-bold" style={{ color: 'var(--ink-3)' }}>GST {m.gstRate}%</span>
+                  {isGstActive && (
+                    <span className="text-[10px] font-bold" style={{ color: 'var(--ink-3)' }}>GST {m.gstRate}%</span>
+                  )}
                 </div>
               </button>
             ))}
           </div>
         </section>
 
-        <aside className="card hidden md:flex flex-col p-[18px] min-h-0">
-          <div className="flex justify-between items-start mb-3.5">
+        <aside className="card hidden md:flex flex-col p-[18px] self-start w-full max-h-[calc(100vh-2rem)] transition-all duration-200">
+          <div className="flex justify-between items-start mb-2.5">
             <div>
               <h3 className="text-[19px]">Current ticket</h3>
               {orderType === 'dine_in' ? (
@@ -1513,7 +1685,7 @@ ${rows}
               setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
           )}
 
-          <div className="grid grid-cols-[1fr_1.2fr] gap-2.5 mt-3.5">
+          <div className="grid grid-cols-[1fr_1.2fr] gap-2.5 mt-3">
             <button disabled={!cart.length || busy} onClick={() => submit(null)} className="btn btn-dark">Send to KOT</button>
             <button disabled={!cart.length || busy} onClick={startCharge} className="btn btn-primary">Charge →</button>
           </div>
@@ -2242,6 +2414,7 @@ function CartBody({
   quickNotes: string[];
 }) {
   const DISC_PRESETS = [0, 10];
+  const isGstActive = Boolean(outlet.gstEnabled && (outlet.gstConfig?.enabled ?? true));
   // discount-entry unit: percentage vs a flat ₹ amount (selector sits by the field)
   const [discMode, setDiscMode] = useState<'pct' | 'amt'>(discountFlatPaise > 0 ? 'amt' : 'pct');
   // presets are % → clear any flat amount; % clamps 0–100, flat clamps 0–subtotal
@@ -2255,10 +2428,11 @@ function CartBody({
   }
   return (
     <>
-      <div className="flex-1 overflow-auto flex flex-col gap-2 min-h-0">
+      <div className="overflow-y-auto flex flex-col gap-2 min-h-0 max-h-[min(340px,36vh)] pr-0.5">
         {!cart.length ? (
-          <div className="grid place-content-center text-center h-full gap-2 py-8" style={{ color: 'var(--ink-3)' }}>
-            <Coffee size={40} className="mx-auto opacity-40" aria-hidden /><p>Tap items to build the ticket.</p>
+          <div className="text-center py-5 flex flex-col items-center gap-1.5" style={{ color: 'var(--ink-3)' }}>
+            <Coffee size={28} className="opacity-40" aria-hidden />
+            <p className="text-xs font-semibold">Tap items to build ticket</p>
           </div>
         ) : cart.map((l) => (
           <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
@@ -2349,11 +2523,11 @@ function CartBody({
 
       {cart.length > 0 && (
         <div className="border-t border-dashed mt-3 pt-3" style={{ borderColor: 'var(--line-2)' }}>
-          <Row label={outlet.gstEnabled && outlet.gstInclusive ? 'Taxable value' : 'Subtotal'} val={formatINR(bill.subtotalPaise)} />
+          <Row label={isGstActive && outlet.gstInclusive ? 'Taxable value' : 'Subtotal'} val={formatINR(bill.subtotalPaise)} />
           {bill.discountPaise > 0 && <Row label={discountPct > 0 ? `Discount (${discountPct}%)` : 'Discount'} val={`− ${formatINR(bill.discountPaise)}`} accent />}
-          {outlet.gstEnabled && <Row label="CGST" val={formatINR(bill.cgstPaise)} sub />}
-          {outlet.gstEnabled && <Row label="SGST" val={formatINR(bill.sgstPaise)} sub />}
-          {outlet.gstEnabled && outlet.gstInclusive && <div className="text-[10px] mt-0.5" style={{ color: 'var(--ink-3)' }}>Menu prices include GST</div>}
+          {isGstActive && <Row label="CGST" val={formatINR(bill.cgstPaise)} sub />}
+          {isGstActive && <Row label="SGST" val={formatINR(bill.sgstPaise)} sub />}
+          {isGstActive && outlet.gstInclusive && <div className="text-[10px] mt-0.5" style={{ color: 'var(--ink-3)' }}>Menu prices include GST</div>}
           {scPct > 0 && <Row label="Service charge" val={formatINR(bill.serviceChargePaise)} />}
           <Row label="Round-off" val={`${bill.roundOffPaise >= 0 ? '+' : '−'} ${formatINR(Math.abs(bill.roundOffPaise))}`} sub />
           <div className="flex justify-between font-extrabold font-display text-[19px] mt-2 pt-2 border-t" style={{ borderColor: 'var(--line)' }}>

@@ -5040,7 +5040,7 @@ export default function SettingsCenter({
                           <span className="text-base">📍</span> STATION CONFIGURATION &amp; PRINTER ROUTING
                         </h4>
                         <p className="text-[11px] text-ink-3">
-                          One unified station registry. Orders split KOT items to each station's printer; waiter bills route to their station's printer.
+                          One unified station registry. Orders split KOT items to each station&apos;s printer; waiter bills route to their station&apos;s printer.
                         </p>
                       </div>
                       <div className="flex items-center gap-2">

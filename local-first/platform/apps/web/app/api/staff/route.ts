@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { prisma, type Prisma, type StaffRole } from '@cafeos/db';
 import { getSession, invalidateStaffCache } from '@/lib/auth';
 import { canManageStaff, assignableRoles, canManageTarget, ALL_ROLES, resolvePrimaryRole, hasRole, hasPermission } from '@/lib/rbac';
-import { hashPassword } from '@/lib/crypto';
+import { hashPassword, verifyPassword } from '@/lib/crypto';
 import { assertSlot, bumpUsage, SlotExceeded } from '@/lib/limits';
 import { publish } from '@/lib/realtime';
 import { parseRupeesToPaise } from '@cafeos/core';
@@ -29,7 +29,7 @@ export async function GET() {
     prisma.staffUser.findMany({
       where: { tenantId: session.tenantId },
       orderBy: [{ active: 'desc' }, { name: 'asc' }],
-      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true, permissions: true },
+      select: { id: true, name: true, role: true, phone: true, email: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true, permissions: true, createdAt: true },
     }),
     prisma.role.findMany({
       where: { tenantId: session.tenantId },
@@ -356,10 +356,31 @@ export async function POST(req: NextRequest) {
       data.active = !!body.active;
     }
 
+    if (body.email !== undefined) data.email = body.email ? String(body.email).trim().toLowerCase() : null;
+    if (body.username !== undefined && String(body.username).trim()) {
+      const u = String(body.username).trim().toLowerCase();
+      if (!USERNAME_RE.test(u)) return NextResponse.json({ error: 'invalid_username', message: 'Username must be 2–60 characters.' }, { status: 400 });
+      const clash = await prisma.staffUser.findFirst({ where: { tenantId: session.tenantId, username: u, NOT: { id } }, select: { id: true } });
+      if (clash) return NextResponse.json({ error: 'username_in_use', message: `Username "${u}" is already in use.` }, { status: 409 });
+      data.username = u;
+    }
+
+    if (body.designation !== undefined || body.joiningDate !== undefined || body.branchAccess !== undefined) {
+      const prevPerms = (typeof (data.permissions || target.permissions) === 'object' && (data.permissions || target.permissions)
+        ? (data.permissions || target.permissions)
+        : {}) as Record<string, any>;
+      data.permissions = {
+        ...prevPerms,
+        ...(body.designation !== undefined ? { designation: body.designation ? String(body.designation).trim() : null } : {}),
+        ...(body.joiningDate !== undefined ? { joiningDate: body.joiningDate ? String(body.joiningDate).trim() : null } : {}),
+        ...(body.branchAccess !== undefined ? { branchAccess: Array.isArray(body.branchAccess) ? body.branchAccess : [body.branchAccess] } : {}),
+      } as Prisma.InputJsonValue;
+    }
+
     const updated = await prisma.staffUser.update({
       where: { id },
       data,
-      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, permissions: true },
+      select: { id: true, name: true, role: true, phone: true, email: true, active: true, employeeCode: true, payType: true, payRatePaise: true, username: true, permissions: true, createdAt: true },
     });
 
     invalidateStaffCache(id);
@@ -367,8 +388,8 @@ export async function POST(req: NextRequest) {
       await publish(session.outletId, { type: 'staff.updated', staffId: id }).catch(() => {});
     }
 
-    await audit(session, 'staff.updated', id, { role: updated.role, active: updated.active });
-    return NextResponse.json({ ok: true, member: { ...updated, hasPin: !!target.pinHash } });
+    await audit(session, 'staff.updated', id, { role: updated.role, active: updated.active, name: updated.name });
+    return NextResponse.json({ ok: true, member: { ...updated, hasPin: !!target.pinHash, hasLogin: !!target.passwordHash } });
   }
 
   // ---- pay configuration (rate + employee code) ----
@@ -529,6 +550,76 @@ export async function POST(req: NextRequest) {
     }
     await audit(session, 'staff.login_set', id, { username: u });
     return NextResponse.json({ ok: true });
+  }
+
+  // Change staff password (with validation & current password check for self)
+  if (action === 'change_password') {
+    const isSelf = id === session.staffId;
+    const currentPassword = String(body.currentPassword ?? '');
+    const newPassword = String(body.newPassword ?? '');
+    const confirmPassword = String(body.confirmPassword ?? '');
+
+    if (!newPassword || newPassword.length < 6) {
+      return NextResponse.json({ error: 'password_too_short', message: 'New password must be at least 6 characters long.' }, { status: 400 });
+    }
+    if (newPassword !== confirmPassword) {
+      return NextResponse.json({ error: 'password_mismatch', message: 'Passwords do not match.' }, { status: 400 });
+    }
+
+    if (isSelf && target.passwordHash) {
+      if (!currentPassword) {
+        return NextResponse.json({ error: 'current_password_required', message: 'Current password is required.' }, { status: 400 });
+      }
+      const isValid = verifyPassword(currentPassword, target.passwordHash);
+      if (!isValid) {
+        return NextResponse.json({ error: 'invalid_current_password', message: 'Current password is incorrect.' }, { status: 400 });
+      }
+    } else if (!isSelf) {
+      if (!canManageStaff(session) || !canManageTarget(session, target.role)) {
+        return NextResponse.json({ error: 'forbidden', message: 'Unauthorized to change this staff member\'s password.' }, { status: 403 });
+      }
+    }
+
+    const passwordHash = hashPassword(newPassword);
+    await prisma.staffUser.update({
+      where: { id },
+      data: { passwordHash },
+    });
+    invalidateStaffCache(id);
+    if (session.outletId) {
+      await publish(session.outletId, { type: 'staff.updated', staffId: id }).catch(() => {});
+    }
+    await audit(session, isSelf ? 'staff.password_changed' : 'staff.password_reset', id, { targetName: target.name });
+    return NextResponse.json({ ok: true, message: 'Password updated successfully.' });
+  }
+
+  // Admin password reset
+  if (action === 'reset_password') {
+    if (!canManageStaff(session) || !canManageTarget(session, target.role)) {
+      return NextResponse.json({ error: 'forbidden', message: 'Unauthorized to reset this staff member\'s password.' }, { status: 403 });
+    }
+
+    const newPassword = String(body.newPassword ?? '');
+    const confirmPassword = String(body.confirmPassword ?? '');
+
+    if (!newPassword || newPassword.length < 6) {
+      return NextResponse.json({ error: 'password_too_short', message: 'New password must be at least 6 characters long.' }, { status: 400 });
+    }
+    if (newPassword !== confirmPassword) {
+      return NextResponse.json({ error: 'password_mismatch', message: 'Passwords do not match.' }, { status: 400 });
+    }
+
+    const passwordHash = hashPassword(newPassword);
+    await prisma.staffUser.update({
+      where: { id },
+      data: { passwordHash },
+    });
+    invalidateStaffCache(id);
+    if (session.outletId) {
+      await publish(session.outletId, { type: 'staff.updated', staffId: id }).catch(() => {});
+    }
+    await audit(session, 'staff.password_reset', id, { targetName: target.name, resetBy: session.staffId });
+    return NextResponse.json({ ok: true, message: 'Password reset successfully.' });
   }
 
   if (action === 'remove') {

@@ -33,6 +33,7 @@ export interface AuditFilters {
   action?: string | null;
   entity?: string | null;
   actorId?: string | null;
+  staffId?: string | null;
   page?: number;
 }
 
@@ -48,7 +49,7 @@ const asObj = (v: Prisma.JsonValue | null): Record<string, unknown> | null =>
 /** Latest-first, outlet-scoped audit entries with optional filters and paging. */
 export async function listAuditLogs(
   outletId: string,
-  { action, entity, actorId, page = 1 }: AuditFilters,
+  { action, entity, actorId, staffId, page = 1 }: AuditFilters,
   pageSize = AUDIT_PAGE_SIZE,
 ): Promise<AuditListResult> {
   const where: Prisma.AuditLogWhereInput = {
@@ -56,6 +57,12 @@ export async function listAuditLogs(
     ...(action ? { action } : {}),
     ...(entity ? { entity } : {}),
     ...(actorId ? { actorId } : {}),
+    ...(staffId ? {
+      OR: [
+        { entityId: staffId },
+        { actorId: staffId },
+      ],
+    } : {}),
   };
   const rows = await prisma.auditLog.findMany({
     where,

@@ -173,63 +173,59 @@ export default function ReceiptPreviewModal({
             )}
 
             {/* Shop Logo (if configured) */}
-            {model.logoUrl && (
-              <div className="flex justify-center mb-2">
+            {model.hasLogo && model.logoUrl && (
+              <div className="flex justify-center mb-1.5">
                 <img
                   src={model.logoUrl}
                   alt={model.storeName}
-                  className="max-h-12 max-w-[120px] object-contain"
+                  className="max-h-[60px] max-w-[180px] object-contain filter grayscale contrast-125"
                 />
               </div>
             )}
 
-            {/* Shop Name & Header */}
+            {/* Shop Name & Header - Standard Thermal Typography */}
             <div className="text-center space-y-0.5">
-              <h2 className="font-extrabold text-sm sm:text-base tracking-wider uppercase text-black">
+              <h2 className={`font-bold tracking-wider uppercase text-black ${model.hasLogo ? 'text-[11px]' : 'text-[13px]'}`}>
                 {model.storeName}
               </h2>
-              {model.addressText && <p className="text-[11px] text-[#4A4036]">{model.addressText}</p>}
-              {model.contactLine && <p className="text-[11px] text-[#4A4036]">{model.contactLine}</p>}
-              {model.headerNote && <p className="text-[11px] text-[#6B5E52] italic">{model.headerNote}</p>}
+              {model.addressText && <p className="text-[10px] text-[#4A4036] leading-tight">{model.addressText}</p>}
+              {model.contactLine && <p className="text-[10px] text-[#4A4036] leading-tight">{model.contactLine}</p>}
+              {model.headerNote && <p className="text-[10px] text-[#6B5E52] italic leading-tight">{model.headerNote}</p>}
             </div>
 
             {/* Divider */}
-            <div className="my-2.5 border-t border-dashed border-[#16120E]/40" />
+            <div className="my-2 border-t border-dashed border-[#16120E]/40" />
 
             {/* Table & Order Row (SAME LINE) */}
             <div className="flex justify-between font-bold text-black text-[11px]">
-              <span className="uppercase">{model.tableAndOrderRow.split(/\s{2,}/)[0]}</span>
-              <span>{model.tableAndOrderRow.split(/\s{2,}/)[1]}</span>
+              <span className="uppercase">{model.tableText}</span>
+              <span>{model.orderText}</span>
             </div>
 
-            {/* Date & Time Row (SAME LINE) */}
+            {/* Date & Time Row (SAME LINE - Standard 12-hour AM/PM) */}
             <div className="flex justify-between text-[11px] text-[#4A4036] mt-0.5">
-              <span>{model.dateTimeRow.split(/\s{2,}/)[0]}</span>
-              <span>{model.dateTimeRow.split(/\s{2,}/)[1]}</span>
+              <span>{model.dateText}</span>
+              <span>{model.timeText}</span>
             </div>
 
             {/* Divider */}
-            <div className="my-2.5 border-t border-dashed border-[#16120E]/40" />
+            <div className="my-2 border-t border-dashed border-[#16120E]/40" />
 
-            {/* Column Headers */}
+            {/* Column Headers (ITEM left, QTY center, AMOUNT right) */}
             <div className="flex justify-between font-bold text-[11px] text-black uppercase pb-1 border-b border-[#16120E]/20">
-              <span>ITEM</span>
-              <div className="flex gap-4">
-                <span>QTY</span>
-                <span className="min-w-[50px] text-right">AMOUNT</span>
-              </div>
+              <span className="flex-1 text-left">ITEM</span>
+              <span className="w-10 text-center">QTY</span>
+              <span className="w-20 text-right">AMOUNT</span>
             </div>
 
             {/* Items List */}
-            <div className="py-2 space-y-1.5 text-[11px]">
+            <div className="py-1.5 space-y-1 text-[11px]">
               {model.itemLines.map((line, idx) => (
                 <div key={idx} className="space-y-0.5">
                   <div className="flex justify-between items-start">
-                    <span className="font-medium text-black pr-2 break-words flex-1">{line.name}</span>
-                    <div className="flex gap-4 shrink-0 font-medium">
-                      <span className="w-6 text-center">{line.qtyText.trim()}</span>
-                      <span className="min-w-[50px] text-right font-semibold">{line.amountText.trim()}</span>
-                    </div>
+                    <span className="font-medium text-black pr-2 break-words flex-1 text-left">{line.name}</span>
+                    <span className="w-10 text-center shrink-0 font-medium">{line.qtyText.trim()}</span>
+                    <span className="w-20 text-right shrink-0 font-semibold tabular-nums">{line.amountText.trim()}</span>
                   </div>
                   {/* Extra wrapped lines or modifiers */}
                   {line.extraLines.map((extra, eIdx) => (
@@ -244,55 +240,62 @@ export default function ReceiptPreviewModal({
             {/* Divider */}
             <div className="my-2 border-t border-dashed border-[#16120E]/40" />
 
-            {/* Subtotal, Discounts, Taxes */}
-            <div className="space-y-1 text-[11px]">
+            {/* Subtotal, Discounts, Taxes (Compact & Dynamic GST Collapse) */}
+            <div className="space-y-0.5 text-[11px]">
               <div className="flex justify-between">
-                <span className="text-[#4A4036]">Subtotal</span>
-                <span className="font-medium">{model.subtotalText}</span>
+                <span className="text-[#4A4036]">Subtotal:</span>
+                <span className="font-semibold tabular-nums">{model.subtotalText}</span>
               </div>
+
+              {model.discountText && (
+                <div className="flex justify-between font-semibold text-[#15803D]">
+                  <span>Discount:</span>
+                  <span className="tabular-nums">{model.discountText}</span>
+                </div>
+              )}
 
               {model.taxBreakdown.map((t, idx) => (
                 <div key={idx} className="flex justify-between text-[#4A4036]">
-                  <span>{t.label}</span>
-                  <span>{t.amountText}</span>
+                  <span>{t.label}:</span>
+                  <span className="font-semibold tabular-nums">{t.amountText}</span>
                 </div>
               ))}
 
-              {model.discountText && (
-                <div className="flex justify-between font-bold text-[#15803D]">
-                  <span>Discount</span>
-                  <span>{model.discountText}</span>
+              {model.serviceChargeText && (
+                <div className="flex justify-between text-[#4A4036]">
+                  <span>Service Charge:</span>
+                  <span className="tabular-nums">{model.serviceChargeText}</span>
                 </div>
               )}
 
               {model.roundOffText && (
                 <div className="flex justify-between text-[#4A4036]">
-                  <span>Round Off</span>
-                  <span>{model.roundOffText}</span>
+                  <span>Round Off:</span>
+                  <span className="tabular-nums">{model.roundOffText}</span>
                 </div>
               )}
             </div>
 
-            {/* Final Total */}
-            <div className="my-2 border-t border-b border-[#16120E]/40 py-1.5 flex justify-between items-center text-sm font-extrabold text-black">
-              <span>TOTAL</span>
-              <span className="text-base font-black">{model.totalText}</span>
+            {/* Final Total (Bold, slightly larger, same vertical column) */}
+            <div className="my-2 border-t border-b border-[#16120E]/40 py-1.5 flex justify-between items-center text-sm font-bold text-black">
+              <span>TOTAL:</span>
+              <span className="text-sm font-black tabular-nums">{model.totalText}</span>
             </div>
 
             {/* Dynamic UPI QR Code */}
             {model.showUpiQr && (
-              <div className="text-center my-3 pt-1 space-y-1.5">
+              <div className="text-center my-2 pt-1 space-y-1">
                 {model.showScanAndPay && (
-                  <p className="font-extrabold text-xs tracking-wider text-black uppercase">
+                  <p className="font-bold text-xs tracking-wider text-black uppercase">
                     SCAN &amp; PAY
                   </p>
                 )}
-                <div className="inline-block p-2 bg-white rounded-xl border border-[#E5E0D8] shadow-sm">
+                <div className="inline-block p-1.5 bg-white rounded-lg border border-[#E5E0D8] shadow-sm">
                   {qrDataUrl ? (
                     <img
                       src={qrDataUrl}
                       alt="UPI QR Code"
-                      className={`mx-auto object-contain ${is58 ? 'w-[120px] h-[120px]' : 'w-[140px] h-[140px]'}`}
+                      className={`mx-auto object-contain ${is58 ? 'w-[110px] h-[110px]' : 'w-[130px] h-[130px]'}`}
                     />
                   ) : (
                     <div className="w-[120px] h-[120px] grid place-items-center text-xs text-gray-400">
@@ -315,7 +318,7 @@ export default function ReceiptPreviewModal({
             )}
 
             {/* Footer */}
-            <div className="text-center pt-2 text-[11px] text-[#6B5E52] space-y-1">
+            <div className="text-center pt-1 text-[11px] text-[#6B5E52] space-y-0.5">
               {model.footerNote && model.footerNote.toLowerCase() !== 'chaya.one' && (
                 <p>{model.footerNote}</p>
               )}
@@ -362,7 +365,7 @@ export default function ReceiptPreviewModal({
                 onClick={handleExecuteReprint}
                 className="px-4 py-2.5 rounded-xl border border-[#3D2C21] text-xs font-bold text-[#E8A838] hover:bg-[#231710] transition flex items-center gap-1.5 disabled:opacity-50"
               >
-                <RefreshCw size={14} className={isPrinting ? 'animate-spin' : ''} /> Reprint
+                <RefreshCw size={14} className={isPrinting ? 'animate-spin' : ''} /> Go to Reprint
               </button>
             )}
 
@@ -372,7 +375,7 @@ export default function ReceiptPreviewModal({
                 onClick={handleExecutePrint}
                 className="px-5 py-2.5 rounded-xl bg-[#E8A838] hover:bg-[#F3B344] text-[#1A130F] text-xs font-extrabold transition shadow-lg flex items-center gap-1.5 disabled:opacity-50"
               >
-                <Printer size={15} /> {isPrinting ? 'Printing…' : 'Print Receipt'}
+                <Printer size={15} /> {isPrinting ? 'Printing…' : 'Go to Print'}
               </button>
             )}
           </div>

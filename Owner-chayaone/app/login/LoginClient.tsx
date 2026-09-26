@@ -19,14 +19,12 @@ export default function LoginClient({
 }: LoginClientProps) {
   const router = useRouter();
   const [businessName, setBusinessName] = useState<string>(initialBusinessName || '');
-  const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl || null);
 
   useEffect(() => {
     fetch('/api/auth/store-info')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (d?.name) setBusinessName(d.name);
-        if (d?.logoUrl) setLogoUrl(d.logoUrl);
       })
       .catch(() => {});
   }, []);
@@ -127,8 +125,8 @@ export default function LoginClient({
             style={{ background: 'none', border: 'none', padding: 0, lineHeight: 0 }}
           >
             <img
-              src={logoUrl || '/logo chaya one.png'}
-              alt={businessName || 'ChayaOne'}
+              src="/logo chaya one.png"
+              alt="ChayaOne"
               style={{ width: 288, height: 'auto', maxWidth: '84%' }}
               className="brand-logo object-contain mx-auto block"
             />
