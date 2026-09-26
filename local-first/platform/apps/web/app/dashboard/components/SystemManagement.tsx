@@ -21,6 +21,7 @@ import {
   Calendar,
   Zap,
 } from 'lucide-react';
+import { useConfirm } from '@/components/ui';
 
 interface SystemManagementProps {
   initialTab?: 'about' | 'updates' | 'history' | 'backup' | 'diagnostics';
@@ -31,6 +32,7 @@ export default function SystemManagement({
   initialTab = 'about',
   flashMessage = (msg) => console.log(msg),
 }: SystemManagementProps) {
+  const { confirm: confirmAction, ConfirmDialog } = useConfirm();
   const [activeTab, setActiveTab] = useState<'about' | 'updates' | 'history' | 'backup' | 'diagnostics'>(initialTab);
 
   // About State
@@ -182,9 +184,12 @@ export default function SystemManagement({
   };
 
   const handleRestoreBackup = async (backupId: string) => {
-    const confirmRestore = window.confirm(
-      'WARNING: Restoring this backup will replace current database tables with data from this snapshot. A safety backup will be taken automatically before restoring. Proceed?'
-    );
+    const confirmRestore = await confirmAction({
+      title: 'Restore Database Backup',
+      message: 'WARNING: Restoring this backup will replace current database tables with data from this snapshot. A safety backup will be taken automatically before restoring. Proceed?',
+      confirmText: 'Restore Backup',
+      isDestructive: true,
+    });
     if (!confirmRestore) return;
 
     setRestoringId(backupId);
@@ -776,6 +781,7 @@ export default function SystemManagement({
           </div>
         </div>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useConfirm } from '@/components/ui';
 
 /**
  * Owner dashboard panel (Staff PWA P5): live staff presence + logged-in devices,
@@ -23,6 +24,7 @@ function ago(ms: number): string {
 }
 
 export default function StaffDevices() {
+  const { confirm: confirmAction, ConfirmDialog } = useConfirm();
   const [staff, setStaff] = useState<StaffPresence[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -42,7 +44,13 @@ export default function StaffDevices() {
   }, [load]);
 
   const revoke = async (device: Device, name: string) => {
-    if (!window.confirm(`Log out ${name}'s device "${device.label ?? 'Unknown'}"? They'll need to sign in again.`)) return;
+    const ok = await confirmAction({
+      title: 'Log Out Staff Device',
+      message: `Log out ${name}'s device "${device.label ?? 'Unknown'}"? They'll need to sign in again.`,
+      confirmText: 'Log Out Device',
+      isDestructive: true,
+    });
+    if (!ok) return;
     setBusyId(device.id);
     try {
       const res = await fetch('/api/staff/devices', {
@@ -101,6 +109,7 @@ export default function StaffDevices() {
           ))}
         </div>
       )}
+      <ConfirmDialog />
     </section>
   );
 }

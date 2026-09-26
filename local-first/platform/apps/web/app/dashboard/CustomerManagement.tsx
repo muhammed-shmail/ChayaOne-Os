@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { formatINR } from '@cafeos/core';
 import type { PwaConfig } from '@/lib/pwa';
+import { useConfirm } from '@/components/ui';
 
 /**
  * Customer Management & Loyalty CRM — owner dashboard module.
@@ -65,8 +66,17 @@ export default function CustomerManagement({ role, flash }: { role: string; flas
     try {
       const qs = new URLSearchParams({ search, filter, page: String(page) });
       const res = await fetch(`/api/dashboard/customers?${qs}`);
-      if (res.ok) setData(await res.json());
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+      if (res.ok) {
+        setData(await res.json());
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error('Failed to load customers:', err);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   }, [search, filter, page]);
 
   useEffect(() => { if (tab === 'list') load(); }, [tab, load]);
@@ -158,7 +168,13 @@ export default function CustomerManagement({ role, flash }: { role: string; flas
               </thead>
               <tbody>
                 {loading && <tr><td colSpan={9} className="p-6 text-center" style={{ color: 'var(--ink-3)' }}>Loading…</td></tr>}
-                {!loading && data?.rows.length === 0 && <tr><td colSpan={9} className="p-6 text-center" style={{ color: 'var(--ink-3)' }}>No customers found.</td></tr>}
+                {!loading && (!data || data.rows.length === 0) && (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center" style={{ color: 'var(--ink-3)' }}>
+                      No customers found yet. Customers entered in POS bills or table orders automatically appear here.
+                    </td>
+                  </tr>
+                )}
                 {!loading && data?.rows.map((r) => (
                   <tr key={r.id} className="cursor-pointer hover:opacity-80" style={{ borderTop: '1px solid var(--line)' }} onClick={() => setProfileId(r.id)}>
                     <Td label="Customer">
@@ -378,6 +394,7 @@ function ProfileDrawer({ id, role, onClose, onChanged, flash }: { id: string; ro
 
 /* ----------------------------- Admin actions ----------------------------- */
 function AdminActions({ busy, status, onAct }: { busy: boolean; status: string; onAct: (p: Record<string, unknown>, m: string) => Promise<boolean>; }) {
+  const { confirm: confirmAction, ConfirmDialog } = useConfirm();
   const [pts, setPts] = useState('');
   const [walletRs, setWalletRs] = useState('');
   const [reason, setReason] = useState('');
@@ -400,7 +417,22 @@ function AdminActions({ busy, status, onAct }: { busy: boolean; status: string; 
             <button className="btn" disabled={busy} onClick={async () => { if (!points() || !needReason()) return; if (await onAct({ action: 'points_deduct', points: points(), reason }, 'Points deducted')) setPts(''); }}>− Deduct</button>
             <button className="btn" disabled={busy} onClick={async () => { if (!points() || !needReason()) return; if (await onAct({ action: 'points_transfer', points: points(), reason }, 'Promo points added')) setPts(''); }}>↗ Promo</button>
           </div>
-          <button className="btn" disabled={busy} onClick={async () => { if (!needReason()) return; if (confirm('Reset all points to 0?')) onAct({ action: 'points_reset', reason }, 'Points reset'); }}>Reset points to 0</button>
+          <button
+            className="btn"
+            disabled={busy}
+            onClick={async () => {
+              if (!needReason()) return;
+              const ok = await confirmAction({
+                title: 'Reset Loyalty Points',
+                message: 'Reset all points to 0? This action cannot be undone.',
+                confirmText: 'Reset Points',
+                isDestructive: true,
+              });
+              if (ok) onAct({ action: 'points_reset', reason }, 'Points reset');
+            }}
+          >
+            Reset points to 0
+          </button>
         </div>
 
         <div className="grid gap-2">
@@ -423,6 +455,7 @@ function AdminActions({ busy, status, onAct }: { busy: boolean; status: string; 
           </div>
         </div>
       </div>
+      <ConfirmDialog />
     </Section>
   );
 }
