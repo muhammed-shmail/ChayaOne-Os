@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -29,7 +29,7 @@ import {
   ThemeToggle, Bell, Table2, LogOut, LayoutDashboard, Wifi, ChefHat, Menu,
   ClipboardList, UtensilsCrossed, Package, Truck, Users, User, Settings, type LucideIcon,
   Percent, Printer, Smartphone, Store, BarChart3, ImageIcon, Download, X, MapPin, Megaphone, FileSpreadsheet,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, useConfirm,
 } from '@/components/ui';
 import { ShiftStatus } from '@/components/ShiftStatus';
 import { BusinessDayPrompt, BusinessDayHeaderBadge } from '@/components/BusinessDayPrompt';
@@ -93,57 +93,6 @@ function auditDiff(before: Record<string, unknown> | null, after: Record<string,
     .map((k) => ({ key: k, before: fmt(b[k]), after: fmt(a[k]) }));
 }
 
-/** Titles + icons for the Settings popup window, keyed by panel. */
-const SETTINGS_TITLE: Record<string, string> = {
-  general: 'General',
-  tax: 'Tax & GST',
-  floor: 'Floor & QR',
-  kitchen: 'Kitchen Workflow',
-  pwa: 'PWA Settings',
-  location: 'Location Gate',
-  devices: 'Devices & Printers',
-  audit: 'Audit Logs',
-  multibranch: 'Multi Branch',
-  app_qrs: 'App QR Codes',
-};
-const SETTINGS_ICON: Record<string, LucideIcon> = {
-  general: Settings,
-  tax: Percent,
-  floor: Table2,
-  kitchen: ChefHat,
-  pwa: Smartphone,
-  location: MapPin,
-  devices: Printer,
-  audit: ClipboardList,
-  multibranch: Store,
-  app_qrs: Smartphone,
-};
-
-/** A focused popup window that hosts one settings panel. Closes on ✕, backdrop click or Esc. */
-function SettingsModal({ title, icon: Icon, onClose, children }: { title: string; icon?: LucideIcon; onClose: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [onClose]);
-  return (
-    <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="presentation" className="scrim anim-fade z-[8500] flex items-start sm:items-center justify-center overflow-y-auto p-3 sm:p-6">
-      <div role="dialog" aria-modal="true" aria-label={title} className="anim-pop my-auto w-full max-w-2xl" style={{ background: 'var(--paper-2)', borderRadius: 22, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b sticky top-0 z-10" style={{ borderColor: 'var(--line)', background: 'var(--paper-2)', borderTopLeftRadius: 22, borderTopRightRadius: 22 }}>
-          <h2 className="font-display text-lg font-bold flex items-center gap-2.5">
-            {Icon && <span className="grid place-items-center rounded-xl shrink-0" style={{ width: 34, height: 34, background: 'var(--paper-3)', color: 'var(--turmeric)' }}><Icon size={18} aria-hidden /></span>}
-            {title}
-          </h2>
-          <button onClick={onClose} aria-label="Close" className="btn btn-icon btn-sm btn-ghost"><X size={18} aria-hidden /></button>
-        </div>
-        <div className="p-4 sm:p-5 flex flex-col gap-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 export default function DashboardClient({
   outlet,
   staff,
@@ -158,6 +107,7 @@ export default function DashboardClient({
   initialModuleConfig?: ModuleSystemConfig;
 }) {
   const router = useRouter();
+  const { confirm: confirmAction, ConfirmDialog } = useConfirm();
 
   const [currentStaff, setCurrentStaff] = useState(staff);
   useEffect(() => {
@@ -899,7 +849,11 @@ export default function DashboardClient({
   // refresh live occupancy every 20s globally as fallback (updates the header stats & floor map)
   useEffect(() => {
     loadTables();
-    const t = setInterval(loadTables, 20000);
+    const t = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadTables();
+      }
+    }, 20000);
     return () => clearInterval(t);
   }, []);
 
@@ -1028,7 +982,11 @@ export default function DashboardClient({
   useEffect(() => {
     if (activeMenu !== 'staff') return;
     loadStaffBoard();
-    const t = setInterval(loadStaffBoard, 20000); // live-ish refresh
+    const t = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadStaffBoard();
+      }
+    }, 20000); // live-ish refresh
     return () => clearInterval(t);
   }, [activeMenu]);
 
@@ -1097,7 +1055,13 @@ export default function DashboardClient({
   };
 
   const handleRemoveUser = async (id: string, name: string) => {
-    if (!confirm(`Remove ${name}? They will no longer be able to log in. History is preserved.`)) return;
+    const ok = await confirmAction({
+      title: 'Remove Staff Member',
+      message: `Remove ${name}? They will no longer be able to log in. History is preserved.`,
+      confirmText: 'Remove Staff',
+      isDestructive: true,
+    });
+    if (!ok) return;
     setStaffMembers((prev: any[]) => prev.filter((m: any) => m.id !== id));
     try {
       const res = await fetch('/api/staff', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'remove', id }) });
@@ -1279,7 +1243,6 @@ export default function DashboardClient({
       const d = await res.json().catch(() => ({}));
       if (res.ok) {
         flashMessage('Category deleted! Items moved to Uncategorised.');
-        setDeleteConfirmCatId(null);
         await loadInventoryData();
       } else {
         flashMessage(d.error || 'Could not delete category');
@@ -1288,6 +1251,7 @@ export default function DashboardClient({
       console.error(err);
       flashMessage('Failed to delete category');
     } finally {
+      setDeleteConfirmCatId(null);
       setCategorySaving(false);
     }
   };
@@ -1388,7 +1352,13 @@ export default function DashboardClient({
   };
 
   const handleDeleteProduct = async (itemId: string, name: string) => {
-    if (!window.confirm(`Delete “${name}”? This cannot be undone.`)) return;
+    const ok = await confirmAction({
+      title: 'Delete Product',
+      message: `Delete "${name}"? This cannot be undone.`,
+      confirmText: 'Delete Product',
+      isDestructive: true,
+    });
+    if (!ok) return;
     try {
       const res = await fetch('/api/dashboard/menu', {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -1918,6 +1888,10 @@ export default function DashboardClient({
     } catch (err) { console.error(err); }
   };
 
+  const handleFloorUpdated = useCallback(async () => {
+    await Promise.all([loadProfile(), loadTables()]);
+  }, []);
+
   // --- Floor & QR actions ---------------------------------------------------
   const ERR_MSG: Record<string, string> = {
     duplicate_label: 'A table with that name already exists.',
@@ -1964,10 +1938,16 @@ export default function DashboardClient({
     if (!editFloorName.trim()) { flashMessage('Enter a floor name'); return; }
     if (await floorApi({ action: 'floor_rename', floorId, name: editFloorName.trim() }, 'Floor renamed')) setEditFloorId(null);
   };
-  const handleDeleteFloor = (f: Floor) => {
+  const handleDeleteFloor = async (f: Floor) => {
     const n = floorTables.filter((t) => t.floorId === f.id).length;
-    if (!window.confirm(`Delete floor “${f.name}”?${n ? ` Its ${n} table${n === 1 ? '' : 's'} will become Unassigned.` : ''}`)) return;
-    floorApi({ action: 'floor_delete', floorId: f.id }, `Floor “${f.name}” deleted`);
+    const ok = await confirmAction({
+      title: 'Delete Floor',
+      message: `Delete floor "${f.name}"?${n ? ` Its ${n} table${n === 1 ? '' : 's'} will become Unassigned.` : ''}`,
+      confirmText: 'Delete Floor',
+      isDestructive: true,
+    });
+    if (!ok) return;
+    await floorApi({ action: 'floor_delete', floorId: f.id }, `Floor “${f.name}” deleted`);
   };
 
   // --- Kitchens / prep stations (Outlet.settings.kitchens) ---
@@ -2007,10 +1987,16 @@ export default function DashboardClient({
     if (!editKitchenName.trim()) { flashMessage('Enter a kitchen name'); return; }
     if (await kitchenApi({ action: 'kitchen_rename', id, name: editKitchenName.trim() }, 'Kitchen renamed')) setEditKitchenId(null);
   };
-  const handleDeleteKitchen = (k: Kitchen) => {
+  const handleDeleteKitchen = async (k: Kitchen) => {
     if (kitchenBusy) return;
-    if (!window.confirm(`Delete kitchen “${k.name}”? Items routed here keep their tag until you reassign them.`)) return;
-    kitchenApi({ action: 'kitchen_delete', id: k.id }, `Kitchen “${k.name}” deleted`);
+    const ok = await confirmAction({
+      title: 'Delete Kitchen',
+      message: `Delete kitchen "${k.name}"? Items routed here keep their tag until you reassign them.`,
+      confirmText: 'Delete Kitchen',
+      isDestructive: true,
+    });
+    if (!ok) return;
+    await kitchenApi({ action: 'kitchen_delete', id: k.id }, `Kitchen “${k.name}” deleted`);
   };
   const handleAssignFloor = (tableId: string, floorId: string) => {
     floorApi({ action: 'assign', id: tableId, floorId: floorId || undefined }, 'Table moved');
@@ -2069,13 +2055,26 @@ export default function DashboardClient({
       setEditTableId(null);
     }
   };
-  const handleDeleteTable = (t: FloorTable) => {
-    if (!window.confirm(`Delete table “${t.label}”? This can’t be undone.`)) return;
-    floorApi({ action: 'delete', id: t.id }, `Table ${t.label} deleted`);
+  const handleDeleteTable = async (t: FloorTable) => {
+    const ok = await confirmAction({
+      title: 'Delete Table',
+      message: `Delete table "${t.label}"? This can't be undone.`,
+      confirmText: 'Delete Table',
+      isDestructive: true,
+    });
+    if (!ok) return;
+    await floorApi({ action: 'delete', id: t.id }, `Table ${t.label} deleted`);
   };
-  const handleRegenerateQr = (t: FloorTable) => {
-    if (!window.confirm(`Rotate the QR for “${t.label}”? Any printed code for this table will stop working.`)) return;
-    floorApi({ action: 'regenerate', id: t.id }, `New QR generated for ${t.label}`).then((ok) => { if (ok) setQrTable(null); });
+  const handleRegenerateQr = async (t: FloorTable) => {
+    const ok = await confirmAction({
+      title: 'Rotate QR Code',
+      message: `Rotate the QR for "${t.label}"? Any printed code for this table will stop working.`,
+      confirmText: 'Rotate QR',
+      isDestructive: true,
+    });
+    if (!ok) return;
+    const okGen = await floorApi({ action: 'regenerate', id: t.id }, `New QR generated for ${t.label}`);
+    if (okGen) setQrTable(null);
   };
   const copyTableLink = async (t: FloorTable) => {
     try { await navigator.clipboard.writeText(tableOrderUrl(t.qrToken)); flashMessage(`Link for ${t.label} copied`); }
@@ -2160,7 +2159,15 @@ export default function DashboardClient({
   };
 
   const handleDeleteDevice = async (id: string, name: string, skipConfirm = false) => {
-    if (!skipConfirm && !window.confirm(`Remove “${name}”?`)) return;
+    if (!skipConfirm) {
+      const ok = await confirmAction({
+        title: 'Remove Device',
+        message: `Remove "${name}"?`,
+        confirmText: 'Remove Device',
+        isDestructive: true,
+      });
+      if (!ok) return;
+    }
     setDevices((prev) => prev.filter((d) => d.id !== id));
     try {
       const res = await fetch('/api/dashboard/settings', {
@@ -4302,9 +4309,7 @@ export default function DashboardClient({
                 openDeviceForm={openDeviceForm}
                 floors={floors}
                 floorTables={floorTables}
-                onFloorUpdated={async () => {
-                  await Promise.all([loadProfile(), loadTables()]);
-                }}
+                onFloorUpdated={handleFloorUpdated}
                 kitchens={kitchens}
                 setKitchens={setKitchens}
                 kitchenApi={kitchenApi}
@@ -5744,6 +5749,9 @@ export default function DashboardClient({
 
       {/* Midnight / Business Day Extension Prompt */}
       <BusinessDayPrompt currentStaff={staff} />
+
+      {/* Confirmation Dialog Modal */}
+      <ConfirmDialog />
     </div>
   );
 }

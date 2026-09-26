@@ -157,7 +157,7 @@ export const BUSINESS_PRESETS: Record<BusinessTypeId, BusinessPresetDef> = {
     id: 'cafe',
     name: 'Cafe',
     description: 'Specialized cafe workflows: coffee, chai, espresso, quick snacks, tables, and waiter/KDS operations.',
-    defaultModules: ['core', 'cafe', 'waiter', 'kds', 'customer_qr'],
+    defaultModules: ['core', 'cafe', 'waiter', 'kds', 'customer_qr', 'crm', 'loyalty'],
     suggestedCategories: ['Chai & Tea', 'Coffee', 'Coolers', 'All-Day Snacks', 'Bakery', 'Desserts'],
   },
   juice: {

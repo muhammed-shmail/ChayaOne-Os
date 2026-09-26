@@ -37,7 +37,10 @@ export async function GET(req: NextRequest) {
   const orders = await prisma.order.findMany({
     where: { tableId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
     orderBy: { placedAt: 'asc' },
-    include: { items: { where: { kotStatus: { not: 'void' } }, orderBy: { id: 'asc' } } },
+    include: {
+      items: { where: { kotStatus: { not: 'void' } }, orderBy: { id: 'asc' } },
+      customer: { select: { id: true, name: true, phone: true } },
+    },
   });
 
   const allLines = orders.flatMap((o) =>
@@ -77,11 +80,13 @@ export async function GET(req: NextRequest) {
       }).catch(() => null)
     : null;
   const isBillPrinted = Boolean(billPrintedAudit) || table.state === 'free';
+  const activeCustomer = orders.find((o) => o.customer)?.customer ?? null;
 
   return NextResponse.json({
     table: { id: table.id, label: table.label },
     count: orders.length,
     orders: orders.map((o) => ({ id: o.id, number: o.number, totalPaise: o.totalPaise, placedAt: o.placedAt })),
+    customer: activeCustomer ? { id: activeCustomer.id, name: activeCustomer.name, phone: activeCustomer.phone } : null,
     lines: allLines,
     totals,
     billPrinted: isBillPrinted,
@@ -236,9 +241,36 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const { action } = body;
 
-  if (action === 'print_bill') {
-    const { tableId, orderId, waiterStation, staffName } = body;
+  if (action === 'update_customer') {
+    const { tableId, customer } = body;
     if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
+    let linkedCustId: string | null = null;
+    if (customer && session.tenantId) {
+      linkedCustId = await findOrCreateCustomerByPhone(session.tenantId, customer);
+    }
+    if (linkedCustId) {
+      await prisma.order.updateMany({
+        where: { tableId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
+        data: { customerId: linkedCustId },
+      });
+    }
+    return NextResponse.json({ ok: true, customerId: linkedCustId });
+  }
+
+  if (action === 'print_bill') {
+    const { tableId, orderId, waiterStation, staffName, customer } = body;
+    if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
+
+    // Link or create customer if provided with bill print
+    if (customer && session.tenantId) {
+      const linkedCustId = await findOrCreateCustomerByPhone(session.tenantId, customer);
+      if (linkedCustId) {
+        await prisma.order.updateMany({
+          where: { tableId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
+          data: { customerId: linkedCustId },
+        });
+      }
+    }
 
     // 1. Direct Station Printing: Send bill directly to waiter's station printer (LAN ESC/POS, no browser popup)
     const printResult = await dispatchStationBillPrint(

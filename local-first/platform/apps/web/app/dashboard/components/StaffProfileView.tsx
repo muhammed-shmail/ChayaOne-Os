@@ -458,6 +458,22 @@ export default function StaffProfileView({
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  // Close modals safely on Escape key
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showEditModal && !editSaving) setShowEditModal(false);
+        if (showChangePwModal && !pwLoading) setShowChangePwModal(false);
+        if (showResetPwModal && !adminResetLoading) setShowResetPwModal(false);
+        if (showCorrectModal && !isSavingAttendance) setShowCorrectModal(false);
+        if (showMarkModal && !isSavingAttendance) setShowMarkModal(false);
+        if (showAddShiftModal && !isSavingShift) setShowAddShiftModal(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showEditModal, editSaving, showChangePwModal, pwLoading, showResetPwModal, adminResetLoading, showCorrectModal, showMarkModal, isSavingAttendance, showAddShiftModal, isSavingShift]);
+
   const handleEditProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setEditSaving(true);

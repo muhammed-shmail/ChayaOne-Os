@@ -1473,6 +1473,27 @@ export default function SettingsCenter({
     onConfirm: () => void;
   } | null>(null);
 
+  useEffect(() => {
+    if (!showConfirmModal?.show && !showAddStationModal && !showEditStationModal && !showStationRoutingModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showConfirmModal?.show) setShowConfirmModal(null);
+        if (showAddStationModal) {
+          setShowAddStationModal(false);
+          setNewStationModalName('');
+          setNewStationModalCode('');
+        }
+        if (showEditStationModal) {
+          setShowEditStationModal(false);
+          setEditingStationData(null);
+        }
+        if (showStationRoutingModal) setShowStationRoutingModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showConfirmModal?.show, showAddStationModal, showEditStationModal, showStationRoutingModal]);
+
   // Advanced GST configuration states
   const [gstConfig, setGstConfig] = useState<any>({
     enabled: false,
@@ -4476,6 +4497,10 @@ export default function SettingsCenter({
                                     message: `Are you sure you want to remove the "${k.name}" preparation station? Menu items mapped to this station will revert to unassigned (no station).`,
                                     onConfirm: async () => {
                                       setDeletingStationId(k.id);
+                                       if (editingStationData?.id === k.id) {
+                                         setShowEditStationModal(false);
+                                         setEditingStationData(null);
+                                       }
                                       try {
                                         await kitchenApi({ action: 'kitchen_delete', id: k.id }, `Station "${k.name}" deleted`);
                                       } finally {
@@ -5214,6 +5239,10 @@ export default function SettingsCenter({
                                               message: `Are you sure you want to delete station "${st.code} · ${st.name}"? Menu items mapped to this station will revert to unassigned.`,
                                               onConfirm: async () => {
                                                 setDeletingStationId(st.id);
+                                                 if (editingStationData?.id === st.id) {
+                                                   setShowEditStationModal(false);
+                                                   setEditingStationData(null);
+                                                 }
                                                 try {
                                                   await kitchenApi({ action: 'kitchen_delete', id: st.id }, `Station "${st.code}" deleted`);
                                                 } finally {

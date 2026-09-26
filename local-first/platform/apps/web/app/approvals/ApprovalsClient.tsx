@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { formatINR } from '@cafeos/core';
-import { Minus, Plus, X, ArrowLeft } from '@/components/ui';
+import { Minus, Plus, X, ArrowLeft, useConfirm } from '@/components/ui';
 import { subscribeStaff } from '@/lib/realtime-client';
 
 export type PendingOrder = {
@@ -18,6 +18,7 @@ export type PendingOrder = {
 const canAct = (role: string) => ['owner', 'manager', 'cashier', 'waiter'].includes(role);
 
 export default function ApprovalsClient({ outletName, role, canApprove, initial }: { outletName: string; role: string; canApprove?: boolean; initial: PendingOrder[] }) {
+  const { confirm: confirmAction, ConfirmDialog } = useConfirm();
   const [orders, setOrders] = useState<PendingOrder[]>(initial);
   // null until mounted → SSR and first client render agree (no hydration mismatch)
   const [now, setNow] = useState<number | null>(null);
@@ -90,7 +91,15 @@ export default function ApprovalsClient({ outletName, role, canApprove, initial 
 
   async function act(id: string, action: 'approve' | 'reject') {
     if (busy[id]) return;
-    if (action === 'reject' && !confirm('Reject this order? The customer will be told it was not confirmed.')) return;
+    if (action === 'reject') {
+      const ok = await confirmAction({
+        title: 'Reject Order',
+        message: 'Reject this order? The customer will be told it was not confirmed.',
+        confirmText: 'Reject Order',
+        isDestructive: true,
+      });
+      if (!ok) return;
+    }
     setBusy((b) => ({ ...b, [id]: true }));
     setOrders((prev) => prev.filter((o) => o.id !== id)); // optimistic
     try {
@@ -167,6 +176,7 @@ export default function ApprovalsClient({ outletName, role, canApprove, initial 
       )}
 
       <style dangerouslySetInnerHTML={{ __html: css }} />
+      <ConfirmDialog />
     </div>
   );
 }

@@ -6,12 +6,12 @@ import { STAGES, posStageOf } from '@/lib/orderStatus';
 import type { Floor } from '@/lib/floors';
 import type { ReceiptConfig } from '@/lib/receipt';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
-import { ThemeToggle } from '@/components/ui';
+import { ThemeToggle, useConfirm } from '@/components/ui';
 import {
   Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
   Plus, Minus, X, Printer, Receipt, Smartphone, Banknote, CreditCard,
   CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
-  ShoppingCart, ChevronUp, Menu, Search, Download, LogOut, type LucideIcon,
+  ShoppingCart, ChevronUp, ChevronDown, Menu, Search, Download, LogOut, type LucideIcon,
   ArrowLeftRight, ArrowRight, CircleAlert, FileText, Edit3,
   Citrus, GlassWater, Leaf, Wine, Milk, Sparkles, Sandwich, Pizza, IceCream, Bean, Utensils,
 } from 'lucide-react';
@@ -413,6 +413,7 @@ function generateClientUuid(): string {
 }
 
 export default function PosClient({ outlet: initialOutlet, staff, menu, tables, floors, staffAppEnabled = false, locationGate = false }: { outlet: Outlet; staff: Staff; menu: MenuCategory[]; tables: TableDto[]; floors: Floor[]; staffAppEnabled?: boolean; locationGate?: boolean }) {
+  const { confirm: confirmAction, ConfirmDialog } = useConfirm();
   const [outlet, setOutlet] = useState<Outlet>(initialOutlet);
   useEffect(() => {
     setOutlet(initialOutlet);
@@ -548,6 +549,35 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   // Order-level customer field visibility (desktop right rail + mobile cart sheet)
   const [showOrderCust, setShowOrderCust] = useState(false);
 
+  // Category scroll navigation controls
+  const categoryListRef = useRef<HTMLDivElement>(null);
+  const [canScrollCatUp, setCanScrollCatUp] = useState(false);
+  const [canScrollCatDown, setCanScrollCatDown] = useState(false);
+
+  const updateCatScroll = () => {
+    const el = categoryListRef.current;
+    if (!el) return;
+    setCanScrollCatUp(el.scrollTop > 4);
+    setCanScrollCatDown(el.scrollTop + el.clientHeight < el.scrollHeight - 4);
+  };
+
+  useEffect(() => {
+    updateCatScroll();
+    const el = categoryListRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', updateCatScroll, { passive: true });
+    window.addEventListener('resize', updateCatScroll);
+    return () => {
+      el.removeEventListener('scroll', updateCatScroll);
+      window.removeEventListener('resize', updateCatScroll);
+    };
+  }, [menu]);
+
+  const scrollCategories = (dir: 'up' | 'down') => {
+    if (!categoryListRef.current) return;
+    categoryListRef.current.scrollBy({ top: dir === 'up' ? -160 : 160, behavior: 'smooth' });
+  };
+
   // Listen for close-t-billing message from embedded T-Billing iframe
   useEffect(() => {
     const handleMsg = (e: MessageEvent) => {
@@ -623,8 +653,33 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
     setTransferMode(startInTransfer); setSelectedDestTable(null); setTransferReason(''); setTransferSuccess(null); setTransferOccupiedError(null);
     const d = await fetch(`/api/tables/order?tableId=${t.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     setTableOrder(d);
+    if (d?.customer) {
+      setCustName(d.customer.name || '');
+      setCustPhone(d.customer.phone || '');
+    }
     const isAlreadyPrinted = Boolean(d?.billPrinted) || (d?.orders && d.orders.some((o: any) => printedOrderIds.has(o.id)));
     if (isAlreadyPrinted) setBillPrinted(true);
+  }
+
+  async function saveTableCustomer(name?: string, phone?: string) {
+    if (!tableAction) return;
+    const n = (name !== undefined ? name : custName).trim();
+    const p = (phone !== undefined ? phone : custPhone).trim();
+    if (!n && !p) return;
+    try {
+      await fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_customer',
+          tableId: tableAction.id,
+          customer: { name: n || undefined, phone: p || undefined },
+        }),
+      });
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('pos-entry-sync'));
+    } catch (e) {
+      console.error('[POS] Failed to save table customer:', e);
+    }
   }
 
   async function executeTableTransfer() {
@@ -671,6 +726,10 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
     if (!tableAction) return null;
     const d = await fetch(`/api/tables/order?tableId=${tableAction.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     setTableOrder(d);
+    if (d?.customer && !custName && !custPhone) {
+      setCustName(d.customer.name || '');
+      setCustPhone(d.customer.phone || '');
+    }
     return d;
   }
 
@@ -730,7 +789,13 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
 
   async function voidLine(l: { id: string; orderId: string; name: string }) {
     if (isOffline()) { flash(OFFLINE_ORDER_MSG); return; }
-    if (!window.confirm(`Remove “${l.name}” from this table? Stock will be restored.`)) return;
+    const ok = await confirmAction({
+      title: 'Remove Item',
+      message: `Remove "${l.name}" from this table? Stock will be restored.`,
+      confirmText: 'Remove Item',
+      isDestructive: true,
+    });
+    if (!ok) return;
     setVoidBusyId(l.id);
     try {
       const r = await fetch('/api/tables/order', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'void_item', orderId: l.orderId, itemId: l.id }) });
@@ -1188,6 +1253,7 @@ ${htmlBody}
           orderId: orderIds[0] || null,
           waiterStation,
           staffName: currentStaff.name,
+          customer: (custName.trim() || custPhone.trim()) ? { name: custName.trim() || undefined, phone: custPhone.trim() || undefined } : undefined,
         }),
       })
         .then(async (res) => {
@@ -1575,176 +1641,227 @@ ${rows}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[180px_1fr_300px] lg:grid-cols-[232px_1fr_360px] gap-4 h-auto md:h-screen p-4 pt-3 md:pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-        <aside className="hidden md:flex flex-col gap-3.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-              <img
-                src="/logo chaya one.png"
-                alt="ChayaOne"
-                className="brand-logo h-8 lg:h-9 w-auto object-contain shrink-0"
-              />
-            </div>
-            <div className="flex items-center gap-1">
-              {canAccess(currentStaff, 'dashboard') && (
-                <a
-                  href="/dashboard"
-                  onClick={handleDashboardClick}
-                  title="Go to Dashboard"
-                  className="btn btn-icon btn-sm btn-ghost"
-                  style={{ color: 'var(--ink-2)' }}
-                >
-                  <LayoutDashboard size={18} aria-hidden />
-                </a>
-              )}
-              <StaffBell role={currentStaff.role} staffId={currentStaff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
-              <ThemeToggle />
-            </div>
-          </div>
-          <div className="flex items-center gap-2 px-1 -mt-1">
-            <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{currentStaff.name[0]}</span>
-            <span className="text-[12.5px] font-bold">{currentStaff.name}</span>
-            <span className="pill" style={{ padding: '2px 8px', fontSize: '10px', textTransform: 'capitalize' }}>
-              {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
-            </span>
-          </div>
-          <div className="px-1 flex flex-col gap-1.5">
-            <ShiftStatus />
-            <BusinessDayHeaderBadge />
-          </div>
-          <div className="flex rounded-full p-[3px] border" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
-            {(['dine_in', 'takeaway'] as const).map((t) => (
-              <button key={t} onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
-                className="flex-1 py-2 rounded-full font-bold text-[13px] transition"
-                style={orderType === t ? { background: 'var(--ink)', color: 'var(--paper-2)' } : { color: 'var(--ink-2)' }}>
-                {t === 'dine_in' ? 'Dine-in' : 'Takeaway'}
+      {/* Desktop Top Header (hidden on mobile) */}
+      <header className="hidden md:flex items-center justify-between px-4 py-2 shrink-0 border-b z-20" style={{ background: 'var(--paper)', borderColor: 'var(--line)', minHeight: '52px', maxHeight: '52px' }}>
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/logo chaya one.png"
+            alt="ChayaOne"
+            className="brand-logo h-7 lg:h-8 w-auto object-contain shrink-0"
+          />
+          {canAccess(currentStaff, 'dashboard') && (
+            <a
+              href="/dashboard"
+              onClick={handleDashboardClick}
+              title="Go to Dashboard"
+              className="btn btn-icon btn-sm btn-ghost"
+              style={{ color: 'var(--ink-2)' }}
+            >
+              <LayoutDashboard size={18} aria-hidden />
+            </a>
+          )}
+          <StaffBell role={currentStaff.role} staffId={currentStaff.id} triggerClassName="btn btn-icon btn-sm btn-ghost" />
+          <ThemeToggle />
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          {/* Search menu */}
+          <div className="relative w-56 lg:w-64">
+            <Search size={15} aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-3)' }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search menu…"
+              aria-label="Search menu"
+              type="search"
+              className="w-full pl-8 pr-8 py-1.5 rounded-full border text-xs lg:text-sm outline-none"
+              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 grid place-items-center"
+                style={{ color: 'var(--ink-3)' }}
+              >
+                <X size={14} aria-hidden />
               </button>
-            ))}
+            )}
           </div>
+
+          {/* Floor map & tables */}
           <button
+            type="button"
             onClick={() => setFloorOpen(true)}
-            className="flex items-center justify-center gap-2 py-2.5 rounded-[14px] border-[1.5px] border-dashed font-bold text-[13px] shrink-0 transition hover:bg-[var(--paper-3)]"
+            title="Open Floor Map & Tables"
+            className="pill shrink-0 inline-flex items-center gap-1.5 cursor-pointer font-bold text-xs transition hover:opacity-85"
             style={{
-              borderColor: selectedTable ? 'var(--turmeric)' : 'var(--line-2)',
+              background: selectedTable ? 'color-mix(in srgb, var(--turmeric) 16%, var(--paper-2))' : 'var(--paper-2)',
+              border: selectedTable ? '1.5px solid var(--turmeric)' : '1px solid var(--line)',
               color: selectedTable ? 'var(--turmeric-d)' : 'var(--ink-2)',
-              background: selectedTable ? 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))' : 'var(--paper-2)',
             }}
           >
-            <Table2 size={16} aria-hidden className={selectedTable ? 'text-[var(--turmeric-d)]' : ''} />
+            <Table2 size={14} aria-hidden className={selectedTable ? 'text-[var(--turmeric-d)]' : ''} />
             <span>{selectedTable ? `Table ${selectedTable.label}` : 'Floor map & tables'}</span>
           </button>
-          <div className="flex flex-col gap-1.5 overflow-auto flex-1">
+
+          {/* Small Sync Button in Top Bar */}
+          <div className="relative shrink-0">
+            <button
+              id="topbar-sync-btn"
+              data-testid="topbar-sync-btn"
+              type="button"
+              onClick={() => setSyncOpen((o) => !o)}
+              title="Server Connection & Sync Settings"
+              className="pill flex items-center gap-1.5 cursor-pointer font-bold text-xs hover:opacity-85 transition"
+              style={{
+                background: syncOpen ? 'var(--paper-3)' : 'var(--paper-2)',
+                border: '1px solid var(--line)',
+                color: 'var(--ink-2)',
+              }}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <RefreshCw size={13} className={syncOpen ? 'text-emerald-500' : ''} />
+              <span>Sync</span>
+            </button>
+
+            {syncOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setSyncOpen(false)} />
+                <div
+                  className="absolute right-0 mt-2 w-[340px] z-50 rounded-2xl p-2.5 shadow-2xl"
+                  style={{
+                    background: 'var(--paper)',
+                    border: '1px solid var(--line-2)',
+                    boxShadow: 'var(--sh-3)',
+                  }}
+                >
+                  <div className="flex items-center justify-between px-2.5 py-1.5 border-b mb-2" style={{ borderColor: 'var(--line)' }}>
+                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>Server &amp; Sync Control</span>
+                    <button
+                      type="button"
+                      onClick={() => setSyncOpen(false)}
+                      className="btn btn-ghost btn-xs w-6 h-6 p-0 grid place-items-center rounded-lg cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <ServerSyncCard onManualSync={refreshTables} compact />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* POS WORKSPACE */}
+      <div className="grid grid-cols-1 md:grid-cols-[190px_1fr_310px] lg:grid-cols-[216px_1fr_336px] xl:grid-cols-[232px_1fr_360px] gap-3.5 p-3.5 flex-1 min-h-0 overflow-hidden">
+        {/* LEFT COLUMN: STAFF / CATEGORIES */}
+        <aside className="hidden md:flex flex-col h-full min-h-0 overflow-hidden gap-2">
+          {/* Staff profile & shift status */}
+          <div className="flex flex-col gap-2 shrink-0">
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white shrink-0" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{currentStaff.name[0]}</span>
+              <span className="text-[12.5px] font-bold truncate">{currentStaff.name}</span>
+              <span className="pill shrink-0" style={{ padding: '2px 7px', fontSize: '10px', textTransform: 'capitalize' }}>
+                {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
+              </span>
+            </div>
+            <div className="px-1 flex flex-col gap-1">
+              <ShiftStatus />
+              <BusinessDayHeaderBadge />
+            </div>
+            <div className="flex rounded-full p-[3px] border shrink-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
+              {(['dine_in', 'takeaway'] as const).map((t) => (
+                <button key={t} onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
+                  className="flex-1 py-1.5 rounded-full font-bold text-[12.5px] transition"
+                  style={orderType === t ? { background: 'var(--ink)', color: 'var(--paper-2)' } : { color: 'var(--ink-2)' }}>
+                  {t === 'dine_in' ? 'Dine-in' : 'Takeaway'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Compact scroll-up indicator/button */}
+          {canScrollCatUp && (
+            <button
+              type="button"
+              onClick={() => scrollCategories('up')}
+              aria-label="Scroll categories up"
+              className="w-full py-1 grid place-items-center text-xs font-bold rounded-lg border transition shrink-0 hover:bg-[var(--paper-3)]"
+              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}
+            >
+              <ChevronUp size={14} />
+            </button>
+          )}
+
+          {/* Category list - internal scroll */}
+          <div ref={categoryListRef} className="flex flex-col gap-1.5 overflow-y-auto overflow-x-hidden flex-1 min-h-0 pr-1 select-none pos-scroll">
             {menu.map((c) => {
               const Ic = getCategoryIcon(c.name);
               const on = c.id === activeCat && !q;
               return (
                 <button key={c.id} onClick={() => { setActiveCat(c.id); setSearch(''); }} aria-pressed={on}
-                  className="flex items-center gap-3 px-3 py-3 rounded-[14px] border font-bold text-sm transition text-left"
+                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-[12px] border font-bold text-[13px] transition text-left shrink-0 cursor-pointer"
                   style={on ? { background: 'var(--ink)', color: 'var(--paper-3)', borderColor: 'var(--ink)' } : { background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}>
-                  <Ic size={18} aria-hidden className="shrink-0" />{c.name}
-                  <span className="ml-auto text-[11px] opacity-60 tnum">{c.items.length}</span>
+                  <Ic size={16} aria-hidden className="shrink-0" />
+                  <span className="truncate">{c.name}</span>
+                  <span className="ml-auto text-[11px] opacity-60 tnum shrink-0">{c.items.length}</span>
                 </button>
               );
             })}
           </div>
-          <button
-            type="button"
-            disabled
-            title="QR Approvals is currently disabled"
-            className="relative flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] opacity-40 cursor-not-allowed select-none"
-            style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
-          >
-            <ClipboardList size={17} aria-hidden /> QR Approvals
-            {pendingApprovals > 0 && (
-              <span className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1.5 grid place-items-center rounded-full text-[11px] font-extrabold text-white tnum opacity-60" style={{ background: 'var(--ink-3)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
-            )}
-          </button>
-          {showInstallApp && (
-            <button onClick={() => staffInstall.promptInstall()} className="flex items-center justify-center gap-2 py-3 rounded-[14px] font-bold text-[13.5px] transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
-              <Download size={17} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install the Staff App'}
-            </button>
-          )}
-          <a href="/api/auth/logout" className="flex items-center justify-center gap-2 py-2.5 rounded-[14px] font-bold text-[13px] transition hover:bg-[var(--paper-3)] mt-auto" style={{ color: 'var(--ink-3)' }}>
-            <LogOut size={16} aria-hidden /> Logout
-          </a>
-        </aside>
 
-        <section className="flex flex-col min-w-0 pb-[calc(120px_+_env(safe-area-inset-bottom))] md:pb-0">
-          <div className="flex items-center gap-3 mb-3.5">
-            <h2 className="text-2xl md:text-[28px] shrink-0">{q ? `“${search.trim()}”` : cat?.name}</h2>
-            <div className="relative ml-auto hidden md:block w-full max-w-[240px]">
-              <Search size={16} aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-3)' }} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search menu…" aria-label="Search menu" type="search"
-                className="w-full pl-9 pr-9 py-2 rounded-full border text-sm outline-none" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }} />
-              {search && <button onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center" style={{ color: 'var(--ink-3)' }}><X size={15} aria-hidden /></button>}
-            </div>
-            {/* Floor Map & Tables in top bar (where unwanted GST badge was located) */}
+          {/* Compact scroll-down indicator/button */}
+          {canScrollCatDown && (
             <button
               type="button"
-              onClick={() => setFloorOpen(true)}
-              title="Open Floor Map & Tables"
-              className="pill shrink-0 hidden md:inline-flex items-center gap-1.5 cursor-pointer font-bold text-xs transition hover:opacity-85"
-              style={{
-                background: selectedTable ? 'color-mix(in srgb, var(--turmeric) 16%, var(--paper-2))' : 'var(--paper-2)',
-                border: selectedTable ? '1.5px solid var(--turmeric)' : '1px solid var(--line)',
-                color: selectedTable ? 'var(--turmeric-d)' : 'var(--ink-2)',
-              }}
+              onClick={() => scrollCategories('down')}
+              aria-label="Scroll categories down"
+              className="w-full py-1 grid place-items-center text-xs font-bold rounded-lg border transition shrink-0 hover:bg-[var(--paper-3)]"
+              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', color: 'var(--ink-2)' }}
             >
-              <Table2 size={14} aria-hidden className={selectedTable ? 'text-[var(--turmeric-d)]' : ''} />
-              <span>{selectedTable ? `Table ${selectedTable.label}` : 'Floor map & tables'}</span>
+              <ChevronDown size={14} />
             </button>
+          )}
 
-            {/* Small Sync Button in Top Bar */}
-            <div className="relative shrink-0 hidden md:block">
-              <button
-                id="topbar-sync-btn"
-                data-testid="topbar-sync-btn"
-                type="button"
-                onClick={() => setSyncOpen((o) => !o)}
-                title="Server Connection & Sync Settings"
-                className="pill flex items-center gap-1.5 cursor-pointer font-bold text-xs hover:opacity-85 transition"
-                style={{
-                  background: syncOpen ? 'var(--paper-3)' : 'var(--paper-2)',
-                  border: '1px solid var(--line)',
-                  color: 'var(--ink-2)',
-                }}
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <RefreshCw size={13} className={syncOpen ? 'text-emerald-500' : ''} />
-                <span>Sync</span>
-              </button>
-
-              {syncOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setSyncOpen(false)} />
-                  <div
-                    className="absolute right-0 mt-2 w-[340px] z-50 rounded-2xl p-2.5 shadow-2xl"
-                    style={{
-                      background: 'var(--paper)',
-                      border: '1px solid var(--line-2)',
-                      boxShadow: 'var(--sh-3)',
-                    }}
-                  >
-                    <div className="flex items-center justify-between px-2.5 py-1.5 border-b mb-2" style={{ borderColor: 'var(--line)' }}>
-                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>Server &amp; Sync Control</span>
-                      <button
-                        type="button"
-                        onClick={() => setSyncOpen(false)}
-                        className="btn btn-ghost btn-xs w-6 h-6 p-0 grid place-items-center rounded-lg cursor-pointer"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                    <ServerSyncCard onManualSync={refreshTables} compact />
-                  </div>
-                </>
+          {/* Bottom fixed controls */}
+          <div className="flex flex-col gap-1 shrink-0 pt-1 border-t" style={{ borderColor: 'var(--line)' }}>
+            <button
+              type="button"
+              disabled
+              title="QR Approvals is currently disabled"
+              className="relative flex items-center justify-center gap-2 py-2 rounded-[10px] font-bold text-xs opacity-40 cursor-not-allowed select-none"
+              style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-3)' }}
+            >
+              <ClipboardList size={15} aria-hidden /> QR Approvals
+              {pendingApprovals > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-4.5 px-1 grid place-items-center rounded-full text-[10px] font-extrabold text-white tnum opacity-60" style={{ background: 'var(--ink-3)' }} aria-label={`${pendingApprovals} pending`}>{pendingApprovals}</span>
               )}
-            </div>
+            </button>
+            {showInstallApp && (
+              <button onClick={() => staffInstall.promptInstall()} className="flex items-center justify-center gap-1.5 py-1.5 rounded-[10px] font-bold text-xs transition" style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}>
+                <Download size={14} aria-hidden /> {staffInstall.iosHint ? 'Add app to Home Screen' : 'Install Staff App'}
+              </button>
+            )}
+            <a href="/api/auth/logout" className="flex items-center justify-center gap-1.5 py-1.5 rounded-[10px] font-bold text-xs transition hover:bg-[var(--paper-3)]" style={{ color: 'var(--ink-3)' }}>
+              <LogOut size={14} aria-hidden /> Logout
+            </a>
+          </div>
+        </aside>
+
+        {/* CENTER COLUMN: PRODUCTS */}
+        <section className="flex flex-col min-w-0 h-full min-h-0 overflow-hidden pb-[calc(120px_+_env(safe-area-inset-bottom))] md:pb-0">
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <h2 className="text-xl md:text-2xl font-bold truncate">{q ? `“${search.trim()}”` : cat?.name}</h2>
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0" style={{ background: 'var(--paper-3)', color: 'var(--ink-3)' }}>
+              {shownItems.length} item{shownItems.length === 1 ? '' : 's'}
+            </span>
           </div>
 
           {live.length > 0 && <LiveOrders tickets={live} now={now} />}
 
-          <div className="grid gap-3 overflow-visible md:overflow-auto content-start pr-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px,1fr))' }}>
+          <div className="grid gap-3 overflow-y-auto overflow-x-hidden content-start pr-1 flex-1 min-h-0 pos-scroll" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(136px,1fr))' }}>
             {shownItems.length === 0 ? (
               <div className="col-span-full grid place-content-center text-center gap-2 py-12" style={{ color: 'var(--ink-3)' }}>
                 <Search size={34} className="mx-auto opacity-40" aria-hidden />
@@ -1806,12 +1923,13 @@ ${rows}
           </div>
         </section>
 
-        <aside className="card hidden md:flex flex-col p-[18px] self-start w-full max-h-[calc(100vh-2rem)] transition-all duration-200">
-          <div className="flex justify-between items-start mb-2.5">
+        {/* RIGHT COLUMN: CURRENT TICKET */}
+        <aside className="card hidden md:flex flex-col p-3.5 w-full h-full min-h-0 overflow-hidden">
+          <div className="flex justify-between items-start mb-2 shrink-0">
             <div>
-              <h3 className="text-[19px]">Current ticket</h3>
+              <h3 className="text-[18px]">Current ticket</h3>
               {orderType === 'dine_in' ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mt-0.5">
                   <button onClick={() => setFloorOpen(true)} title="Change table" className="text-[12.5px] font-bold underline-offset-2 hover:underline" style={{ color: !tableId ? 'var(--clay)' : 'var(--cardamom-d)' }}>
                     {selectedTable ? `Table ${selectedTable.label}` : 'Pick a table'}
                   </button>
@@ -1827,10 +1945,10 @@ ${rows}
                   )}
                 </div>
               ) : (
-                <span className="text-[12.5px] font-bold" style={{ color: 'var(--cardamom-d)' }}>Takeaway</span>
+                <span className="text-[12.5px] font-bold mt-0.5 block" style={{ color: 'var(--cardamom-d)' }}>Takeaway</span>
               )}
             </div>
-            <button onClick={clear} disabled={!cart.length} title="Clear ticket" aria-label="Clear ticket" className="btn btn-icon btn-sm btn-ghost"><RefreshCw size={16} aria-hidden /></button>
+            <button onClick={clear} disabled={!cart.length} title="Clear ticket" aria-label="Clear ticket" className="btn btn-icon btn-sm btn-ghost"><RefreshCw size={15} aria-hidden /></button>
           </div>
 
           <CartBody
@@ -1854,15 +1972,18 @@ ${rows}
           />
 
           {cart.length > 0 && (
-            <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
-              setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
+            <div className="shrink-0 mt-2">
+              <CustomerField name={orderCustName} phone={orderCustPhone} open={showOrderCust}
+                setName={setOrderCustName} setPhone={setOrderCustPhone} setOpen={setShowOrderCust} />
+            </div>
           )}
 
-          <div className="grid grid-cols-[1fr_1.2fr] gap-2.5 mt-3">
+          <div className="grid grid-cols-[1fr_1.2fr] gap-2.5 mt-auto pt-2 shrink-0">
             <button disabled={!cart.length || busy} onClick={() => submit(null)} className="btn btn-dark">Send to KOT</button>
             <button disabled={!cart.length || busy} onClick={startCharge} className="btn btn-primary">Charge →</button>
           </div>
         </aside>
+      </div>
 
         {/* floor modal */}
         {floorOpen && (() => {
@@ -2248,13 +2369,23 @@ ${rows}
                     <span className="inline-flex items-center gap-1.5 text-[12.5px] font-bold" style={{ color: custName.trim() ? 'var(--ink-2)' : 'var(--ink-3)' }}>
                       <User size={14} aria-hidden /> {billCustomer}{custPhone.trim() ? ` · ${custPhone.trim()}` : ''}
                     </span>
-                    <button onClick={() => setShowCust((v) => !v)} className="ml-auto text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>
+                    <button onClick={() => {
+                      if (showCust) {
+                        saveTableCustomer(custName, custPhone);
+                        setShowCust(false);
+                      } else {
+                        setShowCust(true);
+                      }
+                    }} className="ml-auto text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>
                       {showCust ? 'Done' : custName.trim() ? 'Edit' : '＋ Add customer'}
                     </button>
                   </div>
                   {showCust && (
                     <CustomerField name={custName} phone={custPhone} open={showCust}
-                      setName={setCustName} setPhone={setCustPhone} setOpen={setShowCust} compact />
+                      setName={setCustName} setPhone={setCustPhone} setOpen={(v) => {
+                        setShowCust(v);
+                        if (!v) saveTableCustomer(custName, custPhone);
+                      }} compact />
                   )}
                 </div>
 
@@ -2317,7 +2448,6 @@ ${rows}
             {toast}
           </div>
         )}
-      </div>
 
       {/* ── Mobile sticky cart bar — taps open the bottom-sheet (phones only) ── */}
       {!cartSheetOpen && cartCount > 0 && (
@@ -2553,6 +2683,7 @@ ${rows}
 
       {/* Midnight / Business Day Extension Prompt */}
       <BusinessDayPrompt currentStaff={currentStaff} />
+      <ConfirmDialog />
     </>
   );
 }
@@ -2600,118 +2731,123 @@ function CartBody({
     setDiscMode(m);
   }
   return (
-    <>
-      <div className="overflow-y-auto flex flex-col gap-2 min-h-0 max-h-[min(340px,36vh)] pr-0.5">
-        {!cart.length ? (
-          <div className="text-center py-5 flex flex-col items-center gap-1.5" style={{ color: 'var(--ink-3)' }}>
-            <Coffee size={28} className="opacity-40" aria-hidden />
-            <p className="text-xs font-semibold">Tap items to build ticket</p>
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      {!cart.length ? (
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center py-6 text-center select-none" style={{ color: 'var(--ink-3)' }}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-2.5" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
+            <Coffee size={28} className="opacity-45" aria-hidden />
           </div>
-        ) : cart.map((l) => {
-          const CatIcon = l.catName ? getCategoryIcon(l.catName) : null;
-          return (
-          <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-            <div className={`grid ${CatIcon ? 'grid-cols-[auto_1fr_auto_auto]' : 'grid-cols-[1fr_auto_auto]'} gap-2.5 items-center`}>
-              {CatIcon && (
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                  style={{
-                    background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))',
-                    border: '1px solid color-mix(in srgb, var(--turmeric) 20%, var(--line))',
-                    color: 'var(--turmeric-d, #b45309)',
-                  }}
-                  aria-hidden="true"
-                >
-                  <CatIcon size={16} className="stroke-[1.85]" />
-                </div>
-              )}
-              <div className="min-w-0 pr-1">
-                <div className="font-bold text-[13.5px] leading-tight truncate">{l.name}</div>
-                {l.notes && editingNoteKey !== l.key && (
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
-                      ↳ {l.notes}
-                    </span>
-                    <button type="button" onClick={() => openNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
-                    <button type="button" onClick={() => removeNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
+          <p className="text-sm font-bold text-[var(--ink-2)]">Tap items to build ticket</p>
+          <p className="text-xs text-[var(--ink-3)] mt-0.5">Select a category and tap items to begin</p>
+        </div>
+      ) : (
+        <div className="overflow-y-auto flex flex-col gap-2 min-h-0 flex-1 pr-1 pos-scroll">
+          {cart.map((l) => {
+            const CatIcon = l.catName ? getCategoryIcon(l.catName) : null;
+            return (
+            <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border shrink-0" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+              <div className={`grid ${CatIcon ? 'grid-cols-[auto_1fr_auto_auto]' : 'grid-cols-[1fr_auto_auto]'} gap-2.5 items-center`}>
+                {CatIcon && (
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                    style={{
+                      background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))',
+                      border: '1px solid color-mix(in srgb, var(--turmeric) 20%, var(--line))',
+                      color: 'var(--turmeric-d, #b45309)',
+                    }}
+                    aria-hidden="true"
+                  >
+                    <CatIcon size={16} className="stroke-[1.85]" />
                   </div>
                 )}
-                {!l.notes && editingNoteKey !== l.key && (
-                  <button type="button" onClick={() => openNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
-                    <Plus size={11} /> <span>Add note (e.g. without sugar)</span>
-                  </button>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => bump(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
-                <span className="font-bold w-6 text-center tnum">{l.qty}</span>
-                <button onClick={() => bump(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
-              </div>
-              <span className="text-[13.5px] tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
-            </div>
-
-            {editingNoteKey === l.key && (
-              <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
-                <div className="flex flex-wrap gap-1">
-                  {quickNotes.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setNoteDraft(preset)}
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
-                      style={{
-                        background: noteDraft === preset ? 'var(--turmeric)' : 'var(--paper)',
-                        color: noteDraft === preset ? '#2A1607' : 'var(--ink-2)',
-                        borderColor: 'var(--line-2)',
-                      }}
-                    >
-                      {preset}
+                <div className="min-w-0 pr-1">
+                  <div className="font-bold text-[13.5px] leading-tight truncate">{l.name}</div>
+                  {l.notes && editingNoteKey !== l.key && (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
+                        ↳ {l.notes}
+                      </span>
+                      <button type="button" onClick={() => openNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
+                      <button type="button" onClick={() => removeNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
+                    </div>
+                  )}
+                  {!l.notes && editingNoteKey !== l.key && (
+                    <button type="button" onClick={() => openNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
+                      <Plus size={11} /> <span>Add note (e.g. without sugar)</span>
                     </button>
-                  ))}
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    value={noteDraft}
-                    onChange={(e) => setNoteDraft(e.target.value)}
-                    placeholder="e.g. without sugar, extra hot..."
-                    className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
-                    style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveNote(l.key);
-                      if (e.key === 'Escape') removeNote(l.key);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => saveNote(l.key)}
-                    className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0"
-                    style={{ background: 'var(--turmeric-d)' }}
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!l.notes) removeNote(l.key);
-                      else openNoteEdit({ ...l, notes: l.notes });
-                    }}
-                    className="px-2 py-1 text-xs font-medium rounded-lg shrink-0"
-                    style={{ color: 'var(--ink-3)' }}
-                  >
-                    Cancel
-                  </button>
+                  <button onClick={() => bump(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
+                  <span className="font-bold w-6 text-center tnum">{l.qty}</span>
+                  <button onClick={() => bump(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
                 </div>
+                <span className="text-[13.5px] tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
               </div>
-            )}
-          </div>
-          );
-        })}
-      </div>
+
+              {editingNoteKey === l.key && (
+                <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
+                  <div className="flex flex-wrap gap-1">
+                    {quickNotes.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setNoteDraft(preset)}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
+                        style={{
+                          background: noteDraft === preset ? 'var(--turmeric)' : 'var(--paper)',
+                          color: noteDraft === preset ? '#2A1607' : 'var(--ink-2)',
+                          borderColor: 'var(--line-2)',
+                        }}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={noteDraft}
+                      onChange={(e) => setNoteDraft(e.target.value)}
+                      placeholder="e.g. without sugar, extra hot..."
+                      className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
+                      style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveNote(l.key);
+                        if (e.key === 'Escape') removeNote(l.key);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => saveNote(l.key)}
+                      className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0"
+                      style={{ background: 'var(--turmeric-d)' }}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!l.notes) removeNote(l.key);
+                        else openNoteEdit({ ...l, notes: l.notes });
+                      }}
+                      className="px-2 py-1 text-xs font-medium rounded-lg shrink-0"
+                      style={{ color: 'var(--ink-3)' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            );
+          })}
+        </div>
+      )}
 
       {cart.length > 0 && (
-        <div className="border-t border-dashed mt-3 pt-3" style={{ borderColor: 'var(--line-2)' }}>
+        <div className="border-t border-dashed mt-2.5 pt-2 shrink-0" style={{ borderColor: 'var(--line-2)' }}>
           <Row label={isGstActive && outlet.gstInclusive ? 'Taxable value' : 'Subtotal'} val={formatINR(bill.subtotalPaise)} />
           {bill.discountPaise > 0 && <Row label={discountPct > 0 ? `Discount (${discountPct}%)` : 'Discount'} val={`− ${formatINR(bill.discountPaise)}`} accent />}
           {isGstActive && <Row label="CGST" val={formatINR(bill.cgstPaise)} sub />}
@@ -2719,10 +2855,10 @@ function CartBody({
           {isGstActive && outlet.gstInclusive && <div className="text-[10px] mt-0.5" style={{ color: 'var(--ink-3)' }}>Menu prices include GST</div>}
           {scPct > 0 && <Row label="Service charge" val={formatINR(bill.serviceChargePaise)} />}
           <Row label="Round-off" val={`${bill.roundOffPaise >= 0 ? '+' : '−'} ${formatINR(Math.abs(bill.roundOffPaise))}`} sub />
-          <div className="flex justify-between font-extrabold font-display text-[19px] mt-2 pt-2 border-t" style={{ borderColor: 'var(--line)' }}>
+          <div className="flex justify-between font-extrabold font-display text-[18px] mt-1.5 pt-1.5 border-t" style={{ borderColor: 'var(--line)' }}>
             <span>Total</span><span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(bill.totalPaise)}</span>
           </div>
-          <div className="mt-3 flex flex-col gap-2">
+          <div className="mt-2 flex flex-col gap-1.5">
             {/* quick presets + service charge */}
             <div className="flex flex-wrap gap-1.5 items-center">
               {DISC_PRESETS.map((d) => <Chip key={d} on={d === discountPct && discountFlatPaise === 0} onClick={() => applyPreset(d)}>{d ? `${d}% off` : 'No disc.'}</Chip>)}
@@ -2730,29 +2866,29 @@ function CartBody({
             </div>
             {/* discount entry — label left, compact field + %/₹ selector aligned right */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[13.5px]" style={{ color: 'var(--ink-2)' }}>Discount</span>
+              <span className="text-[13px]" style={{ color: 'var(--ink-2)' }}>Discount</span>
               <div className="flex items-center gap-1.5 shrink-0">
-                <div className="relative w-[88px]">
+                <div className="relative w-[84px]">
                   {discMode === 'amt' && <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] font-bold" style={{ color: 'var(--ink-3)' }}>₹</span>}
                   {discMode === 'pct' ? (
                     <input key="pct" type="number" min={0} max={100} step={1} inputMode="numeric"
                       value={discountPct || ''} onChange={(e) => setDiscountPct(clampPct(e.target.value))}
                       placeholder="0" aria-label="Discount percent"
-                      className="w-full pl-2.5 pr-2.5 py-1.5 rounded-[9px] border text-[13.5px] outline-none tnum text-right"
+                      className="w-full pl-2.5 pr-2.5 py-1 rounded-[8px] border text-[13px] outline-none tnum text-right"
                       style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }} />
                   ) : (
                     <input key="amt" type="number" min={0} step="0.01" inputMode="decimal"
                       value={discountFlatPaise ? discountFlatPaise / 100 : ''} onChange={(e) => setDiscountFlatPaise(clampFlat(e.target.value))}
                       placeholder="0" aria-label="Discount amount in rupees"
-                      className="w-full pl-6 pr-2.5 py-1.5 rounded-[9px] border text-[13.5px] outline-none tnum text-right"
+                      className="w-full pl-6 pr-2.5 py-1 rounded-[8px] border text-[13px] outline-none tnum text-right"
                       style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }} />
                   )}
                 </div>
                 {/* %/₹ unit selector */}
-                <div className="flex rounded-[9px] p-[2px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}>
+                <div className="flex rounded-[8px] p-[2px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}>
                   {(['pct', 'amt'] as const).map((m) => (
                     <button key={m} onClick={() => pickMode(m)} aria-pressed={discMode === m} aria-label={m === 'pct' ? 'Discount by percent' : 'Discount by amount'}
-                      className="w-7 py-1 rounded-[6px] text-xs font-extrabold transition"
+                      className="w-6 py-0.5 rounded-[5px] text-[11px] font-extrabold transition"
                       style={discMode === m ? { background: 'var(--turmeric)', color: '#2a1607' } : { color: 'var(--ink-3)' }}>
                       {m === 'pct' ? '%' : '₹'}
                     </button>
@@ -2763,7 +2899,7 @@ function CartBody({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 

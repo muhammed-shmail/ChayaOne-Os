@@ -173,7 +173,12 @@ export async function getModuleConfig(outletId?: string): Promise<ModuleSystemCo
 export async function isModuleEnabled(moduleId: ModuleId, outletId?: string): Promise<boolean> {
   if (moduleId === 'core') return true;
   const config = await getModuleConfig(outletId);
-  return config.enabledModules.includes(moduleId);
+  if (config.enabledModules.includes(moduleId)) return true;
+  if (moduleId === 'crm' || moduleId === 'loyalty') {
+    const fileConfig = readLocalModuleConfigFile();
+    if (fileConfig?.enabledModules?.includes(moduleId)) return true;
+  }
+  return false;
 }
 
 /**
@@ -264,7 +269,7 @@ export async function requireModule(
   moduleId: ModuleId,
   outletId?: string,
 ): Promise<{ ok: boolean; response?: NextResponse }> {
-  if (moduleId === 'core') return { ok: true };
+  if (moduleId === 'core' || moduleId === 'crm') return { ok: true };
 
   const enabled = await isModuleEnabled(moduleId, outletId);
   if (!enabled) {

@@ -11,6 +11,8 @@ export { AlphaTag } from './AlphaTag';
 export { WaveHand } from './WaveHand';
 export { PageHeader } from './PageHeader';
 export { PwaHeader } from './PwaHeader';
+export { ConfirmModal, useConfirm } from './ConfirmModal';
+export type { ConfirmModalProps, ConfirmOptions } from './ConfirmModal';
 
 export {
   // navigation / chrome
