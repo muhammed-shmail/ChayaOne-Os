@@ -64,7 +64,7 @@ export interface ReceiptPrintPayload {
   address?: { line1?: string; city?: string; pincode?: string } | string | null;
   timezone?: string;
 
-  orderNumber: number;
+  orderNumber: number | string;
   tableLabel?: string | null;
   orderType: string;
   customerName?: string | null;
@@ -94,6 +94,7 @@ export interface ReceiptPrintPayload {
 
   isReprint?: boolean;
   isCancelled?: boolean;
+  isBillPreview?: boolean;
   paperWidth?: ReceiptPaperWidth;
   receiptConfig?: Partial<ReceiptConfig>;
   upiConfig?: Partial<UpiPaymentConfig>;
@@ -163,7 +164,10 @@ export function buildKotEscposBuffer(payload: KotPrintPayload, width = 42): Buff
       add('-'.repeat(width));
     }
     add(COMMANDS.LINE_FEED);
+    add(COMMANDS.LINE_FEED);
+    add(COMMANDS.LINE_FEED);
     add(COMMANDS.FULL_CUT);
+    add(COMMANDS.LINE_FEED);
     return Buffer.concat(chunks);
   }
 
@@ -206,7 +210,10 @@ export function buildKotEscposBuffer(payload: KotPrintPayload, width = 42): Buff
   add(COMMANDS.BOLD_OFF);
   add('-'.repeat(width));
   add(COMMANDS.LINE_FEED);
+  add(COMMANDS.LINE_FEED);
+  add(COMMANDS.LINE_FEED);
   add(COMMANDS.FULL_CUT);
+  add(COMMANDS.LINE_FEED);
 
   return Buffer.concat(chunks);
 }
@@ -388,8 +395,15 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   add(COMMANDS.LINE_FEED);
   add(COMMANDS.LINE_FEED);
   add(COMMANDS.LINE_FEED);
-  add(COMMANDS.CASH_DRAWER);
+  add(COMMANDS.LINE_FEED);
+
+  // Pulse cash drawer only for settled cash receipts at checkout counter (never for bill previews or reprints)
+  if (!payload.isBillPreview && !payload.isReprint && payload.paymentMethod === 'CASH') {
+    add(COMMANDS.CASH_DRAWER);
+  }
+
   add(COMMANDS.FULL_CUT);
+  add(COMMANDS.LINE_FEED);
 
   return Buffer.concat(chunks);
 }

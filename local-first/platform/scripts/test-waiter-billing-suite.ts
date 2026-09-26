@@ -1,6 +1,7 @@
 import { prisma } from '@cafeos/db';
 import { resolveReceiptPrinter, routeOrderToStations } from '../apps/web/lib/print/router';
 import { normalizeStationId, isStationMatch, readWaiterStations } from '../apps/web/lib/waiter-stations';
+import { buildReceiptEscposBuffer, COMMANDS } from '../apps/web/lib/print/escpos';
 
 async function runTestSuite() {
   console.log('====================================================');
@@ -198,6 +199,46 @@ async function runTestSuite() {
   const juiceJob = kotJobs.find((j) => j.targetDevice?.id === 'pr-juice');
   assert(Boolean(juiceJob), 'Juice job exists and targets pr-juice');
   assert(juiceJob?.payload.items[0]?.name === 'Juice', 'Juice job contains Juice');
+
+  console.log('\n--- Immediate Station Printing & ESC/POS Protocol Tests ---');
+
+  // Test 35: Bill Preview must NOT send cash drawer pulse (avoids printer freeze/delay on remote stations like P2)
+  const billPreviewBuf = buildReceiptEscposBuffer({
+    storeName: 'Test Cafe',
+    orderNumber: 101,
+    orderType: 'dine_in',
+    tableLabel: 'T1',
+    placedAt: new Date(),
+    subtotalPaise: 50000,
+    totalPaise: 50000,
+    isBillPreview: true,
+    paymentMethod: 'CASH',
+    items: [{ name: 'Test Chai', qty: 1, totalPaise: 50000 }],
+  });
+  const drawerSubseq = COMMANDS.CASH_DRAWER;
+  const billHasDrawer = billPreviewBuf.includes(drawerSubseq);
+  assert(!billHasDrawer, 'Bill preview ESC/POS buffer suppresses cash drawer pulse (prevents P2 printer delay)');
+
+  // Test 36: Settled Cash Receipt DOES include cash drawer pulse for counter cashier
+  const cashReceiptBuf = buildReceiptEscposBuffer({
+    storeName: 'Test Cafe',
+    orderNumber: 101,
+    orderType: 'dine_in',
+    tableLabel: 'T1',
+    placedAt: new Date(),
+    subtotalPaise: 50000,
+    totalPaise: 50000,
+    isBillPreview: false,
+    paymentMethod: 'CASH',
+    items: [{ name: 'Test Chai', qty: 1, totalPaise: 50000 }],
+  });
+  const receiptHasDrawer = cashReceiptBuf.includes(drawerSubseq);
+  assert(receiptHasDrawer, 'Settled cash receipt ESC/POS buffer includes cash drawer pulse at counter');
+
+  // Test 37: Cut command includes post-cut line feed to cleanly advance and cycle knife
+  const cutIndex = billPreviewBuf.indexOf(COMMANDS.FULL_CUT);
+  assert(cutIndex !== -1, 'ESC/POS buffer contains full cut command');
+  assert(cutIndex < billPreviewBuf.length - COMMANDS.FULL_CUT.length, 'Cut command is followed by trailing feed to cycle knife');
 
   console.log('\n====================================================');
   console.log(`RESULT: ${passed}/${total} assertions passed (${Math.round((passed / total) * 100)}%)`);

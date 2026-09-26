@@ -37,7 +37,7 @@ export interface ReceiptInputData {
   gstin?: string | null;
   timezone?: string;
 
-  orderNumber: number;
+  orderNumber: number | string;
   tableLabel?: string | null;
   orderType: 'dine_in' | 'takeaway' | 'delivery' | string;
   placedAt: Date | string;

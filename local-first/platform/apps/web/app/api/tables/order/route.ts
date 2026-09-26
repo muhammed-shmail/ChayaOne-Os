@@ -100,12 +100,21 @@ async function dispatchStationBillPrint(
   staffName?: string | null,
 ) {
   // 1. Resolve waiter's station
-  let waiterStation = requestedStation || (session.permissions as any)?.station || null;
+  let waiterStation = requestedStation || (session.permissions as any)?.station || (session.permissions as any)?.section || null;
   if (!waiterStation && session.staffId) {
     const staffObj = await prisma.staffUser
       .findUnique({ where: { id: session.staffId }, select: { permissions: true } })
       .catch(() => null);
-    waiterStation = (staffObj?.permissions as any)?.station || null;
+    waiterStation = (staffObj?.permissions as any)?.station || (staffObj?.permissions as any)?.section || null;
+  }
+  if (!waiterStation && tableId) {
+    const tbl = await prisma.tableMap
+      .findUnique({ where: { id: tableId }, select: { label: true } })
+      .catch(() => null);
+    if (tbl?.label) {
+      const match = tbl.label.match(/^(P\d+)/i);
+      if (match && match[1]) waiterStation = match[1].toUpperCase();
+    }
   }
 
   // 2. Fetch orders for this table
