@@ -19,7 +19,10 @@ function getLocalDateBounds(dateStr: string, timezone: string): { start: Date; e
 }
 
 function parseLocalDateTime(dateStr: string, timeStr?: string | null): Date {
-  const [year, month, day] = dateStr.split('-').map(Number);
+  const partsDate = dateStr.split('-').map(Number);
+  const year = partsDate[0] ?? 2026;
+  const month = partsDate[1] ?? 1;
+  const day = partsDate[2] ?? 1;
   let hours = 9;
   let minutes = 0;
   if (timeStr) {
@@ -27,13 +30,15 @@ function parseLocalDateTime(dateStr: string, timeStr?: string | null): Date {
     const isAm = /am/i.test(timeStr);
     const cleaned = timeStr.replace(/(am|pm)/i, '').trim();
     const parts = cleaned.split(':').map(Number);
-    if (!isNaN(parts[0])) {
-      hours = parts[0];
+    const p0 = parts[0];
+    const p1 = parts[1];
+    if (typeof p0 === 'number' && !Number.isNaN(p0)) {
+      hours = p0;
       if (isPm && hours < 12) hours += 12;
       if (isAm && hours === 12) hours = 0;
     }
-    if (parts[1] !== undefined && !isNaN(parts[1])) {
-      minutes = parts[1];
+    if (typeof p1 === 'number' && !Number.isNaN(p1)) {
+      minutes = p1;
     }
   }
   // Store offset for Indian timezone (UTC+5:30)
