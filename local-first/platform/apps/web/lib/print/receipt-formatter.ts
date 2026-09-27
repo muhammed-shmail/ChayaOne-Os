@@ -818,10 +818,10 @@ ${typeof window !== 'undefined' && window.location?.origin ? `<base href="${wind
     <div class="store-title">${esc(model.storeName)}</div>
   `}
 
+  ${model.headerNote ? `<div class="store-details" style="font-style:italic;">${esc(model.headerNote)}</div>` : ''}
   ${model.addressText ? `<div class="store-details">${esc(model.addressText)}</div>` : ''}
   ${model.phone ? `<div class="store-details">Tel: ${esc(model.phone)}</div>` : ''}
   ${model.isGstActive && model.gstin ? `<div class="store-details">GSTIN: ${esc(model.gstin)}</div>` : ''}
-  ${model.headerNote ? `<div class="store-details" style="font-style:italic;">${esc(model.headerNote)}</div>` : ''}
   ${model.isGstActive ? `<div class="doc-title">TAX INVOICE</div>` : ''}
 
   <div class="div-dashed"></div>

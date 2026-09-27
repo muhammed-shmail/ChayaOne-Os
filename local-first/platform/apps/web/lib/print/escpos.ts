@@ -312,14 +312,14 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
     add(COMMANDS.BOLD_OFF);
   }
 
+  if (model.headerNote) {
+    add(model.headerNote);
+  }
   if (model.addressText) {
     add(model.addressText);
   }
   if (model.contactLine) {
     add(model.contactLine);
-  }
-  if (model.headerNote) {
-    add(model.headerNote);
   }
 
   // Meta: Table + Order Number (SAME ROW) & Date + Time (SAME ROW)
