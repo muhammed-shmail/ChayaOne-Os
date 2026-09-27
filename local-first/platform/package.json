@@ -8,12 +8,12 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev --filter=!@cafeos/desktop",
-    "dev:all": "turbo run dev --filter=!@cafeos/desktop",
+    "dev": "npm run db:ensure && turbo run dev --filter=!@cafeos/desktop",
+    "dev:all": "npm run db:ensure && turbo run dev --filter=!@cafeos/desktop",
     "dev:desktop": "npm run build -w @cafeos/desktop && npx -w @cafeos/desktop electron .",
     "dev:waiter": "npm run -w @cafeos/waiter dev",
     "dev:customer": "npm run -w @cafeos/customer dev",
-    "dev:server": "npm run -w @cafeos/web dev",
+    "dev:server": "npm run db:ensure && npm run -w @cafeos/web dev",
     "start:local": "node scripts/launch-local-server.mjs",
     "build": "turbo run build",
     "build:all": "turbo run build",
