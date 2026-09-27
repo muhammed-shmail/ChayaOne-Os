@@ -185,6 +185,7 @@ async function dispatchStationBillPrint(
 
   const billPayload = {
     storeName: outlet?.name || 'Chaya Cafe',
+    logoUrl: receiptConfig.logoUrl || (outlet?.settings as any)?.logoUrl || (outlet?.settings as any)?.receipt?.logoUrl || null,
     gstin: outlet?.gstin ?? undefined,
     address: typeof outlet?.address === 'string' ? outlet.address : undefined,
     orderNumber: orderNumbers,

@@ -1873,7 +1873,7 @@ export default function DashboardClient({
 
     const html = inner.trim().startsWith('<!DOCTYPE html>')
       ? inner
-      : `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title><style>
+      : `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><base href="${typeof window !== 'undefined' ? window.location.origin : ''}"/><title>${title}</title><style>
   @page { size: 80mm auto; margin: 3mm 4mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { width: 72mm; font-family: 'Courier New', Courier, monospace; font-size: 11pt; line-height: 1.35; color: #000; background: #fff; }
@@ -1898,7 +1898,7 @@ export default function DashboardClient({
   .footer { text-align: center; font-size: 9pt; color: #333; margin-top: 4pt; line-height: 1.4; }
   .footer .thank-you { font-size: 11pt; font-weight: 700; color: #000; margin-bottom: 2pt; }
   @media screen { body { background: #f5f5f5; padding: 8px; } .receipt { background: #fff; padding: 8px; box-shadow: 0 0 12px rgba(0,0,0,0.15); } }
-</style></head><body><div class="receipt">${inner}</div><script>window.onload=function(){window.print();}<\/script></body></html>`;
+</style></head><body><div class="receipt">${inner}</div></body></html>`;
 
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;opacity:0;pointer-events:none;';
@@ -1910,11 +1910,37 @@ export default function DashboardClient({
     const iframeWin = iframe.contentWindow;
     const cleanup = () => { try { document.body.removeChild(iframe); } catch {} };
     if (iframeWin) {
-      setTimeout(() => {
-        try { iframeWin.focus(); iframeWin.print(); console.log(`[PRINT] Dashboard dialog launched — ${jid}`); }
-        catch (e) { console.error(`[PRINT ERROR] ${jid}:`, e); flashMessage('Print failed'); }
-        finally { setTimeout(cleanup, 2000); }
-      }, 350);
+      let fired = false;
+      const triggerPrint = () => {
+        if (fired) return;
+        fired = true;
+        try {
+          iframeWin.focus();
+          iframeWin.print();
+          console.log(`[PRINT] Dashboard dialog launched — ${jid}`);
+        } catch (e) {
+          console.error(`[PRINT ERROR] ${jid}:`, e);
+          flashMessage('Print failed');
+        } finally {
+          setTimeout(cleanup, 2500);
+        }
+      };
+
+      const imgs = Array.from(doc.images || []);
+      if (imgs.length === 0) {
+        setTimeout(triggerPrint, 80);
+      } else {
+        let remaining = imgs.length;
+        const onReady = () => {
+          remaining--;
+          if (remaining <= 0) setTimeout(triggerPrint, 60);
+        };
+        imgs.forEach((img) => {
+          if (img.complete && img.naturalWidth > 0) onReady();
+          else { img.onload = onReady; img.onerror = onReady; }
+        });
+        setTimeout(triggerPrint, 1200);
+      }
     } else { cleanup(); }
   }
 
@@ -2286,7 +2312,23 @@ export default function DashboardClient({
         reader.readAsDataURL(f);
       });
 
-    // 1. Try standard FormData upload
+    // 1. Try Base64 JSON first for images <= 4MB (immune to multipart boundary/streaming bugs in Windows standalone & Electron)
+    if (file.size <= 4 * 1024 * 1024) {
+      try {
+        const base64Data = await toBase64(file);
+        const res = await fetch('/api/dashboard/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Data, name: file.name }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (res.ok && d.url) return d.url as string;
+      } catch (e) {
+        console.warn('[uploadImage] Base64 upload attempt error, trying FormData fallback:', e);
+      }
+    }
+
+    // 2. Standard FormData upload
     try {
       const fd = new FormData();
       fd.append('image', file);
@@ -2294,28 +2336,23 @@ export default function DashboardClient({
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.url) return d.url as string;
 
-      // If server failed with 400 / upload_failure (common in Windows standalone/Electron multipart parsing),
-      // seamlessly retry using Base64 JSON payload
-      if (res.status === 400 || d.error === 'upload_failure') {
-        console.warn('[uploadImage] FormData failed with 400, attempting Base64 JSON fallback...');
-        const base64Data = await toBase64(file);
-        const retryRes = await fetch('/api/dashboard/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64Data, name: file.name }),
-        });
-        const retryD = await retryRes.json().catch(() => ({}));
-        if (retryRes.ok && retryD.url) return retryD.url as string;
-      }
+      // 3. Fallback: retry with Base64 JSON
+      const base64Data = await toBase64(file);
+      const retryRes = await fetch('/api/dashboard/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Data, name: file.name }),
+      });
+      const retryD = await retryRes.json().catch(() => ({}));
+      if (retryRes.ok && retryD.url) return retryD.url as string;
 
-      const errMsg = d.message || d.error || 'Upload failed';
-      console.error('[uploadImage error]', res.status, d);
+      const errMsg = retryD.message || d.message || d.error || 'Upload failed';
+      console.error('[uploadImage error]', res.status, d, retryD);
       flashMessage(`Upload failed: ${errMsg}`);
       return null;
     } catch (err) {
-      // Network error with FormData: retry once with Base64 JSON payload
+      // Final attempt with Base64 JSON on network error
       try {
-        console.warn('[uploadImage] Network error with FormData, attempting Base64 JSON fallback...');
         const base64Data = await toBase64(file);
         const retryRes = await fetch('/api/dashboard/upload', {
           method: 'POST',

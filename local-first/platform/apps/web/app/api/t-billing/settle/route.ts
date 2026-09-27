@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
     cashierName: session.name,
     storeName: outletInfo?.name ?? 'CHAYAONE CAFE',
     outletName: outletInfo?.name ?? 'CHAYAONE CAFE',
-    logoUrl: (outletInfo?.settings as any)?.logoUrl || null,
+    logoUrl: (outletInfo?.settings as any)?.logoUrl || receiptConfig.logoUrl || (outletInfo?.settings as any)?.receipt?.logoUrl || null,
     address: outletInfo?.address ?? null,
     timezone: outletInfo?.timezone ?? 'Asia/Kolkata',
     gstin: outletInfo?.gstin ?? undefined,

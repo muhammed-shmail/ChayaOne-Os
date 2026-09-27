@@ -321,7 +321,7 @@ export function formatReceiptModel(
     : null;
 
   // 4. Logo & Store Header
-  const resolvedLogoUrl = data.receiptConfig?.showLogo !== false ? (data.logoUrl || null) : null;
+  const resolvedLogoUrl = data.receiptConfig?.showLogo !== false ? (data.logoUrl || data.receiptConfig?.logoUrl || null) : null;
   const hasLogo = Boolean(resolvedLogoUrl);
 
   let addressText: string | null = null;
@@ -571,6 +571,7 @@ export function formatReceiptHtml(
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
+${typeof window !== 'undefined' && window.location?.origin ? `<base href="${window.location.origin}"/>` : ''}
 <title>${esc(docTitle)} - ${esc(String(data.orderNumber))}</title>
 <style>
   @page {
@@ -895,9 +896,42 @@ export function formatReceiptHtml(
 </div>
 ${autoPrint ? `
 <script>
-  window.onload = function() {
-    window.print();
-  };
+  function runPrint() {
+    var imgs = Array.from(document.images || []);
+    if (imgs.length === 0) {
+      setTimeout(function() { window.focus(); window.print(); }, 60);
+      return;
+    }
+    var remaining = imgs.length;
+    var fired = false;
+    function done() {
+      remaining--;
+      if (remaining <= 0 && !fired) {
+        fired = true;
+        setTimeout(function() { window.focus(); window.print(); }, 80);
+      }
+    }
+    imgs.forEach(function(img) {
+      if (img.complete && img.naturalWidth > 0) {
+        done();
+      } else {
+        img.addEventListener('load', done);
+        img.addEventListener('error', done);
+      }
+    });
+    setTimeout(function() {
+      if (!fired) {
+        fired = true;
+        window.focus();
+        window.print();
+      }
+    }, 1500);
+  }
+  if (document.readyState === 'complete') {
+    runPrint();
+  } else {
+    window.addEventListener('load', runPrint);
+  }
 </script>
 ` : ''}
 </body>

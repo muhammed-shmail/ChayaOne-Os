@@ -1174,8 +1174,9 @@ export default function DashboardClient({
   function printOrderDoc(title: string, inner: string) {
     const w = window.open('', '_blank', 'width=380,height=660');
     if (!w) { flashMessage('Allow pop-ups to print'); return; }
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const close = '<' + '/script>';
-    w.document.write(`<html><head><title>${title}</title><style>
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"/><base href="${origin}"/><title>${title}</title><style>
       @page { size: 80mm auto; margin: 3mm 4mm; }
       *{font-family:Consolas, 'SFMono-Regular', Menlo, Courier, monospace;color:#000;box-sizing:border-box}
       body{width:72mm;margin:0 auto;padding:6px;font-size:9.5pt;line-height:1.3}
@@ -1184,7 +1185,31 @@ export default function DashboardClient({
       .line{border-top:1px dashed #000;margin:3pt 0} .tot{font-weight:800;font-size:11pt}
       .meta-row{display:flex;justify-content:space-between;align-items:center;font-size:8.5pt;padding:0.5pt 0}
       .meta-row.bold{font-weight:700}
-    </style></head><body>${inner}<script>window.onload=function(){window.print();setTimeout(function(){window.close()},300)}${close}</body></html>`);
+    </style></head><body>${inner}<script>
+      function doPrint() {
+        var imgs = Array.from(document.images || []);
+        if (imgs.length === 0) {
+          window.focus(); window.print(); setTimeout(function(){ window.close(); }, 300);
+          return;
+        }
+        var remaining = imgs.length;
+        var fired = false;
+        function finish() {
+          remaining--;
+          if (remaining <= 0 && !fired) {
+            fired = true;
+            setTimeout(function() { window.focus(); window.print(); setTimeout(function(){ window.close(); }, 300); }, 60);
+          }
+        }
+        imgs.forEach(function(img) {
+          if (img.complete && img.naturalWidth > 0) finish();
+          else { img.addEventListener('load', finish); img.addEventListener('error', finish); }
+        });
+        setTimeout(function() { if (!fired) { fired = true; window.focus(); window.print(); setTimeout(function(){ window.close(); }, 300); } }, 1500);
+      }
+      if (document.readyState === 'complete') doPrint();
+      else window.addEventListener('load', doPrint);
+    ${close}</body></html>`);
     w.document.close();
   }
 
@@ -1523,7 +1548,23 @@ export default function DashboardClient({
         reader.readAsDataURL(f);
       });
 
-    // 1. Try standard FormData upload
+    // 1. Try Base64 JSON first for images <= 4MB (immune to multipart boundary/streaming bugs in Windows standalone & Electron)
+    if (file.size <= 4 * 1024 * 1024) {
+      try {
+        const base64Data = await toBase64(file);
+        const res = await fetch('/api/dashboard/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Data, name: file.name }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (res.ok && d.url) return d.url as string;
+      } catch (e) {
+        console.warn('[uploadImage] Base64 upload attempt error, trying FormData fallback:', e);
+      }
+    }
+
+    // 2. Standard FormData upload
     try {
       const fd = new FormData();
       fd.append('image', file);
@@ -1531,28 +1572,23 @@ export default function DashboardClient({
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.url) return d.url as string;
 
-      // If server failed with 400 / upload_failure (common in Windows standalone/Electron multipart parsing),
-      // seamlessly retry using Base64 JSON payload
-      if (res.status === 400 || d.error === 'upload_failure') {
-        console.warn('[uploadImage] FormData failed with 400, attempting Base64 JSON fallback...');
-        const base64Data = await toBase64(file);
-        const retryRes = await fetch('/api/dashboard/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64Data, name: file.name }),
-        });
-        const retryD = await retryRes.json().catch(() => ({}));
-        if (retryRes.ok && retryD.url) return retryD.url as string;
-      }
+      // 3. Fallback: retry with Base64 JSON
+      const base64Data = await toBase64(file);
+      const retryRes = await fetch('/api/dashboard/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64Data, name: file.name }),
+      });
+      const retryD = await retryRes.json().catch(() => ({}));
+      if (retryRes.ok && retryD.url) return retryD.url as string;
 
-      const errMsg = d.message || d.error || 'Upload failed';
-      console.error('[uploadImage error]', res.status, d);
+      const errMsg = retryD.message || d.message || d.error || 'Upload failed';
+      console.error('[uploadImage error]', res.status, d, retryD);
       flashMessage(`Upload failed: ${errMsg}`);
       return null;
     } catch (err) {
-      // Network error with FormData: retry once with Base64 JSON payload
+      // Final attempt with Base64 JSON on network error
       try {
-        console.warn('[uploadImage] Network error with FormData, attempting Base64 JSON fallback...');
         const base64Data = await toBase64(file);
         const retryRes = await fetch('/api/dashboard/upload', {
           method: 'POST',

@@ -85,7 +85,7 @@ function detectImage(buf: Buffer, clientMime?: string, fileName?: string): Detec
   }
 
   // 2. JPEG: FF D8
-  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8) {
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xd8) {
     return { valid: true, ext: 'jpg', mime: 'image/jpeg' };
   }
 
@@ -214,15 +214,25 @@ export async function POST(req: NextRequest) {
   const contentType = (req.headers.get('content-type') || '').toLowerCase();
   if (contentType.includes('application/json')) {
     const json = await req.json().catch(() => null);
-    if (json?.image && typeof json.image === 'string') {
-      const match = json.image.match(/^data:([a-zA-Z0-9\/+-]+);base64,(.+)$/);
-      if (match) {
-        mime = match[1];
-        buf = Buffer.from(match[2], 'base64');
-      } else {
-        buf = Buffer.from(json.image, 'base64');
+    const rawImage = json?.image || json?.file || json?.logo || json?.data;
+    if (rawImage && typeof rawImage === 'string') {
+      let b64 = rawImage;
+      if (b64.includes('base64,')) {
+        const parts = b64.split('base64,');
+        const prefix = parts[0];
+        b64 = parts[1];
+        const mimeMatch = prefix.match(/data:([^;]+)/i);
+        if (mimeMatch) {
+          mime = mimeMatch[1].trim().toLowerCase();
+        }
       }
-      blobFileName = json.name || 'image.png';
+      b64 = b64.replace(/\s+/g, '');
+      try {
+        buf = Buffer.from(b64, 'base64');
+      } catch (e) {
+        console.warn('[Upload] Base64 decoding failed:', e);
+      }
+      blobFileName = json.name || json.fileName || 'image.png';
     }
   }
 
@@ -259,6 +269,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Fallback: raw binary body if sent directly with image MIME type
+  if (!buf && (contentType.startsWith('image/') || contentType.includes('application/octet-stream'))) {
+    const rawBuf = await req.arrayBuffer().catch(() => null);
+    if (rawBuf && rawBuf.byteLength > 0) {
+      buf = Buffer.from(rawBuf);
+      mime = contentType.split(';')[0].trim();
+      blobFileName = 'upload.png';
+    }
+  }
+
   if (!buf || buf.length === 0) {
     return NextResponse.json({ error: 'no_file', message: 'No image file provided' }, { status: 400 });
   }
@@ -279,9 +299,13 @@ export async function POST(req: NextRequest) {
     if (extFromName && ['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif', 'avif', 'ico', 'bmp', 'jfif'].includes(extFromName)) {
       ext = extFromName === 'jpeg' || extFromName === 'jfif' ? 'jpg' : extFromName;
       mime = mime || `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+    } else if (mime && mime.startsWith('image/')) {
+      const sub = mime.replace('image/', '').replace('x-', '').replace('vnd.microsoft.', '');
+      ext = sub === 'jpeg' || sub === 'jfif' || sub === 'pjpeg' ? 'jpg' : sub === 'svg+xml' ? 'svg' : sub;
     } else {
+      // Default to png rather than failing
       ext = 'png';
-      mime = mime || 'image/png';
+      mime = 'image/png';
     }
   }
 
