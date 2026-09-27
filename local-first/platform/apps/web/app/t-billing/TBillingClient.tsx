@@ -5,7 +5,8 @@ import { formatINR, computeBill } from '@cafeos/core';
 import type { ReceiptConfig, ReceiptPaperWidth } from '@/lib/receipt';
 import type { KitchenWorkflowConfig } from '@/lib/kitchenWorkflow';
 import type { UpiPaymentConfig } from '@/lib/print/upi';
-import type { ReceiptInputData } from '@/lib/print/receipt-formatter';
+import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
+import { printThermalReceipt } from '@/lib/print/thermal-printer';
 import ReceiptPreviewModal from '@/components/receipt/ReceiptPreviewModal';
 import {
   Table2, Search, RefreshCw, Printer, Receipt, ArrowLeft,
@@ -24,6 +25,9 @@ interface TBillingProps {
   outlet: {
     id: string;
     name: string;
+    brand?: string;
+    phone?: string | null;
+    logoUrl?: string | null;
     gstin: string | null;
     stateCode: string;
     gstEnabled: boolean;
@@ -634,6 +638,10 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       setView('completed');
       loadOrders();
       loadCompletedOrders();
+
+      if (printReceipt) {
+        handlePrintReceipt(data.receipt || previewData);
+      }
     } catch (err) {
       console.error(err);
       flash('Network error settling bill.');
@@ -647,11 +655,13 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     if (settledResult?.receipt) {
       const r = settledResult.receipt;
       return {
-        storeName: r.storeName || outlet.name,
-        logoUrl: r.logoUrl || outlet.receipt.logoUrl,
+        storeName: r.storeName || outlet.brand || outlet.name,
+        logoUrl: outlet.receipt?.showLogo !== false ? (r.logoUrl || outlet.logoUrl || outlet.receipt?.logoUrl) : null,
         address: r.address || outlet.address,
-        phone: r.phone || outlet.receipt.phone,
+        phone: r.phone || outlet.receipt?.phone || outlet.phone,
         gstin: r.gstin || outlet.gstin,
+        header: outlet.receipt?.header ?? r.headerNote ?? null,
+        footer: outlet.receipt?.footer ?? r.footerNote ?? null,
         timezone: r.timezone || outlet.timezone || 'Asia/Kolkata',
         orderNumber: r.orderNumber,
         tableLabel: r.tableLabel || r.tableName,
@@ -680,11 +690,13 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     }
     if (!selectedOrder) return null;
     return {
-      storeName: outlet.name,
-      logoUrl: outlet.receipt.logoUrl,
+      storeName: outlet.brand || outlet.name,
+      logoUrl: outlet.receipt?.showLogo !== false ? (outlet.logoUrl || outlet.receipt?.logoUrl) : null,
       address: outlet.address,
-      phone: outlet.receipt.phone,
+      phone: outlet.receipt?.phone || outlet.phone,
       gstin: outlet.gstin,
+      header: outlet.receipt?.header ?? null,
+      footer: outlet.receipt?.footer ?? null,
       timezone: outlet.timezone || 'Asia/Kolkata',
       orderNumber: selectedOrder.number,
       tableLabel: selectedOrder.table?.label ?? null,
@@ -723,6 +735,11 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     tbPrintInFlight.current = true;
 
     const activeData = receiptDataOverride || previewData;
+    if (!activeData) {
+      tbPrintInFlight.current = false;
+      return;
+    }
+
     const targetOrderId = previewOrderOverride ? (previewOrderOverride as any).orderId : (selectedOrder?.id || settledResult?.order?.id);
     const paper = widthOverride || outlet.receipt.paperWidth || '80mm';
     const jobId = `tbilling-${targetOrderId || 'unknown'}-${Date.now()}`;
@@ -731,56 +748,31 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     console.log(`[PRINT] Job ID   : ${jobId}`);
     console.log(`[PRINT] Order ID : ${targetOrderId || 'N/A'}`);
     console.log(`[PRINT] Paper    : ${paper}`);
-    console.log(`[PRINT] Printer  : TVSE RP3200 Lite (configured receipt printer)`);
-    console.log(`[PRINT] Status   : QUEUED`);
+    console.log(`[PRINT] Status   : PRINTING VIA SHARED THERMAL PIPELINE`);
 
     try {
-      // Path 1: Desktop App ESC/POS direct print (preferred — no Windows dialog)
-      const desktopOk = await LocalPrinterClient.requestPrint({
-        ...(activeData || {}),
-        paperWidth: paper,
-        printerName: 'TVSE RP3200 Lite',
-      });
+      // 1. Shared Bill Renderer (exact same pipeline as Billing Configuration Test Print)
+      const htmlBody = formatReceiptHtml(activeData, paper, { autoPrint: false });
 
-      // Path 2: LAN print queue via API (server-side ESC/POS → network printer)
-      let queueOk = false;
-      if (targetOrderId) {
-        try {
-          console.log(`[PRINT] Dispatching LAN print queue job for order: ${targetOrderId}`);
-          const res = await fetch('/api/print/reprint', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ orderId: targetOrderId, type: 'RECEIPT' }),
-          });
-          queueOk = res.ok;
-          if (queueOk) {
-            console.log(`[PRINT] LAN print queue accepted job for order: ${targetOrderId}`);
-          } else {
-            console.warn(`[PRINT] LAN print queue returned HTTP ${res.status}`);
-          }
-        } catch (err) {
-          console.warn('[PRINT] LAN print dispatch failed:', err);
-        }
+      // 2. Shared Thermal Print Service (hidden iframe directly to thermal printer)
+      const printed = await printThermalReceipt(`Bill #${activeData.orderNumber || ''}`, htmlBody);
+      if (printed) {
+        flash('Receipt sent to thermal printer 🖨️');
       }
 
-      if (desktopOk || queueOk) {
-        console.log(`[PRINT] Status   : PRINTING — Receipt sent to TVSE RP3200 Lite`);
-        console.log(`[PRINT] Method   : ${desktopOk ? 'Desktop App ESC/POS' : 'LAN queue'}`);
-        flash('Receipt sent to thermal printer 🖨️');
-      } else {
-        // Path 3: Fallback to OS print dialog (window.print)
-        console.warn(`[PRINT] Desktop App and LAN queue both unavailable — using OS print dialog`);
-        console.warn(`[PRINT] Job ID: ${jobId}`);
-        console.warn(`[PRINT] Please ensure TVSE RP3200 Lite is selected in the print dialog.`);
-        window.print();
+      // 3. Background LAN queue / Desktop app notification if configured
+      if (targetOrderId) {
+        fetch('/api/print/reprint', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ orderId: targetOrderId, type: 'RECEIPT' }),
+        }).catch(() => {});
       }
     } catch (err: any) {
-      // Show user-friendly message, log technical detail to console
-      console.error(`[PRINT ERROR] T-Billing print failed — Job ID: ${jobId}`);
-      console.error(`[PRINT ERROR] Error:`, err);
-      flash('Printer unavailable. Check TVSE RP3200 Lite connection and try again.');
+      console.error(`[PRINT ERROR] T-Billing print failed — Job ID: ${jobId}`, err);
+      flash('Printer unavailable. Check connection and try again.');
     } finally {
-      // Release dedup lock after a short delay (allow dialog to open)
+      // Release dedup lock after a short delay
       setTimeout(() => { tbPrintInFlight.current = false; }, 2000);
     }
   };
@@ -2266,18 +2258,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
             await handlePrintReceipt(undefined, width);
           }}
           onReprint={async (width) => {
-            const orderId = previewOrderOverride
-              ? (previewOrderOverride as any).orderId
-              : (selectedOrder?.id || settledResult?.order?.id);
-            if (orderId) {
-              const res = await fetch('/api/print/reprint', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ orderId, type: 'RECEIPT' }),
-              });
-              if (!res.ok) throw new Error('Thermal printer is offline or failed to reprint.');
-              flash('Reprint dispatched to billing receipt printer 🖨️');
-            }
+            await handlePrintReceipt(undefined, width);
           }}
         />
       )}

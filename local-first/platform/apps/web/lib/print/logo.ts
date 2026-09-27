@@ -77,8 +77,10 @@ export async function buildLogoEscposBuffer(
     const imgH: number = img.bitmap.height;
 
     // 3. Build ESC/POS GS v 0 raster rows
+    // Manual centering: pad left with white pixels. We only pad the left side
+    // to avoid exceeding the printable width on narrower clone printers.
     const leftPadDots = Math.max(0, Math.floor((targetPrinterWidthDots - imgW) / 2));
-    const totalWidthDots = targetPrinterWidthDots;
+    const totalWidthDots = leftPadDots + imgW;
     const bytesPerRow = Math.ceil(totalWidthDots / 8);
     const rasterData = Buffer.alloc(bytesPerRow * imgH, 0x00);
 
@@ -111,10 +113,13 @@ export async function buildLogoEscposBuffer(
     const yH = Math.floor(imgH / 256);
     const gsv0Header = Buffer.from([0x1d, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
 
-    // 5. Combine: ALIGN_CENTER + GS v 0 header + raster data + two line feeds
+    // 5. Combine: ALIGN_LEFT + GS v 0 header + raster data + two line feeds
+    // We enforce ALIGN_LEFT so the printer's internal margin starts at 0, 
+    // ensuring our manual leftPadDots logic is perfectly centered.
+    const ALIGN_LEFT = Buffer.from([0x1b, 0x61, 0x00]);
     const lineFeed = Buffer.from([0x0a]);
     const result = Buffer.concat([
-      ALIGN_CENTER,
+      ALIGN_LEFT,
       gsv0Header,
       rasterData,
       lineFeed,

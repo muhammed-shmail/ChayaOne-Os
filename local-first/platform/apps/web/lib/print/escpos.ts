@@ -311,11 +311,9 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   // print manager BEFORE this buffer is sent; skip the plain-text name so the
   // brand name is not doubled (once from logo image, once from text).
   add(COMMANDS.ALIGN_CENTER);
-  if (!model.hasLogo) {
-    add(COMMANDS.BOLD_ON);
-    add(model.storeName);
-    add(COMMANDS.BOLD_OFF);
-  }
+  add(COMMANDS.BOLD_ON);
+  add(model.storeName);
+  add(COMMANDS.BOLD_OFF);
 
   if (model.headerNote) {
     add(model.headerNote);
@@ -329,9 +327,16 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
 
   // Meta: Table + Order Number (SAME ROW) & Date + Time (SAME ROW)
   add(COMMANDS.ALIGN_LEFT);
-  add(divider);
-  add(model.tableAndOrderRow);
-  add(model.dateTimeRow);
+  if (model.showTableNumber || model.showOrderNumber) {
+    add(divider);
+    const leftText = model.showTableNumber ? model.tableText : '';
+    const rightText = model.showOrderNumber ? model.orderText : '';
+    add(alignLeftRight(leftText, rightText, width));
+  }
+  if (model.showDateTime) {
+    if (!model.showTableNumber && !model.showOrderNumber) add(divider);
+    add(model.dateTimeRow);
+  }
   add(divider);
 
   // Column Headers (ITEM left, QTY center, AMOUNT right)
@@ -391,9 +396,15 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
     const qrScale = resolvedPaperWidth === '58mm' ? 4 : 5;
     const targetDots = resolvedPaperWidth === '58mm' ? 384 : 576;
     const qrBuffer = buildRasterEscposQr(model.upiResult.uri, qrScale, 3, targetDots);
+    
+    // Explicitly enforce ALIGN_LEFT before the raster.
+    // The raster is already manually padded on the left to center it perfectly.
+    // If we leave the printer in ALIGN_CENTER, some models will double-shift or wrap the raster!
+    add(COMMANDS.ALIGN_LEFT);
     add(qrBuffer);
 
     if (model.showScanAndPay) {
+      add(COMMANDS.ALIGN_CENTER);
       add(COMMANDS.LINE_FEED);
       add(COMMANDS.BOLD_ON);
       add(model.totalText);

@@ -49,13 +49,15 @@ export async function POST(req: NextRequest) {
     const rConfig = readReceiptConfig(outlet?.settings);
     const upiConfig = readUpiConfig(outlet?.settings, outlet?.name);
     payload = {
-      storeName: outlet?.name ?? 'ChayaOne Cafe',
-      logoUrl: (outlet?.settings as any)?.logoUrl || null,
+      storeName: ((outlet?.settings as any)?.profile?.name || outlet?.name) ?? 'ChayaOne Cafe',
+      logoUrl: rConfig.logoUrl || (outlet?.settings as any)?.logoUrl || (outlet?.settings as any)?.receipt?.logoUrl || null,
       address: outlet?.address ?? null,
       timezone: outlet?.timezone ?? 'Asia/Kolkata',
       header: rConfig.header,
       footer: rConfig.footer,
-      phone: rConfig.phone,
+      headerNote: rConfig.header,
+      footerNote: rConfig.footer,
+      phone: rConfig.phone || (outlet?.settings as any)?.phone || null,
       gstin: outlet?.gstin,
       orderNumber: order.number,
       tableLabel: order.table?.label ?? null,

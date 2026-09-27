@@ -49,6 +49,16 @@ export interface ReceiptConfig {
   paperWidth: ReceiptPaperWidth;
   /** QR code size on paper */
   qrSize: ReceiptQrSize;
+  /** Invoice number prefix, e.g. "INV-" or "CHY" */
+  invoicePrefix?: string;
+  /** Invoice number padding length, e.g. 4 or 6 */
+  invoiceNumberLength?: number;
+  /** Round off total payable */
+  roundOffTotal?: boolean;
+  /** Auto print receipt on save */
+  autoPrintReceipt?: boolean;
+  /** Allow duplicate bill reprint */
+  allowDuplicateBill?: boolean;
 }
 
 /** Max length for free-text receipt fields (a few short lines). */
@@ -73,6 +83,11 @@ export const RECEIPT_DEFAULTS: ReceiptConfig = {
   showScanAndPay: true,
   paperWidth: '80mm',
   qrSize: 'medium',
+  invoicePrefix: '',
+  invoiceNumberLength: 0,
+  roundOffTotal: true,
+  autoPrintReceipt: false,
+  allowDuplicateBill: true,
 };
 
 const str = (v: unknown, fallback: string): string =>
@@ -83,8 +98,9 @@ const bool = (v: unknown, fallback: boolean): boolean =>
 
 /** Read & normalize the receipt config from Outlet.settings. Never throws. */
 export function readReceiptConfig(settings: unknown): ReceiptConfig {
-  const s = (settings as { logoUrl?: unknown; receipt?: unknown } | null) ?? {};
+  const s = (settings as { logoUrl?: unknown; receipt?: unknown; billing?: unknown } | null) ?? {};
   const r = (s.receipt as Record<string, unknown> | undefined) ?? {};
+  const b = (s.billing as Record<string, unknown> | undefined) ?? {};
   const widthVal = r.paperWidth === '58mm' ? '58mm' : '80mm';
   const qrSizeVal = r.qrSize === 'small' || r.qrSize === 'large' ? r.qrSize : 'medium';
 
@@ -107,5 +123,10 @@ export function readReceiptConfig(settings: unknown): ReceiptConfig {
     showScanAndPay: bool(r.showScanAndPay, RECEIPT_DEFAULTS.showScanAndPay),
     paperWidth: widthVal,
     qrSize: qrSizeVal,
+    invoicePrefix: typeof r.invoicePrefix === 'string' ? r.invoicePrefix : (typeof b.invoicePrefix === 'string' ? b.invoicePrefix : ''),
+    invoiceNumberLength: r.invoiceNumberLength != null ? Number(r.invoiceNumberLength) : (b.invoiceNumberLength != null ? Number(b.invoiceNumberLength) : 0),
+    roundOffTotal: typeof r.roundOffTotal === 'boolean' ? r.roundOffTotal : (typeof b.roundOffTotal === 'boolean' ? b.roundOffTotal : true),
+    autoPrintReceipt: typeof r.autoPrintReceipt === 'boolean' ? r.autoPrintReceipt : (typeof b.autoPrintReceipt === 'boolean' ? b.autoPrintReceipt : false),
+    allowDuplicateBill: typeof r.allowDuplicateBill === 'boolean' ? r.allowDuplicateBill : (typeof b.allowDuplicateBill === 'boolean' ? b.allowDuplicateBill : true),
   };
 }

@@ -38,7 +38,18 @@ export interface ReceiptItemLine {
 export interface ReceiptInputData {
   storeName: string;
   logoUrl?: string | null;
-  address?: { line1?: string; city?: string; pincode?: string } | string | null;
+  address?: {
+    line1?: string;
+    line2?: string;
+    street?: string;
+    addressLine?: string;
+    city?: string;
+    state?: string;
+    stateCode?: string;
+    pincode?: string;
+    postalCode?: string;
+    zip?: string;
+  } | string | null;
   phone?: string | null;
   gstin?: string | null;
   header?: string | null;
@@ -85,6 +96,13 @@ export interface FormattedReceiptModel {
   isReprint: boolean;
   isCancelled: boolean;
   isGstActive: boolean;
+
+  // Visibility toggles
+  showTableNumber: boolean;
+  showOrderNumber: boolean;
+  showDateTime: boolean;
+  showTaxDetails: boolean;
+  showDiscount: boolean;
 
   // Header lines
   hasLogo: boolean;
@@ -133,6 +151,47 @@ export interface FormattedReceiptModel {
   // Footer
   footerNote?: string | null;
   brandingText: string;
+}
+
+/**
+ * Universal formatter for store address across string and JSON structures.
+ */
+export function formatReceiptAddress(raw: unknown): string | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof raw === 'object' && raw !== null) {
+    const obj = raw as Record<string, unknown>;
+    const line1 = String(obj.line1 || obj.street || obj.addressLine || obj.address || '').trim();
+    const line2 = String(obj.line2 || '').trim();
+    const city = String(obj.city || '').trim();
+    const state = String(obj.state || obj.stateCode || '').trim();
+    const pincode = String(obj.pincode || obj.postalCode || obj.zip || '').trim();
+
+    const parts: string[] = [];
+    if (line1) parts.push(line1);
+    if (line2) parts.push(line2);
+
+    const cityStateZip: string[] = [];
+    if (city) cityStateZip.push(city);
+    if (state && pincode) {
+      cityStateZip.push(`${state} - ${pincode}`);
+    } else if (state) {
+      cityStateZip.push(state);
+    } else if (pincode) {
+      cityStateZip.push(pincode);
+    }
+
+    if (cityStateZip.length > 0) {
+      parts.push(cityStateZip.join(', '));
+    }
+
+    const result = parts.join(', ').trim();
+    return result.length > 0 ? result : null;
+  }
+  return null;
 }
 
 export interface FormatReceiptOptions {
@@ -306,36 +365,39 @@ export function formatReceiptModel(
     whereText = 'Table';
   }
 
-  const orderNumText = `Order #${data.orderNumber}`;
+  // Invoice Number Formatting according to Billing Configuration
+  const prefix = (data.receiptConfig?.invoicePrefix || '').trim();
+  const padWidth = Number(data.receiptConfig?.invoiceNumberLength) || 0;
+  const rawNumStr = String(data.orderNumber || '');
+  const paddedNum = padWidth > 0 && /^\d+$/.test(rawNumStr) ? rawNumStr.padStart(padWidth, '0') : rawNumStr;
+  const formattedInvoiceNumber = prefix ? `${prefix}${paddedNum}` : `#${paddedNum}`;
+
+  const orderNumText = `Order ${formattedInvoiceNumber}`;
   const tableAndOrderRow = alignLeftRight(whereText, orderNumText, charsPerLine);
   const dateTimeRow = alignLeftRight(dateStr, timeStr, charsPerLine);
 
   const tableText = whereText.toUpperCase().startsWith('TABLE')
     ? `TABLE: ${whereText.replace(/^table\s*:?\s*/i, '').trim()}`
     : whereText.toUpperCase();
-  const orderText = `ORDER #${data.orderNumber}`;
+  const orderText = `ORDER ${formattedInvoiceNumber}`;
 
   const cashierLine = data.cashierName ? `Cashier: ${data.cashierName.trim()}` : null;
   const customerLine = data.customerName || data.customerPhone
     ? `Customer: ${[data.customerName, data.customerPhone].filter(Boolean).join(' · ')}`
     : null;
 
-  // 4. Logo & Store Header
+  // 4. Logo & Store Header (Strictly dynamic from Billing Configuration & Store Profile)
   const resolvedLogoUrl = data.receiptConfig?.showLogo !== false ? (data.logoUrl || data.receiptConfig?.logoUrl || null) : null;
   const hasLogo = Boolean(resolvedLogoUrl);
 
-  let addressText: string | null = null;
-  if (data.receiptConfig?.showAddress !== false && data.address) {
-    if (typeof data.address === 'string') {
-      addressText = data.address.trim();
-    } else if (typeof data.address === 'object') {
-      const parts = [data.address.line1, data.address.city, data.address.pincode].filter(Boolean);
-      if (parts.length > 0) addressText = parts.join(', ');
-    }
-  }
+  const rawAddress = data.address || (data.receiptConfig as any)?.address || (data as any)?.profile?.address || null;
+  const addressText = data.receiptConfig?.showAddress !== false ? formatReceiptAddress(rawAddress) : null;
 
-  const phoneText = data.receiptConfig?.showPhone !== false && data.phone ? data.phone.trim() : null;
-  const gstinText = isGstActive && data.receiptConfig?.showGstin !== false && data.gstin ? data.gstin.trim() : null;
+  const rawPhone = data.phone || data.receiptConfig?.phone || (data as any)?.profile?.phone || null;
+  const phoneText = data.receiptConfig?.showPhone !== false && rawPhone ? String(rawPhone).trim() : null;
+
+  const rawGstin = data.gstin || (data.receiptConfig as any)?.gstin || (data as any)?.profile?.gstin || null;
+  const gstinText = isGstActive && data.receiptConfig?.showGstin !== false && rawGstin ? String(rawGstin).trim() : null;
 
   const contactParts: string[] = [];
   if (phoneText) contactParts.push(`Tel: ${phoneText}`);
@@ -350,6 +412,7 @@ export function formatReceiptModel(
   const itemColWidth = charsPerLine - qtyColWidth - amtColWidth - 1;
 
   const itemLines: FormattedReceiptModel['itemLines'] = [];
+  const showItemNotes = data.receiptConfig?.showItemNotes === true;
 
   for (const item of data.items) {
     const itemTotalPaise = item.totalPaise ?? ((item.unitPricePaise ?? item.pricePaise ?? 0) * item.qty);
@@ -367,8 +430,8 @@ export function formatReceiptModel(
       extraLines.push(line);
     }
 
-    // Indented Modifiers
-    if (Array.isArray(item.modifiers) && item.modifiers.length > 0) {
+    // Indented Modifiers (gated by showItemNotes configuration)
+    if (showItemNotes && Array.isArray(item.modifiers) && item.modifiers.length > 0) {
       for (const mod of item.modifiers) {
         const modPrice = mod.pricePaise !== undefined && mod.pricePaise > 0 ? formatReceiptMoney(mod.pricePaise, { useRsFallback: useRs }) : '';
         const modText = `  + ${mod.name}`;
@@ -380,8 +443,8 @@ export function formatReceiptModel(
       }
     }
 
-    // Indented Notes
-    if (data.receiptConfig?.showItemNotes && item.notes) {
+    // Indented Notes (gated by showItemNotes configuration)
+    if (showItemNotes && item.notes) {
       extraLines.push(`  Note: ${item.notes}`);
     }
 
@@ -401,7 +464,7 @@ export function formatReceiptModel(
       ? `-${formatReceiptMoney(data.discountPaise, { useRsFallback: useRs })}`
       : null;
 
-  // GST Breakdown (Only if GST is ON)
+  // GST Breakdown (Only if GST is ON and enabled in Billing Configuration)
   const taxBreakdown: Array<{ label: string; amountText: string }> = [];
   if (isGstActive && data.receiptConfig?.showTaxDetails !== false) {
     if (data.cgstPaise && data.cgstPaise > 0) {
@@ -421,7 +484,7 @@ export function formatReceiptModel(
       : null;
 
   const roundOffText =
-    data.roundOffPaise && data.roundOffPaise !== 0
+    data.roundOffPaise && data.roundOffPaise !== 0 && (data.receiptConfig?.roundOffTotal !== false)
       ? formatReceiptMoney(data.roundOffPaise, { useRsFallback: useRs })
       : null;
 
@@ -454,10 +517,16 @@ export function formatReceiptModel(
     isCancelled: !!data.isCancelled,
     isGstActive,
 
+    showTableNumber: data.receiptConfig?.showTableNumber !== false,
+    showOrderNumber: data.receiptConfig?.showOrderNumber !== false,
+    showDateTime: data.receiptConfig?.showDateTime !== false,
+    showTaxDetails: data.receiptConfig?.showTaxDetails !== false,
+    showDiscount: data.receiptConfig?.showDiscount !== false,
+
     hasLogo,
     logoUrl: resolvedLogoUrl,
-    storeName: (data.storeName || 'CHAYA CAFE').toUpperCase(),
-    headerNote: data.receiptConfig?.header || null,
+    storeName: (data.storeName || (data.receiptConfig as any)?.storeName || 'CHAYA ONE').toUpperCase(),
+    headerNote: data.receiptConfig?.header || data.header || null,
     addressText,
     phone: phoneText,
     gstin: gstinText,
@@ -487,7 +556,7 @@ export function formatReceiptModel(
     showScanAndPay,
     scanAndPayText,
 
-    footerNote: data.receiptConfig?.footer || null,
+    footerNote: data.receiptConfig?.footer || data.footer || null,
     brandingText: 'chaya.one',
   };
 }
@@ -814,25 +883,29 @@ ${typeof window !== 'undefined' && window.location?.origin ? `<base href="${wind
     <div class="logo-wrap">
       <img src="${esc(model.logoUrl)}" alt="${esc(model.storeName)}"/>
     </div>
-  ` : `
-    <div class="store-title">${esc(model.storeName)}</div>
-  `}
+  ` : ''}
+  <div class="store-title">${esc(model.storeName)}</div>
 
-  ${model.headerNote ? `<div class="store-details" style="font-style:italic;">${esc(model.headerNote)}</div>` : ''}
-  ${model.addressText ? `<div class="store-details">${esc(model.addressText)}</div>` : ''}
+  ${model.headerNote ? `<div class="store-details" style="font-style:italic; white-space:pre-line;">${esc(model.headerNote)}</div>` : ''}
+  ${model.addressText ? `<div class="store-details" style="white-space:pre-line;">${esc(model.addressText)}</div>` : ''}
   ${model.phone ? `<div class="store-details">Tel: ${esc(model.phone)}</div>` : ''}
   ${model.isGstActive && model.gstin ? `<div class="store-details">GSTIN: ${esc(model.gstin)}</div>` : ''}
   ${model.isGstActive ? `<div class="doc-title">TAX INVOICE</div>` : ''}
 
-  <div class="div-dashed"></div>
-  <div class="meta-row bold">
-    <span>${esc(model.tableText)}</span>
-    <span>${esc(model.orderText)}</span>
-  </div>
-  <div class="meta-row">
-    <span>${esc(model.dateText)}</span>
-    <span>${esc(model.timeText)}</span>
-  </div>
+  ${(model.showTableNumber || model.showOrderNumber) ? `
+    <div class="div-dashed"></div>
+    <div class="meta-row bold">
+      <span>${model.showTableNumber ? esc(model.tableText) : ''}</span>
+      <span>${model.showOrderNumber ? esc(model.orderText) : ''}</span>
+    </div>
+  ` : ''}
+  ${model.showDateTime ? `
+    ${!(model.showTableNumber || model.showOrderNumber) ? '<div class="div-dashed"></div>' : ''}
+    <div class="meta-row">
+      <span>${esc(model.dateText)}</span>
+      <span>${esc(model.timeText)}</span>
+    </div>
+  ` : ''}
   ${model.cashierLine ? `<div class="meta-row"><span>${esc(model.cashierLine)}</span></div>` : ''}
   ${model.customerLine ? `<div class="meta-row"><span>${esc(model.customerLine)}</span></div>` : ''}
 
@@ -889,7 +962,7 @@ ${typeof window !== 'undefined' && window.location?.origin ? `<base href="${wind
 
   <div class="div-dashed"></div>
   <div class="footer">
-    <div class="thank-you">${model.footerNote ? esc(model.footerNote) : 'Thank you! Visit again.'}</div>
+    <div class="thank-you" style="white-space:pre-line;">${model.footerNote ? esc(model.footerNote) : 'Thank you! Visit again.'}</div>
     <div class="branding">${esc(model.brandingText)}</div>
   </div>
 </div>

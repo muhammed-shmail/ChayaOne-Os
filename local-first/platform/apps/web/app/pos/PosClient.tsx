@@ -28,6 +28,7 @@ import { getGeoHeaders } from '@/lib/geo-client';
 import { generateAuthoritativeUpiUri } from '@/lib/print/upi';
 import { generateQrDataUrl } from '@/lib/print/qr';
 import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
+import { printThermalReceipt } from '@/lib/print/thermal-printer';
 import { hasRole, hasPermission, canAccess, canSettle } from '@/lib/rbac';
 
 /** Bespoke Vector SVGs tailored for Cafe & Beverage domains */
@@ -315,6 +316,8 @@ export type TableDto = { id: string; label: string; seats: number; state: string
 type Outlet = {
   id: string;
   name: string;
+  brand?: string;
+  phone?: string | null;
   gstin: string | null;
   stateCode: string;
   gstEnabled: boolean;
@@ -1224,11 +1227,14 @@ ${htmlBody}
     console.log(`[PRINT] Items    : ${tableOrder.lines?.length || 0}`);
     const totals = tableOrder.totals || {};
     const receiptData: ReceiptInputData = {
-      storeName: outlet.name,
+      storeName: (outlet as any).brand || outlet.name,
       logoUrl: outlet.receipt?.showLogo !== false ? (outlet.receipt?.logoUrl || (outlet as any).logoUrl || (outlet as any)?.settings?.logoUrl || (outlet as any)?.settings?.receipt?.logoUrl || null) : null,
       address: outlet.address,
-      phone: outlet.receipt?.phone,
+      phone: outlet.receipt?.phone || (outlet as any).phone || null,
       gstin: outlet.gstin,
+      header: outlet.receipt?.header ?? null,
+      footer: outlet.receipt?.footer ?? null,
+      timezone: outlet.timezone || 'Asia/Kolkata',
       orderNumber: orderNum,
       orderType: tableOrder.type || 'dine_in',
       tableLabel: tableLabel,
@@ -1257,7 +1263,10 @@ ${htmlBody}
     };
 
     const paperWidth = outlet.receipt?.paperWidth === '58mm' ? '58mm' : '80mm';
-    const htmlBody = formatReceiptHtml(receiptData, paperWidth);
+    const htmlBody = formatReceiptHtml(receiptData, paperWidth, { autoPrint: false });
+
+    // Shared Thermal Print Pipeline (exact same rendering & printing as Billing Configuration Test Print)
+    printThermalReceipt(`Bill - Table ${tableLabel}`, htmlBody);
 
     const waiterStation = (currentStaff.permissions as any)?.station || (currentStaff as any)?.station || null;
     console.log(`[PRINT] Sending bill directly to ${waiterStation ? waiterStation.toUpperCase() + ' station printer' : 'station printer'} (no popup)...`);
@@ -1394,11 +1403,14 @@ ${rows}
     console.log(`[PRINT] Method   : ${method.toUpperCase()}`);
     console.log(`[PRINT] Total    : ${formatINR(totalWithTip)}`);
     const receiptData: ReceiptInputData = {
-      storeName: outlet.name,
+      storeName: (outlet as any).brand || outlet.name,
       logoUrl: outlet.receipt?.showLogo !== false ? (outlet.receipt?.logoUrl || (outlet as any).logoUrl || (outlet as any)?.settings?.logoUrl || (outlet as any)?.settings?.receipt?.logoUrl || null) : null,
       address: outlet.address,
-      phone: outlet.receipt?.phone,
+      phone: outlet.receipt?.phone || (outlet as any).phone || null,
       gstin: outlet.gstin,
+      header: outlet.receipt?.header ?? null,
+      footer: outlet.receipt?.footer ?? null,
+      timezone: outlet.timezone || 'Asia/Kolkata',
       orderNumber: number,
       orderType: orderType,
       tableLabel: tableId ? (tables.find(t => t.id === tableId)?.label || null) : null,
@@ -1429,11 +1441,11 @@ ${rows}
     };
 
     const paperWidth = outlet.receipt?.paperWidth === '58mm' ? '58mm' : '80mm';
-    const htmlBody = formatReceiptHtml(receiptData, paperWidth);
+    const htmlBody = formatReceiptHtml(receiptData, paperWidth, { autoPrint: false });
 
-    console.log(`[PRINT] Sending receipt to print dialog...`);
-    printThermal80mm(`Receipt #${number}`, htmlBody, jobId);
-    console.log(`[PRINT] Receipt #${number} print dialog launched successfully.`);
+    console.log(`[PRINT] Sending receipt to thermal printer...`);
+    printThermalReceipt(`Receipt #${number}`, htmlBody);
+    console.log(`[PRINT] Receipt #${number} sent to thermal printer.`);
   }
 
   // count of QR orders awaiting approval (badge on the Approvals link)

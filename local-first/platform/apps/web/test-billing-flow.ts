@@ -383,14 +383,16 @@ console.log('\n--- TEST 14 & 15 — THERMAL ESC/POS RASTER BUFFERS ---');
   assert(raster80.length > 0, 'Test 15: 80mm raster buffer generated');
   // Check GS v 0 header
   assert(raster80[0] === 0x1d && raster80[1] === 0x76 && raster80[2] === 0x30, 'Test 15: Contains GS v 0 raster header');
-  // Check width bytes = 576 / 8 = 72 bytes (0x48, 0x00)
-  assert(raster80[4] === 72 && raster80[5] === 0, 'Test 15: Raster width padded to exactly 72 bytes (576 dots for 80mm)');
+  // Check width bytes (Should be less than 72 bytes now since we only pad the left side)
+  const width80 = (raster80[4] ?? 0) + (raster80[5] ?? 0) * 256;
+  assert(width80 > 0 && width80 <= 72, 'Test 15: Raster width dynamically padded for left-center alignment (<= 72 bytes)');
 
   // 58mm: 384 dots printable width, scale 4
   const raster58 = buildRasterEscposQr(uri, 4, 3, 384);
   assert(raster58.length > 0, 'Test 14: 58mm raster buffer generated');
-  // Check width bytes = 384 / 8 = 48 bytes (0x30, 0x00)
-  assert(raster58[4] === 48 && raster58[5] === 0, 'Test 14: Raster width padded to exactly 48 bytes (384 dots for 58mm)');
+  // Check width bytes (Should be less than 48 bytes)
+  const width58 = (raster58[4] ?? 0) + (raster58[5] ?? 0) * 256;
+  assert(width58 > 0 && width58 <= 48, 'Test 14: Raster width dynamically padded for left-center alignment (<= 48 bytes)');
 
   // Full ESC/POS binary ticket generation
   const payload: ReceiptPrintPayload = {

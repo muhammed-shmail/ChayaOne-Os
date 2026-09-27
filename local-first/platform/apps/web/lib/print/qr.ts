@@ -140,13 +140,15 @@ export function buildRasterEscposQr(
 
   const targetWidth = targetPrinterWidthDots ?? (scale <= 4 ? 384 : 576);
 
-  // If targetWidth is provided and > qrPixelWidth, center the QR code horizontally
-  const finalWidthDots =
+  // If targetWidth is provided and > qrPixelWidth, compute left padding to center it horizontally.
+  // We ONLY pad the left side (final width = left padding + QR width) to avoid 
+  // overflowing the right margin on printers with slightly narrower printable areas.
+  const leftPadDots =
     targetWidth && targetWidth > qrPixelWidth
-      ? targetWidth
-      : qrPixelWidth;
-
-  const leftPadDots = Math.floor((finalWidthDots - qrPixelWidth) / 2);
+      ? Math.floor((targetWidth - qrPixelWidth) / 2)
+      : 0;
+  
+  const finalWidthDots = leftPadDots + qrPixelWidth;
   const bytesPerRow = Math.ceil(finalWidthDots / 8);
   const rasterData = Buffer.alloc(bytesPerRow * qrPixelHeight, 0x00);
 

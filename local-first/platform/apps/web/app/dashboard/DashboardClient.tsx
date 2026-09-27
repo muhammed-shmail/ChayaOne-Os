@@ -19,6 +19,7 @@ import type { ReceiptConfig } from '@/lib/receipt';
 import { type KitchenWorkflowConfig, KITCHEN_WORKFLOW_DEFAULTS, AUTO_CLEAR_OPTIONS, DELAY_THRESHOLD_OPTIONS, SORT_OPTIONS, THEME_OPTIONS, FONT_SIZE_OPTIONS } from '@/lib/kitchenWorkflow';
 import { tableOrderUrl, tableQrImageUrl } from '@/lib/qr';
 import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
+import { printThermalReceipt } from '@/lib/print/thermal-printer';
 import { FEATURED_LABELS, DEFAULT_GAME_KEYS, DEFAULT_PWA, type PwaConfig } from '@/lib/pwa';
 import type { OutletLocation } from '@/lib/geo';
 import { subscribeStaff } from '@/lib/realtime-client';
@@ -1867,94 +1868,30 @@ export default function DashboardClient({
   const receiptFooterText = () => (outlet.receipt.footer.trim() ? escHtml(outlet.receipt.footer).replace(/\n/g, ' · ') : 'Thank you!');
 
   function printOrderDoc(title: string, inner: string) {
-    // Use hidden iframe to go directly to the OS print dialog (no intermediate popup).
-    const jid = `dashboard-${title.replace(/\s+/g, '-')}-${Date.now()}`;
-    console.log(`[PRINT] Dashboard printOrderDoc — Job: ${jid}`);
-
-    const html = inner.trim().startsWith('<!DOCTYPE html>')
-      ? inner
-      : `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><base href="${typeof window !== 'undefined' ? window.location.origin : ''}"/><title>${title}</title><style>
-  @page { size: 80mm auto; margin: 3mm 4mm; }
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { width: 72mm; font-family: 'Courier New', Courier, monospace; font-size: 11pt; line-height: 1.35; color: #000; background: #fff; }
-  .receipt { width: 100%; }
-  .store-name { text-align: center; font-size: 15pt; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; line-height: 1.2; margin-bottom: 2pt; }
-  .store-sub { text-align: center; font-size: 9pt; color: #222; line-height: 1.3; margin-bottom: 1pt; }
-  .doc-title { text-align: center; font-size: 10pt; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin: 3pt 0 2pt; }
-  .div-solid { border-top: 1.5px solid #000; margin: 3pt 0; }
-  .div-dashed { border-top: 1px dashed #000; margin: 3pt 0; }
-  .meta-row { display: flex; justify-content: space-between; font-size: 9pt; line-height: 1.3; }
-  .meta-row.bold { font-weight: 700; font-size: 9.5pt; }
-  .items-hdr { display: flex; font-size: 9pt; font-weight: 700; text-transform: uppercase; padding-bottom: 2pt; }
-  .col-name { flex: 1; } .col-qty { width: 22pt; text-align: center; } .col-amt { width: 40pt; text-align: right; }
-  .item-row { display: flex; font-size: 10pt; line-height: 1.35; padding: 1pt 0; align-items: flex-start; }
-  .item-name { flex: 1; word-break: break-word; }
-  .item-note { font-size: 8.5pt; color: #333; padding-left: 6pt; }
-  .totals-row { display: flex; justify-content: space-between; font-size: 10pt; line-height: 1.4; }
-  .totals-row.grand { font-size: 13pt; font-weight: 900; margin: 2pt 0; }
-  .totals-row.discount { color: #1a7a1a; }
-  .logo-wrap { text-align: center; margin-bottom: 3pt; }
-  .logo-wrap img { max-height: 14mm; max-width: 40mm; object-fit: contain; }
-  .footer { text-align: center; font-size: 9pt; color: #333; margin-top: 4pt; line-height: 1.4; }
-  .footer .thank-you { font-size: 11pt; font-weight: 700; color: #000; margin-bottom: 2pt; }
-  @media screen { body { background: #f5f5f5; padding: 8px; } .receipt { background: #fff; padding: 8px; box-shadow: 0 0 12px rgba(0,0,0,0.15); } }
-</style></head><body><div class="receipt">${inner}</div></body></html>`;
-
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;opacity:0;pointer-events:none;';
-    iframe.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(iframe);
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!doc) { flashMessage('Print failed — allow iframes'); document.body.removeChild(iframe); return; }
-    doc.open(); doc.write(html); doc.close();
-    const iframeWin = iframe.contentWindow;
-    const cleanup = () => { try { document.body.removeChild(iframe); } catch {} };
-    if (iframeWin) {
-      let fired = false;
-      const triggerPrint = () => {
-        if (fired) return;
-        fired = true;
-        try {
-          iframeWin.focus();
-          iframeWin.print();
-          console.log(`[PRINT] Dashboard dialog launched — ${jid}`);
-        } catch (e) {
-          console.error(`[PRINT ERROR] ${jid}:`, e);
-          flashMessage('Print failed');
-        } finally {
-          setTimeout(cleanup, 2500);
-        }
-      };
-
-      const imgs = Array.from(doc.images || []);
-      if (imgs.length === 0) {
-        setTimeout(triggerPrint, 80);
-      } else {
-        let remaining = imgs.length;
-        const onReady = () => {
-          remaining--;
-          if (remaining <= 0) setTimeout(triggerPrint, 60);
-        };
-        imgs.forEach((img) => {
-          if (img.complete && img.naturalWidth > 0) onReady();
-          else { img.onload = onReady; img.onerror = onReady; }
-        });
-        setTimeout(triggerPrint, 1200);
-      }
-    } else { cleanup(); }
+    printThermalReceipt(title, inner).then((ok) => {
+      if (!ok) flashMessage('Print failed');
+    });
   }
 
   // ── Test Receipt — prints a test page to TVSE RP3200 Lite ──
   function printTestReceipt() {
+    const activeStoreName = profile?.name || (outlet as any).brand || outlet.name || 'CHAYA ONE';
+    const activeAddress = (profile?.line1 || profile?.city || profile?.pincode)
+      ? { line1: profile.line1, city: profile.city, stateCode: profile.stateCode, pincode: profile.pincode }
+      : ((outlet as any).address ?? null);
+    const activeGstin = profile?.gstin || outlet.gstin || ((outlet as any).settings?.gstin ?? null);
+    const activePhone = receiptForm.phone || (outlet as any).phone || (outlet.receipt?.phone ?? null);
+    const activeUpi = outlet.upiConfig ?? (outlet as any).settings?.payment ?? (outlet as any).settings?.upi ?? null;
+
     const receiptData: ReceiptInputData = {
-      storeName: outlet.brand || outlet.name || 'CHAYA ONE',
-      logoUrl: logoUrl ?? outlet.receipt?.logoUrl ?? (outlet as any)?.settings?.logoUrl ?? null,
+      storeName: activeStoreName,
+      logoUrl: logoUrl ?? (receiptForm as any).logoUrl ?? outlet.receipt?.logoUrl ?? ((outlet as any)?.settings?.logoUrl ?? null),
       header: receiptForm.header ?? outlet.receipt?.header ?? null,
       footer: receiptForm.footer ?? outlet.receipt?.footer ?? null,
-      phone: receiptForm.phone ?? outlet.receipt?.phone ?? null,
-      address: (outlet as any).address ?? null,
-      gstin: outlet.gstin ?? (outlet as any).settings?.gstin ?? null,
-      timezone: 'Asia/Kolkata',
+      phone: activePhone,
+      address: activeAddress,
+      gstin: activeGstin,
+      timezone: (outlet as any).timezone || 'Asia/Kolkata',
       orderNumber: 9999,
       tableLabel: 'TEST-01',
       orderType: 'DINE_IN',
@@ -1971,8 +1908,8 @@ export default function DashboardClient({
       totalPaise: 68300,
       paymentMethod: 'CASH',
       gstEnabled: Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled ?? (outlet as any)?.settings?.gst?.enabled),
-      receiptConfig: receiptForm, // Use the current form state for instant preview
-      upiConfig: outlet.upiConfig ?? (outlet as any).settings?.upi ?? null,
+      receiptConfig: receiptForm, // Use the current form state for instant preview & dynamic test print
+      upiConfig: activeUpi,
     };
 
     const paperWidth = receiptForm.paperWidth || outlet.receipt?.paperWidth || '80mm';
@@ -1995,14 +1932,27 @@ export default function DashboardClient({
         body: JSON.stringify({ action: 'print_bill', tableId: o.tableId, orderId: o.id }),
       }).catch((err) => console.error('[PRINT] Dashboard free table failed:', err));
     }
+    const activeStoreName = profile?.name || (outlet as any).brand || outlet.name || 'CHAYA ONE';
+    const activeAddress = (profile?.line1 || profile?.city || profile?.pincode)
+      ? { line1: profile.line1, city: profile.city, stateCode: profile.stateCode, pincode: profile.pincode }
+      : ((outlet as any).address ?? null);
+    const activeGstin = profile?.gstin || outlet.gstin || ((outlet as any).settings?.gstin ?? null);
+    const activePhone = (receiptForm as any)?.phone || (outlet as any).phone || (outlet.receipt?.phone ?? null);
+    const activeUpi = outlet.upiConfig ?? (outlet as any).settings?.payment ?? (outlet as any).settings?.upi ?? null;
+    const activeReceiptConfig = {
+      ...(outlet.receipt || {}),
+      ...(receiptForm || {}),
+    };
+
     const receiptData: ReceiptInputData = {
-      storeName: outlet.brand || outlet.name || 'CHAYA ONE',
-      logoUrl: logoUrl ?? outlet.receipt?.logoUrl ?? (outlet as any)?.settings?.logoUrl ?? null,
-      header: outlet.receipt?.header ?? null,
-      footer: outlet.receipt?.footer ?? null,
-      phone: (outlet as any).phone ?? outlet.receipt?.phone ?? null,
-      gstin: outlet.gstin ?? (outlet as any).settings?.gstin ?? null,
-      timezone: 'Asia/Kolkata',
+      storeName: activeStoreName,
+      logoUrl: logoUrl ?? (activeReceiptConfig as any).logoUrl ?? outlet.receipt?.logoUrl ?? ((outlet as any)?.settings?.logoUrl ?? null),
+      header: activeReceiptConfig.header ?? null,
+      footer: activeReceiptConfig.footer ?? null,
+      phone: activePhone,
+      address: activeAddress,
+      gstin: activeGstin,
+      timezone: (outlet as any).timezone || 'Asia/Kolkata',
       orderNumber: o.number,
       tableLabel: o.table?.label ?? null,
       orderType: o.type,
@@ -2023,10 +1973,11 @@ export default function DashboardClient({
       totalPaise: o.totalPaise,
       paymentMethod: o.paymentMethod ?? null,
       gstEnabled: Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled ?? (outlet as any)?.settings?.gst?.enabled),
-      receiptConfig: outlet.receipt,
-      upiConfig: outlet.upiConfig ?? (outlet as any).settings?.upi ?? null,
+      receiptConfig: activeReceiptConfig,
+      upiConfig: activeUpi,
     };
-    const htmlBill = formatReceiptHtml(receiptData, '80mm', { autoPrint: false });
+    const paperWidth = activeReceiptConfig.paperWidth || outlet.receipt?.paperWidth || '80mm';
+    const htmlBill = formatReceiptHtml(receiptData, paperWidth, { autoPrint: false });
     printOrderDoc(`Bill #${o.number}`, htmlBill);
   }
 
@@ -2088,14 +2039,27 @@ export default function DashboardClient({
     const row = (label: string, val: number) => `<tr><td>${label}</td><td class="r">${formatINR(val)}</td></tr>`;
     
     const randomNum = Math.floor(Math.random() * 9000) + 1000;
+    const activeStoreName = profile?.name || (outlet as any).brand || outlet.name || 'CHAYA ONE';
+    const activeAddress = (profile?.line1 || profile?.city || profile?.pincode)
+      ? { line1: profile.line1, city: profile.city, stateCode: profile.stateCode, pincode: profile.pincode }
+      : ((outlet as any).address ?? null);
+    const activeGstin = profile?.gstin || outlet.gstin || ((outlet as any).settings?.gstin ?? null);
+    const activePhone = (receiptForm as any)?.phone || (outlet as any).phone || (outlet.receipt?.phone ?? null);
+    const activeUpi = outlet.upiConfig ?? (outlet as any).settings?.payment ?? (outlet as any).settings?.upi ?? null;
+    const activeReceiptConfig = {
+      ...(outlet.receipt || {}),
+      ...(receiptForm || {}),
+    };
+
     const receiptData: ReceiptInputData = {
-      storeName: outlet.brand || outlet.name || 'CHAYA ONE',
-      logoUrl: logoUrl ?? outlet.receipt?.logoUrl ?? (outlet as any)?.settings?.logoUrl ?? null,
-      header: outlet.receipt?.header ?? null,
-      footer: outlet.receipt?.footer ?? null,
-      phone: (outlet as any).phone ?? outlet.receipt?.phone ?? null,
-      gstin: outlet.gstin ?? (outlet as any).settings?.gstin ?? null,
-      timezone: 'Asia/Kolkata',
+      storeName: activeStoreName,
+      logoUrl: logoUrl ?? (activeReceiptConfig as any).logoUrl ?? outlet.receipt?.logoUrl ?? ((outlet as any)?.settings?.logoUrl ?? null),
+      header: activeReceiptConfig.header ?? null,
+      footer: activeReceiptConfig.footer ?? null,
+      phone: activePhone,
+      address: activeAddress,
+      gstin: activeGstin,
+      timezone: (outlet as any).timezone || 'Asia/Kolkata',
       orderNumber: randomNum,
       customerName: quickInvoiceCustName.trim() || null,
       customerPhone: quickInvoiceCustPhone.trim() || null,
@@ -2112,11 +2076,12 @@ export default function DashboardClient({
       sgstPaise: totals.sgstPaise,
       roundOffPaise: totals.roundOffPaise,
       totalPaise: totals.totalPaise,
-      gstEnabled: Boolean(profile.gstEnabled),
-      receiptConfig: outlet.receipt,
-      upiConfig: outlet.upiConfig ?? (outlet as any).settings?.upi ?? null,
+      gstEnabled: Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled ?? (outlet as any)?.settings?.gst?.enabled),
+      receiptConfig: activeReceiptConfig,
+      upiConfig: activeUpi,
     };
-    const htmlBill = formatReceiptHtml(receiptData, '80mm', { autoPrint: false });
+    const paperWidth = activeReceiptConfig.paperWidth || outlet.receipt?.paperWidth || '80mm';
+    const htmlBill = formatReceiptHtml(receiptData, paperWidth, { autoPrint: false });
     printOrderDoc(`Quick Bill #${randomNum}`, htmlBill);
   };
 
