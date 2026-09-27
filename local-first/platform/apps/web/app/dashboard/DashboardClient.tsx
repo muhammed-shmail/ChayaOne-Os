@@ -1867,8 +1867,8 @@ export default function DashboardClient({
   }
   const receiptFooterText = () => (outlet.receipt.footer.trim() ? escHtml(outlet.receipt.footer).replace(/\n/g, ' · ') : 'Thank you!');
 
-  function printOrderDoc(title: string, inner: string) {
-    printThermalReceipt(title, inner).then((ok) => {
+  function printOrderDoc(title: string, inner: string, options?: { allowMobilePopup?: boolean }) {
+    printThermalReceipt(title, inner, undefined, options).then((ok) => {
       if (!ok) flashMessage('Print failed');
     });
   }
@@ -1920,7 +1920,7 @@ export default function DashboardClient({
     const paperWidth = receiptForm.paperWidth || outlet.receipt?.paperWidth || '80mm';
     const htmlBill = formatReceiptHtml(receiptData, paperWidth, { autoPrint: false });
     
-    printOrderDoc(`Test Receipt — ${paperWidth}`, htmlBill);
+    printOrderDoc(`Test Receipt — ${paperWidth}`, htmlBill, { allowMobilePopup: true });
     flashMessage('Test receipt sent to printer');
     console.log(`[PRINT] Test receipt triggered for ${paperWidth}`);
   }

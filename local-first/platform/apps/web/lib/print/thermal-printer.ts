@@ -1,4 +1,4 @@
-﻿/**
+/**
  * thermal-printer.ts
  * Standalone (non-React) thermal receipt printing utility.
  *
@@ -19,6 +19,13 @@ function _nextJobId(prefix: string): string {
   return `${prefix}-${Date.now()}-${_jobCounter}`;
 }
 
+/** Helper to detect mobile phone or tablet browsers */
+export function isMobileBrowser(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || window.innerWidth < 768;
+}
+
 /**
  * Print an HTML receipt document using a hidden iframe.
  * Accepts either a full `<!DOCTYPE html>` document or a bare HTML fragment.
@@ -27,14 +34,23 @@ function _nextJobId(prefix: string): string {
  * @param title   - Window/tab title for the print dialog
  * @param htmlBody - Full HTML doc or inner HTML fragment to print
  * @param jobId   - Optional dedup key (auto-generated if omitted)
- * @returns Promise<boolean> — true = print dialog launched, false = error
+ * @param options - Options including allowMobilePopup to selectively permit print dialogs on mobile
+ * @returns Promise<boolean> — true = print dialog launched or handled, false = error
  */
 export function printThermalReceipt(
   title: string,
   htmlBody: string,
   jobId?: string,
+  options?: { allowMobilePopup?: boolean },
 ): Promise<boolean> {
   if (typeof window === 'undefined') return Promise.resolve(false); // SSR guard
+
+  // If on mobile device / tablet and mobile popup is not explicitly allowed,
+  // suppress the browser window.print() OS dialog to prevent unwanted print popups on waiter/owner mobile phones!
+  if (isMobileBrowser() && !options?.allowMobilePopup) {
+    console.log(`[THERMAL] Suppressed browser window.print() on mobile device (silent LAN print handles it). Title: ${title}`);
+    return Promise.resolve(true);
+  }
 
   const jid = jobId || _nextJobId('thermal-receipt');
 
