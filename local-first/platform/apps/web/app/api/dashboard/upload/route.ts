@@ -219,10 +219,10 @@ export async function POST(req: NextRequest) {
       let b64 = rawImage;
       if (b64.includes('base64,')) {
         const parts = b64.split('base64,');
-        const prefix = parts[0];
-        b64 = parts[1];
+        const prefix = parts[0] || '';
+        b64 = parts[1] || '';
         const mimeMatch = prefix.match(/data:([^;]+)/i);
-        if (mimeMatch) {
+        if (mimeMatch && mimeMatch[1]) {
           mime = mimeMatch[1].trim().toLowerCase();
         }
       }
@@ -274,7 +274,7 @@ export async function POST(req: NextRequest) {
     const rawBuf = await req.arrayBuffer().catch(() => null);
     if (rawBuf && rawBuf.byteLength > 0) {
       buf = Buffer.from(rawBuf);
-      mime = contentType.split(';')[0].trim();
+      mime = (contentType.split(';')[0] || '').trim();
       blobFileName = 'upload.png';
     }
   }
