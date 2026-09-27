@@ -49,16 +49,16 @@ export function SectionView({ section, title }: { section: SectionData['section'
     fetch(`/api/dashboard/section?s=${section}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((payload: SectionData) => setState({ loading: false, error: null, payload }))
-      .catch((e) => setState({ loading: false, error: String(e.message ?? e), payload: null }));
+      .catch((e) => setState((prev) => ({ loading: false, error: String(e.message ?? e), payload: prev.payload })));
   }, [section]);
 
   useEffect(() => {
     let alive = true;
-    setState({ loading: true, error: null, payload: null });
+    setState((prev) => ({ loading: !prev.payload, error: null, payload: prev.payload }));
     fetch(`/api/dashboard/section?s=${section}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((payload: SectionData) => alive && setState({ loading: false, error: null, payload }))
-      .catch((e) => alive && setState({ loading: false, error: String(e.message ?? e), payload: null }));
+      .catch((e) => alive && setState((prev) => ({ loading: false, error: String(e.message ?? e), payload: prev.payload })));
     return () => {
       alive = false;
     };
@@ -67,8 +67,8 @@ export function SectionView({ section, title }: { section: SectionData['section'
   return (
     <div className="grid gap-4">
       {title && <SectionHeader title={title} />}
-      {state.loading && <Loading />}
-      {state.error && <Card><Empty>Couldn’t load this section — {state.error}. Try Refresh.</Empty></Card>}
+      {state.loading && !state.payload && <Loading />}
+      {state.error && !state.payload && <Card><Empty>Couldn’t load this section — {state.error}. Try Refresh.</Empty></Card>}
       {state.payload && <SectionBody payload={state.payload} refresh={load} />}
     </div>
   );

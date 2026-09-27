@@ -1365,9 +1365,27 @@ export default function DashboardClient({
         body: JSON.stringify({ action: 'delete', itemId }),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok) { flashMessage('Product deleted'); setEditProductId(null); loadInventoryData(); }
-      else flashMessage(d.message || 'Could not delete product');
-    } catch (err) { console.error(err); }
+      if (res.ok) {
+        flashMessage('Product deleted');
+        setEditProductId(null);
+        loadInventoryData();
+      } else if (d.error === 'has_orders') {
+        await fetch('/api/dashboard/menu', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'availability', itemId, isAvailable: false }),
+        }).catch(() => {});
+        flashMessage(`"${name}" has past order history — marked as Sold Out`);
+        setEditProductId(null);
+        loadInventoryData();
+      } else {
+        flashMessage(d.message || d.error || 'Could not delete product');
+        setEditProductId(null);
+      }
+    } catch (err) {
+      console.error(err);
+      flashMessage('Failed to delete product');
+      setEditProductId(null);
+    }
   };
 
   // order detail + print (Orders view)

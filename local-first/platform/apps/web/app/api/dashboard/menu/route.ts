@@ -205,9 +205,20 @@ export async function POST(req: NextRequest) {
     if (orderCount > 0) {
       return NextResponse.json({ error: 'has_orders', message: 'This item appears on past orders — mark it Sold Out instead of deleting.' }, { status: 409 });
     }
-    // recipes cascade-delete with the item
-    await prisma.menuItem.delete({ where: { id: itemId } });
-    return NextResponse.json({ ok: true, deleted: itemId });
+    try {
+      // Clean up dependent combo items, recipes and rollups if any exist before deleting
+      await prisma.comboItem.deleteMany({ where: { itemId } }).catch(() => {});
+      await prisma.itemSalesRollup.deleteMany({ where: { itemId } }).catch(() => {});
+      await prisma.recipe.deleteMany({ where: { itemId } }).catch(() => {});
+      await prisma.menuItem.delete({ where: { id: itemId } });
+      return NextResponse.json({ ok: true, deleted: itemId });
+    } catch (delErr: any) {
+      console.error('[MENU:DELETE] Failed to delete menu item:', delErr);
+      return NextResponse.json({
+        error: 'delete_failed',
+        message: 'Could not delete item. It may be referenced by existing records.',
+      }, { status: 409 });
+    }
   }
 
   return NextResponse.json({ error: 'invalid_action' }, { status: 400 });

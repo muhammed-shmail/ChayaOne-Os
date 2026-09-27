@@ -1664,9 +1664,10 @@ ${rows}
           <ThemeToggle />
         </div>
 
-        <div className="flex items-center gap-2.5">
+        {/* Center / Navigation Controls: Search -> Dine-in / Takeaway -> Mark In (ShiftStatus) */}
+        <div className="flex items-center gap-3">
           {/* Search menu */}
-          <div className="relative w-56 lg:w-64">
+          <div className="relative w-44 lg:w-56 shrink-0">
             <Search size={15} aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-3)' }} />
             <input
               value={search}
@@ -1681,7 +1682,7 @@ ${rows}
               <button
                 onClick={() => setSearch('')}
                 aria-label="Clear search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 grid place-items-center"
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 grid place-items-center cursor-pointer"
                 style={{ color: 'var(--ink-3)' }}
               >
                 <X size={14} aria-hidden />
@@ -1689,22 +1690,29 @@ ${rows}
             )}
           </div>
 
-          {/* Floor map & tables */}
-          <button
-            type="button"
-            onClick={() => setFloorOpen(true)}
-            title="Open Floor Map & Tables"
-            className="pill shrink-0 inline-flex items-center gap-1.5 cursor-pointer font-bold text-xs transition hover:opacity-85"
-            style={{
-              background: selectedTable ? 'color-mix(in srgb, var(--turmeric) 16%, var(--paper-2))' : 'var(--paper-2)',
-              border: selectedTable ? '1.5px solid var(--turmeric)' : '1px solid var(--line)',
-              color: selectedTable ? 'var(--turmeric-d)' : 'var(--ink-2)',
-            }}
-          >
-            <Table2 size={14} aria-hidden className={selectedTable ? 'text-[var(--turmeric-d)]' : ''} />
-            <span>{selectedTable ? `Table ${selectedTable.label}` : 'Floor map & tables'}</span>
-          </button>
+          {/* Dine-in / Takeaway Switcher */}
+          <div className="flex rounded-full p-[2.5px] border shrink-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
+            {(['dine_in', 'takeaway'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
+                className="px-3.5 py-1 rounded-full font-bold text-xs transition cursor-pointer"
+                style={orderType === t ? { background: 'var(--ink)', color: 'var(--paper-2)' } : { color: 'var(--ink-2)' }}
+              >
+                {t === 'dine_in' ? 'Dine-in' : 'Takeaway'}
+              </button>
+            ))}
+          </div>
 
+          {/* Off shift / Mark In (ShiftStatus) */}
+          <div className="shrink-0 flex items-center">
+            <ShiftStatus />
+          </div>
+        </div>
+
+        {/* Right: Sync */}
+        <div className="flex items-center gap-2 shrink-0">
           {/* Small Sync Button in Top Bar */}
           <div className="relative shrink-0">
             <button
@@ -1758,28 +1766,16 @@ ${rows}
       <div className="grid grid-cols-1 md:grid-cols-[190px_1fr_310px] lg:grid-cols-[216px_1fr_336px] xl:grid-cols-[232px_1fr_360px] gap-3.5 p-3.5 flex-1 min-h-0 overflow-hidden">
         {/* LEFT COLUMN: STAFF / CATEGORIES */}
         <aside className="hidden md:flex flex-col h-full min-h-0 overflow-hidden gap-2">
-          {/* Staff profile & shift status */}
-          <div className="flex flex-col gap-2 shrink-0">
-            <div className="flex items-center gap-2 px-1">
+          {/* Staff profile */}
+          <div className="flex flex-col gap-1.5 shrink-0 px-1">
+            <div className="flex items-center gap-2">
               <span className="w-6 h-6 rounded-full grid place-items-center text-[11px] font-extrabold text-white shrink-0" style={{ background: 'linear-gradient(135deg, var(--turmeric), var(--clay))' }}>{currentStaff.name[0]}</span>
               <span className="text-[12.5px] font-bold truncate">{currentStaff.name}</span>
               <span className="pill shrink-0" style={{ padding: '2px 7px', fontSize: '10px', textTransform: 'capitalize' }}>
                 {currentStaff.roles && currentStaff.roles.length > 1 ? currentStaff.roles.join(' + ') : currentStaff.role}
               </span>
             </div>
-            <div className="px-1 flex flex-col gap-1">
-              <ShiftStatus />
-              <BusinessDayHeaderBadge />
-            </div>
-            <div className="flex rounded-full p-[3px] border shrink-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
-              {(['dine_in', 'takeaway'] as const).map((t) => (
-                <button key={t} onClick={() => { setOrderType(t); if (t === 'takeaway') setTableId(null); }}
-                  className="flex-1 py-1.5 rounded-full font-bold text-[12.5px] transition"
-                  style={orderType === t ? { background: 'var(--ink)', color: 'var(--paper-2)' } : { color: 'var(--ink-2)' }}>
-                  {t === 'dine_in' ? 'Dine-in' : 'Takeaway'}
-                </button>
-              ))}
-            </div>
+            <BusinessDayHeaderBadge />
           </div>
 
           {/* Compact scroll-up indicator/button */}
@@ -1826,7 +1822,24 @@ ${rows}
           )}
 
           {/* Bottom fixed controls */}
-          <div className="flex flex-col gap-1 shrink-0 pt-1 border-t" style={{ borderColor: 'var(--line)' }}>
+          <div className="flex flex-col gap-1.5 shrink-0 pt-1.5 border-t" style={{ borderColor: 'var(--line)' }}>
+            {/* Floor map & tables */}
+            <button
+              type="button"
+              onClick={() => setFloorOpen(true)}
+              title="Open Floor Map & Tables"
+              className="flex items-center justify-center gap-2 py-2 px-3 rounded-[10px] font-bold text-xs transition hover:opacity-90 cursor-pointer shadow-sm select-none"
+              style={{
+                background: selectedTable ? 'color-mix(in srgb, var(--turmeric) 16%, var(--paper-2))' : 'var(--paper-2)',
+                border: selectedTable ? '1.5px solid var(--turmeric)' : '1px solid var(--line)',
+                color: selectedTable ? 'var(--turmeric-d)' : 'var(--ink-2)',
+              }}
+            >
+              <Table2 size={15} aria-hidden className={selectedTable ? 'text-[var(--turmeric-d)]' : ''} />
+              <span className="truncate">{selectedTable ? `Table ${selectedTable.label}` : 'Floor map & tables'}</span>
+            </button>
+
+            {/* QR Approvals */}
             <button
               type="button"
               disabled

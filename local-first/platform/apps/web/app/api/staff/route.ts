@@ -150,6 +150,9 @@ export async function POST(req: NextRequest) {
     if (session.outletId) {
       const prevKitchens = Array.isArray(prevSettings.kitchens) ? (prevSettings.kitchens as any[]) : [];
       const nextKitchens = prevKitchens.filter((k) => k.id?.toLowerCase() !== targetId);
+      const prevDevices = Array.isArray(prevSettings.devices) ? (prevSettings.devices as any[]) : [];
+      const nextDevices = prevDevices.map((d) => (d.station?.trim().toLowerCase() === targetId ? { ...d, station: '' } : d));
+
       await prisma.outlet.update({
         where: { id: session.outletId },
         data: {
@@ -158,10 +161,20 @@ export async function POST(req: NextRequest) {
             waiterStations: next,
             kitchens: nextKitchens,
             stations: next,
+            devices: nextDevices,
             deletedDefaultStations: nextDeleted,
           } as any,
         },
       });
+
+      // Safely unlink any menu items assigned to this station
+      await prisma.menuItem.updateMany({
+        where: { outletId: session.outletId, station: targetId },
+        data: { station: null },
+      }).catch(() => {});
+
+      // Broadcast realtime event
+      await publish(session.outletId, { type: 'outlet.updated', outletId: session.outletId }).catch(() => {});
     }
     return NextResponse.json({ ok: true, waiterStations: next });
   }

@@ -3,8 +3,8 @@
   "short_name": "Waiter",
   "start_url": "/tables",
   "display": "standalone",
-  "background_color": "#14110F",
-  "theme_color": "#E8902A",
+  "background_color": "#DEAD61",
+  "theme_color": "#DEAD61",
   "icons": [
     {
       "src": "/icons/waiter-192.png",
