@@ -15,7 +15,7 @@
  *   postgresql://cafeos:cafeos@localhost:5433/cafeos
  */
 import EmbeddedPostgres from 'embedded-postgres';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -56,6 +56,11 @@ async function main() {
   if (firstRun) {
     console.log('⬇️  First run — downloading Postgres binary & initialising cluster…');
     await pg.initialise();
+  }
+
+  const pidFile = join(dataDir, 'postmaster.pid');
+  if (existsSync(pidFile)) {
+    try { rmSync(pidFile); } catch {}
   }
 
   await pg.start();

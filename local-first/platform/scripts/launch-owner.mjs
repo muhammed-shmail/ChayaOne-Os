@@ -11,7 +11,18 @@ import http from 'http';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..', '..', '..');
-const ownerDir = join(rootDir, 'Owner-chayaone');
+const platformDir = join(__dirname, '..');
+const dbDir = join(platformDir, 'packages', 'db');
+
+function runCommand(command, args, cwd) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, { cwd, shell: true, stdio: 'inherit' });
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Command ${command} ${args.join(' ')} failed with code ${code}`));
+    });
+  });
+}
 
 async function probeHttp(url, timeoutMs = 2000) {
   return new Promise((resolve) => {
@@ -55,6 +66,14 @@ async function main() {
     console.log('✅ Owner Portal is ALREADY running on http://localhost:3004\n');
     await openBrowser('http://localhost:3004');
     return;
+  }
+
+  // Ensure database daemon is running
+  console.log('🐘 Step 1: Checking and starting embedded PostgreSQL (port 5433)…');
+  try {
+    await runCommand('node', ['scripts/ensure-db.mjs'], dbDir);
+  } catch (err) {
+    console.warn('⚠️ Warning starting database daemon:', err.message);
   }
 
   console.log('⚡ Starting Owner Dashboard runtime on port 3004…');

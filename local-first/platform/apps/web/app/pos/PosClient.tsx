@@ -462,6 +462,9 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   const [floorOpen, setFloorOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
   const [floorFilter, setFloorFilter] = useState<string>('all'); // 'all' | floorId | 'unassigned'
+  const [tableStatusFilter, setTableStatusFilter] = useState<string>('all'); // 'all' | 'free' | 'occupied' | TableStage
+  const [tableSectionFilter, setTableSectionFilter] = useState<string>('all'); // 'all' | prefix
+  const [tableSearchQuery, setTableSearchQuery] = useState<string>('');
   const [charging, setCharging] = useState(false);
   // when Send/Charge is tapped with no table, we open the floor map and remember the
   // intent here, then resume it (below) the moment a table is picked
@@ -2000,12 +2003,61 @@ ${rows}
 
         {/* floor modal */}
         {floorOpen && (() => {
+          // Extract table prefixes (e.g. D, L, M, O, S)
+          const prefixes = Array.from(
+            new Set(
+              tables
+                .map((t) => {
+                  const m = t.label.match(/^([A-Za-z]+)/);
+                  return m && m[1] ? m[1].toUpperCase() : null;
+                })
+                .filter(Boolean) as string[]
+            )
+          ).sort();
+
+          const prefixNames: Record<string, string> = {
+            D: 'Dine-in (D)',
+            L: 'Lounge (L)',
+            M: 'Mezzanine (M)',
+            O: 'Outdoor (O)',
+            S: 'Special (S)',
+          };
+
+          // Filter by status, section, search
+          const freeCount = tables.filter((t) => !occupied[t.id]).length;
+          const occupiedCount = tables.filter((t) => !!occupied[t.id]).length;
+          const kotCount = tables.filter((t) => occupied[t.id] && tableStage(occupied[t.id]?.status) === 'kot').length;
+          const readyCount = tables.filter((t) => occupied[t.id] && tableStage(occupied[t.id]?.status) === 'ready').length;
+          const servedCount = tables.filter((t) => occupied[t.id] && tableStage(occupied[t.id]?.status) === 'served').length;
+
+          const filteredTables = tables.filter((t) => {
+            const occ = occupied[t.id];
+            const stage = occ ? tableStage(occ.status) : 'free';
+
+            if (tableStatusFilter === 'free' && occ) return false;
+            if (tableStatusFilter === 'occupied' && !occ) return false;
+            if (tableStatusFilter !== 'all' && tableStatusFilter !== 'free' && tableStatusFilter !== 'occupied') {
+              if (!occ || stage !== tableStatusFilter) return false;
+            }
+
+            if (tableSectionFilter !== 'all') {
+              if (!t.label.toUpperCase().startsWith(tableSectionFilter.toUpperCase())) return false;
+            }
+
+            if (tableSearchQuery.trim()) {
+              const q = tableSearchQuery.trim().toLowerCase();
+              if (!t.label.toLowerCase().includes(q)) return false;
+            }
+
+            return true;
+          });
+
           // group tables under their floor; a missing/stale floorId falls under "Unassigned"
           const floorIds = new Set(floors.map((f) => f.id));
-          const hasUnassigned = tables.some((t) => !t.floorId || !floorIds.has(t.floorId));
+          const hasUnassigned = filteredTables.some((t) => !t.floorId || !floorIds.has(t.floorId));
           const groups: { key: string; name: string; tables: TableDto[] }[] = [
-            ...floors.map((f) => ({ key: f.id, name: f.name, tables: tables.filter((t) => t.floorId === f.id) })),
-            { key: 'unassigned', name: 'Unassigned', tables: tables.filter((t) => !t.floorId || !floorIds.has(t.floorId)) },
+            ...floors.map((f) => ({ key: f.id, name: f.name, tables: filteredTables.filter((t) => t.floorId === f.id) })),
+            { key: 'unassigned', name: 'Unassigned', tables: filteredTables.filter((t) => !t.floorId || !floorIds.has(t.floorId)) },
           ].filter((g) => g.tables.length > 0);
 
           const renderTableButton = (t: TableDto) => {
@@ -2016,7 +2068,7 @@ ${rows}
             const selected = tableId === t.id;
             return (
               <button key={t.id} onClick={() => { if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); } }}
-                className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition"
+                className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition cursor-pointer hover:scale-[1.02]"
                 style={{
                   borderColor: selected ? 'var(--turmeric-d)' : s.color,
                   borderTopWidth: 4, borderTopColor: s.color,
@@ -2041,22 +2093,113 @@ ${rows}
 
           const showAll = floorFilter === 'all';
           const shownGroups = showAll ? groups : groups.filter((g) => g.key === floorFilter);
+          const hasActiveFilters = tableStatusFilter !== 'all' || tableSectionFilter !== 'all' || !!tableSearchQuery.trim();
 
           return (
             <Modal onClose={() => { setFloorOpen(false); setPendingAction(null); }} title="Floor map">
-              {/* status legend — by order stage */}
-              <div className="flex flex-wrap gap-4 px-5 pt-4">
-                {TABLE_STAGE_ORDER.map((k) => (
-                  <span key={k} className="inline-flex items-center gap-1.5 text-xs font-bold" style={{ color: 'var(--ink-2)' }}>
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: TABLE_STAGES[k].color }} />{TABLE_STAGES[k].label}
-                  </span>
-                ))}
+              {/* Filter Row 1: Search & Quick Reset */}
+              <div className="px-5 pt-3 flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={tableSearchQuery}
+                    onChange={(e) => setTableSearchQuery(e.target.value)}
+                    placeholder="Search table (e.g. D1, L, 3)..."
+                    className="w-full px-3.5 py-1.5 pl-8 text-xs rounded-xl border outline-none transition"
+                    style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                  />
+                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-40" />
+                  {tableSearchQuery && (
+                    <button
+                      onClick={() => setTableSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold opacity-60 hover:opacity-100"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                {hasActiveFilters && (
+                  <button
+                    onClick={() => {
+                      setTableStatusFilter('all');
+                      setTableSectionFilter('all');
+                      setTableSearchQuery('');
+                      setFloorFilter('all');
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-bold rounded-xl border transition"
+                    style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--clay, #dc2626)' }}
+                  >
+                    Reset
+                  </button>
+                )}
               </div>
+
+              {/* Filter Row 2: Status Chips with Legend */}
+              <div className="flex flex-wrap items-center gap-1.5 px-5 pt-3">
+                <Chip on={tableStatusFilter === 'all'} onClick={() => setTableStatusFilter('all')}>
+                  All ({tables.length})
+                </Chip>
+                <Chip on={tableStatusFilter === 'free'} onClick={() => setTableStatusFilter('free')}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.free.color }} />
+                    Free ({freeCount})
+                  </span>
+                </Chip>
+                <Chip on={tableStatusFilter === 'occupied'} onClick={() => setTableStatusFilter('occupied')}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: '#f59e0b' }} />
+                    Occupied ({occupiedCount})
+                  </span>
+                </Chip>
+                <Chip on={tableStatusFilter === 'kot'} onClick={() => setTableStatusFilter('kot')}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.kot.color }} />
+                    KOT ({kotCount})
+                  </span>
+                </Chip>
+                {readyCount > 0 && (
+                  <Chip on={tableStatusFilter === 'ready'} onClick={() => setTableStatusFilter('ready')}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.ready.color }} />
+                      Ready ({readyCount})
+                    </span>
+                  </Chip>
+                )}
+                {servedCount > 0 && (
+                  <Chip on={tableStatusFilter === 'served'} onClick={() => setTableStatusFilter('served')}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.served.color }} />
+                      Served ({servedCount})
+                    </span>
+                  </Chip>
+                )}
+              </div>
+
+              {/* Filter Row 3: Section Chips (D, L, M, O, S) */}
+              {prefixes.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5 px-5 pt-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider mr-0.5" style={{ color: 'var(--ink-3)' }}>
+                    Section:
+                  </span>
+                  <Chip on={tableSectionFilter === 'all'} onClick={() => setTableSectionFilter('all')}>
+                    All
+                  </Chip>
+                  {prefixes.map((p) => {
+                    const count = tables.filter((t) => t.label.toUpperCase().startsWith(p)).length;
+                    const label = prefixNames[p] || p;
+                    return (
+                      <Chip key={p} on={tableSectionFilter === p} onClick={() => setTableSectionFilter(p)}>
+                        {label} ({count})
+                      </Chip>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* floor filter chips — only when floors are configured */}
               {floors.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-5 pt-4">
-                  <Chip on={floorFilter === 'all'} onClick={() => setFloorFilter('all')}>All</Chip>
+                <div className="flex flex-wrap gap-2 px-5 pt-2">
+                  <Chip on={floorFilter === 'all'} onClick={() => setFloorFilter('all')}>All Floors</Chip>
                   {floors.map((f) => (
                     <Chip key={f.id} on={floorFilter === f.id} onClick={() => setFloorFilter(f.id)}>{f.name}</Chip>
                   ))}
@@ -2066,8 +2209,30 @@ ${rows}
                 </div>
               )}
 
-              {/* grouped (All) vs single-floor grid */}
-              {showAll && floors.length > 0 ? (
+              {/* Results summary if filtered */}
+              {hasActiveFilters && (
+                <div className="px-5 pt-2 text-[11px] font-medium" style={{ color: 'var(--ink-3)' }}>
+                  Showing {filteredTables.length} of {tables.length} tables
+                </div>
+              )}
+
+              {/* Table Grid / Empty State */}
+              {filteredTables.length === 0 ? (
+                <div className="p-8 text-center flex flex-col items-center gap-2">
+                  <p className="text-sm font-bold" style={{ color: 'var(--ink-2)' }}>No tables match your filter criteria.</p>
+                  <button
+                    onClick={() => {
+                      setTableStatusFilter('all');
+                      setTableSectionFilter('all');
+                      setTableSearchQuery('');
+                      setFloorFilter('all');
+                    }}
+                    className="btn btn-dark text-xs px-3.5 py-1.5"
+                  >
+                    Clear all filters
+                  </button>
+                </div>
+              ) : showAll && floors.length > 0 ? (
                 <div className="p-5 flex flex-col gap-5">
                   {shownGroups.map((g) => (
                     <div key={g.key}>
@@ -2078,7 +2243,7 @@ ${rows}
                 </div>
               ) : (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 p-5">
-                  {(shownGroups.flatMap((g) => g.tables)).map(renderTableButton)}
+                  {filteredTables.map(renderTableButton)}
                 </div>
               )}
             </Modal>

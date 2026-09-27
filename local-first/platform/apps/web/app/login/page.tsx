@@ -8,26 +8,40 @@ export const dynamic = 'force-dynamic';
 export default async function LoginPage() {
   const session = await getSession();
   if (session) {
-    const [outlet, staff] = await Promise.all([
-      prisma.outlet.findUnique({ where: { id: session.outletId } }),
-      prisma.staffUser.findUnique({ where: { id: session.staffId } }),
-    ]);
+    let outlet = null;
+    let staff = null;
+    try {
+      [outlet, staff] = await Promise.all([
+        prisma.outlet.findUnique({ where: { id: session.outletId } }),
+        prisma.staffUser.findUnique({ where: { id: session.staffId } }),
+      ]);
+    } catch (err) {
+      console.error('[LoginPage] DB query failed during session check:', err);
+    }
     if (outlet && staff) {
       redirect(session.role === 'kitchen' ? '/kds' : (session.role === 'owner' || session.role === 'manager' || session.role === 'cashier' || session.role === 'accountant' ? '/dashboard' : '/pos'));
-    } else {
+    } else if (outlet || staff) {
       redirect('/api/auth/logout');
     }
   }
-  const outlet = await prisma.outlet.findFirst({
-    select: {
-      name: true,
-      settings: true,
-      tenant: { select: { name: true } },
-    },
-  });
 
-  const businessName = outlet?.tenant?.name || outlet?.name || 'ChayaOne';
-  const logoUrl = (outlet?.settings as any)?.logoUrl || null;
+  let businessName = 'ChayaOne';
+  let logoUrl: string | null = null;
+
+  try {
+    const outlet = await prisma.outlet.findFirst({
+      select: {
+        name: true,
+        settings: true,
+        tenant: { select: { name: true } },
+      },
+    });
+
+    businessName = outlet?.tenant?.name || outlet?.name || 'ChayaOne';
+    logoUrl = (outlet?.settings as any)?.logoUrl || null;
+  } catch (err) {
+    console.error('[LoginPage] Could not load outlet details from database:', err);
+  }
 
   return <LoginClient initialBusinessName={businessName} initialLogoUrl={logoUrl} />;
 }

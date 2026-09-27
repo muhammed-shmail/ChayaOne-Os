@@ -1143,6 +1143,21 @@ export default function DashboardClient({
   const [categorySearch, setCategorySearch] = useState('');
   const [deleteConfirmCatId, setDeleteConfirmCatId] = useState<string | null>(null);
 
+  // Menu Import state (JSON / Excel)
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importFileName, setImportFileName] = useState('');
+  const [importParsedItems, setImportParsedItems] = useState<any[]>([]);
+  const [importParsedCategories, setImportParsedCategories] = useState<string[]>([]);
+  const [importMode, setImportMode] = useState<'replace' | 'append'>('replace');
+  const [importing, setImporting] = useState(false);
+  const [importParsing, setImportParsing] = useState(false);
+  const [importSearch, setImportSearch] = useState('');
+  const [importCatFilter, setImportCatFilter] = useState('all');
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+
   // Station picker options = default unassigned option plus configured stations.
   const stationOptions = (current: string) => {
     const list = kitchens.map((k) => ({ id: k.id, name: k.name }));
@@ -1277,6 +1292,426 @@ export default function DashboardClient({
     } catch (err) {
       console.error(err);
       await loadInventoryData();
+    }
+  };
+
+  // --- Menu Import Handlers (JSON / Excel) ---
+  const parseAndSetMenuData = (itemsRaw: any[], categoriesRaw?: string[], sourceName?: string) => {
+    setImportError(null);
+    setImportSuccess(null);
+    if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
+      setImportError('No menu items found in the file.');
+      return;
+    }
+
+    const categoriesSet = new Set<string>();
+    if (Array.isArray(categoriesRaw)) {
+      categoriesRaw.forEach((c) => {
+        const trimmed = String(c || '').trim();
+        if (trimmed) categoriesSet.add(trimmed);
+      });
+    }
+
+    const normalizedItems: any[] = [];
+    for (const raw of itemsRaw) {
+      if (!raw || typeof raw !== 'object') continue;
+
+      // Extract Name
+      const name = String(
+        raw.name ??
+        raw.Name ??
+        raw['Item Name'] ??
+        raw['item name'] ??
+        raw['Product Name'] ??
+        raw['product name'] ??
+        raw.Product ??
+        raw.product ??
+        raw.Item ??
+        raw.item ??
+        raw.title ??
+        raw.Title ??
+        ''
+      ).trim();
+
+      if (!name) continue;
+
+      // Extract Category
+      const category = String(
+        raw.category ??
+        raw.Category ??
+        raw.Cat ??
+        raw.cat ??
+        raw.Group ??
+        raw.group ??
+        raw.Section ??
+        raw.section ??
+        ''
+      ).trim();
+
+      if (category) {
+        categoriesSet.add(category);
+      }
+
+      // Extract Price
+      let price = 0;
+      let pricePaise = 0;
+      if (raw.pricePaise !== undefined && raw.pricePaise !== null && !isNaN(Number(raw.pricePaise))) {
+        pricePaise = Math.round(Number(raw.pricePaise));
+        price = pricePaise / 100;
+      } else {
+        const rawPriceStr = String(
+          raw.price ??
+          raw.Price ??
+          raw['Price (₹)'] ??
+          raw['Price(₹)'] ??
+          raw['Price (Rs)'] ??
+          raw['Price(Rs)'] ??
+          raw.Rate ??
+          raw.rate ??
+          raw.MRP ??
+          raw.mrp ??
+          raw.Amount ??
+          raw.amount ??
+          '0'
+        ).replace(/[^0-9.-]/g, '');
+        const parsedP = parseFloat(rawPriceStr);
+        price = !isNaN(parsedP) && parsedP >= 0 ? parsedP : 0;
+        pricePaise = Math.round(price * 100);
+      }
+
+      // Extract Station
+      const station = String(
+        raw.station ??
+        raw.Station ??
+        raw.Kitchen ??
+        raw.kitchen ??
+        raw.Printer ??
+        raw.printer ??
+        raw['KOT Station'] ??
+        raw['kot station'] ??
+        ''
+      ).trim().toUpperCase();
+
+      // Extract Availability
+      let isAvailable = true;
+      const rawAvail = raw.isAvailable ?? raw.isavailable ?? raw.Available ?? raw.available ?? raw.Status ?? raw.status;
+      if (rawAvail !== undefined && rawAvail !== null) {
+        const availStr = String(rawAvail).trim().toLowerCase();
+        if (availStr === 'false' || availStr === '0' || availStr === 'sold out' || availStr === 'no' || rawAvail === false) {
+          isAvailable = false;
+        }
+      }
+
+      // Extract Tags
+      let tags: string[] = [];
+      const rawTags = raw.tags ?? raw.Tags ?? raw.tag ?? raw.Tag ?? raw.Dietary ?? raw.dietary ?? raw.Type ?? raw.type;
+      if (Array.isArray(rawTags)) {
+        tags = rawTags.map((t) => String(t).trim()).filter(Boolean);
+      } else if (typeof rawTags === 'string' && rawTags.trim()) {
+        tags = rawTags.split(',').map((t) => t.trim()).filter(Boolean);
+      }
+
+      // Extract Description
+      const description = String(raw.description ?? raw.Description ?? raw.desc ?? raw.Desc ?? '').trim();
+
+      // Extract GST Rate
+      let gstRate = 5;
+      const rawGst = raw.gstRate ?? raw.gst ?? raw.GST ?? raw['GST %'] ?? raw['GST Rate'] ?? raw.tax ?? raw.Tax;
+      if (rawGst !== undefined && rawGst !== null && !isNaN(Number(rawGst))) {
+        gstRate = Number(rawGst);
+      }
+
+      // Extract HSN
+      const hsnCode = String(raw.hsnCode ?? raw.hsn ?? raw.HSN ?? raw['HSN/SAC'] ?? raw['HSN Code'] ?? '').trim();
+
+      normalizedItems.push({
+        name,
+        category: category || 'Uncategorised',
+        price,
+        pricePaise,
+        station: station || 'P1',
+        isAvailable,
+        tags,
+        description,
+        gstRate,
+        hsnCode: hsnCode || '2106',
+      });
+    }
+
+    if (normalizedItems.length === 0) {
+      setImportError('Could not find any valid products with names in this file. Please check column headers.');
+      return;
+    }
+
+    const categoriesArray = Array.from(categoriesSet);
+    setImportParsedItems(normalizedItems);
+    setImportParsedCategories(categoriesArray);
+    if (sourceName) setImportFileName(sourceName);
+  };
+
+  const handleFileSelected = async (file: File) => {
+    setImportError(null);
+    setImportSuccess(null);
+    setImportFile(file);
+    setImportFileName(file.name);
+    setImportParsing(true);
+
+    try {
+      const fileNameLower = file.name.toLowerCase();
+
+      if (fileNameLower.endsWith('.json')) {
+        const text = await file.text();
+        let json: any;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          throw new Error('Invalid JSON format. Please verify the JSON syntax.');
+        }
+
+        if (Array.isArray(json)) {
+          parseAndSetMenuData(json, undefined, file.name);
+        } else if (json && typeof json === 'object') {
+          if (Array.isArray(json.items)) {
+            parseAndSetMenuData(json.items, Array.isArray(json.categories) ? json.categories : undefined, file.name);
+          } else {
+            // Might be { "Category Name": [ items ] }
+            const flattened: any[] = [];
+            const cats: string[] = [];
+            for (const [key, val] of Object.entries(json)) {
+              if (Array.isArray(val)) {
+                cats.push(key);
+                for (const item of val) {
+                  if (typeof item === 'object' && item !== null) {
+                    flattened.push({ ...item, category: item.category || key });
+                  }
+                }
+              }
+            }
+            if (flattened.length > 0) {
+              parseAndSetMenuData(flattened, cats, file.name);
+            } else {
+              throw new Error('JSON structure not recognized. Expected `{ categories: [...], items: [...] }` or an array of items.');
+            }
+          }
+        } else {
+          throw new Error('Unrecognized JSON structure.');
+        }
+      } else if (
+        fileNameLower.endsWith('.xlsx') ||
+        fileNameLower.endsWith('.xls') ||
+        fileNameLower.endsWith('.csv')
+      ) {
+        const arrayBuffer = await file.arrayBuffer();
+        const XLSX = await import('xlsx');
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+
+        const allRows: any[] = [];
+        const sheetCats: string[] = [];
+
+        for (const sheetName of workbook.SheetNames) {
+          const sheet = workbook.Sheets[sheetName];
+          if (!sheet) continue;
+          const rows = XLSX.utils.sheet_to_json<any>(sheet, { defval: '' });
+          if (rows.length > 0) {
+            const isNamedSheet = workbook.SheetNames.length > 1 && !sheetName.toLowerCase().startsWith('sheet');
+            if (isNamedSheet) sheetCats.push(sheetName);
+            for (const row of rows) {
+              if (isNamedSheet && !row.Category && !row.category) {
+                row.category = sheetName;
+              }
+              allRows.push(row);
+            }
+          }
+        }
+
+        if (allRows.length === 0) {
+          throw new Error('No data rows found in this spreadsheet.');
+        }
+
+        parseAndSetMenuData(allRows, sheetCats.length > 0 ? sheetCats : undefined, file.name);
+      } else {
+        throw new Error('Unsupported file format. Please upload a .xlsx, .xls, .csv, or .json file.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setImportError(err?.message || 'Failed to read or parse file.');
+    } finally {
+      setImportParsing(false);
+    }
+  };
+
+  const handleLoadKaawaPreset = async () => {
+    setImportParsing(true);
+    setImportError(null);
+    setImportSuccess(null);
+    try {
+      const res = await fetch('/kaawa_menu_parsed.json');
+      if (!res.ok) {
+        throw new Error('Could not fetch preset file from server.');
+      }
+      const data = await res.json();
+      parseAndSetMenuData(data.items || [], data.categories || [], 'kaawa_menu_parsed.json (183 Items Preset)');
+    } catch (err: any) {
+      setImportError('Failed to load Kaawa menu preset: ' + err.message);
+    } finally {
+      setImportParsing(false);
+    }
+  };
+
+  const handleDownloadSampleExcel = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const sampleRows = [
+        {
+          Category: 'Chaya',
+          Name: 'Kaawa Special Tea',
+          'Price (₹)': 20,
+          Station: 'P1',
+          Tags: 'veg',
+          Available: 'Available',
+          Description: 'Signature spiced milk tea',
+          'GST %': 5,
+          'HSN Code': '2106',
+        },
+        {
+          Category: 'Chaya',
+          Name: 'Ginger Tea',
+          'Price (₹)': 25,
+          Station: 'P1',
+          Tags: 'veg',
+          Available: 'Available',
+          Description: 'Fresh ginger brew with milk',
+          'GST %': 5,
+          'HSN Code': '2106',
+        },
+        {
+          Category: 'Fresh Juice',
+          Name: 'Orange Juice',
+          'Price (₹)': 80,
+          Station: 'P1',
+          Tags: 'veg',
+          Available: 'Available',
+          Description: 'Fresh pressed orange juice',
+          'GST %': 5,
+          'HSN Code': '2106',
+        },
+        {
+          Category: 'Starters',
+          Name: 'Crispy Veg Samosa',
+          'Price (₹)': 30,
+          Station: 'P2',
+          Tags: 'veg, spicy',
+          Available: 'Available',
+          Description: '2 pieces served with mint chutney',
+          'GST %': 5,
+          'HSN Code': '2106',
+        },
+        {
+          Category: 'Burger',
+          Name: 'Crispy Chicken Burger',
+          'Price (₹)': 140,
+          Station: 'P2',
+          Tags: 'non-veg',
+          Available: 'Available',
+          Description: 'Crispy chicken patty with lettuce and spicy mayo',
+          'GST %': 5,
+          'HSN Code': '2106',
+        },
+      ];
+
+      const ws = XLSX.utils.json_to_sheet(sampleRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Menu Template');
+      XLSX.writeFile(wb, 'ChayaOne_Menu_Template.xlsx');
+    } catch (err: any) {
+      flashMessage('Failed to download Excel template: ' + (err?.message || 'Error'));
+    }
+  };
+
+  const handleDownloadSampleJson = () => {
+    const sample = {
+      categories: ['Chaya', 'Fresh Juice', 'Starters', 'Burger'],
+      items: [
+        {
+          category: 'Chaya',
+          name: 'Kaawa Special Tea',
+          price: 20,
+          pricePaise: 2000,
+          station: 'P1',
+          isAvailable: true,
+          tags: ['veg'],
+          description: 'Signature spiced milk tea',
+          gstRate: 5,
+          hsnCode: '2106',
+        },
+        {
+          category: 'Starters',
+          name: 'Crispy Veg Samosa',
+          price: 30,
+          pricePaise: 3000,
+          station: 'P2',
+          isAvailable: true,
+          tags: ['veg', 'spicy'],
+          description: '2 pieces served with mint chutney',
+          gstRate: 5,
+          hsnCode: '2106',
+        },
+      ],
+    };
+    const blob = new Blob([JSON.stringify(sample, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'ChayaOne_Menu_Template.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExecuteImport = async () => {
+    if (!importParsedItems.length) {
+      setImportError('No items ready to import.');
+      return;
+    }
+
+    if (importMode === 'replace') {
+      const confirmed = await confirmAction({
+        title: 'Replace Menu Confirmation',
+        message: `This will replace your current menu with ${importParsedItems.length} products across ${importParsedCategories.length} categories. Past sales, bills, and orders will remain completely safe. Are you sure you want to proceed?`,
+        confirmText: 'Yes, Clean Replace Menu',
+        isDestructive: true,
+      });
+      if (!confirmed) return;
+    }
+
+    setImporting(true);
+    setImportError(null);
+    setImportSuccess(null);
+
+    try {
+      const res = await fetch('/api/dashboard/menu', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'import_menu',
+          mode: importMode,
+          categories: importParsedCategories,
+          items: importParsedItems,
+        }),
+      });
+
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.ok) {
+        setImportSuccess(`Successfully imported ${d.count} products across ${d.categoriesCount} categories!`);
+        flashMessage(`Imported ${d.count} menu items successfully!`);
+        await loadInventoryData();
+      } else {
+        setImportError(d.message || d.error || 'Failed to import menu items.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setImportError(err?.message || 'Network error while importing menu.');
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -4439,6 +4874,21 @@ export default function DashboardClient({
                     >
                       📁 Categories & Manage (Edit)
                     </button>
+                    <button
+                      role="tab"
+                      aria-selected={activeSubTab === 'import'}
+                      onClick={() => {
+                        setActiveSubTab('import');
+                        setImportError(null);
+                        setImportSuccess(null);
+                      }}
+                      className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5"
+                      style={activeSubTab === 'import'
+                        ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                        : { color: 'var(--ink-2)', background: 'transparent' }}
+                    >
+                      <span>📥</span> Import Menu (JSON / Excel)
+                    </button>
                   </div>
                 </div>
 
@@ -5264,6 +5714,493 @@ export default function DashboardClient({
                               </div>
                             );
                           })}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })()}
+
+                {activeSubTab === 'import' && (() => {
+                  const q = importSearch.trim().toLowerCase();
+                  const filteredItems = importParsedItems.filter((item) => {
+                    const matchesSearch = !q ||
+                      item.name.toLowerCase().includes(q) ||
+                      item.category.toLowerCase().includes(q) ||
+                      (item.description && item.description.toLowerCase().includes(q)) ||
+                      (item.station && item.station.toLowerCase().includes(q));
+                    const matchesCat = importCatFilter === 'all' || item.category === importCatFilter;
+                    return matchesSearch && matchesCat;
+                  });
+
+                  // Station counters
+                  const stationCounts: Record<string, number> = {};
+                  importParsedItems.forEach((it) => {
+                    const st = it.station || 'Unassigned';
+                    stationCounts[st] = (stationCounts[st] || 0) + 1;
+                  });
+
+                  // Category counts
+                  const catCounts: Record<string, number> = {};
+                  importParsedItems.forEach((it) => {
+                    const c = it.category || 'Uncategorised';
+                    catCounts[c] = (catCounts[c] || 0) + 1;
+                  });
+
+                  return (
+                    <section className="card p-5 flex flex-col gap-6">
+                      {/* Top Header */}
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4" style={{ borderColor: 'var(--line-2)' }}>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">📥</span>
+                            <h4 className="font-bold text-lg">Bulk Import Menu (JSON / Excel)</h4>
+                            <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold" style={{ background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line-2)' }}>
+                              Spreadsheet & Preset Importer
+                            </span>
+                          </div>
+                          <p className="text-xs text-ink-3 mt-1 max-w-2xl">
+                            Easily import your entire cafe menu from an Excel sheet (<code className="font-mono">.xlsx</code>, <code className="font-mono">.xls</code>, <code className="font-mono">.csv</code>) or a JSON file. Automatically sets up categories, item names, prices, kitchen prep stations (P1 / P2), and stock availability.
+                          </p>
+                        </div>
+
+                        {/* Quick Presets & Templates */}
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={handleLoadKaawaPreset}
+                            disabled={importParsing || importing}
+                            className="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                            style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                            title="Load pre-configured Kaawa Menu with 183 items across 22 categories"
+                          >
+                            <span>⚡</span>
+                            <span>Load Kaawa Menu Preset (183 Items)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDownloadSampleExcel}
+                            className="px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer hover:bg-black/5 transition flex items-center gap-1.5"
+                            style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)', color: 'var(--ink)' }}
+                            title="Download blank sample Excel spreadsheet template"
+                          >
+                            <span>📊</span>
+                            <span>Sample Excel (.xlsx)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDownloadSampleJson}
+                            className="px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer hover:bg-black/5 transition flex items-center gap-1.5"
+                            style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)', color: 'var(--ink)' }}
+                            title="Download sample JSON file template"
+                          >
+                            <span>📄</span>
+                            <span>Sample JSON</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Success Alert */}
+                      {importSuccess && (
+                        <div className="p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn" style={{ background: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.3)' }}>
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl">🎉</span>
+                            <div>
+                              <p className="text-sm font-bold text-emerald-800 dark:text-emerald-300">{importSuccess}</p>
+                              <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">Your POS and Menu Management are now up-to-date with all categories and items.</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setActiveSubTab('menu')}
+                              className="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                              style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                            >
+                              <span>📝 View in Menu Management</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => window.open('/pos', '_blank')}
+                              className="px-3.5 py-2 rounded-xl text-xs font-semibold border bg-white dark:bg-neutral-800 text-ink cursor-pointer hover:opacity-90"
+                              style={{ borderColor: 'var(--line-2)' }}
+                            >
+                              <span>🛒 Open POS</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Error Alert */}
+                      {importError && (
+                        <div className="p-4 rounded-2xl border flex items-center gap-3 animate-fadeIn bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-900/50">
+                          <span className="text-xl">⚠️</span>
+                          <div className="text-xs font-medium flex-1">
+                            <strong>Import Error:</strong> {importError}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setImportError(null)}
+                            className="text-xs opacity-70 hover:opacity-100 font-bold px-2 py-1"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+
+                      {/* File Upload / Drag & Drop Card */}
+                      <div
+                        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                        onDragLeave={() => setIsDragOver(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDragOver(false);
+                          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                            handleFileSelected(e.dataTransfer.files[0]);
+                          }
+                        }}
+                        onClick={() => importFileInputRef.current?.click()}
+                        className={`p-6 sm:p-8 rounded-2xl border-2 border-dashed transition-all cursor-pointer text-center flex flex-col items-center justify-center gap-3 ${
+                          isDragOver ? 'scale-[1.01]' : 'hover:border-turmeric/60'
+                        }`}
+                        style={{
+                          background: isDragOver ? 'var(--paper-2)' : 'var(--paper-3)',
+                          borderColor: isDragOver ? 'var(--turmeric)' : 'var(--line-2)',
+                        }}
+                      >
+                        <input
+                          ref={importFileInputRef}
+                          type="file"
+                          accept=".json,.xlsx,.xls,.csv"
+                          className="hidden"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              handleFileSelected(e.target.files[0]);
+                            }
+                          }}
+                        />
+
+                        <div className="w-14 h-14 rounded-2xl grid place-items-center text-2xl shadow-sm" style={{ background: 'var(--paper-2)', border: '1px solid var(--line-2)' }}>
+                          {importParsing ? '⏳' : importParsedItems.length > 0 ? '📄' : '📁'}
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-bold text-ink">
+                            {importParsing
+                              ? 'Analyzing & Parsing menu file...'
+                              : importParsedItems.length > 0
+                              ? `Selected file: ${importFileName}`
+                              : 'Click to choose an Excel or JSON file, or drag and drop here'}
+                          </p>
+                          <p className="text-xs text-ink-3 mt-1">
+                            Supports <span className="font-semibold text-ink-2">.xlsx, .xls, .csv, .json</span> • Auto-detects columns: Name, Category, Price, Station (P1/P2), Tags (veg/non-veg), Availability
+                          </p>
+                        </div>
+
+                        {importParsedItems.length > 0 && (
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300">
+                              ✓ {importParsedItems.length} Products Parsed
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setImportParsedItems([]);
+                                setImportParsedCategories([]);
+                                setImportFileName('');
+                                setImportFile(null);
+                                setImportSuccess(null);
+                                setImportError(null);
+                              }}
+                              className="text-xs text-ink-3 hover:text-red-500 font-medium px-2 py-1 underline cursor-pointer"
+                            >
+                              Choose different file
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Parsed Data Preview & Configuration Section */}
+                      {importParsedItems.length > 0 && (
+                        <div className="flex flex-col gap-5 pt-2">
+                          {/* Summary Metric Cards */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="p-3.5 rounded-xl border flex flex-col" style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
+                              <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">Total Products</span>
+                              <span className="text-2xl font-black text-ink mt-1">{importParsedItems.length}</span>
+                              <span className="text-[10px] text-ink-3 mt-0.5">Ready for upload</span>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl border flex flex-col" style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
+                              <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">Categories</span>
+                              <span className="text-2xl font-black text-ink mt-1">{importParsedCategories.length}</span>
+                              <span className="text-[10px] text-ink-3 mt-0.5">Unique sections</span>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl border flex flex-col" style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
+                              <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">Kitchen Stations</span>
+                              <span className="text-2xl font-black text-ink mt-1">{Object.keys(stationCounts).length}</span>
+                              <span className="text-[10px] text-ink-3 mt-0.5">
+                                {Object.entries(stationCounts).map(([st, cnt]) => `${st}: ${cnt}`).join(' • ')}
+                              </span>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl border flex flex-col" style={{ background: 'var(--paper-3)', borderColor: 'var(--line-2)' }}>
+                              <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">Stock Status</span>
+                              <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
+                                {importParsedItems.filter((i) => i.isAvailable).length}
+                              </span>
+                              <span className="text-[10px] text-ink-3 mt-0.5">
+                                Available ({importParsedItems.filter((i) => !i.isAvailable).length} sold out)
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Import Mode Selector Card */}
+                          <div className="p-4 rounded-2xl border" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                            <h5 className="font-bold text-sm text-ink mb-1 flex items-center gap-1.5">
+                              <span>⚙️</span> Choose Import Mode
+                            </h5>
+                            <p className="text-xs text-ink-3 mb-3">
+                              Select how you want this menu file to be applied to your outlet:
+                            </p>
+
+                            <div className="grid sm:grid-cols-2 gap-3">
+                              <label
+                                className={`p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer transition ${
+                                  importMode === 'replace' ? 'ring-2 ring-turmeric/80 shadow-sm' : 'hover:bg-black/5'
+                                }`}
+                                style={{
+                                  background: importMode === 'replace' ? 'var(--paper-2)' : 'transparent',
+                                  borderColor: importMode === 'replace' ? 'var(--turmeric)' : 'var(--line-2)',
+                                }}
+                              >
+                                <input
+                                  type="radio"
+                                  name="importMode"
+                                  value="replace"
+                                  checked={importMode === 'replace'}
+                                  onChange={() => setImportMode('replace')}
+                                  className="mt-0.5 text-turmeric accent-turmeric"
+                                />
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-xs text-ink">🔄 Clean Replace (Recommended)</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-amber-500/20 text-amber-800 dark:text-amber-300">Default</span>
+                                  </div>
+                                  <p className="text-[11px] text-ink-3 mt-1 leading-relaxed">
+                                    Safely clears previous menu items and sets up this new menu cleanly. Historical receipts and orders stay 100% intact (order items snapshot is decoupled).
+                                  </p>
+                                </div>
+                              </label>
+
+                              <label
+                                className={`p-3.5 rounded-xl border flex items-start gap-3 cursor-pointer transition ${
+                                  importMode === 'append' ? 'ring-2 ring-turmeric/80 shadow-sm' : 'hover:bg-black/5'
+                                }`}
+                                style={{
+                                  background: importMode === 'append' ? 'var(--paper-2)' : 'transparent',
+                                  borderColor: importMode === 'append' ? 'var(--turmeric)' : 'var(--line-2)',
+                                }}
+                              >
+                                <input
+                                  type="radio"
+                                  name="importMode"
+                                  value="append"
+                                  checked={importMode === 'append'}
+                                  onChange={() => setImportMode('append')}
+                                  className="mt-0.5 text-turmeric accent-turmeric"
+                                />
+                                <div>
+                                  <span className="font-bold text-xs text-ink">➕ Append / Merge</span>
+                                  <p className="text-[11px] text-ink-3 mt-1 leading-relaxed">
+                                    Keeps your existing menu categories and items untouched, and appends these new items into the menu. Creates missing categories automatically.
+                                  </p>
+                                </div>
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Category Filter Chips */}
+                          <div>
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <span className="text-xs font-bold text-ink-2">Detected Categories ({importParsedCategories.length}):</span>
+                              <span className="text-xs text-ink-3">Click to filter preview</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto no-scrollbar p-1">
+                              <button
+                                type="button"
+                                onClick={() => setImportCatFilter('all')}
+                                className="px-3 py-1 rounded-full text-xs font-semibold transition"
+                                style={importCatFilter === 'all'
+                                  ? { background: 'var(--turmeric)', color: '#2A1607' }
+                                  : { background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line-2)' }}
+                              >
+                                All ({importParsedItems.length})
+                              </button>
+                              {importParsedCategories.map((cat) => {
+                                const active = importCatFilter === cat;
+                                return (
+                                  <button
+                                    key={cat}
+                                    type="button"
+                                    onClick={() => setImportCatFilter(cat)}
+                                    className="px-2.5 py-1 rounded-full text-xs font-medium transition"
+                                    style={active
+                                      ? { background: 'var(--turmeric)', color: '#2A1607' }
+                                      : { background: 'var(--paper-3)', color: 'var(--ink-3)', border: '1px solid var(--line-2)' }}
+                                  >
+                                    {cat} <span className="opacity-70 font-mono text-[10px]">({catCounts[cat] || 0})</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Search & Preview Data Table */}
+                          <div className="border rounded-2xl overflow-hidden" style={{ borderColor: 'var(--line-2)' }}>
+                            <div className="p-3 bg-paper-3 border-b flex flex-wrap items-center justify-between gap-2" style={{ borderColor: 'var(--line-2)' }}>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-ink">Preview Items ({filteredItems.length})</span>
+                                {filteredItems.length !== importParsedItems.length && (
+                                  <span className="text-xs text-ink-3">(filtered from {importParsedItems.length})</span>
+                                )}
+                              </div>
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-ink-3">🔍</span>
+                                <input
+                                  type="text"
+                                  value={importSearch}
+                                  onChange={(e) => setImportSearch(e.target.value)}
+                                  placeholder="Search preview..."
+                                  className="pl-7 pr-3 py-1.5 rounded-lg border text-xs outline-none w-48"
+                                  style={{ background: 'var(--paper-2)', borderColor: 'var(--line-2)' }}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="max-h-80 overflow-y-auto">
+                              <table className="w-full text-left text-xs">
+                                <thead className="sticky top-0 bg-paper-2 border-b text-ink-3 font-semibold uppercase tracking-wider text-[10px]" style={{ borderColor: 'var(--line-2)' }}>
+                                  <tr>
+                                    <th className="py-2.5 px-3">#</th>
+                                    <th className="py-2.5 px-3">Category</th>
+                                    <th className="py-2.5 px-3">Product Name</th>
+                                    <th className="py-2.5 px-3 text-right">Price (₹)</th>
+                                    <th className="py-2.5 px-3 text-center">Station</th>
+                                    <th className="py-2.5 px-3">Dietary / Tags</th>
+                                    <th className="py-2.5 px-3 text-center">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-line-2">
+                                  {filteredItems.slice(0, 100).map((it, idx) => (
+                                    <tr key={idx} className="hover:bg-black/5 transition">
+                                      <td className="py-2 px-3 text-ink-3 font-mono text-[11px]">{idx + 1}</td>
+                                      <td className="py-2 px-3">
+                                        <span className="px-2 py-0.5 rounded-md font-semibold text-[11px]" style={{ background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line-2)' }}>
+                                          {it.category}
+                                        </span>
+                                      </td>
+                                      <td className="py-2 px-3">
+                                        <div className="font-bold text-ink">{it.name}</div>
+                                        {it.description && <div className="text-[10px] text-ink-3 truncate max-w-xs">{it.description}</div>}
+                                      </td>
+                                      <td className="py-2 px-3 text-right font-mono font-bold text-ink">
+                                        ₹{it.price.toFixed(2)}
+                                      </td>
+                                      <td className="py-2 px-3 text-center">
+                                        <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                          it.station === 'P1'
+                                            ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300'
+                                            : it.station === 'P2'
+                                            ? 'bg-rose-100 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300'
+                                            : 'bg-indigo-100 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-300'
+                                        }`}>
+                                          {it.station || 'P1'}
+                                        </span>
+                                      </td>
+                                      <td className="py-2 px-3">
+                                        {it.tags && it.tags.length > 0 ? (
+                                          <div className="flex flex-wrap gap-1">
+                                            {it.tags.map((t: string, ti: number) => (
+                                              <span key={ti} className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-paper-3 text-ink-2 border" style={{ borderColor: 'var(--line-2)' }}>
+                                                {t}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <span className="text-[10px] text-ink-3">—</span>
+                                        )}
+                                      </td>
+                                      <td className="py-2 px-3 text-center">
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                          it.isAvailable
+                                            ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30'
+                                            : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30'
+                                        }`}>
+                                          {it.isAvailable ? 'Available' : 'Sold Out'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {filteredItems.length > 100 && (
+                                <div className="p-3 text-center text-xs text-ink-3 bg-paper-2 border-t" style={{ borderColor: 'var(--line-2)' }}>
+                                  Showing first 100 of {filteredItems.length} items. All {filteredItems.length} will be imported.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Sticky Import Execution Bar */}
+                          <div className="p-4 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm" style={{ background: 'var(--paper-3)', borderColor: 'var(--turmeric)' }}>
+                            <div>
+                              <p className="font-bold text-sm text-ink flex items-center gap-1.5">
+                                <span>🚀 Ready to apply to menu:</span>
+                                <span>{importParsedItems.length} items across {importParsedCategories.length} categories</span>
+                              </p>
+                              <p className="text-xs text-ink-3 mt-0.5">
+                                Mode: <strong className="text-ink">{importMode === 'replace' ? 'Safe Clean Replace' : 'Append & Merge'}</strong>
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-3 w-full sm:w-auto">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setImportParsedItems([]);
+                                  setImportParsedCategories([]);
+                                  setImportFileName('');
+                                  setImportFile(null);
+                                }}
+                                disabled={importing}
+                                className="px-4 py-2.5 rounded-xl text-xs font-semibold border cursor-pointer hover:bg-black/5 transition text-ink-2 w-1/2 sm:w-auto text-center"
+                                style={{ borderColor: 'var(--line-2)', background: 'var(--paper-2)' }}
+                              >
+                                Clear
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleExecuteImport}
+                                disabled={importing || importParsedItems.length === 0}
+                                className="px-6 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 w-1/2 sm:w-auto"
+                                style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                              >
+                                {importing ? (
+                                  <>
+                                    <span className="animate-spin">⏳</span>
+                                    <span>Importing Menu...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>✓</span>
+                                    <span>Confirm & Import Menu</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </section>

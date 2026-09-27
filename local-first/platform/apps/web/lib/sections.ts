@@ -734,240 +734,304 @@ export interface StaffData {
 async function getStaff(outletId: string, tenantId: string): Promise<StaffData> {
   const period = new Date().toISOString().slice(0, 7);
 
-  // Auto-close any stale unclosed attendance punches older than 16 hours
-  await prisma.attendance.updateMany({
-    where: {
-      outletId,
-      clockOut: null,
-      clockIn: { lt: new Date(Date.now() - 16 * 3600 * 1000) },
-    },
-    data: {
-      clockOut: new Date(),
-    },
-  }).catch(() => {});
+  try {
+    if (!outletId && tenantId) {
+      const o = await prisma.outlet.findFirst({ where: { tenantId }, select: { id: true } });
+      if (o) outletId = o.id;
+    }
+    if (!outletId) {
+      const o = await prisma.outlet.findFirst({ select: { id: true, tenantId: true } });
+      if (o) {
+        outletId = o.id;
+        if (!tenantId) tenantId = o.tenantId;
+      }
+    }
+    if (!outletId) {
+      return {
+        members: [],
+        customRoles: [],
+        waiterStations: [],
+        sales: [],
+        attendance: [],
+        activity: [],
+        attendanceToday: [],
+        shifts: [],
+        payroll: [],
+        period,
+      };
+    }
 
-  const parts = period.split('-').map(Number);
-  const periodYear = Number.isFinite(parts[0]) && parts[0] ? parts[0] : new Date().getFullYear();
-  const periodMonth = Number.isFinite(parts[1]) && parts[1] ? parts[1] : new Date().getMonth() + 1;
-  const periodStart = new Date(Date.UTC(periodYear, periodMonth - 1, 1, 0, 0, 0));
-  const periodEnd = new Date(Date.UTC(periodYear, periodMonth, 1, 0, 0, 0));
-
-  const [memberRows, customRoles, sales, attendance, active, todayWork, attToday, shiftRows, payRows, monthPunches, outletRecord] = await Promise.all([
-    prisma.staffUser.findMany({
-      where: { tenantId, OR: [{ outletId }, { outletId: null }] },
-      orderBy: [{ active: 'desc' }, { name: 'asc' }],
-      select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true, permissions: true },
-    }),
-    prisma.role.findMany({
-      where: { tenantId },
-      orderBy: { name: 'asc' },
-    }).catch(() => []),
-    prisma.$queryRaw<{ staffId: string | null; name: string; orders: number; gross: number }[]>`
-      SELECT o."staffId"::text AS "staffId",
-             COALESCE(s."name", 'Unattributed') AS name,
-             COUNT(*)::int AS orders,
-             COALESCE(SUM(o."totalPaise"), 0)::int AS gross
-      FROM orders o
-      LEFT JOIN staff_users s ON s.id = o."staffId"
-      WHERE o."outletId" = ${outletId}::uuid
-        AND o."status" = 'settled'
-        AND o."settledAt" IS NOT NULL
-        AND o."settledAt" >= now() - interval '30 days'
-      GROUP BY 1, 2
-      ORDER BY gross DESC
-    `,
-    prisma.attendance.findMany({
-      where: { outletId },
-      orderBy: { clockIn: 'desc' },
-      take: 12,
-      include: { staff: { select: { name: true } } },
-    }),
-    // active (unsettled) dine-in orders attributed to a staff member (taker or approver)
-    prisma.$queryRaw<{ staffId: string; tables: string[]; orders: number }[]>`
-      SELECT s.id::text AS "staffId",
-             COALESCE(array_agg(DISTINCT t.label) FILTER (WHERE t.label IS NOT NULL), '{}') AS tables,
-             COUNT(DISTINCT o.id)::int AS orders
-      FROM orders o
-      JOIN staff_users s ON s.id = o."staffId" OR s.id = o."approvedById"
-      LEFT JOIN tables_map t ON t.id = o."tableId"
-      WHERE o."outletId" = ${outletId}::uuid
-        AND o."settledAt" IS NULL
-        AND o."status" IN ('open','in_kitchen','ready','served')
-      GROUP BY s.id
-    `,
-    // today's work per staff: orders taken + ₹ + approvals/settles/voids from the audit log
-    prisma.$queryRaw<{ staffId: string; orders: number; gross: number; approvals: number; settled: number; voided: number }[]>`
-      SELECT s.id::text AS "staffId",
-             COALESCE(ord.orders, 0)::int AS orders,
-             COALESCE(ord.gross, 0)::int AS gross,
-             COALESCE(al.approvals, 0)::int AS approvals,
-             COALESCE(al.settled, 0)::int AS settled,
-             COALESCE(al.voided, 0)::int AS voided
-      FROM staff_users s
-      LEFT JOIN (
-        SELECT "staffId", COUNT(*)::int AS orders, COALESCE(SUM("totalPaise"),0)::int AS gross
-        FROM orders
-        WHERE "outletId" = ${outletId}::uuid AND status = 'settled' AND "settledAt" IS NOT NULL
-          AND ("settledAt" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date
-        GROUP BY "staffId"
-      ) ord ON ord."staffId" = s.id
-      LEFT JOIN (
-        SELECT "actorId",
-               COUNT(*) FILTER (WHERE action = 'order.approved')::int AS approvals,
-               COUNT(*) FILTER (WHERE action = 'table.settled')::int AS settled,
-               COUNT(*) FILTER (WHERE action = 'order.item_voided')::int AS voided
-        FROM audit_log
-        WHERE "outletId" = ${outletId}::uuid
-          AND ("createdAt" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date
-        GROUP BY "actorId"
-      ) al ON al."actorId" = s.id
-      WHERE s."tenantId" = ${tenantId}::uuid
-    `,
-    // today's attendance punches (including any open active punches)
-    prisma.$queryRaw<{ id: string; staffId: string; name: string; role: string; clockIn: Date | null; clockOut: Date | null }[]>`
-      SELECT a."id"::text AS "id", a."staffId"::text AS "staffId", s.name AS name, s.role AS role, a."clockIn" AS "clockIn", a."clockOut" AS "clockOut"
-      FROM attendance a JOIN staff_users s ON s.id = a."staffId"
-      WHERE a."outletId" = ${outletId}::uuid
-        AND (("clockIn" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date OR a."clockOut" IS NULL)
-      ORDER BY a."clockIn" DESC
-    `,
-    // today + upcoming shifts
-    prisma.shift.findMany({
-      where: { outletId, endsAt: { gte: new Date() } },
-      orderBy: { startsAt: 'asc' },
-      take: 60,
-      include: { staff: { select: { name: true } } },
-    }),
-    // salary payments in the current period
-    prisma.salaryPayment.findMany({
-      where: { outletId, periodLabel: period },
-      orderBy: { paidAt: 'desc' },
-      select: { id: true, staffId: true, periodLabel: true, amountPaise: true, method: true, note: true, paidAt: true },
-    }),
-    // month attendance punches for wage & hours tracking
-    prisma.attendance.findMany({
+    // Auto-close any stale unclosed attendance punches older than 16 hours
+    await prisma.attendance.updateMany({
       where: {
         outletId,
-        clockIn: { gte: periodStart, lt: periodEnd },
+        clockOut: null,
+        clockIn: { lt: new Date(Date.now() - 16 * 3600 * 1000) },
       },
-      select: { staffId: true, clockIn: true, clockOut: true },
-    }),
-    prisma.outlet.findUnique({
-      where: { id: outletId },
-      select: { settings: true },
-    }).catch(() => null),
-  ]);
+      data: {
+        clockOut: new Date(),
+      },
+    }).catch(() => {});
 
-  const waiterStations = readWaiterStations(outletRecord?.settings);
-  const members: StaffMember[] = memberRows.map(({ pinHash, passwordHash, ...m }) => ({ ...m, hasPin: !!pinHash, hasLogin: !!passwordHash }));
-  const activeBy = new Map(active.map((a) => [a.staffId, a]));
-  const workBy = new Map(todayWork.map((w) => [w.staffId, w]));
-  const paidBy = new Map<string, number>();
-  for (const p of payRows) paidBy.set(p.staffId, (paidBy.get(p.staffId) ?? 0) + p.amountPaise);
+    const parts = period.split('-').map(Number);
+    const periodYear = Number.isFinite(parts[0]) && parts[0] ? parts[0] : new Date().getFullYear();
+    const periodMonth = Number.isFinite(parts[1]) && parts[1] ? parts[1] : new Date().getMonth() + 1;
+    const periodStart = new Date(Date.UTC(periodYear, periodMonth - 1, 1, 0, 0, 0));
+    const periodEnd = new Date(Date.UTC(periodYear, periodMonth, 1, 0, 0, 0));
 
-  // Month attendance aggregation per staff member
-  const monthStaffDays = new Map<string, Set<string>>();
-  const monthStaffMinutes = new Map<string, number>();
-  for (const p of monthPunches) {
-    const dayKey = p.clockIn.toISOString().slice(0, 10);
-    if (!monthStaffDays.has(p.staffId)) monthStaffDays.set(p.staffId, new Set());
-    monthStaffDays.get(p.staffId)!.add(dayKey);
+    const [memberRows, customRoles, sales, attendance, active, todayWork, attToday, shiftRows, payRows, monthPunches, outletRecord] = await Promise.all([
+      prisma.staffUser.findMany({
+        where: { tenantId, OR: [{ outletId }, { outletId: null }] },
+        orderBy: [{ active: 'desc' }, { name: 'asc' }],
+        select: { id: true, name: true, role: true, phone: true, active: true, employeeCode: true, payType: true, payRatePaise: true, pinHash: true, username: true, passwordHash: true, permissions: true },
+      }).catch(() => []),
+      prisma.role.findMany({
+        where: { tenantId },
+        orderBy: { name: 'asc' },
+      }).catch(() => []),
+      prisma.$queryRaw<{ staffId: string | null; name: string; orders: number; gross: number }[]>`
+        SELECT o."staffId"::text AS "staffId",
+               COALESCE(s."name", 'Unattributed') AS name,
+               COUNT(*)::int AS orders,
+               COALESCE(SUM(o."totalPaise"), 0)::int AS gross
+        FROM orders o
+        LEFT JOIN staff_users s ON s.id = o."staffId"
+        WHERE o."outletId" = ${outletId}::uuid
+          AND o."status" = 'settled'
+          AND o."settledAt" IS NOT NULL
+          AND o."settledAt" >= now() - interval '30 days'
+        GROUP BY 1, 2
+        ORDER BY gross DESC
+      `.catch(() => []),
+      prisma.attendance.findMany({
+        where: { outletId },
+        orderBy: { clockIn: 'desc' },
+        take: 12,
+        include: { staff: { select: { name: true } } },
+      }).catch(() => []),
+      // active (unsettled) dine-in orders attributed to a staff member (taker or approver)
+      prisma.$queryRaw<{ staffId: string; tables: string[]; orders: number }[]>`
+        SELECT s.id::text AS "staffId",
+               COALESCE(array_agg(DISTINCT t.label) FILTER (WHERE t.label IS NOT NULL), '{}') AS tables,
+               COUNT(DISTINCT o.id)::int AS orders
+        FROM orders o
+        JOIN staff_users s ON s.id = o."staffId" OR s.id = o."approvedById"
+        LEFT JOIN tables_map t ON t.id = o."tableId"
+        WHERE o."outletId" = ${outletId}::uuid
+          AND o."settledAt" IS NULL
+          AND o."status" IN ('open','in_kitchen','ready','served')
+        GROUP BY s.id
+      `.catch(() => []),
+      // today's work per staff: orders taken + ₹ + approvals/settles/voids from the audit log
+      prisma.$queryRaw<{ staffId: string; orders: number; gross: number; approvals: number; settled: number; voided: number }[]>`
+        SELECT s.id::text AS "staffId",
+               COALESCE(ord.orders, 0)::int AS orders,
+               COALESCE(ord.gross, 0)::int AS gross,
+               COALESCE(al.approvals, 0)::int AS approvals,
+               COALESCE(al.settled, 0)::int AS settled,
+               COALESCE(al.voided, 0)::int AS voided
+        FROM staff_users s
+        LEFT JOIN (
+          SELECT "staffId", COUNT(*)::int AS orders, COALESCE(SUM("totalPaise"),0)::int AS gross
+          FROM orders
+          WHERE "outletId" = ${outletId}::uuid AND status = 'settled' AND "settledAt" IS NOT NULL
+            AND ("settledAt" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date
+          GROUP BY "staffId"
+        ) ord ON ord."staffId" = s.id
+        LEFT JOIN (
+          SELECT "actorId",
+                 COUNT(*) FILTER (WHERE action = 'order.approved')::int AS approvals,
+                 COUNT(*) FILTER (WHERE action = 'table.settled')::int AS settled,
+                 COUNT(*) FILTER (WHERE action = 'order.item_voided')::int AS voided
+          FROM audit_log
+          WHERE "outletId" = ${outletId}::uuid
+            AND ("createdAt" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date
+          GROUP BY "actorId"
+        ) al ON al."actorId" = s.id
+        WHERE s."tenantId" = ${tenantId}::uuid
+      `.catch(() => []),
+      // today's attendance punches (including any open active punches)
+      prisma.$queryRaw<{ id: string; staffId: string; name: string; role: string; clockIn: Date | null; clockOut: Date | null }[]>`
+        SELECT a."id"::text AS "id", a."staffId"::text AS "staffId", s.name AS name, s.role AS role, a."clockIn" AS "clockIn", a."clockOut" AS "clockOut"
+        FROM attendance a JOIN staff_users s ON s.id = a."staffId"
+        WHERE a."outletId" = ${outletId}::uuid
+          AND (("clockIn" AT TIME ZONE ${TZ})::date = (now() AT TIME ZONE ${TZ})::date OR a."clockOut" IS NULL)
+        ORDER BY a."clockIn" DESC
+      `.catch(() => []),
+      // today + upcoming shifts
+      prisma.shift.findMany({
+        where: { outletId, endsAt: { gte: new Date() } },
+        orderBy: { startsAt: 'asc' },
+        take: 60,
+        include: { staff: { select: { name: true } } },
+      }).catch(() => []),
+      // salary payments in the current period
+      prisma.salaryPayment.findMany({
+        where: { outletId, periodLabel: period },
+        orderBy: { paidAt: 'desc' },
+        select: { id: true, staffId: true, periodLabel: true, amountPaise: true, method: true, note: true, paidAt: true },
+      }).catch(() => []),
+      // month attendance punches for wage & hours tracking
+      prisma.attendance.findMany({
+        where: {
+          outletId,
+          clockIn: { gte: periodStart, lt: periodEnd },
+        },
+        select: { staffId: true, clockIn: true, clockOut: true },
+      }).catch(() => []),
+      prisma.outlet.findUnique({
+        where: { id: outletId },
+        select: { settings: true },
+      }).catch(() => null),
+    ]);
 
-    const end = p.clockOut ? new Date(p.clockOut).getTime() : Math.min(Date.now(), new Date(p.clockIn).getTime() + 8 * 3600 * 1000);
-    const durMins = Math.max(0, Math.round((end - new Date(p.clockIn).getTime()) / 60000));
-    monthStaffMinutes.set(p.staffId, (monthStaffMinutes.get(p.staffId) ?? 0) + durMins);
-  }
+    const waiterStations = readWaiterStations(outletRecord?.settings);
+    const members: StaffMember[] = (memberRows || []).map(({ pinHash, passwordHash, ...m }) => ({ ...m, hasPin: !!pinHash, hasLogin: !!passwordHash }));
+    const activeBy = new Map((active || []).map((a) => [a.staffId, a]));
+    const workBy = new Map((todayWork || []).map((w) => [w.staffId, w]));
+    const paidBy = new Map<string, number>();
+    for (const p of payRows || []) paidBy.set(p.staffId, (paidBy.get(p.staffId) ?? 0) + (p.amountPaise || 0));
 
-  // activity board — only staff who can take/serve orders (exclude kitchen)
-  const activity: StaffActivity[] = members
-    .filter((m) => m.active && m.role !== 'kitchen')
-    .map((m) => {
-      const a = activeBy.get(m.id);
-      const w = workBy.get(m.id);
+    // Month attendance aggregation per staff member
+    const monthStaffDays = new Map<string, Set<string>>();
+    const monthStaffMinutes = new Map<string, number>();
+    for (const p of monthPunches || []) {
+      if (!p.clockIn) continue;
+      const clockInDate = new Date(p.clockIn);
+      if (isNaN(clockInDate.getTime())) continue;
+      const dayKey = clockInDate.toISOString().slice(0, 10);
+      if (!monthStaffDays.has(p.staffId)) monthStaffDays.set(p.staffId, new Set());
+      monthStaffDays.get(p.staffId)!.add(dayKey);
+
+      const end = p.clockOut ? new Date(p.clockOut).getTime() : Math.min(Date.now(), clockInDate.getTime() + 8 * 3600 * 1000);
+      const durMins = Math.max(0, Math.round((end - clockInDate.getTime()) / 60000));
+      monthStaffMinutes.set(p.staffId, (monthStaffMinutes.get(p.staffId) ?? 0) + durMins);
+    }
+
+    // activity board — only staff who can take/serve orders (exclude kitchen)
+    const activity: StaffActivity[] = members
+      .filter((m) => m.active && m.role !== 'kitchen')
+      .map((m) => {
+        const a = activeBy.get(m.id);
+        const w = workBy.get(m.id);
+        return {
+          staffId: m.id, name: m.name, role: m.role,
+          status: (a?.orders ?? 0) > 0 ? 'occupied' : 'free',
+          activeTables: a?.tables ?? [],
+          activeOrders: a?.orders ?? 0,
+          today: { orders: w?.orders ?? 0, approvals: w?.approvals ?? 0, settled: w?.settled ?? 0, voided: w?.voided ?? 0, grossPaise: w?.gross ?? 0 },
+        };
+      });
+
+    const attendanceToday = (attToday || []).map((a) => {
+      const clockInDate = a.clockIn ? new Date(a.clockIn) : null;
+      const clockOutDate = a.clockOut ? new Date(a.clockOut) : null;
+      const end = clockOutDate && !isNaN(clockOutDate.getTime()) ? clockOutDate.getTime() : Date.now();
+      const start = clockInDate && !isNaN(clockInDate.getTime()) ? clockInDate.getTime() : 0;
+      const minutes = start ? Math.max(0, Math.round((end - start) / 60000)) : 0;
       return {
-        staffId: m.id, name: m.name, role: m.role,
-        status: (a?.orders ?? 0) > 0 ? 'occupied' : 'free',
-        activeTables: a?.tables ?? [],
-        activeOrders: a?.orders ?? 0,
-        today: { orders: w?.orders ?? 0, approvals: w?.approvals ?? 0, settled: w?.settled ?? 0, voided: w?.voided ?? 0, grossPaise: w?.gross ?? 0 },
+        id: a.id || a.staffId,
+        staffId: a.staffId,
+        name: a.name || 'Staff',
+        role: a.role || 'staff',
+        clockIn: clockInDate && !isNaN(clockInDate.getTime()) ? clockInDate.toISOString() : null,
+        clockOut: clockOutDate && !isNaN(clockOutDate.getTime()) ? clockOutDate.toISOString() : null,
+        minutes,
+        present: !!clockInDate && !clockOutDate,
       };
     });
 
-  const attendanceToday = attToday.map((a) => {
-    const end = a.clockOut ? new Date(a.clockOut).getTime() : Date.now();
-    const minutes = a.clockIn ? Math.max(0, Math.round((end - new Date(a.clockIn).getTime()) / 60000)) : 0;
-    return { id: a.id, staffId: a.staffId, name: a.name, role: a.role, clockIn: a.clockIn ? new Date(a.clockIn).toISOString() : null, clockOut: a.clockOut ? new Date(a.clockOut).toISOString() : null, minutes, present: !!a.clockIn && !a.clockOut };
-  });
+    const payroll: StaffPayrollItem[] = members.filter((m) => m.active).map((m) => {
+      const daysWorked = monthStaffDays.get(m.id)?.size ?? 0;
+      const totalMins = monthStaffMinutes.get(m.id) ?? 0;
+      const totalHoursWorked = Number((totalMins / 60).toFixed(1));
+      const paid = paidBy.get(m.id) ?? 0;
 
-  const payroll: StaffPayrollItem[] = members.filter((m) => m.active).map((m) => {
-    const daysWorked = monthStaffDays.get(m.id)?.size ?? 0;
-    const totalMins = monthStaffMinutes.get(m.id) ?? 0;
-    const totalHoursWorked = Number((totalMins / 60).toFixed(1));
-    const paid = paidBy.get(m.id) ?? 0;
+      let expectedPayPaise = 0;
+      if (m.payType === 'monthly' && m.payRatePaise) {
+        expectedPayPaise = m.payRatePaise;
+      } else if (m.payType === 'hourly' && m.payRatePaise) {
+        expectedPayPaise = Math.round((m.payRatePaise / 60) * totalMins);
+      }
 
-    let expectedPayPaise = 0;
-    if (m.payType === 'monthly' && m.payRatePaise) {
-      expectedPayPaise = m.payRatePaise;
-    } else if (m.payType === 'hourly' && m.payRatePaise) {
-      expectedPayPaise = Math.round((m.payRatePaise / 60) * totalMins);
-    }
+      const pendingBalancePaise = Math.max(0, expectedPayPaise - paid);
 
-    const pendingBalancePaise = Math.max(0, expectedPayPaise - paid);
+      let status: 'paid' | 'partial' | 'due' | 'advance' | 'unconfigured' = 'unconfigured';
+      if (!m.payType || !m.payRatePaise) {
+        status = paid > 0 ? 'advance' : 'unconfigured';
+      } else if (paid >= expectedPayPaise && expectedPayPaise > 0) {
+        status = 'paid';
+      } else if (paid > 0 && paid < expectedPayPaise) {
+        status = 'partial';
+      } else if (paid === 0 && expectedPayPaise > 0) {
+        status = 'due';
+      } else if (paid > expectedPayPaise) {
+        status = 'advance';
+      }
 
-    let status: 'paid' | 'partial' | 'due' | 'advance' | 'unconfigured' = 'unconfigured';
-    if (!m.payType || !m.payRatePaise) {
-      status = paid > 0 ? 'advance' : 'unconfigured';
-    } else if (paid >= expectedPayPaise && expectedPayPaise > 0) {
-      status = 'paid';
-    } else if (paid > 0 && paid < expectedPayPaise) {
-      status = 'partial';
-    } else if (paid === 0 && expectedPayPaise > 0) {
-      status = 'due';
-    } else if (paid > expectedPayPaise) {
-      status = 'advance';
-    }
+      return {
+        staffId: m.id,
+        name: m.name,
+        role: m.role,
+        employeeCode: m.employeeCode,
+        payType: m.payType,
+        payRatePaise: m.payRatePaise,
+        daysWorked,
+        totalHoursWorked,
+        expectedPayPaise,
+        paidThisPeriodPaise: paid,
+        pendingBalancePaise,
+        status,
+        recent: (payRows || []).filter((p) => p.staffId === m.id).map((p) => ({
+          id: p.id,
+          periodLabel: p.periodLabel || period,
+          amountPaise: p.amountPaise || 0,
+          method: p.method || 'cash',
+          paidAt: p.paidAt ? new Date(p.paidAt).toISOString() : new Date().toISOString(),
+          note: p.note || null,
+        })),
+      };
+    });
 
     return {
-      staffId: m.id,
-      name: m.name,
-      role: m.role,
-      employeeCode: m.employeeCode,
-      payType: m.payType,
-      payRatePaise: m.payRatePaise,
-      daysWorked,
-      totalHoursWorked,
-      expectedPayPaise,
-      paidThisPeriodPaise: paid,
-      pendingBalancePaise,
-      status,
-      recent: payRows.filter((p) => p.staffId === m.id).map((p) => ({
-        id: p.id,
-        periodLabel: p.periodLabel,
-        amountPaise: p.amountPaise,
-        method: p.method,
-        paidAt: p.paidAt.toISOString(),
-        note: p.note || null,
+      members,
+      customRoles,
+      waiterStations,
+      sales: (sales || []).map((r) => ({ staffId: r.staffId, name: r.name, orders: r.orders, grossPaise: r.gross })),
+      attendance: (attendance || []).map((a) => ({
+        id: a.id,
+        name: a.staff?.name || 'Staff',
+        clockIn: a.clockIn ? new Date(a.clockIn).toISOString() : new Date().toISOString(),
+        clockOut: a.clockOut ? new Date(a.clockOut).toISOString() : null,
       })),
+      activity,
+      attendanceToday,
+      shifts: (shiftRows || []).map((s) => ({
+        id: s.id,
+        staffId: s.staffId,
+        name: s.staff?.name || 'Staff',
+        startsAt: s.startsAt ? new Date(s.startsAt).toISOString() : new Date().toISOString(),
+        endsAt: s.endsAt ? new Date(s.endsAt).toISOString() : new Date().toISOString(),
+        role: s.role || 'staff',
+      })),
+      payroll,
+      period,
     };
-  });
-
-  return {
-    members,
-    customRoles,
-    waiterStations,
-    sales: sales.map((r) => ({ staffId: r.staffId, name: r.name, orders: r.orders, grossPaise: r.gross })),
-    attendance: attendance.map((a) => ({
-      id: a.id,
-      name: a.staff.name,
-      clockIn: a.clockIn.toISOString(),
-      clockOut: a.clockOut ? a.clockOut.toISOString() : null,
-    })),
-    activity,
-    attendanceToday,
-    shifts: shiftRows.map((s) => ({ id: s.id, staffId: s.staffId, name: s.staff.name, startsAt: s.startsAt.toISOString(), endsAt: s.endsAt.toISOString(), role: s.role })),
-    payroll,
-    period,
-  };
+  } catch (err: any) {
+    console.error('[getStaff] Fatal error in getStaff:', err);
+    return {
+      members: [],
+      customRoles: [],
+      waiterStations: [],
+      sales: [],
+      attendance: [],
+      activity: [],
+      attendanceToday: [],
+      shifts: [],
+      payroll: [],
+      period,
+    };
+  }
 }
 
 // ===================== Loyalty & Games =====================

@@ -14,6 +14,8 @@ const SECTIONS: SectionName[] = ['monitor', 'sales', 'inventory', 'suppliers', '
  * Owner/manager only, scoped to the session's outlet + tenant. The client loads
  * this lazily when a sidebar section is opened so the Overview paints instantly.
  */
+import { prisma } from '@cafeos/db';
+
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -22,6 +24,34 @@ export async function GET(req: NextRequest) {
   const s = req.nextUrl.searchParams.get('s') as SectionName | null;
   if (!s || !SECTIONS.includes(s)) return NextResponse.json({ error: 'unknown section' }, { status: 400 });
 
-  const result = await getSectionData(s, session.outletId, session.tenantId);
-  return NextResponse.json(result);
+  const requestedOutlet = req.nextUrl.searchParams.get('outletId');
+  let outletId = requestedOutlet || session.outletId;
+  if (!outletId) {
+    const o = await prisma.outlet.findFirst({ where: { tenantId: session.tenantId }, select: { id: true } });
+    if (o) outletId = o.id;
+  }
+
+  try {
+    const result = await getSectionData(s, outletId, session.tenantId);
+    return NextResponse.json(result);
+  } catch (err: any) {
+    console.error(`[API /api/dashboard/section?s=${s}] error:`, err);
+    // Return safe fallback section payload so client dashboard does not crash with HTTP 500
+    return NextResponse.json({
+      section: s,
+      data: {
+        members: [],
+        customRoles: [],
+        waiterStations: {},
+        sales: [],
+        attendance: [],
+        activity: [],
+        attendanceToday: [],
+        shifts: [],
+        payroll: [],
+        period: new Date().toISOString().slice(0, 7),
+      },
+      error: err?.message || 'Section failed to load',
+    });
+  }
 }

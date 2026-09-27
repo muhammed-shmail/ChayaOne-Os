@@ -51,8 +51,12 @@ export async function GET() {
       g.lastSeenMs = Math.max(g.lastSeenMs, lastSeenMs);
     } else {
       byStaff.set(r.staffId, {
-        staffId: r.staffId, name: r.staff.name, role: r.staff.role,
-        online, lastSeenMs, devices: [device],
+        staffId: r.staffId,
+        name: r.staff?.name || 'Staff User',
+        role: r.staff?.role || 'staff',
+        online,
+        lastSeenMs,
+        devices: [device],
       });
     }
   }
