@@ -74,7 +74,17 @@ export async function GET(req: NextRequest) {
         reportData = await ReportsService.getPaymentsReport(session.outletId, session.tenantId, filter, tz);
         break;
       case 'expenses':
-        reportData = await ReportsService.getExpensesReport(session.outletId, session.tenantId, filter, tz);
+        try {
+          reportData = await ReportsService.getExpensesReport(session.outletId, session.tenantId, filter, tz);
+        } catch (expErr: any) {
+          console.warn('[Reports] Expenses report error (table may not exist yet):', expErr?.message);
+          reportData = {
+            summary: { totalExpensesPaise: 0, totalGstPaise: 0, expenseCount: 0, cashExpensesPaise: 0, bankExpensesPaise: 0 },
+            byCategory: [],
+            expenses: [],
+            _warning: 'Expenses data unavailable. Run prisma db push to create the expenses table.',
+          };
+        }
         break;
       case 'staff':
         reportData = await ReportsService.getStaffReport(session.outletId, session.tenantId, filter, tz);
