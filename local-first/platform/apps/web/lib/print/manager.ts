@@ -176,25 +176,24 @@ export async function processPrintQueueBatch(batchSize = 10) {
             if (receiptPayload.logoUrl === undefined || receiptPayload.logoUrl === null) {
               receiptPayload.logoUrl = receiptConfig.logoUrl || (outlet?.settings as any)?.logoUrl || (outlet?.settings as any)?.receipt?.logoUrl || null;
             }
-            escposBuffer = buildReceiptEscposBuffer(receiptPayload);
 
             // Prepend logo raster if logo is configured (async: logo downloaded & encoded)
-            const logoUrlForPrint = receiptPayload.logoUrl ||
-              receiptConfig.logoUrl ||
-              (outlet?.settings as any)?.logoUrl || null;
+            let fetchedLogoBuffer: Buffer | null = null;
+            const logoUrlForPrint = receiptPayload.logoUrl;
             if (logoUrlForPrint && receiptPayload.receiptConfig?.showLogo !== false) {
               const resolvedPaperWidth = receiptPayload.paperWidth ||
                 receiptPayload.receiptConfig?.paperWidth ||
                 receiptConfig.paperWidth || '80mm';
-              const logoBuffer = await buildLogoEscposBuffer(
+              fetchedLogoBuffer = await buildLogoEscposBuffer(
                 logoUrlForPrint,
                 resolvedPaperWidth as '80mm' | '58mm',
               );
-              if (logoBuffer) {
-                escposBuffer = Buffer.concat([logoBuffer, escposBuffer]);
-                console.log('[LOGO RASTER] Logo prepended to receipt buffer successfully');
+              if (fetchedLogoBuffer) {
+                console.log('[LOGO RASTER] Logo processed successfully');
               }
             }
+
+            escposBuffer = buildReceiptEscposBuffer(receiptPayload, undefined, fetchedLogoBuffer);
           } else {
             const kotPayload = { ...(job.payload as unknown as KotPrintPayload) };
             if (job.attempts > 0) {

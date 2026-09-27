@@ -224,7 +224,7 @@ export function buildKotEscposBuffer(payload: KotPrintPayload, width = 42): Buff
  * Build ESC/POS binary buffer for a Customer Order Receipt / Invoice.
  * Supports both 58mm (32 chars) and 80mm (42 chars) printer profiles with dynamic UPI QR.
  */
-export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOverride?: number): Buffer {
+export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOverride?: number, logoBuffer?: Buffer | null): Buffer {
   const chunks: Buffer[] = [];
   const add = (buf: Buffer | string) => {
     if (typeof buf === 'string') {
@@ -284,8 +284,13 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   const width = model.charsPerLine;
   const divider = '-'.repeat(width);
 
-  // Initialize printer
+  // Initialize printer FIRST (this resets the print buffer and formatting)
   add(COMMANDS.INIT);
+
+  // Print raster logo immediately after initialization
+  if (logoBuffer) {
+    add(logoBuffer);
+  }
 
   // Status Watermark if Reprint / Void
   if (model.isReprint) {

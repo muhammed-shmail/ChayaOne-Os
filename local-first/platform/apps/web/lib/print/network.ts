@@ -51,7 +51,7 @@ export async function sendNetworkPrintJob(buffer: Buffer, options: NetworkPrintO
         socket.end();
 
         // Thermal printers on port 9100 (Raw JetDirect) frequently keep CLOSE_WAIT open indefinitely
-        // until host terminates the connection. We give a 100ms window for the TCP buffer to drain across LAN,
+        // until host terminates the connection. We give a 1000ms window for the TCP buffer to drain across LAN,
         // then forcefully close (destroy) the socket. This triggers the printer's cut & printhead immediately.
         flushTimer = setTimeout(() => {
           if (!isSettled) {
@@ -59,7 +59,7 @@ export async function sendNetworkPrintJob(buffer: Buffer, options: NetworkPrintO
             cleanup();
             resolve();
           }
-        }, 100);
+        }, 1000);
       });
     });
 
