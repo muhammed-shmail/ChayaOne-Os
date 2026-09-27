@@ -1843,17 +1843,54 @@ export default function DashboardClient({
 
   // upload an image file → returns its public URL (or null)
   const uploadImage = async (file: File): Promise<string | null> => {
-    const fd = new FormData();
-    fd.append('image', file);
+    const toBase64 = (f: File): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(f);
+      });
+
+    // 1. Try standard FormData upload
     try {
+      const fd = new FormData();
+      fd.append('image', file);
       const res = await fetch('/api/dashboard/upload', { method: 'POST', body: fd });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.url) return d.url as string;
+
+      // If server failed with 400 / upload_failure (common in Windows standalone/Electron multipart parsing),
+      // seamlessly retry using Base64 JSON payload
+      if (res.status === 400 || d.error === 'upload_failure') {
+        console.warn('[uploadImage] FormData failed with 400, attempting Base64 JSON fallback...');
+        const base64Data = await toBase64(file);
+        const retryRes = await fetch('/api/dashboard/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Data, name: file.name }),
+        });
+        const retryD = await retryRes.json().catch(() => ({}));
+        if (retryRes.ok && retryD.url) return retryD.url as string;
+      }
+
       const errMsg = d.message || d.error || 'Upload failed';
       console.error('[uploadImage error]', res.status, d);
       flashMessage(`Upload failed: ${errMsg}`);
       return null;
     } catch (err) {
+      // Network error with FormData: retry once with Base64 JSON payload
+      try {
+        console.warn('[uploadImage] Network error with FormData, attempting Base64 JSON fallback...');
+        const base64Data = await toBase64(file);
+        const retryRes = await fetch('/api/dashboard/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Data, name: file.name }),
+        });
+        const retryD = await retryRes.json().catch(() => ({}));
+        if (retryRes.ok && retryD.url) return retryD.url as string;
+      } catch {}
+
       console.error('[uploadImage network error]', err);
       flashMessage('Upload failed: Network error');
       return null;

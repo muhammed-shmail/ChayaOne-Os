@@ -187,62 +187,91 @@ export async function POST(req: NextRequest) {
     const fallbackOutlet = await prisma.outlet.findFirst({ select: { id: true } });
     outletId = fallbackOutlet?.id ?? null;
   }
+  // Safe default: never block upload due to missing outlet in local DB
   if (!outletId) {
-    return NextResponse.json({ error: 'no_outlet', message: 'No outlet configured in database' }, { status: 400 });
+    outletId = session.tenantId || 'store';
   }
 
-  const form = await req.formData().catch((err) => {
-    console.error('[Owner upload] req.formData() failed:', err);
-    return null;
-  });
-  if (!form) {
-    return NextResponse.json({ error: 'upload_failure', message: 'Invalid form data' }, { status: 400 });
+  let buf: Buffer | null = null;
+  let ext = 'png';
+  let mime = 'image/png';
+  let blobFileName = '';
+
+  const contentType = (req.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('application/json')) {
+    const json = await req.json().catch(() => null);
+    if (json?.image && typeof json.image === 'string') {
+      const match = json.image.match(/^data:([a-zA-Z0-9\/+-]+);base64,(.+)$/);
+      if (match) {
+        mime = match[1];
+        buf = Buffer.from(match[2], 'base64');
+      } else {
+        buf = Buffer.from(json.image, 'base64');
+      }
+      blobFileName = json.name || 'image.png';
+    }
   }
 
-  let file = form.get('image') || form.get('file') || form.get('logo') || form.get('upload') || form.get('photo');
-  if (!file) {
-    for (const value of form.values()) {
-      if (value && typeof value === 'object' && typeof (value as any).arrayBuffer === 'function') {
-        file = value;
-        break;
+  if (!buf) {
+    const form = await req.formData().catch((err) => {
+      console.warn('[Owner upload] req.formData() failed:', err);
+      return null;
+    });
+
+    if (form) {
+      let file = form.get('image') || form.get('file') || form.get('logo') || form.get('upload') || form.get('photo');
+      if (!file) {
+        for (const value of form.values()) {
+          if (value && typeof value === 'object' && typeof (value as any).arrayBuffer === 'function') {
+            file = value;
+            break;
+          }
+        }
+      }
+      if (file && typeof file === 'object' && typeof (file as any).arrayBuffer === 'function') {
+        const blobFile = file as any;
+        if (blobFile.size > MAX_BYTES) {
+          return NextResponse.json(
+            { error: 'too_large', maxBytes: MAX_BYTES, message: `File size exceeds ${MAX_BYTES / 1024 / 1024}MB limit` },
+            { status: 413 }
+          );
+        }
+        const arrayBuf = await blobFile.arrayBuffer().catch(() => null);
+        if (arrayBuf) {
+          buf = Buffer.from(arrayBuf);
+          blobFileName = blobFile.name || '';
+          mime = blobFile.type || '';
+        }
       }
     }
   }
 
-  if (!file || typeof file === 'string' || typeof (file as any).arrayBuffer !== 'function') {
+  if (!buf || buf.length === 0) {
     return NextResponse.json({ error: 'no_file', message: 'No image file provided' }, { status: 400 });
   }
 
-  const blobFile = file as unknown as { size: number; type?: string; name?: string; arrayBuffer: () => Promise<ArrayBuffer> };
-
-  if (blobFile.size <= 0) {
-    return NextResponse.json({ error: 'corrupted_files', message: 'File is empty (0 bytes)' }, { status: 400 });
-  }
-
-  if (blobFile.size > MAX_BYTES) {
+  if (buf.length > MAX_BYTES) {
     return NextResponse.json(
       { error: 'too_large', maxBytes: MAX_BYTES, message: `File size exceeds ${MAX_BYTES / 1024 / 1024}MB limit` },
       { status: 413 }
     );
   }
 
-  const arrayBuf = await blobFile.arrayBuffer().catch(() => null);
-  if (!arrayBuf) {
-    return NextResponse.json({ error: 'corrupted_files', message: 'Could not read file data' }, { status: 400 });
+  const detected = detectImage(buf, mime, blobFileName);
+  if (detected.valid) {
+    ext = detected.ext;
+    mime = detected.mime;
+  } else {
+    const extFromName = blobFileName ? path.extname(blobFileName).toLowerCase().replace('.', '').trim() : '';
+    if (extFromName && ['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif', 'avif', 'ico', 'bmp', 'jfif'].includes(extFromName)) {
+      ext = extFromName === 'jpeg' || extFromName === 'jfif' ? 'jpg' : extFromName;
+      mime = mime || `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+    } else {
+      ext = 'png';
+      mime = mime || 'image/png';
+    }
   }
 
-  const buf = Buffer.from(arrayBuf);
-  const detected = detectImage(buf, blobFile.type, blobFile.name);
-
-  if (!detected.valid) {
-    return NextResponse.json(
-      { error: 'corrupted_files', message: 'Uploaded file is not a supported image (PNG, JPG, WEBP, SVG, GIF, AVIF).' },
-      { status: 400 }
-    );
-  }
-
-  const ext = detected.ext;
-  const mime = detected.mime;
   const name = `${crypto.randomUUID()}.${ext}`;
   const key = `${outletId}/${name}`;
 
