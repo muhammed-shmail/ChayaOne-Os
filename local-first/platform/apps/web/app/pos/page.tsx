@@ -71,6 +71,7 @@ export default async function PosPage() {
         address: outlet.address,
         timezone: outlet.timezone,
         receipt,
+        logoUrl: receipt.logoUrl || (outlet.settings as any)?.logoUrl || (outlet.settings as any)?.receipt?.logoUrl || null,
         upiConfig,
         kitchenWorkflow,
         gstConfig: gst,

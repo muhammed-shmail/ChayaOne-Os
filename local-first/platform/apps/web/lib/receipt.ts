@@ -89,7 +89,7 @@ export function readReceiptConfig(settings: unknown): ReceiptConfig {
   const qrSizeVal = r.qrSize === 'small' || r.qrSize === 'large' ? r.qrSize : 'medium';
 
   return {
-    logoUrl: typeof s.logoUrl === 'string' && s.logoUrl ? s.logoUrl : null,
+    logoUrl: (typeof s.logoUrl === 'string' && s.logoUrl.trim()) ? s.logoUrl.trim() : (typeof r.logoUrl === 'string' && r.logoUrl.trim()) ? r.logoUrl.trim() : null,
     header: str(r.header, RECEIPT_DEFAULTS.header),
     footer: str(r.footer, RECEIPT_DEFAULTS.footer),
     phone: str(r.phone, RECEIPT_DEFAULTS.phone),

@@ -173,7 +173,7 @@ export async function processPrintQueueBatch(batchSize = 10) {
               receiptPayload.storeName = outlet?.name || 'CHAYA CAFE';
             }
             if (receiptPayload.logoUrl === undefined || receiptPayload.logoUrl === null) {
-              receiptPayload.logoUrl = receiptConfig.logoUrl;
+              receiptPayload.logoUrl = receiptConfig.logoUrl || (outlet?.settings as any)?.logoUrl || (outlet?.settings as any)?.receipt?.logoUrl || null;
             }
             escposBuffer = buildReceiptEscposBuffer(receiptPayload);
           } else {

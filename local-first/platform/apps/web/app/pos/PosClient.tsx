@@ -1024,9 +1024,6 @@ ${htmlBody}
 </body></html>`;
 
     // Use a hidden iframe instead of a popup window.
-    // This avoids the browser's pop-up blocker AND removes the intermediate
-    // "window opened" step — clicking Print Bill goes straight to the OS
-    // print dialog (same as the user's configured TVSE RP3200 Lite).
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none;opacity:0;pointer-events:none;';
     iframe.setAttribute('aria-hidden', 'true');
@@ -1045,7 +1042,7 @@ ${htmlBody}
     doc.write(html);
     doc.close();
 
-    // Wait for iframe content to load, then trigger the system print dialog
+    // Wait for iframe images & content to load, then trigger the system print dialog
     const iframeWin = iframe.contentWindow;
     const doCleanup = () => {
       activePrintJobs.current.delete(jid);
@@ -1053,7 +1050,10 @@ ${htmlBody}
     };
 
     if (iframeWin) {
-      const timer = setTimeout(() => {
+      let printTriggered = false;
+      const triggerPrint = () => {
+        if (printTriggered) return;
+        printTriggered = true;
         try {
           console.log(`[PRINT] Opening Windows print dialog for Job ID: ${jid}`);
           iframeWin.focus();
@@ -1063,12 +1063,35 @@ ${htmlBody}
           console.error(`[PRINT ERROR] Job ID: ${jid} — Error: ${err?.message || err}`);
           flash('Print failed — please try again');
         } finally {
-          setTimeout(doCleanup, 2000);
+          setTimeout(doCleanup, 2500);
         }
-      }, 350);
+      };
+
+      // Wait for all images in the iframe document to finish loading
+      const imgs = Array.from(doc.images || []);
+      if (imgs.length === 0) {
+        setTimeout(triggerPrint, 80);
+      } else {
+        let remaining = imgs.length;
+        const onImgReady = () => {
+          remaining--;
+          if (remaining <= 0) {
+            setTimeout(triggerPrint, 60);
+          }
+        };
+        imgs.forEach((img) => {
+          if (img.complete && img.naturalWidth > 0) {
+            onImgReady();
+          } else {
+            img.onload = onImgReady;
+            img.onerror = onImgReady;
+          }
+        });
+        // Safety timeout so printing always triggers even if an image takes long
+        setTimeout(triggerPrint, 1200);
+      }
 
       iframeWin.onbeforeunload = () => {
-        clearTimeout(timer);
         doCleanup();
       };
     } else {
@@ -1187,7 +1210,7 @@ ${htmlBody}
     const totals = tableOrder.totals || {};
     const receiptData: ReceiptInputData = {
       storeName: outlet.name,
-      logoUrl: outlet.receipt?.showLogo !== false ? outlet.receipt?.logoUrl : null,
+      logoUrl: outlet.receipt?.showLogo !== false ? (outlet.receipt?.logoUrl || (outlet as any).logoUrl || (outlet as any)?.settings?.logoUrl || (outlet as any)?.settings?.receipt?.logoUrl || null) : null,
       address: outlet.address,
       phone: outlet.receipt?.phone,
       gstin: outlet.gstin,
@@ -1338,7 +1361,7 @@ ${rows}
     console.log(`[PRINT] Total    : ${formatINR(totalWithTip)}`);
     const receiptData: ReceiptInputData = {
       storeName: outlet.name,
-      logoUrl: outlet.receipt?.showLogo !== false ? outlet.receipt?.logoUrl : null,
+      logoUrl: outlet.receipt?.showLogo !== false ? (outlet.receipt?.logoUrl || (outlet as any).logoUrl || (outlet as any)?.settings?.logoUrl || (outlet as any)?.settings?.receipt?.logoUrl || null) : null,
       address: outlet.address,
       phone: outlet.receipt?.phone,
       gstin: outlet.gstin,
