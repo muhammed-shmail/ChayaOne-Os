@@ -1946,41 +1946,41 @@ export default function DashboardClient({
 
   // ── Test Receipt — prints a test page to TVSE RP3200 Lite ──
   function printTestReceipt() {
-    const storeName = escHtml(outlet.brand || 'CHAYA ONE');
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-    const htmlBody = `
-<div class="store-name">${storeName}</div>
-<div class="div-solid"></div>
-<div class="doc-title">TEST RECEIPT</div>
-<div class="div-solid"></div>
-<div class="meta-row bold"><span>Printer:</span><span>TVSE RP3200 Lite</span></div>
-<div class="meta-row"><span>Paper:</span><span>80mm (72mm printable)</span></div>
-<div class="meta-row"><span>Date:</span><span>${dateStr}</span></div>
-<div class="meta-row"><span>Time:</span><span>${timeStr}</span></div>
-<div class="div-dashed"></div>
-<div class="meta-row bold"><span>COLUMN TEST</span></div>
-<div class="items-hdr"><div class="col-name">ITEM</div><div class="col-qty">QTY</div><div class="col-amt">AMOUNT</div></div>
-<div class="div-dashed"></div>
-<div class="item-row"><div class="col-name item-name">Masala Tea</div><div class="col-qty">2</div><div class="col-amt">Rs.80.00</div></div>
-<div class="item-row"><div class="col-name item-name">Chicken Cutlet (Large)</div><div class="col-qty">1</div><div class="col-amt">Rs.120.00</div></div>
-<div class="item-row"><div class="col-name item-name">Very Long Item Name That Should Wrap Correctly</div><div class="col-qty">3</div><div class="col-amt">Rs.450.00</div></div>
-<div class="div-solid"></div>
-<div class="totals-row"><span>Subtotal</span><span>Rs.650.00</span></div>
-<div class="totals-row grand"><span>TOTAL</span><span>Rs.650.00</span></div>
-<div class="div-solid"></div>
-<div class="meta-row"><span>FONT TEST</span></div>
-<div class="div-dashed"></div>
-<div style="font-size:9pt;">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
-<div style="font-size:9pt;">abcdefghijklmnopqrstuvwxyz</div>
-<div style="font-size:9pt;">0123456789 !@#$%^&amp;*()-=</div>
-<div style="font-size:10pt;font-weight:bold;">Rs. RUPEE SYMBOL: Rs.100 Rs.999</div>
-<div class="div-solid"></div>
-<div class="footer"><div class="thank-you">PRINT TEST SUCCESSFUL</div><div>chaya.one</div></div>`;
-    printOrderDoc('Test Receipt — TVSE RP3200 Lite', htmlBody);
+    const receiptData: ReceiptInputData = {
+      storeName: outlet.brand || outlet.name || 'CHAYA ONE',
+      logoUrl: logoUrl ?? outlet.receipt?.logoUrl ?? (outlet as any)?.settings?.logoUrl ?? null,
+      header: receiptForm.header ?? outlet.receipt?.header ?? null,
+      footer: receiptForm.footer ?? outlet.receipt?.footer ?? null,
+      phone: receiptForm.phone ?? outlet.receipt?.phone ?? null,
+      address: outlet.address ?? null,
+      gstin: outlet.gstin ?? (outlet as any).settings?.gstin ?? null,
+      timezone: 'Asia/Kolkata',
+      orderNumber: 9999,
+      tableLabel: 'TEST-01',
+      orderType: 'DINE_IN',
+      placedAt: new Date(),
+      items: [
+        { name: 'Masala Tea', qty: 2, unitPricePaise: 4000, totalPaise: 8000 },
+        { name: 'Chicken Cutlet', qty: 1, unitPricePaise: 12000, totalPaise: 12000 },
+        { name: 'Long Item Name Test Wrapping', qty: 3, unitPricePaise: 15000, totalPaise: 45000 },
+      ],
+      subtotalPaise: 65000,
+      cgstPaise: 1625,
+      sgstPaise: 1625,
+      roundOffPaise: 50,
+      totalPaise: 68300,
+      paymentMethod: 'CASH',
+      gstEnabled: Boolean(profile?.gstEnabled ?? (outlet as any)?.gstEnabled ?? (outlet as any)?.settings?.gst?.enabled),
+      receiptConfig: receiptForm, // Use the current form state for instant preview
+      upiConfig: outlet.upiConfig ?? (outlet as any).settings?.upi ?? null,
+    };
+
+    const paperWidth = receiptForm.paperWidth || outlet.receipt?.paperWidth || '80mm';
+    const htmlBill = formatReceiptHtml(receiptData, paperWidth, { autoPrint: false });
+    
+    printOrderDoc(`Test Receipt — ${paperWidth}`, htmlBill);
     flashMessage('Test receipt sent to printer');
-    console.log('[PRINT] Test receipt triggered for TVSE RP3200 Lite');
+    console.log(`[PRINT] Test receipt triggered for ${paperWidth}`);
   }
 
   const [dashboardPrintedBills, setDashboardPrintedBills] = useState<Set<string>>(new Set());
