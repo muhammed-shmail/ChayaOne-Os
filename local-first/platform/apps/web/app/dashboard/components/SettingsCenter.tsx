@@ -4806,13 +4806,25 @@ export default function SettingsCenter({
                         </div>
                       </div>
 
-                      <div className="mt-3">
-                        <label className="lbl">Store Customer Support Phone</label>
-                        <input
-                          value={receiptForm.phone}
-                          onChange={(e) => setReceiptForm((prev: any) => ({ ...prev, phone: e.target.value }))}
-                          className="inp"
-                        />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                        <div>
+                          <label className="lbl">Store Customer Support Phone</label>
+                          <input
+                            value={receiptForm.phone || ''}
+                            onChange={(e) => setReceiptForm((prev: any) => ({ ...prev, phone: e.target.value }))}
+                            placeholder="e.g. +91 98765 43210"
+                            className="inp"
+                          />
+                        </div>
+                        <div>
+                          <label className="lbl">UPI ID for Dynamic QR Payment</label>
+                          <input
+                            value={receiptForm.upiId || ''}
+                            onChange={(e) => setReceiptForm((prev: any) => ({ ...prev, upiId: e.target.value }))}
+                            placeholder="e.g. chayacafe@okhdfcbank or 9876543210@paytm"
+                            className="inp"
+                          />
+                        </div>
                       </div>
                     </div>
 

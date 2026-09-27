@@ -1881,7 +1881,12 @@ export default function DashboardClient({
       : ((outlet as any).address ?? null);
     const activeGstin = profile?.gstin || outlet.gstin || ((outlet as any).settings?.gstin ?? null);
     const activePhone = receiptForm.phone || (outlet as any).phone || (outlet.receipt?.phone ?? null);
-    const activeUpi = outlet.upiConfig ?? (outlet as any).settings?.payment ?? (outlet as any).settings?.upi ?? null;
+    const rawUpiConfig = outlet.upiConfig ?? (outlet as any).settings?.payment ?? (outlet as any).settings?.upi ?? null;
+    const effectiveUpiId = ((receiptForm as any)?.upiId || rawUpiConfig?.upiId || (outlet as any).settings?.upiVpa || '').trim();
+    const activeUpi = {
+      ...(rawUpiConfig || {}),
+      ...(effectiveUpiId ? { upiId: effectiveUpiId, upiEnabled: true, receiptQrEnabled: true } : {}),
+    };
 
     const receiptData: ReceiptInputData = {
       storeName: activeStoreName,
@@ -1938,7 +1943,12 @@ export default function DashboardClient({
       : ((outlet as any).address ?? null);
     const activeGstin = profile?.gstin || outlet.gstin || ((outlet as any).settings?.gstin ?? null);
     const activePhone = (receiptForm as any)?.phone || (outlet as any).phone || (outlet.receipt?.phone ?? null);
-    const activeUpi = outlet.upiConfig ?? (outlet as any).settings?.payment ?? (outlet as any).settings?.upi ?? null;
+    const rawOrderUpiConfig = outlet.upiConfig ?? (outlet as any).settings?.payment ?? (outlet as any).settings?.upi ?? null;
+    const effectiveOrderUpiId = ((receiptForm as any)?.upiId || rawOrderUpiConfig?.upiId || (outlet as any).settings?.upiVpa || '').trim();
+    const activeUpi = {
+      ...(rawOrderUpiConfig || {}),
+      ...(effectiveOrderUpiId ? { upiId: effectiveOrderUpiId, upiEnabled: true, receiptQrEnabled: true } : {}),
+    };
     const activeReceiptConfig = {
       ...(outlet.receipt || {}),
       ...(receiptForm || {}),
@@ -2146,6 +2156,7 @@ export default function DashboardClient({
     header: outlet.receipt.header,
     footer: outlet.receipt.footer,
     phone: outlet.receipt.phone,
+    upiId: (outlet as any).upiConfig?.upiId || (outlet as any).settings?.payment?.upiId || (outlet as any).settings?.receipt?.upiId || (outlet as any).settings?.upiVpa || '',
     showLogo: outlet.receipt.showLogo,
     showAddress: outlet.receipt.showAddress,
     showPhone: outlet.receipt.showPhone,
@@ -2811,7 +2822,10 @@ export default function DashboardClient({
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok) {
-        if (d.receipt) setReceiptForm((prev: any) => ({ ...prev, ...d.receipt }));
+        if (d.receipt) {
+          setReceiptForm((prev: any) => ({ ...prev, ...d.receipt }));
+          outlet.receipt = { ...outlet.receipt, ...d.receipt };
+        }
         flashMessage('Receipt layout saved'); router.refresh();
       } else flashMessage('Could not save receipt layout');
     } catch (err) { console.error(err); flashMessage('Could not save receipt layout'); }

@@ -387,17 +387,43 @@ export function formatReceiptModel(
     : null;
 
   // 4. Logo & Store Header (Strictly dynamic from Billing Configuration & Store Profile)
-  const resolvedLogoUrl = data.receiptConfig?.showLogo !== false ? (data.logoUrl || data.receiptConfig?.logoUrl || null) : null;
+  const rawLogo =
+    data.logoUrl ||
+    data.receiptConfig?.logoUrl ||
+    (data as any)?.outlet?.logoUrl ||
+    (data as any)?.settings?.logoUrl ||
+    (data as any)?.outlet?.settings?.logoUrl ||
+    null;
+  const resolvedLogoUrl = data.receiptConfig?.showLogo !== false ? rawLogo : null;
   const hasLogo = Boolean(resolvedLogoUrl);
 
-  const rawAddress = data.address || (data.receiptConfig as any)?.address || (data as any)?.profile?.address || null;
+  const rawAddress =
+    data.address ||
+    (data.receiptConfig as any)?.address ||
+    (data as any)?.profile?.address ||
+    (data as any)?.outlet?.address ||
+    (data as any)?.settings?.address ||
+    null;
   const addressText = data.receiptConfig?.showAddress !== false ? formatReceiptAddress(rawAddress) : null;
 
-  const rawPhone = data.phone || data.receiptConfig?.phone || (data as any)?.profile?.phone || null;
+  const rawPhone =
+    data.phone ||
+    data.receiptConfig?.phone ||
+    (data as any)?.profile?.phone ||
+    (data as any)?.outlet?.phone ||
+    (data as any)?.settings?.phone ||
+    (data as any)?.settings?.receipt?.phone ||
+    null;
   const phoneText = data.receiptConfig?.showPhone !== false && rawPhone ? String(rawPhone).trim() : null;
 
-  const rawGstin = data.gstin || (data.receiptConfig as any)?.gstin || (data as any)?.profile?.gstin || null;
-  const gstinText = isGstActive && data.receiptConfig?.showGstin !== false && rawGstin ? String(rawGstin).trim() : null;
+  const rawGstin =
+    data.gstin ||
+    (data.receiptConfig as any)?.gstin ||
+    (data as any)?.profile?.gstin ||
+    (data as any)?.outlet?.gstin ||
+    (data as any)?.settings?.gstin ||
+    null;
+  const gstinText = (data.receiptConfig?.showGstin !== false && rawGstin) ? String(rawGstin).trim() : null;
 
   const contactParts: string[] = [];
   if (phoneText) contactParts.push(`Tel: ${phoneText}`);
@@ -491,8 +517,21 @@ export function formatReceiptModel(
   const totalText = formatReceiptMoney(data.totalPaise, { useRsFallback: useRs });
 
   // 7. Dynamic NPCI UPI QR Code
-  const upiId = (data.upiConfig?.upiId || '').trim();
-  const upiBusinessName = (data.upiConfig?.upiBusinessName || data.storeName || 'Chaya Cafe').trim();
+  const upiId = (
+    data.upiConfig?.upiId ||
+    (data.receiptConfig as any)?.upiId ||
+    (data as any)?.settings?.payment?.upiId ||
+    (data as any)?.settings?.upi?.upiId ||
+    (data as any)?.outlet?.upiConfig?.upiId ||
+    ''
+  ).trim();
+  const upiBusinessName = (
+    data.upiConfig?.upiBusinessName ||
+    (data.receiptConfig as any)?.upiBusinessName ||
+    (data as any)?.settings?.payment?.upiBusinessName ||
+    data.storeName ||
+    'Chaya Cafe'
+  ).trim();
   const upiEnabled = (data.upiConfig?.upiEnabled !== false) && (upiId.length > 0);
   const receiptQrEnabled = (data.upiConfig?.receiptQrEnabled !== false) && (data.receiptConfig?.showUpiQr !== false);
 
@@ -889,8 +928,8 @@ ${typeof window !== 'undefined' && window.location?.origin ? `<base href="${wind
   ${model.headerNote ? `<div class="store-details" style="font-style:italic; white-space:pre-line;">${esc(model.headerNote)}</div>` : ''}
   ${model.addressText ? `<div class="store-details" style="white-space:pre-line;">${esc(model.addressText)}</div>` : ''}
   ${model.phone ? `<div class="store-details">Tel: ${esc(model.phone)}</div>` : ''}
-  ${model.isGstActive && model.gstin ? `<div class="store-details">GSTIN: ${esc(model.gstin)}</div>` : ''}
-  ${model.isGstActive ? `<div class="doc-title">TAX INVOICE</div>` : ''}
+  ${model.gstin ? `<div class="store-details">GSTIN: ${esc(model.gstin)}</div>` : ''}
+  <div class="doc-title">${esc(docTitle)}</div>
 
   ${(model.showTableNumber || model.showOrderNumber) ? `
     <div class="div-dashed"></div>

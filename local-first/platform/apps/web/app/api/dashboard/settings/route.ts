@@ -666,7 +666,50 @@ export async function POST(req: NextRequest) {
   if (body.action === 'receipt') {
     const r = (body.receipt ?? {}) as Record<string, unknown>;
     const clean = (v: unknown) => String(v ?? '').slice(0, RECEIPT_FIELD_MAX);
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { name: true, settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const existingReceipt = (settings.receipt as Record<string, unknown> | undefined) ?? {};
+    const existingPayment = (settings.payment as Record<string, unknown> | undefined) ?? {};
+
+    const logoUrl = typeof r.logoUrl === 'string' && r.logoUrl.trim()
+      ? r.logoUrl.trim()
+      : typeof existingReceipt.logoUrl === 'string' && existingReceipt.logoUrl.trim()
+      ? existingReceipt.logoUrl.trim()
+      : typeof settings.logoUrl === 'string' && settings.logoUrl.trim()
+      ? settings.logoUrl.trim()
+      : null;
+
+    const upiId = typeof r.upiId === 'string'
+      ? r.upiId.trim()
+      : typeof existingReceipt.upiId === 'string'
+      ? existingReceipt.upiId.trim()
+      : typeof existingPayment.upiId === 'string'
+      ? existingPayment.upiId.trim()
+      : '';
+
+    const invoicePrefix = typeof r.invoicePrefix === 'string'
+      ? r.invoicePrefix
+      : typeof existingReceipt.invoicePrefix === 'string'
+      ? existingReceipt.invoicePrefix
+      : '';
+
+    const invoiceNumberLength = r.invoiceNumberLength != null
+      ? Number(r.invoiceNumberLength)
+      : existingReceipt.invoiceNumberLength != null
+      ? Number(existingReceipt.invoiceNumberLength)
+      : 0;
+
+    const roundOffTotal = typeof r.roundOffTotal === 'boolean'
+      ? r.roundOffTotal
+      : existingReceipt.roundOffTotal !== false;
+
     const receipt = {
+      ...existingReceipt,
+      logoUrl,
+      upiId,
+      invoicePrefix,
+      invoiceNumberLength,
+      roundOffTotal,
       header: clean(r.header),
       footer: clean(r.footer),
       phone: clean(r.phone),
@@ -685,13 +728,31 @@ export async function POST(req: NextRequest) {
       paperWidth: r.paperWidth === '58mm' ? '58mm' : '80mm',
       qrSize: r.qrSize === 'small' || r.qrSize === 'large' ? r.qrSize : 'medium',
     };
-    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
-    const settings = (current?.settings as Record<string, unknown>) ?? {};
-    const merged = { ...settings, receipt };
+
+    const paymentUpdate = upiId ? {
+      ...existingPayment,
+      upiId,
+      upiEnabled: true,
+      receiptQrEnabled: receipt.showUpiQr,
+      showScanAndPayText: receipt.showScanAndPay,
+      upiBusinessName: (existingPayment.upiBusinessName as string) || current?.name || 'Cafe',
+    } : existingPayment;
+
+    const merged = {
+      ...settings,
+      ...(logoUrl ? { logoUrl } : {}),
+      ...(upiId ? { upiVpa: upiId } : {}),
+      payment: paymentUpdate,
+      receipt,
+    };
+
     await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
     await prisma.auditLog.create({
       data: { outletId, actorId: session.staffId, action: 'receipt.updated', entity: 'outlet', entityId: outletId, after: receipt as unknown as Prisma.InputJsonValue },
     }).catch(() => {});
+
+    publishLocalRealtimeEvent(outletId, { type: 'outlet.updated', outletId }).catch(() => {});
+
     return NextResponse.json({ ok: true, receipt: readReceiptConfig(merged) });
   }
 

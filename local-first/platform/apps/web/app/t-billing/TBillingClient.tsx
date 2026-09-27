@@ -656,10 +656,10 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       const r = settledResult.receipt;
       return {
         storeName: r.storeName || outlet.brand || outlet.name,
-        logoUrl: outlet.receipt?.showLogo !== false ? (r.logoUrl || outlet.logoUrl || outlet.receipt?.logoUrl) : null,
+        logoUrl: outlet.receipt?.showLogo !== false ? (r.logoUrl || outlet.logoUrl || outlet.receipt?.logoUrl || (outlet as any)?.settings?.logoUrl) : null,
         address: r.address || outlet.address,
-        phone: r.phone || outlet.receipt?.phone || outlet.phone,
-        gstin: r.gstin || outlet.gstin,
+        phone: r.phone || outlet.receipt?.phone || outlet.phone || (outlet as any)?.settings?.phone,
+        gstin: r.gstin || outlet.gstin || (outlet as any)?.settings?.gstin,
         header: outlet.receipt?.header ?? r.headerNote ?? null,
         footer: outlet.receipt?.footer ?? r.footerNote ?? null,
         timezone: r.timezone || outlet.timezone || 'Asia/Kolkata',
@@ -691,10 +691,10 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     if (!selectedOrder) return null;
     return {
       storeName: outlet.brand || outlet.name,
-      logoUrl: outlet.receipt?.showLogo !== false ? (outlet.logoUrl || outlet.receipt?.logoUrl) : null,
+      logoUrl: outlet.receipt?.showLogo !== false ? (outlet.logoUrl || outlet.receipt?.logoUrl || (outlet as any)?.settings?.logoUrl) : null,
       address: outlet.address,
-      phone: outlet.receipt?.phone || outlet.phone,
-      gstin: outlet.gstin,
+      phone: outlet.receipt?.phone || outlet.phone || (outlet as any)?.settings?.phone,
+      gstin: outlet.gstin || (outlet as any)?.settings?.gstin,
       header: outlet.receipt?.header ?? null,
       footer: outlet.receipt?.footer ?? null,
       timezone: outlet.timezone || 'Asia/Kolkata',

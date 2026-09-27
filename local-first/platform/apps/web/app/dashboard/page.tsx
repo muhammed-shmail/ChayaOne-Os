@@ -25,7 +25,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
 
   const outlet = await prisma.outlet.findUnique({
     where: { id: session.outletId },
-    select: { id: true, name: true, gstin: true, settings: true, tenant: { select: { name: true, plan: true } } },
+    select: { id: true, name: true, gstin: true, address: true, timezone: true, stateCode: true, settings: true, tenant: { select: { name: true, plan: true } } },
   });
   if (!outlet) redirect('/api/auth/logout');
 
@@ -39,7 +39,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: { 
   const receipt = readReceiptConfig(outlet.settings);
   const upiConfig = readUpiConfig(outlet.settings, outlet.name);
 
-  const dashboardOutlet = { name: outlet.name, brand: outlet.tenant.name, plan: outlet.tenant.plan, gstin: outlet.gstin, receipt, upiConfig, settings: outlet.settings };
+  const dashboardOutlet = {
+    id: outlet.id,
+    name: outlet.name,
+    brand: outlet.tenant.name,
+    plan: outlet.tenant.plan,
+    gstin: outlet.gstin,
+    address: outlet.address,
+    timezone: outlet.timezone,
+    stateCode: outlet.stateCode,
+    phone: receipt.phone || (outlet.settings as any)?.phone || (outlet.settings as any)?.receipt?.phone || null,
+    logoUrl: receipt.logoUrl || (outlet.settings as any)?.logoUrl || (outlet.settings as any)?.receipt?.logoUrl || null,
+    receipt,
+    upiConfig,
+    settings: outlet.settings,
+  };
 
   const showOwner = hasRole(session, ['owner', 'accountant']) || (hasRole(session, 'manager') && searchParams?.view === 'owner');
 

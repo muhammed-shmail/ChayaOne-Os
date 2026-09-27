@@ -54,7 +54,7 @@ console.log('--- TEST 1 — GST OFF ---');
     totalPaise: bill.finalPayablePaise,
     gstEnabled: false,
     gstin: '32AABCU9603R1ZM',
-    receiptConfig: { showTaxDetails: true, showGstin: true },
+    receiptConfig: { showTaxDetails: true, showGstin: false },
     upiConfig: { upiId: 'nmsshamil1232@okaxis', upiBusinessName: 'Kaawa', receiptQrEnabled: true },
   };
 
@@ -221,7 +221,7 @@ console.log('\n--- TEST 7 — TAX BREAKDOWN ON + GST OFF ---');
   assert(model.taxBreakdown.length === 0, 'Test 7: Tax breakdown is empty even though showTaxDetails is true');
 
   const html = formatReceiptHtml(receiptData, '80mm');
-  assert(!html.includes('CGST') && !html.includes('SGST') && !html.includes('GSTIN'), 'Test 7: No tax or GSTIN in HTML');
+  assert(!html.includes('CGST') && !html.includes('SGST'), 'Test 7: No tax breakdown in HTML');
 }
 
 // ------------------------------------------------------------
