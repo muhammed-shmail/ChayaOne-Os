@@ -45,22 +45,26 @@ export async function resolveTenantIdFromHost(host: string | null | undefined): 
 }
 
 async function lookupTenantId(host: string | null | undefined): Promise<string | null> {
-  const sub = subdomainFromHost(host);
-  if (sub) {
-    const t = await prisma.tenant.findUnique({ where: { subdomain: sub }, select: { id: true } });
-    if (t) return t.id;
-  }
-  // Custom domain (no usable subdomain, but a real apex/host like brewlab.com)
-  const h = (host?.split(':')[0] ?? '').toLowerCase().trim();
-  if (h && h !== 'localhost' && h.includes('.') && !/^\d/.test(h)) {
-    const b = await prisma.tenantBranding.findUnique({ where: { customDomain: h }, select: { tenantId: true } });
-    if (b) return b.tenantId;
-  }
-  // Local dev fallback
-  const dev = process.env.DEV_TENANT_SUBDOMAIN;
-  if (dev) {
-    const t = await prisma.tenant.findUnique({ where: { subdomain: dev }, select: { id: true } });
-    if (t) return t.id;
+  try {
+    const sub = subdomainFromHost(host);
+    if (sub) {
+      const t = await prisma.tenant.findUnique({ where: { subdomain: sub }, select: { id: true } });
+      if (t) return t.id;
+    }
+    // Custom domain (no usable subdomain, but a real apex/host like brewlab.com)
+    const h = (host?.split(':')[0] ?? '').toLowerCase().trim();
+    if (h && h !== 'localhost' && h.includes('.') && !/^\d/.test(h)) {
+      const b = await prisma.tenantBranding.findUnique({ where: { customDomain: h }, select: { tenantId: true } });
+      if (b) return b.tenantId;
+    }
+    // Local dev fallback
+    const dev = process.env.DEV_TENANT_SUBDOMAIN;
+    if (dev) {
+      const t = await prisma.tenant.findUnique({ where: { subdomain: dev }, select: { id: true } });
+      if (t) return t.id;
+    }
+  } catch (err: any) {
+    console.error('[tenant] Failed to lookup tenant id:', err?.message || err);
   }
   return null;
 }
