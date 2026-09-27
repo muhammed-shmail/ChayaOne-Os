@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   other: {
     'mobile-web-app-capable': 'yes',
   },
-  icons: { icon: '/app.png?v=4', shortcut: '/favicon.ico', apple: '/app.png?v=4' },
+  icons: { icon: '/app.png?v=5', shortcut: '/favicon.ico', apple: '/app.png?v=5' },
 };
 
 export const viewport: Viewport = {

@@ -4,8 +4,8 @@
   "description": "ChayaOne OS Waiter & Floor Staff Terminal",
   "start_url": "/tables",
   "display": "standalone",
-  "background_color": "#14110F",
-  "theme_color": "#E8902A",
+  "background_color": "#DEAD61",
+  "theme_color": "#DEAD61",
   "orientation": "any",
   "icons": [
     {

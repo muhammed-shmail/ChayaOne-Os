@@ -97,6 +97,11 @@ export function readWaiterStations(settings: unknown): WaiterStation[] {
     });
   }
 
+  // If user explicitly deleted default stations, do not force-reinject DEFAULT_WAITER_STATIONS
+  if (list.length === 0 && deletedDefaults.length > 0) {
+    return [];
+  }
+
   return list.length > 0 ? list : DEFAULT_WAITER_STATIONS;
 }
 

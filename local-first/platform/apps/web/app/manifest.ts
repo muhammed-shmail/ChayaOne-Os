@@ -15,8 +15,8 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     orientation: 'any',
-    background_color: '#14110F',
-    theme_color: '#E8902A',
+    background_color: '#DEAD61',
+    theme_color: '#DEAD61',
     icons: [
       {
         src: '/icons/waiter-192.png',
@@ -31,7 +31,7 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: 'maskable',
       },
       {
-        src: '/app.png?v=4',
+        src: '/app.png?v=5',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',

@@ -612,6 +612,19 @@ export async function POST(req: NextRequest) {
       if (!prevDeleted.includes(id)) {
         (settings as any).deletedDefaultStations = [...prevDeleted, id];
       }
+
+      // Unbind any devices mapped to this deleted station
+      const prevDevices = Array.isArray(settings.devices) ? (settings.devices as any[]) : [];
+      settings.devices = prevDevices.map((d: any) => (d.station?.trim().toLowerCase() === id ? { ...d, station: '' } : d));
+
+      // Unbind any menu items configured to this station
+      await prisma.menuItem.updateMany({
+        where: { outletId, station: id },
+        data: { station: null },
+      }).catch(() => {});
+
+      // Broadcast realtime event
+      publishLocalRealtimeEvent(outletId, { type: 'outlet.updated', outletId }).catch(() => {});
     }
 
     const merged = {

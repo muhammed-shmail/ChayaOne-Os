@@ -167,6 +167,16 @@ export async function getSession(): Promise<Session | null> {
       session.name = live.name;
       if (live.outletId) session.outletId = live.outletId;
     }
+    // Guarantee valid outletId fallback for tenant-scoped sessions (e.g. owners)
+    if (!session.outletId && session.tenantId) {
+      const defOutlet = await prisma.outlet.findFirst({
+        where: { tenantId: session.tenantId },
+        select: { id: true },
+      });
+      if (defOutlet) {
+        session.outletId = defOutlet.id;
+      }
+    }
   } catch (err) {
     console.warn('[AUTH] Live staff context fetch fallback:', err);
   }
