@@ -539,6 +539,7 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   const [settleBusy, setSettleBusy] = useState(false);
   const [askSettle, setAskSettle] = useState(false);
   const [billPrinted, setBillPrinted] = useState(false);
+  const [printBusy, setPrintBusy] = useState(false);
   // NOTE: printedOrderIds was removed — it was a persistent in-memory Set that
   // caused false-positive "bill already printed" state when reopening a table
   // within the same browser session. The authoritative source of truth for
@@ -673,7 +674,7 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
     // any other derived field (table.state, order.status, etc.).
     // If d?.billPrinted is undefined or null, we treat it as false — NOT printed.
     const isAlreadyPrinted = d?.billPrinted === true;
-    if (isAlreadyPrinted) setBillPrinted(true);
+    setBillPrinted(isAlreadyPrinted);
     // [FLOOR_TABLE_LOADED] client-side log
     console.log(
       `[BILL_BUTTON_STATE] tableId=${t.id} orderId=${d?.orders?.[0]?.id ?? 'none'}` +
@@ -747,6 +748,7 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
     if (!tableAction) return null;
     const d = await fetch(`/api/tables/order?tableId=${tableAction.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     setTableOrder(d);
+    setBillPrinted(d?.billPrinted === true);
     if (d?.customer && !custName && !custPhone) {
       setCustName(d.customer.name || '');
       setCustPhone(d.customer.phone || '');
@@ -1211,8 +1213,8 @@ ${htmlBody}
     `;
   }
 
-  function printBill() {
-    if (!tableOrder || billPrinted) return;
+  async function printBill() {
+    if (!tableOrder || printBusy) return;
     const isGstConfig = outlet.gstEnabled && outlet.gstConfig?.enabled;
     const showHsn = isGstConfig && outlet.gstConfig?.showHsn;
     const tableLabel = tableAction?.label ?? '';
@@ -1272,51 +1274,33 @@ ${htmlBody}
     console.log(`[PRINT] Sending bill directly to ${waiterStation ? waiterStation.toUpperCase() + ' station printer' : 'station printer'} (no popup)...`);
     console.log(`[BILL_PRINT_STARTED] tableId=${tableAction?.id} orderId=${tableOrder?.orders?.[0]?.id ?? 'none'}`);
 
-    // 1. Optimistic UI: disable the button immediately so the waiter cannot
-    //    double-tap. This is purely a UX guard — the authoritative bill-printed
-    //    state lives in the backend's 'bill.printed' audit log.
-    setBillPrinted(true);
+    setPrintBusy(true);
     const tableId = tableAction?.id;
     const orderIds = (tableOrder?.orders || []).map((o: any) => o.id).concat(tableOrder?.id ? [tableOrder.id] : []);
 
-    // 2. Immediately free table in local state so floor map updates with zero latency
     if (tableId) {
-      setOccupied((prev) => {
-        const next = { ...prev };
-        delete next[tableId];
-        return next;
-      });
-    }
-
-    // 3. Mark table as free on server & dispatch station direct print (no browser popup)
-    if (tableId) {
-      fetch('/api/tables/order', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          action: 'print_bill',
-          tableId,
-          orderId: orderIds[0] || null,
-          waiterStation,
-          staffName: currentStaff.name,
-          customer: (custName.trim() || custPhone.trim()) ? { name: custName.trim() || undefined, phone: custPhone.trim() || undefined } : undefined,
-        }),
-      })
-        .then(async (res) => {
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok || data.ok === false) {
-            // Server rejected the print (e.g. no active orders, network error).
-            // Reset bill-printed so the waiter can retry.
-            console.warn(
-              `[BILL_PRINT_FAILED] tableId=${tableId} server returned ok=false.` +
-              ` reason=${data.error ?? 'unknown'} — resetting billPrinted to allow retry`
-            );
-            setBillPrinted(false);
-            // Restore local occupied state
-            refreshTables();
-            flash(`⚠️ Bill print failed: ${data.error ?? 'unknown error'}. Please retry.`);
-            return;
-          }
+      try {
+        const res = await fetch('/api/tables/order', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'print_bill',
+            tableId,
+            orderId: orderIds[0] || null,
+            waiterStation,
+            staffName: currentStaff.name,
+            customer: (custName.trim() || custPhone.trim()) ? { name: custName.trim() || undefined, phone: custPhone.trim() || undefined } : undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          console.warn(
+            `[BILL_PRINT_FAILED] tableId=${tableId} server returned ok=false.` +
+            ` reason=${data.error ?? 'unknown'}`
+          );
+          flash(`⚠️ Bill print failed: ${data.error ?? 'unknown error'}. Please retry.`);
+        } else {
+          setBillPrinted(true);
           console.log(
             `[BILL_PRINT_SUCCESS] tableId=${tableId} printer=${data.printerName ?? 'default'}` +
             ` station=${data.station ?? 'none'} billPrinted=true`
@@ -1327,18 +1311,17 @@ ${htmlBody}
             flash('✓ Bill printed through station printer');
           }
           refreshTables();
-        })
-        .catch((err) => {
-          console.error('[PRINT] Server free table / bill print failed:', err);
-          // Network error — reset so waiter can retry
-          setBillPrinted(false);
-          refreshTables();
-          flash('⚠️ Network error. Please retry bill print.');
-        });
+          refreshTableOrder();
+        }
+      } catch (err) {
+        console.error('[PRINT] Server bill print failed:', err);
+        flash('⚠️ Network error. Please retry bill print.');
+      } finally {
+        setPrintBusy(false);
+      }
+    } else {
+      setPrintBusy(false);
     }
-
-    // 4. Smoothly close modal after user sees confirmation
-    setTimeout(() => closeTableActions(), 1000);
   }
 
   function printKOT() {
@@ -2640,39 +2623,33 @@ ${rows}
                   <div className="grid grid-cols-2 gap-2.5">
                     <button
                       onClick={() => { setAddMode(true); setTableCart([]); setAddSearch(''); }}
-                      disabled={billPrinted}
                       className="btn btn-dark"
-                      style={billPrinted ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
                     >
                       <Plus size={16} aria-hidden /> Add items
                     </button>
                     <button
                       onClick={printKOT}
-                      disabled={billPrinted}
                       className="btn"
-                      style={billPrinted ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
                     >
                       <Receipt size={16} aria-hidden /> Print KOT
                     </button>
                     {canPrintBill && (
                       <button
                         onClick={printBill}
-                        disabled={billPrinted}
+                        disabled={printBusy}
                         className="btn col-span-2"
-                        title={billPrinted ? 'Bill already printed — table freed' : 'Print bill for this table'}
-                        style={billPrinted
-                          ? { opacity: 0.38, cursor: 'not-allowed', background: 'var(--paper-3)', border: '1px solid var(--line)' }
-                          : {}}
+                        title={billPrinted ? 'Bill already printed — click to reprint bill' : 'Print bill for this table'}
+                        style={billPrinted ? { borderColor: 'var(--turmeric, #d97706)' } : {}}
                       >
                         <Printer size={16} aria-hidden />
-                        {billPrinted ? '✓ Bill Printed — Table Freed' : 'Print bill'}
+                        {printBusy ? 'Printing bill...' : billPrinted ? '🖨️ Reprint Bill' : 'Print bill'}
                       </button>
                     )}
                   </div>
                 )}
                 {billPrinted && (
                   <p className="text-[11px] mt-2 text-center font-semibold" style={{ color: 'var(--turmeric-d)' }}>
-                    💳 Collect payment at the billing counter — use T-Billing to settle.
+                    💳 Bill printed. Collect payment at the billing counter (T-Billing) to settle.
                   </p>
                 )}
                 {!canPrintBill && !billPrinted && <p className="text-[11px] mt-3 text-center" style={{ color: 'var(--ink-3)' }}>Bill printing requires staff access.</p>}

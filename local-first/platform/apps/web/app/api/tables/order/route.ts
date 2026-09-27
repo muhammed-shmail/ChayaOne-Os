@@ -92,9 +92,22 @@ export async function GET(req: NextRequest) {
       }).catch(() => null)
     : null;
 
-  // isBillPrinted = true only when a BILL_PREVIEW job was created for this order
-  // session. KOT print jobs (PrintJobType.KOT) are never counted here.
-  const isBillPrinted = Boolean(billPrintJob);
+  // isBillPrinted = true only when a BILL_PREVIEW job exists AND no newer orders
+  // or KOTs were placed after the bill was printed. If new items or orders were
+  // added after the bill was printed, the bill is NOT yet printed for the current order state.
+  let isBillPrinted = false;
+  if (billPrintJob) {
+    const hasNewerOrder = orders.some((o) => o.placedAt > billPrintJob.createdAt);
+    const newerKot = await prisma.kot.findFirst({
+      where: {
+        orderId: { in: activeOrderIds },
+        createdAt: { gt: billPrintJob.createdAt },
+      },
+      select: { id: true },
+    }).catch(() => null);
+
+    isBillPrinted = !hasNewerOrder && !newerKot;
+  }
 
   const activeCustomer = orders.find((o) => o.customer)?.customer ?? null;
 
@@ -353,27 +366,27 @@ export async function POST(req: NextRequest) {
       },
     }).catch(() => {});
 
-    // 3. Free table now that the bill has been printed
+    // 3. Mark table as 'billed' — DO NOT free table until bill is settled
     await prisma.tableMap.update({
       where: { id: tableId },
-      data: { state: 'free' },
+      data: { state: 'billed' },
     }).catch(() => {});
 
     console.log(
       `[BILL_PRINT_SUCCESS] tableId=${tableId} orderId=${orderId ?? 'none'}` +
       ` printer=${printResult.printerName ?? 'default'} station=${printResult.station ?? 'none'}` +
-      ` billPrinted=true table freed`
+      ` billPrinted=true table state=billed`
     );
 
     await publish(session.outletId, {
       type: 'table.updated',
       tableId,
-      state: 'free',
+      state: 'billed',
     });
 
     return NextResponse.json({
       ok: true,
-      state: 'free',
+      state: 'billed',
       billPrinted: true,
       printerName: printResult.printerName,
       station: printResult.station,

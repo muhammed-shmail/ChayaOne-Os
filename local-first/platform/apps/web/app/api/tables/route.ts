@@ -36,11 +36,10 @@ export async function GET() {
   const tableFloors = readTableFloors(settings);
   const disabledTables = readDisabledTables(settings);
 
-  // fold the active orders into a per-table occupancy summary (skip tables explicitly freed)
-  const freeTableIds = new Set(tables.filter((t) => t.state === 'free').map((t) => t.id));
+  // fold the active orders into a per-table occupancy summary
   const occMap = new Map<string, { id: string; orderId: string; number: number; sinceMs: number; billPaise: number; orders: number; status: string }>();
   for (const o of activeOrders) {
-    if (!o.tableId || freeTableIds.has(o.tableId)) continue;
+    if (!o.tableId) continue;
     const cur = occMap.get(o.tableId);
     if (cur) {
       cur.billPaise += o.totalPaise;
@@ -58,7 +57,7 @@ export async function GET() {
     id: t.id,
     label: t.label,
     seats: t.seats,
-    state: t.state,
+    state: occMap.has(t.id) ? (t.state === 'billed' ? 'billed' : 'seated') : t.state,
     qrToken: t.qrToken,
     floorId: tableFloors[t.id] ?? null,
     active: !disabledTables.includes(t.id),
