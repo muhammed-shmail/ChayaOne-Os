@@ -184,10 +184,13 @@ export default function ReceiptPreviewModal({
             )}
 
             {/* Shop Name & Header - Standard Thermal Typography */}
+            {/* When a logo is present the brand name is already in the image — hide text name */}
             <div className="text-center space-y-0.5">
-              <h2 className={`font-bold tracking-wider uppercase text-black ${model.hasLogo ? 'text-[11px]' : 'text-[13px]'}`}>
-                {model.storeName}
-              </h2>
+              {!model.hasLogo && (
+                <h2 className="font-bold tracking-wider uppercase text-black text-[13px]">
+                  {model.storeName}
+                </h2>
+              )}
               {model.addressText && <p className="text-[10px] text-[#4A4036] leading-tight">{model.addressText}</p>}
               {model.contactLine && <p className="text-[10px] text-[#4A4036] leading-tight">{model.contactLine}</p>}
               {model.headerNote && <p className="text-[10px] text-[#6B5E52] italic leading-tight">{model.headerNote}</p>}

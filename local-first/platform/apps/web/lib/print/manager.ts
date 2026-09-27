@@ -8,6 +8,7 @@ import { readUpiConfig } from './upi';
 import { readGstConfig } from '../tax';
 import { resolveReceiptPrinter } from './router';
 import { readWaiterStations, isStationMatch } from '../waiter-stations';
+import { buildLogoEscposBuffer } from './logo';
 
 export interface CreatePrintJobParams {
   tenantId: string;
@@ -176,6 +177,24 @@ export async function processPrintQueueBatch(batchSize = 10) {
               receiptPayload.logoUrl = receiptConfig.logoUrl || (outlet?.settings as any)?.logoUrl || (outlet?.settings as any)?.receipt?.logoUrl || null;
             }
             escposBuffer = buildReceiptEscposBuffer(receiptPayload);
+
+            // Prepend logo raster if logo is configured (async: logo downloaded & encoded)
+            const logoUrlForPrint = receiptPayload.logoUrl ||
+              receiptConfig.logoUrl ||
+              (outlet?.settings as any)?.logoUrl || null;
+            if (logoUrlForPrint && receiptPayload.receiptConfig?.showLogo !== false) {
+              const resolvedPaperWidth = receiptPayload.paperWidth ||
+                receiptPayload.receiptConfig?.paperWidth ||
+                receiptConfig.paperWidth || '80mm';
+              const logoBuffer = await buildLogoEscposBuffer(
+                logoUrlForPrint,
+                resolvedPaperWidth as '80mm' | '58mm',
+              );
+              if (logoBuffer) {
+                escposBuffer = Buffer.concat([logoBuffer, escposBuffer]);
+                console.log('[LOGO RASTER] Logo prepended to receipt buffer successfully');
+              }
+            }
           } else {
             const kotPayload = { ...(job.payload as unknown as KotPrintPayload) };
             if (job.attempts > 0) {

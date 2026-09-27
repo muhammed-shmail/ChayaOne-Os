@@ -301,11 +301,16 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
     add(COMMANDS.BOLD_OFF);
   }
 
-  // Header: Shop Name & Details (standard thermal typography, never oversized)
+  // Header: Shop Name & Details (standard thermal typography)
+  // When a logo is configured it will be printed as a raster image by the
+  // print manager BEFORE this buffer is sent; skip the plain-text name so the
+  // brand name is not doubled (once from logo image, once from text).
   add(COMMANDS.ALIGN_CENTER);
-  add(COMMANDS.BOLD_ON);
-  add(model.storeName);
-  add(COMMANDS.BOLD_OFF);
+  if (!model.hasLogo) {
+    add(COMMANDS.BOLD_ON);
+    add(model.storeName);
+    add(COMMANDS.BOLD_OFF);
+  }
 
   if (model.addressText) {
     add(model.addressText);

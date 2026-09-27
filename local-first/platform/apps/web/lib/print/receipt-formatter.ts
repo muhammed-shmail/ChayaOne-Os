@@ -812,9 +812,8 @@ ${typeof window !== 'undefined' && window.location?.origin ? `<base href="${wind
 
   ${model.logoUrl ? `
     <div class="logo-wrap">
-      <img src="${esc(model.logoUrl)}" alt="Logo"/>
+      <img src="${esc(model.logoUrl)}" alt="${esc(model.storeName)}"/>
     </div>
-    <div class="store-title with-logo">${esc(model.storeName)}</div>
   ` : `
     <div class="store-title">${esc(model.storeName)}</div>
   `}
