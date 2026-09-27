@@ -307,9 +307,6 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   }
 
   // Header: Shop Name & Details (standard thermal typography)
-  // When a logo is configured it will be printed as a raster image by the
-  // print manager BEFORE this buffer is sent; skip the plain-text name so the
-  // brand name is not doubled (once from logo image, once from text).
   add(COMMANDS.ALIGN_CENTER);
   add(COMMANDS.BOLD_ON);
   add(model.storeName);
@@ -325,6 +322,12 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
     add(model.contactLine);
   }
 
+  // Document Title (TAX INVOICE / INVOICE) matching HTML bill
+  const docTitle = model.isGstActive ? 'TAX INVOICE' : 'INVOICE';
+  add(COMMANDS.BOLD_ON);
+  add(docTitle);
+  add(COMMANDS.BOLD_OFF);
+
   // Meta: Table + Order Number (SAME ROW) & Date + Time (SAME ROW)
   add(COMMANDS.ALIGN_LEFT);
   if (model.showTableNumber || model.showOrderNumber) {
@@ -336,6 +339,12 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   if (model.showDateTime) {
     if (!model.showTableNumber && !model.showOrderNumber) add(divider);
     add(model.dateTimeRow);
+  }
+  if (model.cashierLine) {
+    add(model.cashierLine);
+  }
+  if (model.customerLine) {
+    add(model.customerLine);
   }
   add(divider);
 
@@ -392,19 +401,18 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
     }
     add(COMMANDS.LINE_FEED);
 
-    // Raster QR: 4 dots per module for 58mm, 5 dots for 80mm
-    const qrScale = resolvedPaperWidth === '58mm' ? 4 : 5;
+    // Raster QR: 4 dots per module (matches crisp 120px SVG dimension in HTML bill)
+    const qrScale = 4;
     const targetDots = resolvedPaperWidth === '58mm' ? 384 : 576;
     const qrBuffer = buildRasterEscposQr(model.upiResult.uri, qrScale, 3, targetDots);
     
     // Explicitly enforce ALIGN_LEFT before the raster.
     // The raster is already manually padded on the left to center it perfectly.
-    // If we leave the printer in ALIGN_CENTER, some models will double-shift or wrap the raster!
     add(COMMANDS.ALIGN_LEFT);
     add(qrBuffer);
 
+    add(COMMANDS.ALIGN_CENTER);
     if (model.showScanAndPay) {
-      add(COMMANDS.ALIGN_CENTER);
       add(COMMANDS.LINE_FEED);
       add(COMMANDS.BOLD_ON);
       add(model.totalText);

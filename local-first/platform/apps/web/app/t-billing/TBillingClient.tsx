@@ -8,6 +8,12 @@ import type { UpiPaymentConfig } from '@/lib/print/upi';
 import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-formatter';
 import { printThermalReceipt } from '@/lib/print/thermal-printer';
 import ReceiptPreviewModal from '@/components/receipt/ReceiptPreviewModal';
+
+function isMobileBrowser(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || window.innerWidth < 768;
+}
 import {
   Table2, Search, RefreshCw, Printer, Receipt, ArrowLeft,
   X, User, Smartphone, CreditCard,
@@ -754,9 +760,13 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       // 1. Shared Bill Renderer (exact same pipeline as Billing Configuration Test Print)
       const htmlBody = formatReceiptHtml(activeData, paper, { autoPrint: false });
 
-      // 2. Shared Thermal Print Service (hidden iframe directly to thermal printer)
-      const printed = await printThermalReceipt(`Bill #${activeData.orderNumber || ''}`, htmlBody);
-      if (printed) {
+      // 2. Shared Thermal Print Service (hidden iframe directly to thermal printer for desktop)
+      if (!isMobileBrowser()) {
+        const printed = await printThermalReceipt(`Bill #${activeData.orderNumber || ''}`, htmlBody);
+        if (printed) {
+          flash('Receipt sent to thermal printer 🖨️');
+        }
+      } else {
         flash('Receipt sent to thermal printer 🖨️');
       }
 

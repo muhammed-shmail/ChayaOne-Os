@@ -31,6 +31,12 @@ import { formatReceiptHtml, type ReceiptInputData } from '@/lib/print/receipt-fo
 import { printThermalReceipt } from '@/lib/print/thermal-printer';
 import { hasRole, hasPermission, canAccess, canSettle } from '@/lib/rbac';
 
+function isMobileBrowser(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) || window.innerWidth < 768;
+}
+
 /** Bespoke Vector SVGs tailored for Cafe & Beverage domains */
 export function ChaiCupIcon({ size = 20, className = '', ...props }: any) {
   return (
@@ -1267,8 +1273,12 @@ ${htmlBody}
     const paperWidth = outlet.receipt?.paperWidth === '58mm' ? '58mm' : '80mm';
     const htmlBody = formatReceiptHtml(receiptData, paperWidth, { autoPrint: false });
 
-    // Shared Thermal Print Pipeline (exact same rendering & printing as Billing Configuration Test Print)
-    printThermalReceipt(`Bill - Table ${tableLabel}`, htmlBody);
+    // Shared Thermal Print Pipeline
+    // On desktop / cashier PC: Prints via thermal printer driver (same as Billing Config Test Print)
+    // On mobile / waiter devices: Suppress browser window.print() dialog; silent server LAN print handles it!
+    if (!isMobileBrowser()) {
+      printThermalReceipt(`Bill - Table ${tableLabel}`, htmlBody);
+    }
 
     const waiterStation = (currentStaff.permissions as any)?.station || (currentStaff as any)?.station || null;
     console.log(`[PRINT] Sending bill directly to ${waiterStation ? waiterStation.toUpperCase() + ' station printer' : 'station printer'} (no popup)...`);
@@ -1426,9 +1436,11 @@ ${rows}
     const paperWidth = outlet.receipt?.paperWidth === '58mm' ? '58mm' : '80mm';
     const htmlBody = formatReceiptHtml(receiptData, paperWidth, { autoPrint: false });
 
-    console.log(`[PRINT] Sending receipt to thermal printer...`);
-    printThermalReceipt(`Receipt #${number}`, htmlBody);
-    console.log(`[PRINT] Receipt #${number} sent to thermal printer.`);
+    if (!isMobileBrowser()) {
+      console.log(`[PRINT] Sending receipt to thermal printer...`);
+      printThermalReceipt(`Receipt #${number}`, htmlBody);
+      console.log(`[PRINT] Receipt #${number} sent to thermal printer.`);
+    }
   }
 
   // count of QR orders awaiting approval (badge on the Approvals link)
