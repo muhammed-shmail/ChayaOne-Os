@@ -2591,7 +2591,7 @@ export default function DashboardClient({
       </div>
       </aside>
 
-      <main suppressHydrationWarning className="min-w-0 flex-1 flex flex-col gap-4 px-5 pt-5 md:px-7 md:pt-7 pb-[calc(76px_+_env(safe-area-inset-bottom))] lg:pb-7">
+      <main suppressHydrationWarning className="min-w-0 flex-1 flex flex-col gap-4 px-5 pt-5 md:px-7 md:pt-7 pb-[calc(76px_+_env(safe-area-inset-bottom))] lg:pb-7 max-w-full overflow-x-hidden">
         {/* Header */}
         <header suppressHydrationWarning className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b" style={{ borderColor: 'var(--line)' }}>
           <div className="flex items-center gap-3 min-w-0">
@@ -3212,47 +3212,59 @@ export default function DashboardClient({
 
         {/* ── 2. Orders View ── */}
         {activeMenu === 'orders' && (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 min-w-0 w-full max-w-full">
             {/* Quick launcher cards */}
-            <div className="grid grid-cols-2 gap-4">
-              <button onClick={() => { setPosInitialFloorOpen(false); setShowPos(true); }} className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition text-left cursor-pointer">
+            <div className="grid grid-cols-2 gap-4 min-w-0 w-full">
+              <button onClick={() => { setPosInitialFloorOpen(false); setShowPos(true); }} className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition text-left cursor-pointer min-w-0">
                 <span className="text-3xl">⊞</span>
-                <div className="mt-3">
-                  <h3 className="text-lg font-bold">Take Order (POS)</h3>
-                  <p className="text-xs text-ink-3">Open interactive cashier till</p>
+                <div className="mt-3 min-w-0">
+                  <h3 className="text-lg font-bold truncate">Take Order (POS)</h3>
+                  <p className="text-xs text-ink-3 truncate">Open interactive cashier till</p>
                 </div>
               </button>
-              <button onClick={() => setShowKds(true)} className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition text-left cursor-pointer">
+              <button onClick={() => setShowKds(true)} className="card p-6 flex flex-col justify-between hover:-translate-y-0.5 transition text-left cursor-pointer min-w-0">
                 <span className="text-3xl">⊟</span>
-                <div className="mt-3">
-                  <h3 className="text-lg font-bold">Kitchen Display (KDS)</h3>
-                  <p className="text-xs text-ink-3">Track live cooking queues</p>
+                <div className="mt-3 min-w-0">
+                  <h3 className="text-lg font-bold truncate">Kitchen Display (KDS)</h3>
+                  <p className="text-xs text-ink-3 truncate">Track live cooking queues</p>
                 </div>
               </button>
             </div>
 
-            <section className="card p-5">
+            <section className="card p-5 min-w-0 w-full max-w-full overflow-hidden">
               <div className="flex justify-between items-center mb-3">
                 <h4 className="font-bold">Live Order Queue</h4>
-                <button onClick={loadOrders} className="btn py-1 px-3 text-xs">↻ Refresh</button>
+                <button onClick={loadOrders} className="btn py-1 px-3 text-xs shrink-0">↻ Refresh</button>
               </div>
               {ordersLoading ? (
                 <p className="text-sm">Loading orders...</p>
               ) : ordersList.filter((o) => o.status !== 'settled' && o.status !== 'cancelled').length === 0 ? (
                 <p className="text-sm text-ink-3">No active orders right now.</p>
               ) : (
-                <div className="grid gap-3">
+                <div className="flex flex-col gap-3 min-w-0 w-full">
                   {ordersList
                     .filter((o) => o.status !== 'settled' && o.status !== 'cancelled')
                     .map((o) => (
-                      <div key={o.id} className="card p-4 flex flex-wrap justify-between items-center gap-3" style={{ background: 'var(--paper-3)' }}>
-                        <button onClick={() => setOrderDetail(o)} className="text-left flex-1 min-w-0">
-                          <span className="font-bold text-base">#{o.number} ({o.type === 'takeaway' ? 'Takeaway' : `Table ${o.table?.label ?? '—'}`}) <span className="text-xs font-normal" style={{ color: 'var(--turmeric-d)' }}>· details ▸</span></span>
-                          <div className="text-xs text-ink-3 mt-1 truncate">
+                      <div
+                        key={o.id}
+                        className="card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0 w-full overflow-hidden"
+                        style={{ background: 'var(--paper-3)' }}
+                      >
+                        <button
+                          onClick={() => setOrderDetail(o)}
+                          className="text-left flex-1 min-w-0 max-w-full overflow-hidden block cursor-pointer"
+                        >
+                          <div className="font-bold text-base truncate">
+                            #{o.number} ({o.type === 'takeaway' ? 'Takeaway' : `Table ${o.table?.label ?? '—'}`}) <span className="text-xs font-normal" style={{ color: 'var(--turmeric-d)' }}>· details ▸</span>
+                          </div>
+                          <div
+                            className="text-xs text-ink-3 mt-1 truncate block w-full overflow-hidden"
+                            title={o.items.map((i: any) => `${i.qty}× ${i.nameSnapshot}`).join(', ')}
+                          >
                             {o.items.map((i: any) => `${i.qty}× ${i.nameSnapshot}`).join(', ')}
                           </div>
                         </button>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                           <span className="pill text-[10px] uppercase">{o.status}</span>
                           {o.status === 'in_kitchen' && (
                             <button onClick={() => handleBumpOrder(o.id, 'ready')} className="btn py-1.5 px-3 text-xs btn-primary">Mark Ready</button>

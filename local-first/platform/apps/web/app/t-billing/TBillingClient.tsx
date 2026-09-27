@@ -58,14 +58,14 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
 
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
 
-  const [discountType, setDiscountType] = useState<'pct' | 'flat'>('pct');
+  const [discountType, setDiscountType] = useState<'pct' | 'flat'>('flat');
   const [discountVal, setDiscountVal] = useState<string>('0');
 
   const [custName, setCustName] = useState<string>('');
   const [custPhone, setCustPhone] = useState<string>('');
   const [custGstin, setCustGstin] = useState<string>('');
   const [custMatches, setCustMatches] = useState<{ id: string; name: string | null; phone: string | null; points: number; visitCount: number }[]>([]);
-  const [printReceipt, setPrintReceipt] = useState<boolean>(true);
+  const [printReceipt, setPrintReceipt] = useState<boolean>(false);
 
   const [payTab, setPayTab] = useState<'cash' | 'upi' | 'card' | 'split'>('cash');
   const [cashReceived, setCashReceived] = useState<string>('');
@@ -280,7 +280,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       paymentMethod,
       invoiceNo,
       isReprint: true,
-      gstEnabled: (order.cgstPaise || 0) + (order.sgstPaise || 0) > 0,
+      gstEnabled: outlet.gstEnabled && ((order.cgstPaise || 0) + (order.sgstPaise || 0) > 0),
       receiptConfig: outlet.receipt,
       upiConfig: outlet.upiConfig,
     };
@@ -366,7 +366,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       return;
     }
     setSelectedOrder(order);
-    setDiscountType('pct');
+    setDiscountType('flat');
     setDiscountVal('0');
     setCustName(order.customer?.name || '');
     setCustPhone(order.customer?.phone || '');
@@ -379,6 +379,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     setSplitCash('0');
     setSplitUpi('0');
     setSplitCard('0');
+    setPrintReceipt(false);
     setView('workspace');
   };
 
@@ -1506,7 +1507,9 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         <th className="px-3 py-2.5 text-left text-[11px] font-extrabold uppercase tracking-wider rounded-l-xl">Item</th>
                         <th className="px-3 py-2.5 text-center text-[11px] font-extrabold uppercase tracking-wider">Qty</th>
                         <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider">Rate</th>
-                        <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider">Tax</th>
+                        {outlet.gstEnabled && (
+                          <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider">Tax</th>
+                        )}
                         <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider rounded-r-xl">Amount</th>
                       </tr>
                     </thead>
@@ -1528,7 +1531,9 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                             </td>
                             <td className="px-3 py-3 text-center font-bold tnum">{i.qty}</td>
                             <td className="px-3 py-3 text-right font-medium tnum">{formatINR(i.unitPricePaise)}</td>
-                            <td className="px-3 py-3 text-right text-xs tnum" style={{ color: 'var(--ink-3)' }}>{gstRate}%</td>
+                            {outlet.gstEnabled && (
+                              <td className="px-3 py-3 text-right text-xs tnum" style={{ color: 'var(--ink-3)' }}>{gstRate}%</td>
+                            )}
                             <td className="px-3 py-3 text-right font-bold tnum">{formatINR(lineTotal)}</td>
                           </tr>
                         );
@@ -2211,7 +2216,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                               totalPaise: h.totalPaise,
                               paymentMethod: h.paymentMethods,
                               isReprint: true,
-                              gstEnabled: (h.cgstPaise || 0) + (h.sgstPaise || 0) > 0,
+                              gstEnabled: outlet.gstEnabled && ((h.cgstPaise || 0) + (h.sgstPaise || 0) > 0),
                               receiptConfig: outlet.receipt,
                               upiConfig: outlet.upiConfig,
                             };

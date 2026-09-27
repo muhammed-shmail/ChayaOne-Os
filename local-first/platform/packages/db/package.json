@@ -13,6 +13,7 @@
     "deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "deploy:prod": "prisma migrate deploy",
     "deploy:push": "prisma db push --skip-generate --accept-data-loss",
+    "import:menu": "node scripts/ensure-db.mjs && dotenv -e ../../.env -- tsx import-kaawa-menu.ts",
     "seed": "node scripts/ensure-db.mjs && dotenv -e ../../.env -- tsx prisma/seed.ts",
     "seed:prod": "tsx prisma/seed.ts",
     "seed:demo": "node scripts/ensure-db.mjs && dotenv -e ../../.env -- tsx prisma/seed-demo.ts",
