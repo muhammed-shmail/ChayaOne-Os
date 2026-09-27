@@ -536,7 +536,11 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   const [settleBusy, setSettleBusy] = useState(false);
   const [askSettle, setAskSettle] = useState(false);
   const [billPrinted, setBillPrinted] = useState(false);
-  const [printedOrderIds, setPrintedOrderIds] = useState<Set<string>>(new Set());
+  // NOTE: printedOrderIds was removed — it was a persistent in-memory Set that
+  // caused false-positive "bill already printed" state when reopening a table
+  // within the same browser session. The authoritative source of truth for
+  // bill-printed status is the backend's 'bill.printed' audit log entry,
+  // returned as `billPrinted` in GET /api/tables/order.
   const canSettleBill = canSettle(currentStaff);
   const canPrintBill = canSettleBill || hasRole(currentStaff, ['owner', 'manager', 'cashier', 'waiter']);
   // "Install the Staff App" entry — only when the cafe has the Staff App (PWA) offer
@@ -661,8 +665,18 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
       setCustName(d.customer.name || '');
       setCustPhone(d.customer.phone || '');
     }
-    const isAlreadyPrinted = Boolean(d?.billPrinted) || (d?.orders && d.orders.some((o: any) => printedOrderIds.has(o.id)));
+    // billPrinted is driven exclusively by the authoritative backend value.
+    // We do NOT use any local in-memory set (printedOrderIds was removed) or
+    // any other derived field (table.state, order.status, etc.).
+    // If d?.billPrinted is undefined or null, we treat it as false — NOT printed.
+    const isAlreadyPrinted = d?.billPrinted === true;
     if (isAlreadyPrinted) setBillPrinted(true);
+    // [FLOOR_TABLE_LOADED] client-side log
+    console.log(
+      `[BILL_BUTTON_STATE] tableId=${t.id} orderId=${d?.orders?.[0]?.id ?? 'none'}` +
+      ` billPrinted=${isAlreadyPrinted} canPrintBill=${canSettleBill || hasRole(currentStaff, ['owner', 'manager', 'cashier', 'waiter'])}` +
+      ` reason=${isAlreadyPrinted ? 'backend_bill_printed_audit' : 'not_yet_printed'}`
+    );
   }
 
   async function saveTableCustomer(name?: string, phone?: string) {
@@ -1247,18 +1261,14 @@ ${htmlBody}
 
     const waiterStation = (currentStaff.permissions as any)?.station || (currentStaff as any)?.station || null;
     console.log(`[PRINT] Sending bill directly to ${waiterStation ? waiterStation.toUpperCase() + ' station printer' : 'station printer'} (no popup)...`);
+    console.log(`[BILL_PRINT_STARTED] tableId=${tableAction?.id} orderId=${tableOrder?.orders?.[0]?.id ?? 'none'}`);
 
-    // 1. Immediately disable button and record printed locally
+    // 1. Optimistic UI: disable the button immediately so the waiter cannot
+    //    double-tap. This is purely a UX guard — the authoritative bill-printed
+    //    state lives in the backend's 'bill.printed' audit log.
     setBillPrinted(true);
     const tableId = tableAction?.id;
     const orderIds = (tableOrder?.orders || []).map((o: any) => o.id).concat(tableOrder?.id ? [tableOrder.id] : []);
-    if (orderIds.length > 0) {
-      setPrintedOrderIds((prev) => {
-        const next = new Set(prev);
-        orderIds.forEach((id: string) => next.add(id));
-        return next;
-      });
-    }
 
     // 2. Immediately free table in local state so floor map updates with zero latency
     if (tableId) {
@@ -1285,6 +1295,23 @@ ${htmlBody}
       })
         .then(async (res) => {
           const data = await res.json().catch(() => ({}));
+          if (!res.ok || data.ok === false) {
+            // Server rejected the print (e.g. no active orders, network error).
+            // Reset bill-printed so the waiter can retry.
+            console.warn(
+              `[BILL_PRINT_FAILED] tableId=${tableId} server returned ok=false.` +
+              ` reason=${data.error ?? 'unknown'} — resetting billPrinted to allow retry`
+            );
+            setBillPrinted(false);
+            // Restore local occupied state
+            refreshTables();
+            flash(`⚠️ Bill print failed: ${data.error ?? 'unknown error'}. Please retry.`);
+            return;
+          }
+          console.log(
+            `[BILL_PRINT_SUCCESS] tableId=${tableId} printer=${data.printerName ?? 'default'}` +
+            ` station=${data.station ?? 'none'} billPrinted=true`
+          );
           if (data.printerName) {
             flash(`🖨️ Bill sent directly to ${data.printerName} (${(data.station || waiterStation || '').toUpperCase()})`);
           } else {
@@ -1292,7 +1319,13 @@ ${htmlBody}
           }
           refreshTables();
         })
-        .catch((err) => console.error('[PRINT] Server free table / bill print failed:', err));
+        .catch((err) => {
+          console.error('[PRINT] Server free table / bill print failed:', err);
+          // Network error — reset so waiter can retry
+          setBillPrinted(false);
+          refreshTables();
+          flash('⚠️ Network error. Please retry bill print.');
+        });
     }
 
     // 4. Smoothly close modal after user sees confirmation

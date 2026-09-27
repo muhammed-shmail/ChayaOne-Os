@@ -67,20 +67,43 @@ export async function GET(req: NextRequest) {
     totalPaise: orders.reduce((s, o) => s + o.totalPaise, 0),
   };
 
-  const billPrintedAudit = orders.length > 0 && orders[0]?.placedAt
-    ? await prisma.auditLog.findFirst({
+  // Authoritative bill-printed check:
+  // Use the PrintJob table (BILL_PREVIEW type) tied to these specific orders.
+  // This is immune to stale data because BILL_PREVIEW print jobs are ONLY created
+  // when dispatchStationBillPrint() succeeds (ok:true, orders found, job queued).
+  //
+  // Why NOT the audit log: the old code wrote 'bill.printed' audit entries even
+  // when dispatchStationBillPrint returned ok:false (no active orders, printer error),
+  // leaving stale entries that incorrectly flagged tables as "already printed".
+  //
+  // Why NOT table.state === 'free': a table can be freed by settle, void, transfer,
+  // etc., which have nothing to do with bill printing.
+  const activeOrderIds = orders.map((o) => o.id);
+  const billPrintJob = activeOrderIds.length > 0 && orders[0]?.placedAt
+    ? await prisma.printJob.findFirst({
         where: {
           outletId: session.outletId,
-          action: 'bill.printed',
-          entity: 'table',
-          entityId: tableId,
+          orderId: { in: activeOrderIds },
+          jobType: PrintJobType.BILL_PREVIEW,
           createdAt: { gte: orders[0].placedAt },
         },
-        select: { id: true },
+        select: { id: true, jobId: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
       }).catch(() => null)
     : null;
-  const isBillPrinted = Boolean(billPrintedAudit) || table.state === 'free';
+
+  // isBillPrinted = true only when a BILL_PREVIEW job was created for this order
+  // session. KOT print jobs (PrintJobType.KOT) are never counted here.
+  const isBillPrinted = Boolean(billPrintJob);
+
   const activeCustomer = orders.find((o) => o.customer)?.customer ?? null;
+
+  // [FLOOR_TABLE_LOADED] debug log — shows exact state at table open time
+  console.log(
+    `[FLOOR_TABLE_LOADED] tableId=${tableId} orderId=${orders[0]?.id ?? 'none'}` +
+    ` tableState=${table.state} billPrintJobId=${billPrintJob?.jobId ?? 'none'}` +
+    ` isBillPrinted=${isBillPrinted} activeOrders=${orders.length}`
+  );
 
   return NextResponse.json({
     table: { id: table.id, label: table.label },
@@ -271,6 +294,8 @@ export async function POST(req: NextRequest) {
     const { tableId, orderId, waiterStation, staffName, customer } = body;
     if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
 
+    console.log(`[BILL_PRINT_STARTED] tableId=${tableId} orderId=${orderId ?? 'none'} actor=${session.staffId}`);
+
     // Link or create customer if provided with bill print
     if (customer && session.tenantId) {
       const linkedCustId = await findOrCreateCustomerByPhone(session.tenantId, customer);
@@ -291,12 +316,26 @@ export async function POST(req: NextRequest) {
       staffName
     );
 
-    // 2. Free table on print bill
-    await prisma.tableMap.update({
-      where: { id: tableId },
-      data: { state: 'free' },
-    }).catch(() => {});
+    if (!printResult.ok) {
+      // Print job could not be created (no active orders, printer error, etc.)
+      // Do NOT mark bill as printed. Do NOT free the table. The waiter must retry.
+      console.log(
+        `[BILL_PRINT_FAILED] tableId=${tableId} orderId=${orderId ?? 'none'}` +
+        ` reason=${printResult.error ?? 'dispatch_failed'}` +
+        ` billPrinted=false (table NOT freed)`
+      );
+      return NextResponse.json({
+        ok: false,
+        error: printResult.error ?? 'print_dispatch_failed',
+        billPrinted: false,
+        printerName: printResult.printerName,
+        station: printResult.station,
+      });
+    }
 
+    // 2. Print job created successfully — now write the authoritative audit entry
+    //    that marks this bill as printed for this table session. This is the ONLY
+    //    place that sets billPrinted = true in the system.
     await prisma.auditLog.create({
       data: {
         outletId: session.outletId,
@@ -304,9 +343,21 @@ export async function POST(req: NextRequest) {
         action: 'bill.printed',
         entity: 'table',
         entityId: tableId,
-        after: { orderId: orderId ?? null, printResult } as Prisma.InputJsonValue,
+        after: { orderId: orderId ?? null, printJobId: printResult.jobId ?? null, station: printResult.station } as Prisma.InputJsonValue,
       },
     }).catch(() => {});
+
+    // 3. Free table now that the bill has been printed
+    await prisma.tableMap.update({
+      where: { id: tableId },
+      data: { state: 'free' },
+    }).catch(() => {});
+
+    console.log(
+      `[BILL_PRINT_SUCCESS] tableId=${tableId} orderId=${orderId ?? 'none'}` +
+      ` printer=${printResult.printerName ?? 'default'} station=${printResult.station ?? 'none'}` +
+      ` billPrinted=true table freed`
+    );
 
     await publish(session.outletId, {
       type: 'table.updated',
