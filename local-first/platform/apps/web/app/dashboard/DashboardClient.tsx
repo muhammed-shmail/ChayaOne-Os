@@ -1952,7 +1952,7 @@ export default function DashboardClient({
       header: receiptForm.header ?? outlet.receipt?.header ?? null,
       footer: receiptForm.footer ?? outlet.receipt?.footer ?? null,
       phone: receiptForm.phone ?? outlet.receipt?.phone ?? null,
-      address: outlet.address ?? null,
+      address: (outlet as any).address ?? null,
       gstin: outlet.gstin ?? (outlet as any).settings?.gstin ?? null,
       timezone: 'Asia/Kolkata',
       orderNumber: 9999,
