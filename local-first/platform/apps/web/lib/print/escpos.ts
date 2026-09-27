@@ -328,68 +328,74 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
   add(docTitle);
   add(COMMANDS.BOLD_OFF);
 
+  // Horizontal centering margin: on 80mm paper (48 printable columns), center the 42-char layout
+  // with an exact equal 3-column margin on the left and right (3 + 42 + 3 = 48)
+  const maxPaperChars = resolvedPaperWidth === '58mm' ? 32 : 48;
+  const leftPadCount = Math.max(0, Math.floor((maxPaperChars - width) / 2));
+  const pad = ' '.repeat(leftPadCount);
+
   // Meta: Table + Order Number (SAME ROW) & Date + Time (SAME ROW)
   add(COMMANDS.ALIGN_LEFT);
   if (model.showTableNumber || model.showOrderNumber) {
-    add(divider);
+    add(pad + divider);
     const leftText = model.showTableNumber ? model.tableText : '';
     const rightText = model.showOrderNumber ? model.orderText : '';
-    add(alignLeftRight(leftText, rightText, width));
+    add(pad + alignLeftRight(leftText, rightText, width));
   }
   if (model.showDateTime) {
-    if (!model.showTableNumber && !model.showOrderNumber) add(divider);
-    add(model.dateTimeRow);
+    if (!model.showTableNumber && !model.showOrderNumber) add(pad + divider);
+    add(pad + model.dateTimeRow);
   }
   if (model.cashierLine) {
-    add(model.cashierLine);
+    add(pad + model.cashierLine);
   }
   if (model.customerLine) {
-    add(model.customerLine);
+    add(pad + model.customerLine);
   }
-  add(divider);
+  add(pad + divider);
 
   // Column Headers (ITEM left, QTY center, AMOUNT right)
   const colHeader = width === 32
     ? 'ITEM'.padEnd(17, ' ') + ' ' + 'QTY '.padEnd(4, ' ') + 'AMOUNT'.padStart(10, ' ')
     : 'ITEM'.padEnd(24, ' ') + ' ' + ' QTY '.padEnd(5, ' ') + 'AMOUNT'.padStart(12, ' ');
-  add(colHeader);
-  add(divider);
+  add(pad + colHeader);
+  add(pad + divider);
 
   // Items
   for (const line of model.itemLines) {
-    add(formatItemRowMono(line.name, line.qty, line.amountText, width));
+    add(pad + formatItemRowMono(line.name, line.qty, line.amountText, width));
     for (const extra of line.extraLines) {
-      add(extra);
+      add(pad + extra);
     }
   }
 
   // Subtotal, Discounts, Taxes
-  add(divider);
-  add(alignLeftRight('Subtotal:', model.subtotalText, width));
+  add(pad + divider);
+  add(pad + alignLeftRight('Subtotal:', model.subtotalText, width));
 
   if (model.discountText) {
-    add(alignLeftRight('Discount:', model.discountText, width));
+    add(pad + alignLeftRight('Discount:', model.discountText, width));
   }
 
   for (const tax of model.taxBreakdown) {
-    add(alignLeftRight(`${tax.label}:`, tax.amountText, width));
+    add(pad + alignLeftRight(`${tax.label}:`, tax.amountText, width));
   }
 
   if (model.serviceChargeText) {
-    add(alignLeftRight('Service Charge:', model.serviceChargeText, width));
+    add(pad + alignLeftRight('Service Charge:', model.serviceChargeText, width));
   }
 
   if (model.roundOffText) {
-    add(alignLeftRight('Round Off:', model.roundOffText, width));
+    add(pad + alignLeftRight('Round Off:', model.roundOffText, width));
   }
 
   // Final Total (Emphasized bold, standard font size to maintain column alignment)
-  add(divider);
+  add(pad + divider);
   add(COMMANDS.ALIGN_LEFT);
   add(COMMANDS.BOLD_ON);
-  add(alignLeftRight('TOTAL:', model.totalText, width));
+  add(pad + alignLeftRight('TOTAL:', model.totalText, width));
   add(COMMANDS.BOLD_OFF);
-  add(divider);
+  add(pad + divider);
 
   // Dynamic UPI QR Code
   if (model.showUpiQr && model.upiResult.uri) {
@@ -420,7 +426,7 @@ export function buildReceiptEscposBuffer(payload: ReceiptPrintPayload, widthOver
       add('Scan to pay via UPI');
     }
     add(COMMANDS.LINE_FEED);
-    add(divider);
+    add(pad + divider);
   }
 
   // Footer: Branding
