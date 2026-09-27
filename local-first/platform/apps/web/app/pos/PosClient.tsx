@@ -326,6 +326,7 @@ type Outlet = {
   kitchenWorkflow: KitchenWorkflowConfig;
   gstConfig?: any;
   upiConfig?: any;
+  logoUrl?: string | null;
 };
 type Staff = {
   id: string;
