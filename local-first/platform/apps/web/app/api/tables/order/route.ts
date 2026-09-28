@@ -34,8 +34,16 @@ export async function GET(req: NextRequest) {
   const table = await prisma.tableMap.findFirst({ where: { id: tableId, outletId: session.outletId }, select: { id: true, label: true, state: true } });
   if (!table) return NextResponse.json({ error: 'not_found' }, { status: 404 });
 
+  const orderId = req.nextUrl.searchParams.get('orderId');
+
   const orders = await prisma.order.findMany({
-    where: { tableId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
+    where: {
+      tableId,
+      outletId: session.outletId,
+      status: { in: [...ACTIVE_STATUS] },
+      settledAt: null,
+      ...(orderId ? { id: orderId } : {}),
+    },
     orderBy: { placedAt: 'asc' },
     include: {
       items: { where: { kotStatus: { not: 'void' } }, orderBy: { id: 'asc' } },
@@ -121,7 +129,38 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     table: { id: table.id, label: table.label },
     count: orders.length,
-    orders: orders.map((o) => ({ id: o.id, number: o.number, totalPaise: o.totalPaise, placedAt: o.placedAt })),
+    orders: orders.map((o, idx) => ({
+      id: o.id,
+      number: o.number,
+      totalPaise: o.totalPaise,
+      placedAt: o.placedAt,
+      partyLabel: o.customer?.name?.toLowerCase().includes('new guest')
+        ? 'Team B (New Guest)'
+        : idx === 0
+        ? 'Team A'
+        : `Party ${idx + 1}`,
+      customer: o.customer ? { id: o.customer.id, name: o.customer.name, phone: o.customer.phone } : null,
+      lines: o.items.map((i) => ({
+        id: i.id,
+        orderId: o.id,
+        name: i.nameSnapshot,
+        qty: i.qty,
+        unitPricePaise: i.unitPricePaise,
+        linePaise: i.qty * i.unitPricePaise,
+        station: i.station,
+        kotStatus: i.kotStatus,
+      })),
+      totals: {
+        subtotalPaise: o.subtotalPaise,
+        discountPaise: o.discountPaise,
+        cgstPaise: o.cgstPaise,
+        sgstPaise: o.sgstPaise,
+        igstPaise: o.igstPaise,
+        serviceChargePaise: o.serviceChargePaise,
+        roundOffPaise: o.roundOffPaise,
+        totalPaise: o.totalPaise,
+      },
+    })),
     customer: activeCustomer ? { id: activeCustomer.id, name: activeCustomer.name, phone: activeCustomer.phone } : null,
     lines: allLines,
     totals,
@@ -177,6 +216,14 @@ async function dispatchStationBillPrint(
     });
     if (single && single.outletId === session.outletId) {
       orders = [single];
+    }
+  }
+
+  // If specific orderId requested, print only that order (preserves multi-party isolation)
+  if (orderId && orders.length > 1) {
+    const matched = orders.filter((o) => o.id === orderId);
+    if (matched.length > 0) {
+      orders = matched;
     }
   }
 
@@ -441,8 +488,15 @@ export async function POST(req: NextRequest) {
   if (action !== 'settle' || !tableId) return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
   const pay = (['cash', 'upi', 'card'] as const).includes(method) ? method : 'cash';
 
+  const targetOrderId = body.orderId || null;
   const orders = await prisma.order.findMany({
-    where: { tableId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
+    where: {
+      tableId,
+      outletId: session.outletId,
+      status: { in: [...ACTIVE_STATUS] },
+      settledAt: null,
+      ...(targetOrderId ? { id: targetOrderId } : {}),
+    },
     select: { id: true, totalPaise: true, customerId: true },
   });
   if (orders.length === 0) return NextResponse.json({ error: 'nothing_to_settle' }, { status: 409 });
@@ -484,24 +538,36 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Free the table in the database
+  // Free the table ONLY IF no other active orders remain on this table (Multi-Party support)
+  const remainingOrders = await prisma.order.count({
+    where: {
+      outletId: session.outletId,
+      tableId,
+      id: { notIn: orders.map((o) => o.id) },
+      status: { in: [...ACTIVE_STATUS] },
+      settledAt: null,
+    },
+  });
+
+  const nextState = remainingOrders === 0 ? 'free' : 'seated';
+
   await prisma.tableMap.update({
     where: { id: tableId },
-    data: { state: 'free' },
+    data: { state: nextState },
   }).catch(() => {});
 
-  // Broadcast table.updated so all floor screens clear occupancy immediately
+  // Broadcast table.updated
   await publish(session.outletId, {
     type: 'table.updated',
     tableId,
-    state: 'free',
+    state: nextState,
   });
 
   await prisma.auditLog.create({
-    data: { outletId: session.outletId, actorId: session.staffId, action: 'table.settled', entity: 'table', entityId: tableId, after: { method: pay, totalPaise: total, orders: orders.length } as Prisma.InputJsonValue },
+    data: { outletId: session.outletId, actorId: session.staffId, action: 'table.settled', entity: 'table', entityId: tableId, after: { method: pay, totalPaise: total, orders: orders.length, remainingOrders } as Prisma.InputJsonValue },
   }).catch(() => {});
 
-  return NextResponse.json({ ok: true, settled: orders.length, totalPaise: total, method: pay });
+  return NextResponse.json({ ok: true, settled: orders.length, totalPaise: total, method: pay, remainingOrders });
 }
 
 /** Void one sent line from an order and recompute everything from the survivors. */

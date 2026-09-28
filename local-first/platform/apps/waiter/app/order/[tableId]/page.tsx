@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
   Search,
@@ -14,8 +14,8 @@ import {
   Info,
   X,
   Sparkles,
+  Users,
 } from 'lucide-react';
-import { randomUUID } from 'crypto';
 
 interface ModifierOption {
   id: string;
@@ -58,9 +58,25 @@ interface CartLine {
 }
 
 export default function WaiterOrderBuilderPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-xs text-gray-500">
+          Loading order...
+        </div>
+      }
+    >
+      <OrderBuilderContent />
+    </Suspense>
+  );
+}
+
+function OrderBuilderContent() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const tableId = String(params.tableId);
+  const isNewParty = searchParams.get('newParty') === 'true';
 
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [selectedCatId, setSelectedCatId] = useState<string>('all');
@@ -218,6 +234,8 @@ export default function WaiterOrderBuilderPage() {
           type: 'dine_in',
           tableId,
           lines,
+          isNewParty: isNewParty ? true : undefined,
+          customer: isNewParty ? { name: 'New Guest' } : undefined,
         }),
       });
 
@@ -232,7 +250,7 @@ export default function WaiterOrderBuilderPage() {
         sessionStorage.setItem('chayaone_just_ordered_table', JSON.stringify({ tableId, tableLabel, time: Date.now() }));
       } catch {}
 
-      setSuccessToast(`✓ KOT Sent for ${tableLabel}!`);
+      setSuccessToast(isNewParty ? `✓ KOT Sent for ${tableLabel} (New Guest)!` : `✓ KOT Sent for ${tableLabel}!`);
       setTimeout(() => {
         router.push('/tables');
       }, 350);
@@ -261,8 +279,17 @@ export default function WaiterOrderBuilderPage() {
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
-            <h1 className="text-base font-bold text-white leading-tight">{tableLabel}</h1>
-            <p className="text-[11px] text-sky-400 font-medium">Add Items & Send KOT</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-bold text-white leading-tight">{tableLabel}</h1>
+              {isNewParty && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                  Team B (New Party)
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-sky-400 font-medium">
+              {isNewParty ? 'Fresh Seating · Add Items & Send KOT' : 'Add Items & Send KOT'}
+            </p>
           </div>
         </div>
 

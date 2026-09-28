@@ -10,7 +10,7 @@ import { ThemeToggle, useConfirm } from '@/components/ui';
 import {
   Table2, ClipboardList, LayoutDashboard, RefreshCw, Coffee,
   Plus, Minus, X, Printer, Receipt, Smartphone, Banknote, CreditCard,
-  CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, QrCode,
+  CupSoda, UtensilsCrossed, Croissant, Cake, Soup, User, Users, QrCode,
   ShoppingCart, ChevronUp, ChevronDown, Menu, Search, Download, LogOut, type LucideIcon,
   ArrowLeftRight, ArrowRight, CircleAlert, FileText, Edit3,
   Citrus, GlassWater, Leaf, Wine, Milk, Sparkles, Sandwich, Pizza, IceCream, Bean, Utensils,
@@ -546,6 +546,15 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   const [askSettle, setAskSettle] = useState(false);
   const [billPrinted, setBillPrinted] = useState(false);
   const [printBusy, setPrintBusy] = useState(false);
+
+  // Multi-Party / "New Seating" on table prompt (Industry Standard: Toast, Petpooja, Clover)
+  const [multiPartyPrompt, setMultiPartyPrompt] = useState<{
+    table: TableDto;
+    orderNumber: number;
+    billPaise: number;
+  } | null>(null);
+  const [isNewParty, setIsNewParty] = useState(false);
+  const [selectedPartyIndex, setSelectedPartyIndex] = useState(0);
   // NOTE: printedOrderIds was removed — it was a persistent in-memory Set that
   // caused false-positive "bill already printed" state when reopening a table
   // within the same browser session. The authoritative source of truth for
@@ -658,27 +667,38 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   function closeTableActions() {
     setTableAction(null); setTableOrder(null); setAddMode(false); setTableCart([]); setAddSearch(''); resetCustomer();
     setTransferMode(false); setSelectedDestTable(null); setTransferReason(''); setTransferSuccess(null); setTransferOccupiedError(null);
-    setBillPrinted(false);
+    setBillPrinted(false); setSelectedPartyIndex(0);
   }
 
-  async function openTableActions(t: TableDto, startInTransfer = false) {
+  async function openTableActions(t: TableDto, startInTransfer = false, bypassPrompt = false) {
     setPendingAction(null); // tapping an occupied table diverts to its running order, not the new ticket
+    setSelectedPartyIndex(0);
+
+    const d = await fetch(`/api/tables/order?tableId=${t.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+
+    // If table has an unsettled printed bill, show the 2-choice Multi-Party prompt (Team A vs Team B)
+    if (!startInTransfer && !bypassPrompt && (d?.billPrinted === true || t.state === 'billed')) {
+      const orderNum = d?.orders?.[0]?.number || occupied[t.id]?.number || 0;
+      const billPaise = d?.totals?.totalPaise || occupied[t.id]?.billPaise || 0;
+      setMultiPartyPrompt({
+        table: t,
+        orderNumber: orderNum,
+        billPaise,
+      });
+      return;
+    }
+
     setTableAction({ id: t.id, label: t.label });
-    setTableOrder(null);
+    setTableOrder(d);
     setAskSettle(false);
     setBillPrinted(false);
     setAddMode(false); setTableCart([]); setAddSearch(''); resetCustomer();
     setTransferMode(startInTransfer); setSelectedDestTable(null); setTransferReason(''); setTransferSuccess(null); setTransferOccupiedError(null);
-    const d = await fetch(`/api/tables/order?tableId=${t.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    setTableOrder(d);
     if (d?.customer) {
       setCustName(d.customer.name || '');
       setCustPhone(d.customer.phone || '');
     }
     // billPrinted is driven exclusively by the authoritative backend value.
-    // We do NOT use any local in-memory set (printedOrderIds was removed) or
-    // any other derived field (table.state, order.status, etc.).
-    // If d?.billPrinted is undefined or null, we treat it as false — NOT printed.
     const isAlreadyPrinted = d?.billPrinted === true;
     setBillPrinted(isAlreadyPrinted);
     // [FLOOR_TABLE_LOADED] client-side log
@@ -1224,7 +1244,11 @@ ${htmlBody}
     const isGstConfig = outlet.gstEnabled && outlet.gstConfig?.enabled;
     const showHsn = isGstConfig && outlet.gstConfig?.showHsn;
     const tableLabel = tableAction?.label ?? '';
-    const orderNum = tableOrder.number || tableOrder.orderNumber || '';
+    const activeOrder = (tableOrder.orders && tableOrder.orders.length > 0)
+      ? (tableOrder.orders[selectedPartyIndex] || tableOrder.orders[0])
+      : null;
+    const orderNum = activeOrder?.number || tableOrder.number || tableOrder.orderNumber || '';
+    const targetOrderId = activeOrder?.id || (tableOrder?.orders?.[0]?.id) || null;
     const jobId = `bill:table${tableLabel}:order${orderNum}`;
 
     console.log(`[PRINT] ── Print Bill ──`);
@@ -1232,8 +1256,9 @@ ${htmlBody}
     console.log(`[PRINT] Table    : ${tableLabel}`);
     console.log(`[PRINT] Order #  : ${orderNum}`);
     console.log(`[PRINT] Cashier  : ${currentStaff.name}`);
-    console.log(`[PRINT] Items    : ${tableOrder.lines?.length || 0}`);
-    const totals = tableOrder.totals || {};
+    const activeLines = activeOrder?.lines || tableOrder.lines || [];
+    console.log(`[PRINT] Items    : ${activeLines.length}`);
+    const totals = activeOrder?.totals || tableOrder.totals || {};
     const receiptData: ReceiptInputData = {
       storeName: (outlet as any).brand || outlet.name,
       logoUrl: outlet.receipt?.showLogo !== false ? (outlet.receipt?.logoUrl || (outlet as any).logoUrl || (outlet as any)?.settings?.logoUrl || (outlet as any)?.settings?.receipt?.logoUrl || null) : null,
@@ -1246,8 +1271,8 @@ ${htmlBody}
       orderNumber: orderNum,
       orderType: tableOrder.type || 'dine_in',
       tableLabel: tableLabel,
-      placedAt: tableOrder.placedAt || new Date(),
-      items: (tableOrder.lines || []).map((l: any) => ({
+      placedAt: activeOrder?.placedAt || tableOrder.placedAt || new Date(),
+      items: activeLines.map((l: any) => ({
         name: l.name,
         qty: l.qty,
         unitPricePaise: l.unitPricePaise ?? l.pricePaise ?? 0,
@@ -1282,11 +1307,10 @@ ${htmlBody}
 
     const waiterStation = (currentStaff.permissions as any)?.station || (currentStaff as any)?.station || null;
     console.log(`[PRINT] Sending bill directly to ${waiterStation ? waiterStation.toUpperCase() + ' station printer' : 'station printer'} (no popup)...`);
-    console.log(`[BILL_PRINT_STARTED] tableId=${tableAction?.id} orderId=${tableOrder?.orders?.[0]?.id ?? 'none'}`);
+    console.log(`[BILL_PRINT_STARTED] tableId=${tableAction?.id} orderId=${targetOrderId ?? 'none'}`);
 
     setPrintBusy(true);
     const tableId = tableAction?.id;
-    const orderIds = (tableOrder?.orders || []).map((o: any) => o.id).concat(tableOrder?.id ? [tableOrder.id] : []);
 
     if (tableId) {
       try {
@@ -1296,7 +1320,7 @@ ${htmlBody}
           body: JSON.stringify({
             action: 'print_bill',
             tableId,
-            orderId: orderIds[0] || null,
+            orderId: targetOrderId,
             waiterStation,
             staffName: currentStaff.name,
             customer: (custName.trim() || custPhone.trim()) ? { name: custName.trim() || undefined, phone: custPhone.trim() || undefined } : undefined,
@@ -1577,7 +1601,7 @@ ${rows}
   }
   function clear() {
     setCart([]); setDiscountPct(0); setDiscountFlatPaise(0); setScPct(0);
-    setOrderCustName(''); setOrderCustPhone('');
+    setOrderCustName(''); setOrderCustPhone(''); setIsNewParty(false);
   }
 
   // shared "Charge →" entry: dine-in needs a table first (opens the floor map)
@@ -1595,7 +1619,8 @@ ${rows}
     if (orderType === 'dine_in' && !tableId) { setCharging(false); setPendingAction('kot'); setFloorOpen(true); flash('Pick a table first'); return; }
     // customer: the charge modal passes an explicit value (may be null); a plain
     // Send-to-KOT (no opts) falls back to whatever was attached on the ticket panel.
-    const customer = opts ? (opts.customer ?? null) : (orderCustName.trim() || orderCustPhone.trim() ? { name: orderCustName.trim(), phone: orderCustPhone.trim() } : null);
+    const defaultCustName = isNewParty ? (orderCustName.trim() || 'New Guest') : orderCustName.trim();
+    const customer = opts ? (opts.customer ?? null) : (defaultCustName || orderCustPhone.trim() ? { name: defaultCustName, phone: orderCustPhone.trim() } : null);
     setBusy(true);
     try {
       const body = {
@@ -1604,8 +1629,9 @@ ${rows}
         staffId: staff.id,
         type: orderType,
         tableId: orderType === 'dine_in' ? tableId : null,
+        isNewParty,
         // walk-in captured on the ticket / charge modal → server creates/links the CRM customer
-        ...(customer ? { customer } : {}),
+        ...(customer ? { customer } : isNewParty ? { customer: { name: 'New Guest' } } : {}),
         lines: cart.map((l) => ({
           itemId: l.itemId,
           nameSnapshot: l.name,
@@ -1632,12 +1658,20 @@ ${rows}
         flash(data?.message || (data?.error ? `Error: ${data.error}` : 'Cannot reach Main PC — verify Wi-Fi is connected (disable 5G)'));
         return;
       }
-      flash(withPayment ? `Paid ${formatINR(bill.totalPaise + withPayment.tipPaise)} · #${data.order.number}` : `KOT #${data.order.number} sent to kitchen`);
+      flash(withPayment
+        ? `Paid ${formatINR(bill.totalPaise + withPayment.tipPaise)} · #${data.order.number}`
+        : isNewParty
+        ? `KOT #${data.order.number} sent to kitchen (Table ${selectedTable?.label || ''} - New Guest)`
+        : `KOT #${data.order.number} sent to kitchen`);
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('pos-entry-sync'));
       // print the receipt before clearing the cart (cart/bill are read inside printReceipt)
       if (withPayment && opts?.print) printReceipt(data.order.number, withPayment.method, withPayment.tipPaise, customer);
       // start tracking it on the live rail (idempotent replays return the same order)
-      const where = orderType === 'takeaway' ? '🥡 Takeaway' : selectedTable ? `Table ${selectedTable.label}` : 'Dine-in';
+      const where = orderType === 'takeaway'
+        ? '🥡 Takeaway'
+        : selectedTable
+        ? (isNewParty ? `Table ${selectedTable.label} (New Guest)` : `Table ${selectedTable.label}`)
+        : 'Dine-in';
       setLive((prev) => (prev.some((t) => t.id === data.order.id) ? prev : [{ id: data.order.id, number: data.order.number, where, status: data.order.status ?? 'in_kitchen', placedAt: Date.now() }, ...prev]));
       // Printed / Hybrid workflow: auto-print the paper KOT (reads cart, so before clear())
       if (!data.idempotent && outlet.kitchenWorkflow.autoPrintKot && outlet.kitchenWorkflow.mode !== 'digital') printKotFromCart(data.order.number, where);
@@ -1681,7 +1715,7 @@ ${rows}
             <button onClick={() => setFloorOpen(true)} aria-label={selectedTable ? `Table ${selectedTable.label}` : 'Pick a table'}
               className="flex items-center gap-1.5 h-10 px-3 rounded-full border-[1.5px] font-bold text-[12.5px] shrink-0 whitespace-nowrap"
               style={{ borderColor: !tableId ? 'var(--clay)' : 'var(--line)', color: !tableId ? 'var(--clay)' : 'var(--ink-2)', background: 'var(--paper-2)' }}>
-              <Table2 size={14} aria-hidden />{selectedTable ? `T${selectedTable.label}` : 'Table'}
+              <Table2 size={14} aria-hidden />{selectedTable ? `T${selectedTable.label}${isNewParty ? ' (New Party)' : ''}` : 'Table'}
             </button>
           )}
         </div>
@@ -2013,6 +2047,11 @@ ${rows}
                   <button onClick={() => setFloorOpen(true)} title="Change table" className="text-[12.5px] font-bold underline-offset-2 hover:underline" style={{ color: !tableId ? 'var(--clay)' : 'var(--cardamom-d)' }}>
                     {selectedTable ? `Table ${selectedTable.label}` : 'Pick a table'}
                   </button>
+                  {isNewParty && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                      <Users size={11} aria-hidden /> Team B (New Party)
+                    </span>
+                  )}
                   {selectedTable && occupied[selectedTable.id] && (
                     <button
                       onClick={() => openTableActions(selectedTable, true)}
@@ -2131,7 +2170,24 @@ ${rows}
             const mins = occ ? Math.floor((now - occ.sinceMs) / 60000) : 0;
             const selected = tableId === t.id;
             return (
-              <button key={t.id} onClick={() => { if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); } }}
+              <button key={t.id} onClick={() => {
+                if (occ) {
+                  if (t.state === 'billed' || occ.status === 'billed') {
+                    setMultiPartyPrompt({
+                      table: t,
+                      orderNumber: occ.number,
+                      billPaise: occ.billPaise,
+                    });
+                    return;
+                  }
+                  openTableActions(t);
+                } else {
+                  setTableId(t.id);
+                  setIsNewParty(false);
+                  setOrderType('dine_in');
+                  setFloorOpen(false);
+                }
+              }}
                 className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition cursor-pointer hover:scale-[1.02]"
                 style={{
                   borderColor: selected ? 'var(--turmeric-d)' : s.color,
@@ -2313,6 +2369,140 @@ ${rows}
             </Modal>
           );
         })()}
+
+        {/* Multi-Party / "New Seating" on table prompt (Toast / Petpooja / Clover industry standard) */}
+        {multiPartyPrompt && (
+          <Modal
+            onClose={() => setMultiPartyPrompt(null)}
+            title={`Table ${multiPartyPrompt.table.label}`}
+          >
+            <div className="p-5 flex flex-col gap-4">
+              {/* Alert header banner */}
+              <div
+                className="p-4 rounded-2xl border flex items-center gap-3.5"
+                style={{
+                  background: 'color-mix(in srgb, var(--turmeric) 12%, var(--paper-2))',
+                  borderColor: 'var(--turmeric, #d97706)',
+                }}
+              >
+                <div
+                  className="w-10 h-10 rounded-xl grid place-items-center shrink-0"
+                  style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                >
+                  <Receipt size={20} />
+                </div>
+                <div>
+                  <div className="font-extrabold text-sm" style={{ color: 'var(--ink)' }}>
+                    Table {multiPartyPrompt.table.label} has an unsettled bill (#{multiPartyPrompt.orderNumber})
+                  </div>
+                  <div className="text-xs font-semibold mt-0.5" style={{ color: 'var(--turmeric-d, #b45309)' }}>
+                    {formatINR(multiPartyPrompt.billPaise)} · Waiting to be settled at billing counter
+                  </div>
+                </div>
+              </div>
+
+              {/* 2-Choice Options */}
+              <div className="flex flex-col gap-3">
+                {/* 1. New Party / Next Seating (Team B) */}
+                <button
+                  onClick={() => {
+                    const t = multiPartyPrompt.table;
+                    setMultiPartyPrompt(null);
+                    setTableId(t.id);
+                    setOrderType('dine_in');
+                    setCart([]);
+                    setIsNewParty(true);
+                    setOrderCustName('New Guest');
+                    setFloorOpen(false);
+                    flash(`✓ Table ${t.label}: Blank cart started for New Party (Team B)`);
+                  }}
+                  className="w-full p-4 rounded-2xl border text-left transition hover:scale-[1.01] active:scale-[0.99] flex items-center justify-between group shadow-sm"
+                  style={{
+                    background: 'color-mix(in srgb, var(--cardamom) 12%, var(--paper-3))',
+                    borderColor: 'var(--cardamom, #16a34a)',
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="w-10 h-10 rounded-xl grid place-items-center shrink-0 mt-0.5"
+                      style={{ background: 'var(--cardamom)', color: '#fff' }}
+                    >
+                      <Users size={20} />
+                    </span>
+                    <div>
+                      <div className="font-extrabold text-[15px] flex items-center gap-2" style={{ color: 'var(--ink)' }}>
+                        <span>👥 New Party / Next Seating</span>
+                        <span
+                          className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full"
+                          style={{ background: 'var(--cardamom)', color: '#fff' }}
+                        >
+                          Team B
+                        </span>
+                      </div>
+                      <div className="text-xs font-medium mt-1" style={{ color: 'var(--cardamom-d, #16a34a)' }}>
+                        ↳ Start a fresh bill for the new customer
+                      </div>
+                      <div className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>
+                        Takes order with zero delay · Team A's #{multiPartyPrompt.orderNumber} bill stays untouched
+                      </div>
+                    </div>
+                  </div>
+                  <ArrowRight size={18} className="shrink-0 transition-transform group-hover:translate-x-1" style={{ color: 'var(--cardamom-d)' }} />
+                </button>
+
+                {/* 2. Add to Existing Bill #115 (Team A) */}
+                <button
+                  onClick={() => {
+                    const t = multiPartyPrompt.table;
+                    setMultiPartyPrompt(null);
+                    openTableActions(t, false, true);
+                  }}
+                  className="w-full p-4 rounded-2xl border text-left transition hover:scale-[1.01] active:scale-[0.99] flex items-center justify-between group"
+                  style={{
+                    background: 'var(--paper-3)',
+                    borderColor: 'var(--line)',
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="w-10 h-10 rounded-xl grid place-items-center shrink-0 mt-0.5"
+                      style={{ background: 'var(--paper-2)', color: 'var(--ink-2)', border: '1px solid var(--line)' }}
+                    >
+                      <Plus size={20} />
+                    </span>
+                    <div>
+                      <div className="font-extrabold text-[15px] flex items-center gap-2" style={{ color: 'var(--ink)' }}>
+                        <span>➕ Add to Existing Bill #{multiPartyPrompt.orderNumber}</span>
+                        <span
+                          className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full"
+                          style={{ background: 'var(--paper)', color: 'var(--ink-3)', border: '1px solid var(--line)' }}
+                        >
+                          Team A
+                        </span>
+                      </div>
+                      <div className="text-xs font-medium mt-1" style={{ color: 'var(--ink-2)' }}>
+                        ↳ Previous customer ordered more items
+                      </div>
+                      <div className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>
+                        Adds items to existing Bill #{multiPartyPrompt.orderNumber}
+                      </div>
+                    </div>
+                  </div>
+                  <ArrowRight size={18} className="shrink-0 transition-transform group-hover:translate-x-1" style={{ color: 'var(--ink-3)' }} />
+                </button>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  onClick={() => setMultiPartyPrompt(null)}
+                  className="btn text-xs px-4 py-2"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
 
         {/* table actions — opens when an occupied table is tapped */}
         {tableAction && (
@@ -2582,28 +2772,78 @@ ${rows}
               })()
             ) : (
               <div className="p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>
-                    {tableOrder.count} order{tableOrder.count > 1 ? 's' : ''} · #{tableOrder.orders.map((o: any) => o.number).join(', ')}
-                  </span>
-                  <span className="font-display font-extrabold text-2xl tnum">{formatINR(tableOrder.totals.totalPaise)}</span>
-                </div>
+                {/* Multi-Party tabs if more than 1 active order on the table */}
+                {tableOrder.orders && tableOrder.orders.length > 1 && (
+                  <div className="flex items-center gap-1.5 mb-3 pb-2.5 border-b overflow-x-auto" style={{ borderColor: 'var(--line)' }}>
+                    <span className="text-[11px] font-bold uppercase tracking-wider shrink-0 mr-1" style={{ color: 'var(--ink-3)' }}>
+                      Party:
+                    </span>
+                    {tableOrder.orders.map((o: any, idx: number) => {
+                      const isSel = selectedPartyIndex === idx;
+                      const label = o.partyLabel || (idx === 0 ? 'Team A' : `Team B (#${o.number})`);
+                      return (
+                        <button
+                          key={o.id}
+                          onClick={() => setSelectedPartyIndex(idx)}
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5"
+                          style={{
+                            background: isSel ? 'var(--turmeric)' : 'var(--paper-3)',
+                            color: isSel ? '#2A1607' : 'var(--ink-2)',
+                            border: isSel ? 'none' : '1px solid var(--line)',
+                            boxShadow: isSel ? '0 1px 6px color-mix(in srgb, var(--turmeric) 35%, transparent)' : 'none',
+                          }}
+                        >
+                          <span>{label}</span>
+                          <span className="opacity-90 tnum">· {formatINR(o.totalPaise)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
-                <div className="max-h-[240px] overflow-auto flex flex-col gap-1.5 border-t border-b py-3 mb-4" style={{ borderColor: 'var(--line)' }}>
-                  {tableOrder.lines.length === 0 ? (
-                    <p className="text-sm text-center py-2" style={{ color: 'var(--ink-3)' }}>No items yet.</p>
-                  ) : tableOrder.lines.map((l: any) => (
-                    <div key={l.id} className="flex justify-between items-center gap-2 text-sm">
-                      <span className="min-w-0"><b className="mr-1.5" style={{ color: 'var(--turmeric-d)' }}>{l.qty}×</b>{l.name}</span>
-                      <span className="flex items-center gap-2 shrink-0">
-                        <span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
-                        {canSettleBill && (
-                          <button onClick={() => voidLine(l)} disabled={voidBusyId === l.id} title="Remove item" aria-label={`Remove ${l.name}`} className="w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--paper-3)', color: 'var(--clay, #c0392b)', opacity: voidBusyId === l.id ? 0.5 : 1 }}><X size={15} aria-hidden /></button>
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                {(() => {
+                  const activeOrder = (tableOrder.orders && tableOrder.orders.length > 0)
+                    ? (tableOrder.orders[selectedPartyIndex] || tableOrder.orders[0])
+                    : null;
+                  const displayLines = activeOrder?.lines || tableOrder.lines || [];
+                  const displayTotal = activeOrder ? activeOrder.totalPaise : tableOrder.totals.totalPaise;
+                  const displayOrderNum = activeOrder ? `#${activeOrder.number}` : `#${tableOrder.orders.map((o: any) => o.number).join(', ')}`;
+                  const displayParty = activeOrder?.partyLabel || (tableOrder.orders?.length > 1 ? `Party ${selectedPartyIndex + 1}` : null);
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>
+                            {displayParty ? `${displayParty} · ${displayOrderNum}` : `${tableOrder.count} order${tableOrder.count > 1 ? 's' : ''} · ${displayOrderNum}`}
+                          </span>
+                          {displayParty && (
+                            <span className="text-[11px] font-medium" style={{ color: 'var(--ink-3)' }}>
+                              Separate bill · unmerged
+                            </span>
+                          )}
+                        </div>
+                        <span className="font-display font-extrabold text-2xl tnum">{formatINR(displayTotal)}</span>
+                      </div>
+
+                      <div className="max-h-[240px] overflow-auto flex flex-col gap-1.5 border-t border-b py-3 mb-4" style={{ borderColor: 'var(--line)' }}>
+                        {displayLines.length === 0 ? (
+                          <p className="text-sm text-center py-2" style={{ color: 'var(--ink-3)' }}>No items yet.</p>
+                        ) : displayLines.map((l: any) => (
+                          <div key={l.id} className="flex justify-between items-center gap-2 text-sm">
+                            <span className="min-w-0"><b className="mr-1.5" style={{ color: 'var(--turmeric-d)' }}>{l.qty}×</b>{l.name}</span>
+                            <span className="flex items-center gap-2 shrink-0">
+                              <span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
+                              {canSettleBill && (
+                                <button onClick={() => voidLine(l)} disabled={voidBusyId === l.id} title="Remove item" aria-label={`Remove ${l.name}`} className="w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--paper-3)', color: 'var(--clay, #c0392b)', opacity: voidBusyId === l.id ? 0.5 : 1 }}><X size={15} aria-hidden /></button>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* customer on the bill — optional, defaults to "Customer" */}
                 <div className="mb-3">
@@ -2710,9 +2950,16 @@ ${rows}
                 <div>
                   <h3 className="text-[18px] font-display font-bold">Current ticket</h3>
                   {orderType === 'dine_in' ? (
-                    <button onClick={() => { setCartSheetOpen(false); setFloorOpen(true); }} className="text-[12.5px] font-bold" style={{ color: !tableId ? 'var(--clay)' : 'var(--cardamom-d)' }}>
-                      {selectedTable ? `Table ${selectedTable.label}` : 'Pick a table'}
-                    </button>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <button onClick={() => { setCartSheetOpen(false); setFloorOpen(true); }} className="text-[12.5px] font-bold" style={{ color: !tableId ? 'var(--clay)' : 'var(--cardamom-d)' }}>
+                        {selectedTable ? `Table ${selectedTable.label}` : 'Pick a table'}
+                      </button>
+                      {isNewParty && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                          <Users size={11} aria-hidden /> Team B (New Party)
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <span className="text-[12.5px] font-bold" style={{ color: 'var(--cardamom-d)' }}>Takeaway</span>
                   )}

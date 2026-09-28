@@ -33,6 +33,7 @@ export const CreateOrderSchema = z.object({
   outletId: z.string().uuid(),
   type: OrderTypeEnum,
   tableId: z.string().uuid().nullish(),
+  isNewParty: z.boolean().optional(),
   customerId: z.string().uuid().nullish(),
   /** optional walk-in captured at the POS; linked/created server-side by phoneHash */
   customer: z

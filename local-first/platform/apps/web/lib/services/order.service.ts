@@ -348,12 +348,20 @@ export class OrderService {
 
         // Print routing
         if (kw.autoPrintKot || kw.mode !== 'digital') {
+          const isNewGuest = (input as any).isNewParty ||
+            createdOrder.customer?.name?.toLowerCase().includes('new guest') ||
+            input.customer?.name?.toLowerCase().includes('new guest');
+          const kotTable = createdOrder.table ? {
+            ...createdOrder.table,
+            label: isNewGuest ? `${createdOrder.table.label} (New Guest)` : createdOrder.table.label,
+          } : null;
+
           const jobs = routeOrderToStations(
             {
               id: createdOrder.id,
               number: createdOrder.number,
               type: createdOrder.type,
-              table: createdOrder.table,
+              table: kotTable,
               placedAt: createdOrder.placedAt,
               items: createdOrder.items.map((i) => ({
                 nameSnapshot: i.nameSnapshot,

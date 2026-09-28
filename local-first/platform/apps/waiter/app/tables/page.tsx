@@ -606,18 +606,55 @@ export default function WaiterTablesPage() {
                 </div>
               )}
 
-              <button
-                onClick={() => router.push(`/order/${selectedTable.id}`)}
-                className="w-full py-3.5 px-4 rounded-2xl bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white font-semibold flex items-center justify-between transition-all shadow-lg shadow-sky-500/20"
-              >
-                <div className="flex items-center gap-3">
-                  <Utensils className="w-5 h-5" />
-                  <span>
-                    {occupiedMap[selectedTable.id] ? 'Add Items to Order' : 'Take New Order'}
-                  </span>
+              {selectedTable.state === 'billed' ? (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2.5">
+                  <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
+                    <Users className="w-4 h-4 shrink-0" />
+                    <span>Table {selectedTable.label} has an unsettled bill (#{occupiedMap[selectedTable.id]?.number})</span>
+                  </div>
+                  <p className="text-[11px] text-gray-300">
+                    Choose order type for this table:
+                  </p>
+                  <div className="space-y-2 pt-1">
+                    <button
+                      onClick={() => router.push(`/order/${selectedTable.id}?newParty=true`)}
+                      className="w-full py-3 px-3.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold text-xs flex items-center justify-between shadow-lg shadow-amber-500/20 active:scale-98 transition-all"
+                    >
+                      <div className="flex items-center gap-2.5 text-left">
+                        <Users className="w-4 h-4 shrink-0 text-white" />
+                        <div>
+                          <div className="text-white font-bold text-xs">👥 New Party / Next Seating (Team B)</div>
+                          <div className="text-[10px] text-amber-100 font-normal">Fresh blank bill, keeps Bill #{occupiedMap[selectedTable.id]?.number} safe</div>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 shrink-0 text-white" />
+                    </button>
+                    <button
+                      onClick={() => router.push(`/order/${selectedTable.id}`)}
+                      className="w-full py-2.5 px-3.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 font-medium text-xs flex items-center justify-between active:scale-98 transition-all"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Utensils className="w-4 h-4 text-sky-400 shrink-0" />
+                        <span>➕ Add to Existing Bill #{occupiedMap[selectedTable.id]?.number} (Team A)</span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 shrink-0 text-gray-400" />
+                    </button>
+                  </div>
                 </div>
-                <ChevronRight className="w-4 h-4 opacity-80" />
-              </button>
+              ) : (
+                <button
+                  onClick={() => router.push(`/order/${selectedTable.id}`)}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white font-semibold flex items-center justify-between transition-all shadow-lg shadow-sky-500/20"
+                >
+                  <div className="flex items-center gap-3">
+                    <Utensils className="w-5 h-5" />
+                    <span>
+                      {occupiedMap[selectedTable.id] ? 'Add Items to Order' : 'Take New Order'}
+                    </span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 opacity-80" />
+                </button>
+              )}
 
               {occupiedMap[selectedTable.id] && (
                 <>

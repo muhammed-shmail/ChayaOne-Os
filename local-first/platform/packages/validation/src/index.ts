@@ -27,6 +27,7 @@ export const CreateOrderSchema = z.object({
   outletId: z.string().uuid(),
   type: OrderTypeEnum,
   tableId: z.string().uuid().nullish(),
+  isNewParty: z.boolean().optional(),
   customerId: z.string().uuid().nullish(),
   customer: z
     .object({

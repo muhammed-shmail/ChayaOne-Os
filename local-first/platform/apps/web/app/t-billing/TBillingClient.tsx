@@ -1334,13 +1334,20 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         )}
 
                         {/* Table / Type label */}
-                        <p className="text-xs font-extrabold mb-2.5 flex items-center gap-1.5" style={{ color: 'var(--gold-d)' }}>
-                          {isTakeaway
-                            ? <><ShoppingBag size={12} /> Takeaway</>
-                            : (o.table?.label || o.tableLabel || o.tableName)
-                            ? <><Table2 size={12} /> Table {o.table?.label || o.tableLabel || o.tableName}</>
-                            : '📍 Direct'}
-                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+                          <p className="text-xs font-extrabold flex items-center gap-1.5" style={{ color: 'var(--gold-d)' }}>
+                            {isTakeaway
+                              ? <><ShoppingBag size={12} /> Takeaway</>
+                              : (o.table?.label || o.tableLabel || o.tableName)
+                              ? <><Table2 size={12} /> Table {o.table?.label || o.tableLabel || o.tableName}</>
+                              : '📍 Direct'}
+                          </p>
+                          {(o.isNewParty || (o.customer?.name || '').toLowerCase().includes('new guest')) && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-500/20 text-amber-500 border border-amber-500/40">
+                              Team B (New Party)
+                            </span>
+                          )}
+                        </div>
 
                         {/* Order details */}
                         <div className="space-y-1.5">
@@ -1481,11 +1488,16 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                     <span className="text-[10px] font-extrabold uppercase tracking-widest" style={{ color: 'var(--gold-d)' }} suppressHydrationWarning>
                       Invoice Preview — INV-{new Date().getFullYear()}-{String(selectedOrder.number).padStart(6, '0')}
                     </span>
-                    <h2 className="font-display text-2xl font-extrabold mt-0.5" style={{ color: 'var(--ink)' }}>
+                    <h2 className="font-display text-2xl font-extrabold mt-0.5 flex items-center gap-2 flex-wrap" style={{ color: 'var(--ink)' }}>
                       Order #{selectedOrder.number}
-                      <span className="text-base font-semibold ml-2" style={{ color: 'var(--gold-d)' }}>
+                      <span className="text-base font-semibold" style={{ color: 'var(--gold-d)' }}>
                         · {selectedOrder.table?.label ? `Table ${selectedOrder.table.label}` : 'Takeaway'}
                       </span>
+                      {(selectedOrder.isNewParty || (selectedOrder.customer?.name || '').toLowerCase().includes('new guest')) && (
+                        <span className="px-2 py-0.5 rounded text-xs font-extrabold bg-amber-500/20 text-amber-500 border border-amber-500/40">
+                          Team B (New Party)
+                        </span>
+                      )}
                     </h2>
                   </div>
                   <div className="text-right text-xs" style={{ color: 'var(--ink-3)' }}>
