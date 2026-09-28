@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -2943,7 +2943,7 @@ export default function DashboardClient({
             transition={{ duration: 0.2 }}
             className={`absolute inset-0 flex items-center justify-center ${isExpanded ? 'pointer-events-auto' : 'pointer-events-none'}`}
           >
-            <img src="/app.png" alt="ChayaOne" style={{ width: '100%', height: 'auto', margin: 0, maxWidth: 140 }} className="brand-logo object-contain" />
+            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: '100%', height: 'auto', margin: 0, maxWidth: 140 }} className="brand-logo object-contain" />
           </motion.div>
           <motion.div
             initial={false}

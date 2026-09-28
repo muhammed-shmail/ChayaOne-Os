@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { computeBill, formatINR, type BillLine } from '@cafeos/core';
@@ -1712,7 +1712,7 @@ ${rows}
       <header className="hidden md:flex items-center justify-between px-4 py-2 shrink-0 border-b z-20" style={{ background: 'var(--paper)', borderColor: 'var(--line)', minHeight: '52px', maxHeight: '52px' }}>
         <div className="flex items-center gap-2.5">
           <img
-            src="/app.png"
+            src="/logo chaya one.png"
             alt="ChayaOne"
             className="brand-logo h-7 lg:h-8 w-auto object-contain shrink-0"
           />
@@ -2830,7 +2830,7 @@ ${rows}
             <div className="flex items-center justify-between gap-2 pb-0.5">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-10 h-6 shrink-0 overflow-hidden flex items-center justify-center">
-                  <img src="/app.png" alt="ChayaOne" className="brand-logo w-full h-full object-contain" />
+                  <img src="/logo chaya one.png" alt="ChayaOne" className="brand-logo w-full h-full object-contain" />
                 </div>
                 <span className="font-display font-bold text-[15px] truncate">{(outlet.name.split('—')[0] ?? '').trim()}</span>
               </div>

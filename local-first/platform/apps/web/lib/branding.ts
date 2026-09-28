@@ -1,4 +1,4 @@
-﻿import { prisma } from '@cafeos/db';
+import { prisma } from '@cafeos/db';
 import { tenantHasFeature } from './features';
 
 /**
@@ -14,7 +14,7 @@ export type Branding = {
   poweredBy: boolean;
 };
 
-const DEFAULTS: Branding = { appName: 'ChayaOne', logoUrl: '/app.png', faviconUrl: '/app.png', colors: {}, poweredBy: true };
+const DEFAULTS: Branding = { appName: 'ChayaOne', logoUrl: '/logo chaya one.png', faviconUrl: '/app.png', colors: {}, poweredBy: true };
 
 export async function getTenantBranding(tenantId: string): Promise<Branding> {
   const [b, whiteLabel] = await Promise.all([

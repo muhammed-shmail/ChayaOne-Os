@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -269,7 +269,7 @@ export default function SetupClient() {
 
         {/* Brand */}
         <div className="text-center mb-6">
-          <img src="/app.png" alt="ChayaOne" className="mx-auto mb-3 object-contain" style={{ height: 56, width: 'auto', maxWidth: '70%' }} />
+          <img src="/logo chaya one.png" alt="ChayaOne" className="mx-auto mb-3 object-contain" style={{ height: 56, width: 'auto', maxWidth: '70%' }} />
           <p className="text-xs font-bold tracking-[0.25em] uppercase" style={{ color: 'var(--gold-d)' }}>Main PC Setup Wizard</p>
         </div>
 
