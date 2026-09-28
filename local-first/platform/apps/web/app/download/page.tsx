@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { BrandMark } from '@/components/BrandMark';
@@ -39,7 +39,7 @@ export default function DownloadPage() {
   return (
     <main className="dl">
       <section className="dl-hero">
-        <img src="/logo chaya one.png" alt="ChayaOne" className="brand-logo" style={{ width: 132, height: 132, objectFit: 'contain' }} />
+        <img src="/app.png" alt="ChayaOne" className="brand-logo" style={{ width: 132, height: 132, objectFit: 'contain' }} />
         <h1 className="dl-title">Install ChayaOne</h1>
         <p className="dl-sub">Your cafe, in your pocket — order, earn points, and track your table.</p>
 

@@ -1,4 +1,4 @@
-import Link from 'next/link';
+﻿import Link from 'next/link';
 import {
   ThemeToggle, AlphaTag, ArrowRight,
   Table2, ChefHat, Smartphone, LayoutDashboard,
@@ -43,7 +43,7 @@ export default function LaunchHub() {
         {/* brand lockup: Chaya.One logo · CafeOS wordmark, vertically centred */}
         <div className="flex items-center gap-4 sm:gap-5 mb-5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo chaya one.png" alt="Chaya.One" className="brand-logo h-14 sm:h-16 w-auto object-contain shrink-0" />
+          <img src="/app.png" alt="Chaya.One" className="brand-logo h-14 sm:h-16 w-auto object-contain shrink-0" />
           <span className="w-px self-stretch my-1 shrink-0" style={{ background: 'var(--gold-hair)' }} aria-hidden />
           <h1 className="font-display font-semibold text-5xl sm:text-6xl leading-[0.9] tracking-tight">
             Cafe<span className="text-gold-d">OS</span>

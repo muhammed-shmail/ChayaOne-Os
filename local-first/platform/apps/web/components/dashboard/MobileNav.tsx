@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 /**
  * Mobile dashboard navigation — a slide-out drawer (full menu) + a fixed
@@ -110,7 +110,7 @@ export function MobileDrawer({
         <div className="flex items-center justify-center px-2 py-3 mb-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/logo chaya one.png"
+            src="/app.png"
             alt="ChayaOne"
             style={{ width: '100%', height: 'auto', maxWidth: 150 }}
             className="brand-logo object-contain"

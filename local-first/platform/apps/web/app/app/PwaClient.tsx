@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useState } from 'react';
 import { GamesHub } from '@/components/games/GamesHub';
@@ -689,7 +689,7 @@ function Register({ cfg, outlet, welcome, qrToken, onDone }: { cfg: { enabled: b
 
   return (
     <div className="reg">
-      <img src="/logo chaya one.png" alt="ChayaOne" className="brand-logo" style={{ width: 120, height: 120, objectFit: 'contain' }} />
+      <img src="/app.png" alt="ChayaOne" className="brand-logo" style={{ width: 120, height: 120, objectFit: 'contain' }} />
       <AlphaTag />
 
       {step === 'phone' && (
@@ -743,7 +743,7 @@ function Register({ cfg, outlet, welcome, qrToken, onDone }: { cfg: { enabled: b
    QR. Cafe identity + table (auto-detected) + today's offers + Start Ordering. */
 function Welcome({ ctx, onStart }: { ctx: Ctx; onStart: () => void }) {
   const pwa = ctx.pwa;
-  const logo = pwa?.theme.logoUrl ?? '/logo chaya one.png';
+  const logo = pwa?.theme.logoUrl ?? '/app.png';
   const banners = pwa?.banners ?? [];
   return (
     <div className="welcome">

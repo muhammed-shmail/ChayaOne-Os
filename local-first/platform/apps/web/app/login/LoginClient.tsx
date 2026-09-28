@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -303,7 +303,7 @@ export default function LoginClient({ initialBusinessName }: LoginClientProps = 
             className="mb-1.5 disabled:opacity-50 flex justify-center items-center w-full"
             style={{ background: 'none', border: 'none', padding: 0, lineHeight: 0, cursor: 'pointer' }}
           >
-            <img src="/logo chaya one.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="brand-logo object-contain mx-auto block" />
+            <img src="/app.png" alt="ChayaOne" style={{ width: 288, height: 'auto', maxWidth: '84%' }} className="brand-logo object-contain mx-auto block" />
           </button>
           <AlphaTag />
           <h1 className="font-display text-[40px] leading-none mt-3.5">{businessName || 'ChayaOne'}</h1>

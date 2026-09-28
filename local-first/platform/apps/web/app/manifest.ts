@@ -19,19 +19,19 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#DEAD61',
     icons: [
       {
-        src: '/icons/waiter-192.png',
+        src: '/icons/waiter-192.png?v=6',
         sizes: '192x192',
         type: 'image/png',
-        purpose: 'maskable',
+        purpose: 'any maskable',
       },
       {
-        src: '/icons/waiter-512.png',
+        src: '/icons/waiter-512.png?v=6',
         sizes: '512x512',
         type: 'image/png',
-        purpose: 'maskable',
+        purpose: 'any maskable',
       },
       {
-        src: '/app.png?v=5',
+        src: '/app.png?v=6',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',

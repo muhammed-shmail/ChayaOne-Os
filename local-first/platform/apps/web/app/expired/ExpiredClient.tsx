@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -138,7 +138,7 @@ export default function ExpiredClient() {
         {/* Brand Header */}
         <div className="mb-6 flex flex-col items-center">
           <img
-            src="/logo chaya one.png"
+            src="/app.png"
             alt="ChayaOne"
             style={{ width: 220, height: 'auto', maxWidth: '78%' }}
             className="brand-logo object-contain mx-auto block mb-3"
