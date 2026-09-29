@@ -2232,6 +2232,13 @@ ${rows}
               }, 800);
             };
 
+            const handlePressCancel = () => {
+              if ((t as any)._pressTimer) {
+                clearTimeout((t as any)._pressTimer);
+                (t as any)._pressTimer = null;
+              }
+            };
+
             const handlePressEnd = (e: React.PointerEvent) => {
               if ((t as any)._pressTimer) {
                 clearTimeout((t as any)._pressTimer);
@@ -2244,7 +2251,8 @@ ${rows}
               <button key={t.id} 
                 onPointerDown={handlePressStart}
                 onPointerUp={handlePressEnd}
-                onPointerLeave={handlePressEnd}
+                onPointerLeave={handlePressCancel}
+                onPointerCancel={handlePressCancel}
                 className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition cursor-pointer hover:scale-[1.02]"
                 style={{
                   borderColor: selected ? 'var(--turmeric-d)' : s.color,
