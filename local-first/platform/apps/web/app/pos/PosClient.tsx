@@ -1708,7 +1708,10 @@ ${rows}
       if (!data.idempotent && outlet.kitchenWorkflow.autoPrintKot && outlet.kitchenWorkflow.mode !== 'digital') printKotFromCart(data.order.number, where);
       clear(); setCharging(false);
       // reset the table so the next order must pick one (don't silently reuse the last table)
-      if (orderType === 'dine_in') setTableId(null);
+      if (orderType === 'dine_in') {
+        setTableId(null);
+        if (staffAppEnabled || isMobileBrowser()) setFloorOpen(true);
+      }
     } catch (e: any) {
       console.error('Order submission error:', e);
       flash(e?.message ? `Order failed: ${e.message}` : 'Cannot reach Main PC — check Wi-Fi connection (disable 5G)');
@@ -2953,7 +2956,7 @@ ${rows}
         aria-label="Mobile navigation"
       >
         <button
-          onClick={() => { setFloorOpen(false); setMoreOpen(false); }}
+          onClick={() => { setFloorOpen(false); setMoreOpen(false); closeTableActions(); }}
           className="relative flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold transition"
           style={{ minHeight: 58, color: (!floorOpen && !moreOpen) ? 'var(--turmeric-d)' : 'var(--ink-2)' }}
         >
@@ -2965,7 +2968,7 @@ ${rows}
         </button>
 
         <button
-          onClick={() => { setFloorOpen(true); setMoreOpen(false); }}
+          onClick={() => { setFloorOpen(true); setMoreOpen(false); closeTableActions(); }}
           className="relative flex flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold transition"
           style={{ minHeight: 58, color: floorOpen ? 'var(--turmeric-d)' : 'var(--ink-2)' }}
         >
@@ -3040,7 +3043,7 @@ ${rows}
                   <LayoutDashboard size={16} aria-hidden /> Dashboard
                 </a>
               )}
-              <button onClick={() => { setMoreOpen(false); setFloorOpen(true); }} className="flex items-center gap-2 px-2.5 py-2 rounded-xl border-[1.5px] border-dashed font-bold text-[13px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
+              <button onClick={() => { setMoreOpen(false); setFloorOpen(true); closeTableActions(); }} className="flex items-center gap-2 px-2.5 py-2 rounded-xl border-[1.5px] border-dashed font-bold text-[13px]" style={{ borderColor: 'var(--line-2)', color: 'var(--ink-2)' }}>
                 <Table2 size={16} aria-hidden /> Floor map &amp; tables
               </button>
               <button
