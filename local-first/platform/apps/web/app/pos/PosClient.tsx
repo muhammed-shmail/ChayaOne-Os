@@ -414,7 +414,7 @@ function generateClientUuid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     try {
       return crypto.randomUUID();
-    } catch {}
+    } catch { }
   }
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -446,7 +446,7 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
             gstConfig: { ...prev.gstConfig, enabled: gstEnabled, ...(updated.gst || {}) },
           }));
         }
-      } catch {}
+      } catch { }
     };
 
     window.addEventListener('settings.updated', handleSettingsUpdate);
@@ -815,13 +815,13 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
         type: 'dine_in' as const,
         tableId: tableAction.id,
         ...(custName.trim() || custPhone.trim() ? { customer: { name: custName.trim(), phone: custPhone.trim() } } : {}),
-        lines: tableCart.map((l) => ({ 
-          itemId: l.itemId, 
-          nameSnapshot: l.name, 
-          qty: l.qty, 
-          unitPricePaise: l.pricePaise, 
-          gstRate: l.gstRate, 
-          station: l.station, 
+        lines: tableCart.map((l) => ({
+          itemId: l.itemId,
+          nameSnapshot: l.name,
+          qty: l.qty,
+          unitPricePaise: l.pricePaise,
+          gstRate: l.gstRate,
+          station: l.station,
           modifiers: [],
           notes: l.notes || undefined
         })),
@@ -1103,7 +1103,7 @@ ${htmlBody}
     const iframeWin = iframe.contentWindow;
     const doCleanup = () => {
       activePrintJobs.current.delete(jid);
-      try { document.body.removeChild(iframe); } catch {}
+      try { document.body.removeChild(iframe); } catch { }
     };
 
     if (iframeWin) {
@@ -1522,7 +1522,7 @@ ${rows}
               setCurrentStaff((prev) => ({ ...prev, ...d.staff }));
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
       if (msg.type !== 'order.updated') return;
       setLive((prev) => {
@@ -2134,755 +2134,752 @@ ${rows}
         </aside>
       </div>
 
-        {/* floor modal */}
-        {floorOpen && (() => {
-          // Extract table prefixes (e.g. D, L, M, O, S)
-          const prefixes = Array.from(
-            new Set(
-              tables
-                .map((t) => {
-                  const m = t.label.match(/^([A-Za-z]+)/);
-                  return m && m[1] ? m[1].toUpperCase() : null;
-                })
-                .filter(Boolean) as string[]
-            )
-          ).sort();
+      {/* floor modal */}
+      {floorOpen && (() => {
+        // Extract table prefixes (e.g. D, L, M, O, S)
+        const prefixes = Array.from(
+          new Set(
+            tables
+              .map((t) => {
+                const m = t.label.match(/^([A-Za-z]+)/);
+                return m && m[1] ? m[1].toUpperCase() : null;
+              })
+              .filter(Boolean) as string[]
+          )
+        ).sort();
 
-          const prefixNames: Record<string, string> = {
-            D: 'Dine-in (D)',
-            L: 'Lounge (L)',
-            M: 'Mezzanine (M)',
-            O: 'Outdoor (O)',
-            S: 'Special (S)',
-          };
+        const prefixNames: Record<string, string> = {
+          D: 'Dine-in (D)',
+          L: 'Lounge (L)',
+          M: 'Mezzanine (M)',
+          O: 'Outdoor (O)',
+          S: 'Special (S)',
+        };
 
-          // Filter by status, section, search
-          const freeCount = tables.filter((t) => !occupied[t.id]).length;
-          const occupiedCount = tables.filter((t) => !!occupied[t.id]).length;
-          const kotCount = tables.filter((t) => occupied[t.id] && tableStage(occupied[t.id]?.status) === 'kot').length;
-          const readyCount = tables.filter((t) => occupied[t.id] && tableStage(occupied[t.id]?.status) === 'ready').length;
-          const servedCount = tables.filter((t) => occupied[t.id] && tableStage(occupied[t.id]?.status) === 'served').length;
+        // Filter by status, section, search
+        const freeCount = tables.filter((t) => !occupied[t.id]).length;
+        const occupiedCount = tables.filter((t) => !!occupied[t.id]).length;
+        const kotCount = tables.filter((t) => occupied[t.id] && tableStage(occupied[t.id]?.status) === 'kot').length;
+        const readyCount = tables.filter((t) => occupied[t.id] && tableStage(occupied[t.id]?.status) === 'ready').length;
+        const servedCount = tables.filter((t) => occupied[t.id] && tableStage(occupied[t.id]?.status) === 'served').length;
 
-          const filteredTables = tables.filter((t) => {
-            const occ = occupied[t.id];
-            const stage = occ ? tableStage(occ.status) : 'free';
+        const filteredTables = tables.filter((t) => {
+          const occ = occupied[t.id];
+          const stage = occ ? tableStage(occ.status) : 'free';
 
-            if (tableStatusFilter === 'free' && occ) return false;
-            if (tableStatusFilter === 'occupied' && !occ) return false;
-            if (tableStatusFilter !== 'all' && tableStatusFilter !== 'free' && tableStatusFilter !== 'occupied') {
-              if (!occ || stage !== tableStatusFilter) return false;
-            }
+          if (tableStatusFilter === 'free' && occ) return false;
+          if (tableStatusFilter === 'occupied' && !occ) return false;
+          if (tableStatusFilter !== 'all' && tableStatusFilter !== 'free' && tableStatusFilter !== 'occupied') {
+            if (!occ || stage !== tableStatusFilter) return false;
+          }
 
-            if (tableSectionFilter !== 'all') {
-              if (!t.label.toUpperCase().startsWith(tableSectionFilter.toUpperCase())) return false;
-            }
+          if (tableSectionFilter !== 'all') {
+            if (!t.label.toUpperCase().startsWith(tableSectionFilter.toUpperCase())) return false;
+          }
 
-            if (tableSearchQuery.trim()) {
-              const q = tableSearchQuery.trim().toLowerCase();
-              if (!t.label.toLowerCase().includes(q)) return false;
-            }
+          if (tableSearchQuery.trim()) {
+            const q = tableSearchQuery.trim().toLowerCase();
+            if (!t.label.toLowerCase().includes(q)) return false;
+          }
 
-            return true;
-          });
+          return true;
+        });
 
-          // group tables under their floor; a missing/stale floorId falls under "Unassigned"
-          const floorIds = new Set(floors.map((f) => f.id));
-          const hasUnassigned = filteredTables.some((t) => !t.floorId || !floorIds.has(t.floorId));
-          const groups: { key: string; name: string; tables: TableDto[] }[] = [
-            ...floors.map((f) => ({ key: f.id, name: f.name, tables: filteredTables.filter((t) => t.floorId === f.id) })),
-            { key: 'unassigned', name: 'Unassigned', tables: filteredTables.filter((t) => !t.floorId || !floorIds.has(t.floorId)) },
-          ].filter((g) => g.tables.length > 0);
+        // group tables under their floor; a missing/stale floorId falls under "Unassigned"
+        const floorIds = new Set(floors.map((f) => f.id));
+        const hasUnassigned = filteredTables.some((t) => !t.floorId || !floorIds.has(t.floorId));
+        const groups: { key: string; name: string; tables: TableDto[] }[] = [
+          ...floors.map((f) => ({ key: f.id, name: f.name, tables: filteredTables.filter((t) => t.floorId === f.id) })),
+          { key: 'unassigned', name: 'Unassigned', tables: filteredTables.filter((t) => !t.floorId || !floorIds.has(t.floorId)) },
+        ].filter((g) => g.tables.length > 0);
 
-          const renderTableButton = (t: TableDto) => {
-            const occ = occupied[t.id];
-            const stage = tableStage(occ?.status);
-            const s = TABLE_STAGES[stage];
-            const mins = occ ? Math.floor((now - occ.sinceMs) / 60000) : 0;
-            const selected = tableId === t.id;
+        const renderTableButton = (t: TableDto) => {
+          const occ = occupied[t.id];
+          const stage = tableStage(occ?.status);
+          const s = TABLE_STAGES[stage];
+          const mins = occ ? Math.floor((now - occ.sinceMs) / 60000) : 0;
+          const selected = tableId === t.id;
 
-            const handlePressStart = (e: React.PointerEvent) => {
-              if (e.pointerType === 'mouse' && e.button !== 0) return;
-              (t as any)._pressTimer = setTimeout(async () => {
-                (t as any)._pressTimer = null;
-                (t as any)._longPressed = true;
-                if (occ) {
-                  const confirmed = await confirmAction({
-                    title: 'Clear Table',
-                    message: `Are you sure you want to clear table ${t.label}? This will cancel all active orders on this table.`,
-                    confirmText: 'Clear Table',
-                    cancelText: 'Keep Table',
-                  });
-                  if (confirmed) {
-                    try {
-                      const r = await fetch('/api/tables/order', {
-                        method: 'POST',
-                        headers: { 'content-type': 'application/json' },
-                        body: JSON.stringify({ action: 'clear_table', tableId: t.id }),
-                      });
-                      if (r.ok) {
-                        flash('Table cleared.');
-                        refreshTables();
-                      } else {
-                        flash('Failed to clear table.');
-                      }
-                    } catch (e) {
-                      flash('Error clearing table.');
+          const handlePressStart = (e: React.PointerEvent) => {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            (t as any)._pressTimer = setTimeout(async () => {
+              (t as any)._pressTimer = null;
+              if (occ) {
+                const confirmed = await confirmAction({
+                  title: 'Clear Table',
+                  message: `Are you sure you want to clear table ${t.label}? This will cancel all active orders on this table.`,
+                  confirmText: 'Clear Table',
+                  cancelText: 'Keep Table',
+                });
+                if (confirmed) {
+                  try {
+                    const r = await fetch('/api/tables/order', {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify({ action: 'clear_table', tableId: t.id }),
+                    });
+                    if (r.ok) {
+                      flash('Table cleared.');
+                      refreshTables();
+                    } else {
+                      flash('Failed to clear table.');
                     }
+                  } catch (e) {
+                    flash('Error clearing table.');
                   }
                 }
-              }, 800);
-            };
-
-            const handlePressCancel = () => {
-              if ((t as any)._pressTimer) {
-                clearTimeout((t as any)._pressTimer);
-                (t as any)._pressTimer = null;
               }
-            };
-
-            const handleClick = (e: React.MouseEvent) => {
-              handlePressCancel();
-              if ((t as any)._longPressed) {
-                (t as any)._longPressed = false;
-                return;
-              }
-              if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); }
-            };
-
-            return (
-              <button key={t.id} 
-                onPointerDown={handlePressStart}
-                onPointerUp={handlePressCancel}
-                onPointerLeave={handlePressCancel}
-                onPointerCancel={handlePressCancel}
-                onClick={handleClick}
-                className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition cursor-pointer hover:scale-[1.02]"
-                style={{
-                  borderColor: selected ? 'var(--turmeric-d)' : s.color,
-                  borderTopWidth: 4, borderTopColor: s.color,
-                  background: occ ? `color-mix(in srgb, ${s.color} 10%, var(--paper-3))` : 'var(--paper-3)',
-                  boxShadow: selected ? 'var(--sh-glow)' : undefined,
-                }}>
-                <span className="font-display font-bold text-[22px]">{t.label}</span>
-                {occ ? (
-                  <>
-                    <span className="text-[11px] font-bold tnum" style={{ color: 'var(--ink-2)' }}>#{occ.number} · {formatINR(occ.billPaise)}</span>
-                    <span className="text-[10px] font-bold uppercase" style={{ color: s.color }}>{s.label} · {mins}m</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="tracking-widest" style={{ color: 'var(--ink-3)' }}>{'•'.repeat(t.seats)}</span>
-                    <span className="text-[10px] font-bold uppercase" style={{ color: 'var(--ink-3)' }}>Free</span>
-                  </>
-                )}
-              </button>
-            );
+            }, 800);
           };
 
-          const showAll = floorFilter === 'all';
-          const shownGroups = showAll ? groups : groups.filter((g) => g.key === floorFilter);
-          const hasActiveFilters = tableStatusFilter !== 'all' || tableSectionFilter !== 'all' || !!tableSearchQuery.trim();
+          const handlePressCancel = () => {
+            if ((t as any)._pressTimer) {
+              clearTimeout((t as any)._pressTimer);
+              (t as any)._pressTimer = null;
+            }
+          };
+
+          const handlePressEnd = (e: React.PointerEvent) => {
+            if ((t as any)._pressTimer) {
+              clearTimeout((t as any)._pressTimer);
+              (t as any)._pressTimer = null;
+              if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); }
+            }
+          };
 
           return (
-            <Modal onClose={() => { setFloorOpen(false); setPendingAction(null); }} title="Floor map">
-              {/* Filter Row 1: Search & Quick Reset */}
-              <div className="px-5 pt-3 flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    value={tableSearchQuery}
-                    onChange={(e) => setTableSearchQuery(e.target.value)}
-                    placeholder="Search table (e.g. D1, L, 3)..."
-                    className="w-full px-3.5 py-1.5 pl-8 text-xs rounded-xl border outline-none transition"
-                    style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
-                  />
-                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-40" />
-                  {tableSearchQuery && (
-                    <button
-                      onClick={() => setTableSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold opacity-60 hover:opacity-100"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-                {hasActiveFilters && (
-                  <button
-                    onClick={() => {
-                      setTableStatusFilter('all');
-                      setTableSectionFilter('all');
-                      setTableSearchQuery('');
-                      setFloorFilter('all');
-                    }}
-                    className="px-2.5 py-1.5 text-xs font-bold rounded-xl border transition"
-                    style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--clay, #dc2626)' }}
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
-
-              {/* Filter Row 2: Status Chips with Legend */}
-              <div className="flex flex-wrap items-center gap-1.5 px-5 pt-3">
-                <Chip on={tableStatusFilter === 'all'} onClick={() => setTableStatusFilter('all')}>
-                  All ({tables.length})
-                </Chip>
-                <Chip on={tableStatusFilter === 'free'} onClick={() => setTableStatusFilter('free')}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.free.color }} />
-                    Free ({freeCount})
-                  </span>
-                </Chip>
-                <Chip on={tableStatusFilter === 'occupied'} onClick={() => setTableStatusFilter('occupied')}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full" style={{ background: '#f59e0b' }} />
-                    Occupied ({occupiedCount})
-                  </span>
-                </Chip>
-                <Chip on={tableStatusFilter === 'kot'} onClick={() => setTableStatusFilter('kot')}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.kot.color }} />
-                    KOT ({kotCount})
-                  </span>
-                </Chip>
-                {readyCount > 0 && (
-                  <Chip on={tableStatusFilter === 'ready'} onClick={() => setTableStatusFilter('ready')}>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.ready.color }} />
-                      Ready ({readyCount})
-                    </span>
-                  </Chip>
-                )}
-                {servedCount > 0 && (
-                  <Chip on={tableStatusFilter === 'served'} onClick={() => setTableStatusFilter('served')}>
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.served.color }} />
-                      Served ({servedCount})
-                    </span>
-                  </Chip>
-                )}
-              </div>
-
-              {/* Filter Row 3: Section Chips (D, L, M, O, S) */}
-              {prefixes.length > 1 && (
-                <div className="flex flex-wrap items-center gap-1.5 px-5 pt-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider mr-0.5" style={{ color: 'var(--ink-3)' }}>
-                    Section:
-                  </span>
-                  <Chip on={tableSectionFilter === 'all'} onClick={() => setTableSectionFilter('all')}>
-                    All
-                  </Chip>
-                  {prefixes.map((p) => {
-                    const count = tables.filter((t) => t.label.toUpperCase().startsWith(p)).length;
-                    const label = prefixNames[p] || p;
-                    return (
-                      <Chip key={p} on={tableSectionFilter === p} onClick={() => setTableSectionFilter(p)}>
-                        {label} ({count})
-                      </Chip>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* floor filter chips — only when floors are configured */}
-              {floors.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-5 pt-2">
-                  <Chip on={floorFilter === 'all'} onClick={() => setFloorFilter('all')}>All Floors</Chip>
-                  {floors.map((f) => (
-                    <Chip key={f.id} on={floorFilter === f.id} onClick={() => setFloorFilter(f.id)}>{f.name}</Chip>
-                  ))}
-                  {hasUnassigned && (
-                    <Chip on={floorFilter === 'unassigned'} onClick={() => setFloorFilter('unassigned')}>Unassigned</Chip>
-                  )}
-                </div>
-              )}
-
-              {/* Results summary if filtered */}
-              {hasActiveFilters && (
-                <div className="px-5 pt-2 text-[11px] font-medium" style={{ color: 'var(--ink-3)' }}>
-                  Showing {filteredTables.length} of {tables.length} tables
-                </div>
-              )}
-
-              {/* Table Grid / Empty State */}
-              {filteredTables.length === 0 ? (
-                <div className="p-8 text-center flex flex-col items-center gap-2">
-                  <p className="text-sm font-bold" style={{ color: 'var(--ink-2)' }}>No tables match your filter criteria.</p>
-                  <button
-                    onClick={() => {
-                      setTableStatusFilter('all');
-                      setTableSectionFilter('all');
-                      setTableSearchQuery('');
-                      setFloorFilter('all');
-                    }}
-                    className="btn btn-dark text-xs px-3.5 py-1.5"
-                  >
-                    Clear all filters
-                  </button>
-                </div>
-              ) : showAll && floors.length > 0 ? (
-                <div className="p-5 flex flex-col gap-5">
-                  {shownGroups.map((g) => (
-                    <div key={g.key}>
-                      <div className="text-[11px] font-bold uppercase tracking-wide mb-2.5" style={{ color: 'var(--ink-3)' }}>{g.name}</div>
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">{g.tables.map(renderTableButton)}</div>
-                    </div>
-                  ))}
-                </div>
+            <button key={t.id}
+              onPointerDown={handlePressStart}
+              onPointerUp={handlePressEnd}
+              onPointerLeave={handlePressCancel}
+              onPointerCancel={handlePressCancel}
+              className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition cursor-pointer hover:scale-[1.02]"
+              style={{
+                borderColor: selected ? 'var(--turmeric-d)' : s.color,
+                borderTopWidth: 4, borderTopColor: s.color,
+                background: occ ? `color-mix(in srgb, ${s.color} 10%, var(--paper-3))` : 'var(--paper-3)',
+                boxShadow: selected ? 'var(--sh-glow)' : undefined,
+              }}>
+              <span className="font-display font-bold text-[22px]">{t.label}</span>
+              {occ ? (
+                <>
+                  <span className="text-[11px] font-bold tnum" style={{ color: 'var(--ink-2)' }}>#{occ.number} · {formatINR(occ.billPaise)}</span>
+                  <span className="text-[10px] font-bold uppercase" style={{ color: s.color }}>{s.label} · {mins}m</span>
+                </>
               ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 p-5">
-                  {filteredTables.map(renderTableButton)}
-                </div>
+                <>
+                  <span className="tracking-widest" style={{ color: 'var(--ink-3)' }}>{'•'.repeat(t.seats)}</span>
+                  <span className="text-[10px] font-bold uppercase" style={{ color: 'var(--ink-3)' }}>Free</span>
+                </>
               )}
-            </Modal>
+            </button>
           );
-        })()}
+        };
 
-        {/* table actions — opens when an occupied table is tapped */}
-        {tableAction && (
-          <Modal
-            onClose={closeTableActions}
-            title={`Table ${tableAction.label}`}
-            headerAction={
-              !transferMode ? (
+        const showAll = floorFilter === 'all';
+        const shownGroups = showAll ? groups : groups.filter((g) => g.key === floorFilter);
+        const hasActiveFilters = tableStatusFilter !== 'all' || tableSectionFilter !== 'all' || !!tableSearchQuery.trim();
+
+        return (
+          <Modal onClose={() => { setFloorOpen(false); setPendingAction(null); }} title="Floor map">
+            {/* Filter Row 1: Search & Quick Reset */}
+            <div className="px-5 pt-3 flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={tableSearchQuery}
+                  onChange={(e) => setTableSearchQuery(e.target.value)}
+                  placeholder="Search table (e.g. D1, L, 3)..."
+                  className="w-full px-3.5 py-1.5 pl-8 text-xs rounded-xl border outline-none transition"
+                  style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                />
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-40" />
+                {tableSearchQuery && (
+                  <button
+                    onClick={() => setTableSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold opacity-60 hover:opacity-100"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              {hasActiveFilters && (
                 <button
                   onClick={() => {
-                    setTransferMode(true);
-                    setSelectedDestTable(null);
-                    setTransferOccupiedError(null);
-                    setTransferSuccess(null);
+                    setTableStatusFilter('all');
+                    setTableSectionFilter('all');
+                    setTableSearchQuery('');
+                    setFloorFilter('all');
                   }}
-                  title="Transfer table"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] border text-xs font-bold transition hover:opacity-90 shadow-sm"
-                  style={{
-                    background: 'color-mix(in srgb, var(--turmeric) 22%, var(--paper))',
-                    borderColor: 'var(--turmeric)',
-                    color: 'var(--turmeric-d, #b45309)',
-                  }}
+                  className="px-2.5 py-1.5 text-xs font-bold rounded-xl border transition"
+                  style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--clay, #dc2626)' }}
                 >
-                  <ArrowLeftRight size={14} aria-hidden />
-                  <span>Transfer</span>
+                  Reset
                 </button>
-              ) : undefined
-            }
-          >
-            {!tableOrder ? (
-              <p className="p-6 text-center" style={{ color: 'var(--ink-3)' }}>Loading order…</p>
-            ) : transferMode ? (
-              /* ── Table Transfer Flow ── */
-              transferSuccess ? (
-                <div className="p-6 text-center flex flex-col items-center gap-3">
-                  <div className="w-14 h-14 rounded-full grid place-items-center text-2xl font-bold" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#16a34a' }}>
-                    ✓
+              )}
+            </div>
+
+            {/* Filter Row 2: Status Chips with Legend */}
+            <div className="flex flex-wrap items-center gap-1.5 px-5 pt-3">
+              <Chip on={tableStatusFilter === 'all'} onClick={() => setTableStatusFilter('all')}>
+                All ({tables.length})
+              </Chip>
+              <Chip on={tableStatusFilter === 'free'} onClick={() => setTableStatusFilter('free')}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.free.color }} />
+                  Free ({freeCount})
+                </span>
+              </Chip>
+              <Chip on={tableStatusFilter === 'occupied'} onClick={() => setTableStatusFilter('occupied')}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: '#f59e0b' }} />
+                  Occupied ({occupiedCount})
+                </span>
+              </Chip>
+              <Chip on={tableStatusFilter === 'kot'} onClick={() => setTableStatusFilter('kot')}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.kot.color }} />
+                  KOT ({kotCount})
+                </span>
+              </Chip>
+              {readyCount > 0 && (
+                <Chip on={tableStatusFilter === 'ready'} onClick={() => setTableStatusFilter('ready')}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.ready.color }} />
+                    Ready ({readyCount})
+                  </span>
+                </Chip>
+              )}
+              {servedCount > 0 && (
+                <Chip on={tableStatusFilter === 'served'} onClick={() => setTableStatusFilter('served')}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: TABLE_STAGES.served.color }} />
+                    Served ({servedCount})
+                  </span>
+                </Chip>
+              )}
+            </div>
+
+            {/* Filter Row 3: Section Chips (D, L, M, O, S) */}
+            {prefixes.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 px-5 pt-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider mr-0.5" style={{ color: 'var(--ink-3)' }}>
+                  Section:
+                </span>
+                <Chip on={tableSectionFilter === 'all'} onClick={() => setTableSectionFilter('all')}>
+                  All
+                </Chip>
+                {prefixes.map((p) => {
+                  const count = tables.filter((t) => t.label.toUpperCase().startsWith(p)).length;
+                  const label = prefixNames[p] || p;
+                  return (
+                    <Chip key={p} on={tableSectionFilter === p} onClick={() => setTableSectionFilter(p)}>
+                      {label} ({count})
+                    </Chip>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* floor filter chips — only when floors are configured */}
+            {floors.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-5 pt-2">
+                <Chip on={floorFilter === 'all'} onClick={() => setFloorFilter('all')}>All Floors</Chip>
+                {floors.map((f) => (
+                  <Chip key={f.id} on={floorFilter === f.id} onClick={() => setFloorFilter(f.id)}>{f.name}</Chip>
+                ))}
+                {hasUnassigned && (
+                  <Chip on={floorFilter === 'unassigned'} onClick={() => setFloorFilter('unassigned')}>Unassigned</Chip>
+                )}
+              </div>
+            )}
+
+            {/* Results summary if filtered */}
+            {hasActiveFilters && (
+              <div className="px-5 pt-2 text-[11px] font-medium" style={{ color: 'var(--ink-3)' }}>
+                Showing {filteredTables.length} of {tables.length} tables
+              </div>
+            )}
+
+            {/* Table Grid / Empty State */}
+            {filteredTables.length === 0 ? (
+              <div className="p-8 text-center flex flex-col items-center gap-2">
+                <p className="text-sm font-bold" style={{ color: 'var(--ink-2)' }}>No tables match your filter criteria.</p>
+                <button
+                  onClick={() => {
+                    setTableStatusFilter('all');
+                    setTableSectionFilter('all');
+                    setTableSearchQuery('');
+                    setFloorFilter('all');
+                  }}
+                  className="btn btn-dark text-xs px-3.5 py-1.5"
+                >
+                  Clear all filters
+                </button>
+              </div>
+            ) : showAll && floors.length > 0 ? (
+              <div className="p-5 flex flex-col gap-5">
+                {shownGroups.map((g) => (
+                  <div key={g.key}>
+                    <div className="text-[11px] font-bold uppercase tracking-wide mb-2.5" style={{ color: 'var(--ink-3)' }}>{g.name}</div>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">{g.tables.map(renderTableButton)}</div>
                   </div>
-                  <h3 className="text-lg font-display font-bold">Order #{transferSuccess.orderNumber} Transferred</h3>
-                  <div className="p-3.5 rounded-xl border w-full flex flex-col gap-1.5 text-xs text-left" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-                    <div className="flex items-center justify-between">
-                      <span style={{ color: 'var(--ink-3)' }}>Source:</span>
-                      <b style={{ color: 'var(--cardamom-d, #16a34a)' }}>Table {transferSuccess.fromLabel} is now AVAILABLE</b>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span style={{ color: 'var(--ink-3)' }}>Destination:</span>
-                      <b style={{ color: 'var(--turmeric-d)' }}>Table {transferSuccess.toLabel} is now OCCUPIED</b>
-                    </div>
-                  </div>
-                  <button onClick={closeTableActions} className="btn btn-primary w-full mt-2">Done</button>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 p-5">
+                {filteredTables.map(renderTableButton)}
+              </div>
+            )}
+          </Modal>
+        );
+      })()}
+
+      {/* table actions — opens when an occupied table is tapped */}
+      {tableAction && (
+        <Modal
+          onClose={closeTableActions}
+          title={`Table ${tableAction.label}`}
+          headerAction={
+            !transferMode ? (
+              <button
+                onClick={() => {
+                  setTransferMode(true);
+                  setSelectedDestTable(null);
+                  setTransferOccupiedError(null);
+                  setTransferSuccess(null);
+                }}
+                title="Transfer table"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] border text-xs font-bold transition hover:opacity-90 shadow-sm"
+                style={{
+                  background: 'color-mix(in srgb, var(--turmeric) 22%, var(--paper))',
+                  borderColor: 'var(--turmeric)',
+                  color: 'var(--turmeric-d, #b45309)',
+                }}
+              >
+                <ArrowLeftRight size={14} aria-hidden />
+                <span>Transfer</span>
+              </button>
+            ) : undefined
+          }
+        >
+          {!tableOrder ? (
+            <p className="p-6 text-center" style={{ color: 'var(--ink-3)' }}>Loading order…</p>
+          ) : transferMode ? (
+            /* ── Table Transfer Flow ── */
+            transferSuccess ? (
+              <div className="p-6 text-center flex flex-col items-center gap-3">
+                <div className="w-14 h-14 rounded-full grid place-items-center text-2xl font-bold" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#16a34a' }}>
+                  ✓
                 </div>
-              ) : selectedDestTable ? (
-                transferOccupiedError || occupied[selectedDestTable.id] ? (
+                <h3 className="text-lg font-display font-bold">Order #{transferSuccess.orderNumber} Transferred</h3>
+                <div className="p-3.5 rounded-xl border w-full flex flex-col gap-1.5 text-xs text-left" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--ink-3)' }}>Source:</span>
+                    <b style={{ color: 'var(--cardamom-d, #16a34a)' }}>Table {transferSuccess.fromLabel} is now AVAILABLE</b>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--ink-3)' }}>Destination:</span>
+                    <b style={{ color: 'var(--turmeric-d)' }}>Table {transferSuccess.toLabel} is now OCCUPIED</b>
+                  </div>
+                </div>
+                <button onClick={closeTableActions} className="btn btn-primary w-full mt-2">Done</button>
+              </div>
+            ) : selectedDestTable ? (
+              transferOccupiedError || occupied[selectedDestTable.id] ? (
+                <div className="p-5 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <button onClick={() => { setSelectedDestTable(null); setTransferOccupiedError(null); }} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
+                    <span className="font-bold text-[13px]" style={{ color: 'var(--clay, #dc2626)' }}>Destination Occupied</span>
+                  </div>
+                  <div className="p-4 rounded-xl border flex flex-col gap-2" style={{ background: 'rgba(239, 68, 68, 0.08)', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
+                    <div className="flex items-center gap-2 font-bold text-sm" style={{ color: 'var(--clay, #dc2626)' }}>
+                      <CircleAlert size={18} /> Table {selectedDestTable.label} is already occupied.
+                    </div>
+                    <p className="text-xs" style={{ color: 'var(--ink-2)' }}>
+                      An active order is currently running on Table {selectedDestTable.label}. Normal transfer cannot overwrite an existing order.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 mt-2">
+                    <button
+                      onClick={() => {
+                        flash(`To merge into Table ${selectedDestTable.label}, add items directly or settle via POS.`);
+                      }}
+                      className="btn btn-dark w-full"
+                      style={{ background: 'var(--paper-3)', color: 'var(--ink-2)' }}
+                    >
+                      MERGE ORDERS
+                    </button>
+                    <button onClick={() => { setSelectedDestTable(null); setTransferOccupiedError(null); }} className="btn w-full">
+                      CANCEL
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-5 flex flex-col gap-3.5">
+                  <div className="flex items-center justify-between">
+                    <button onClick={() => setSelectedDestTable(null)} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
+                    <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>Confirm Transfer</span>
+                  </div>
+
+                  <div className="p-4 rounded-2xl border flex items-center justify-between text-center" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                    <div className="flex-1">
+                      <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>From</div>
+                      <div className="font-display font-black text-2xl" style={{ color: 'var(--clay, #dc2626)' }}>Table {tableAction.label}</div>
+                    </div>
+                    <div className="px-2" style={{ color: 'var(--turmeric-d)' }}>
+                      <ArrowRight size={22} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>To</div>
+                      <div className="font-display font-black text-2xl" style={{ color: 'var(--cardamom-d, #16a34a)' }}>Table {selectedDestTable.label}</div>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl border flex flex-col gap-1 text-xs" style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}>
+                    <div className="flex justify-between">
+                      <span style={{ color: 'var(--ink-3)' }}>Order:</span>
+                      <b>#{tableOrder.orders.map((o: any) => o.number).join(', ')}</b>
+                    </div>
+                    <div className="flex justify-between">
+                      <span style={{ color: 'var(--ink-3)' }}>Total:</span>
+                      <b className="tnum">{formatINR(tableOrder.totals.totalPaise)}</b>
+                    </div>
+                    <div className="flex justify-between">
+                      <span style={{ color: 'var(--ink-3)' }}>Items:</span>
+                      <span>{tableOrder.lines.reduce((s: number, l: any) => s + l.qty, 0)} items ({tableOrder.lines.length} lines)</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold mb-1" style={{ color: 'var(--ink-3)' }}>Reason (optional)</label>
+                    <input
+                      type="text"
+                      value={transferReason}
+                      onChange={(e) => setTransferReason(e.target.value)}
+                      placeholder="e.g. Guest moved outdoor, joined table..."
+                      className="w-full p-2.5 rounded-xl border text-sm outline-none"
+                      style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5 pt-1">
+                    <button onClick={() => setSelectedDestTable(null)} disabled={transferBusy} className="btn">
+                      Cancel
+                    </button>
+                    <button onClick={executeTableTransfer} disabled={transferBusy} className="btn btn-primary">
+                      {transferBusy ? 'Transferring…' : 'Confirm Transfer'}
+                    </button>
+                  </div>
+                </div>
+              )
+            ) : (
+              /* Destination Table Picker */
+              (() => {
+                const floorIds = new Set(floors.map((f) => f.id));
+                const hasUnassigned = tables.some((t) => !t.floorId || !floorIds.has(t.floorId));
+                const availableTables = transferFloorFilter === 'all'
+                  ? tables
+                  : transferFloorFilter === 'unassigned'
+                    ? tables.filter((t) => !t.floorId || !floorIds.has(t.floorId))
+                    : tables.filter((t) => t.floorId === transferFloorFilter);
+
+                return (
                   <div className="p-5 flex flex-col gap-3">
                     <div className="flex items-center justify-between">
-                      <button onClick={() => { setSelectedDestTable(null); setTransferOccupiedError(null); }} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
-                      <span className="font-bold text-[13px]" style={{ color: 'var(--clay, #dc2626)' }}>Destination Occupied</span>
-                    </div>
-                    <div className="p-4 rounded-xl border flex flex-col gap-2" style={{ background: 'rgba(239, 68, 68, 0.08)', borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-                      <div className="flex items-center gap-2 font-bold text-sm" style={{ color: 'var(--clay, #dc2626)' }}>
-                        <CircleAlert size={18} /> Table {selectedDestTable.label} is already occupied.
-                      </div>
-                      <p className="text-xs" style={{ color: 'var(--ink-2)' }}>
-                        An active order is currently running on Table {selectedDestTable.label}. Normal transfer cannot overwrite an existing order.
-                      </p>
-                    </div>
-                    <div className="flex flex-col gap-2 mt-2">
-                      <button
-                        onClick={() => {
-                          flash(`To merge into Table ${selectedDestTable.label}, add items directly or settle via POS.`);
-                        }}
-                        className="btn btn-dark w-full"
-                        style={{ background: 'var(--paper-3)', color: 'var(--ink-2)' }}
-                      >
-                        MERGE ORDERS
-                      </button>
-                      <button onClick={() => { setSelectedDestTable(null); setTransferOccupiedError(null); }} className="btn w-full">
-                        CANCEL
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-5 flex flex-col gap-3.5">
-                    <div className="flex items-center justify-between">
-                      <button onClick={() => setSelectedDestTable(null)} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
-                      <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>Confirm Transfer</span>
+                      <button onClick={() => setTransferMode(false)} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
+                      <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>Select Destination Table</span>
                     </div>
 
-                    <div className="p-4 rounded-2xl border flex items-center justify-between text-center" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-                      <div className="flex-1">
-                        <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>From</div>
-                        <div className="font-display font-black text-2xl" style={{ color: 'var(--clay, #dc2626)' }}>Table {tableAction.label}</div>
+                    {floors.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pb-1">
+                        <Chip on={transferFloorFilter === 'all'} onClick={() => setTransferFloorFilter('all')}>All</Chip>
+                        {floors.map((f) => (
+                          <Chip key={f.id} on={transferFloorFilter === f.id} onClick={() => setTransferFloorFilter(f.id)}>{f.name}</Chip>
+                        ))}
+                        {hasUnassigned && (
+                          <Chip on={transferFloorFilter === 'unassigned'} onClick={() => setTransferFloorFilter('unassigned')}>Unassigned</Chip>
+                        )}
                       </div>
-                      <div className="px-2" style={{ color: 'var(--turmeric-d)' }}>
-                        <ArrowRight size={22} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>To</div>
-                        <div className="font-display font-black text-2xl" style={{ color: 'var(--cardamom-d, #16a34a)' }}>Table {selectedDestTable.label}</div>
-                      </div>
-                    </div>
+                    )}
 
-                    <div className="p-3 rounded-xl border flex flex-col gap-1 text-xs" style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}>
-                      <div className="flex justify-between">
-                        <span style={{ color: 'var(--ink-3)' }}>Order:</span>
-                        <b>#{tableOrder.orders.map((o: any) => o.number).join(', ')}</b>
-                      </div>
-                      <div className="flex justify-between">
-                        <span style={{ color: 'var(--ink-3)' }}>Total:</span>
-                        <b className="tnum">{formatINR(tableOrder.totals.totalPaise)}</b>
-                      </div>
-                      <div className="flex justify-between">
-                        <span style={{ color: 'var(--ink-3)' }}>Items:</span>
-                        <span>{tableOrder.lines.reduce((s: number, l: any) => s + l.qty, 0)} items ({tableOrder.lines.length} lines)</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold mb-1" style={{ color: 'var(--ink-3)' }}>Reason (optional)</label>
-                      <input
-                        type="text"
-                        value={transferReason}
-                        onChange={(e) => setTransferReason(e.target.value)}
-                        placeholder="e.g. Guest moved outdoor, joined table..."
-                        className="w-full p-2.5 rounded-xl border text-sm outline-none"
-                        style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2.5 pt-1">
-                      <button onClick={() => setSelectedDestTable(null)} disabled={transferBusy} className="btn">
-                        Cancel
-                      </button>
-                      <button onClick={executeTableTransfer} disabled={transferBusy} className="btn btn-primary">
-                        {transferBusy ? 'Transferring…' : 'Confirm Transfer'}
-                      </button>
-                    </div>
-                  </div>
-                )
-              ) : (
-                /* Destination Table Picker */
-                (() => {
-                  const floorIds = new Set(floors.map((f) => f.id));
-                  const hasUnassigned = tables.some((t) => !t.floorId || !floorIds.has(t.floorId));
-                  const availableTables = transferFloorFilter === 'all'
-                    ? tables
-                    : transferFloorFilter === 'unassigned'
-                      ? tables.filter((t) => !t.floorId || !floorIds.has(t.floorId))
-                      : tables.filter((t) => t.floorId === transferFloorFilter);
-
-                  return (
-                    <div className="p-5 flex flex-col gap-3">
-                      <div className="flex items-center justify-between">
-                        <button onClick={() => setTransferMode(false)} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
-                        <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>Select Destination Table</span>
-                      </div>
-
-                      {floors.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pb-1">
-                          <Chip on={transferFloorFilter === 'all'} onClick={() => setTransferFloorFilter('all')}>All</Chip>
-                          {floors.map((f) => (
-                            <Chip key={f.id} on={transferFloorFilter === f.id} onClick={() => setTransferFloorFilter(f.id)}>{f.name}</Chip>
-                          ))}
-                          {hasUnassigned && (
-                            <Chip on={transferFloorFilter === 'unassigned'} onClick={() => setTransferFloorFilter('unassigned')}>Unassigned</Chip>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="max-h-[280px] overflow-auto grid grid-cols-3 sm:grid-cols-4 gap-2.5 pt-1">
-                        {availableTables.map((t) => {
-                          const isCurrent = t.id === tableAction.id;
-                          const occ = occupied[t.id];
-                          return (
-                            <button
-                              key={t.id}
-                              disabled={isCurrent}
-                              onClick={() => {
-                                if (isCurrent) return;
-                                setSelectedDestTable(t);
-                                if (occ) {
-                                  setTransferOccupiedError(`Table ${t.label} is already occupied.`);
-                                } else {
-                                  setTransferOccupiedError(null);
-                                }
-                              }}
-                              className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition relative"
-                              style={{
-                                opacity: isCurrent ? 0.35 : 1,
-                                borderColor: occ ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.5)',
-                                background: occ ? 'color-mix(in srgb, var(--clay, #dc2626) 8%, var(--paper-3))' : 'color-mix(in srgb, var(--cardamom-d, #16a34a) 8%, var(--paper-3))',
-                              }}
-                            >
-                              {isCurrent && (
-                                <span className="absolute top-1 right-1 text-[8.5px] font-bold px-1 rounded bg-black/40 text-white">Current</span>
-                              )}
-                              <span className="font-display font-bold text-[20px]">{t.label}</span>
-                              {occ ? (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#dc2626' }}>
-                                  Occupied
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#16a34a' }}>
-                                  Free · {t.seats}s
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()
-              )
-            ) : addMode ? (
-              /* ── inline add-items panel ── */
-              (() => {
-                const q = addSearch.trim().toLowerCase();
-                const items = menu.flatMap((c) => c.items).filter((it) => !q || it.name.toLowerCase().includes(q));
-                const cartTotal = tableCart.reduce((s, l) => s + l.pricePaise * l.qty, 0);
-                return (
-                  <div className="p-5 flex flex-col h-[85vh]">
-                    <div className="flex items-center justify-between mb-4 pb-2 border-b shrink-0" style={{ borderColor: 'var(--line)' }}>
-                      <button onClick={() => { setAddMode(false); setAddSearch(''); }} className="text-xs font-bold transition hover:opacity-80" style={{ color: 'var(--ink-3)' }}>← Back to Order</button>
-                      <button onClick={() => { setTableCart([]); setAddSearch(''); }} className="text-[11px] font-bold px-2 py-1 rounded transition hover:opacity-80" style={{ color: 'var(--ink-3)', background: 'var(--paper-3)' }}>Clear</button>
-                    </div>
-
-                    <div className="flex-1 min-h-0 flex flex-col">
-                      <div className="text-[11px] font-bold uppercase mb-2" style={{ color: 'var(--ink-3)' }}>Ordering Now</div>
-                      
-                      {tableCart.length === 0 ? (
-                        <div className="flex-1 flex items-center justify-center border-2 border-dashed rounded-xl mb-4" style={{ borderColor: 'var(--line-2)' }}>
-                          <p className="text-xs text-center" style={{ color: 'var(--ink-3)' }}>No new items selected yet.<br/>Search or tap items below.</p>
-                        </div>
-                      ) : (
-                        <div className="flex-1 min-h-[120px] overflow-y-auto flex flex-col gap-2 mb-4 pr-1 pos-scroll">
-                          {tableCart.map((l) => {
-                            const CatIcon = l.catName ? getCategoryIcon(l.catName) : null;
-                            return (
-                              <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border shrink-0" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-                                <div className={`grid ${CatIcon ? 'grid-cols-[auto_1fr_auto]' : 'grid-cols-[1fr_auto]'} gap-2.5 items-center`}>
-                                  {CatIcon && (
-                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))', border: '1px solid color-mix(in srgb, var(--turmeric) 20%, var(--line))', color: 'var(--turmeric-d, #b45309)' }} aria-hidden>
-                                      <CatIcon size={16} className="stroke-[1.85]" />
-                                    </div>
-                                  )}
-                                  <div className="min-w-0 pr-1">
-                                    <div className="font-bold text-[13.5px] leading-tight truncate flex items-center justify-between">
-                                      <span className="truncate pr-2">{l.name}</span>
-                                      <span className="text-[13px] tnum shrink-0 font-normal" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
-                                    </div>
-                                    
-                                    {l.notes && tableEditingNoteKey !== l.key && (
-                                      <div className="flex items-center gap-1.5 mt-1">
-                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
-                                          ↳ {l.notes}
-                                        </span>
-                                        <button type="button" onClick={() => openTableNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
-                                        <button type="button" onClick={() => removeTableNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
-                                      </div>
-                                    )}
-                                    {!l.notes && tableEditingNoteKey !== l.key && (
-                                      <button type="button" onClick={() => openTableNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
-                                        <Plus size={11} /> <span>Add note</span>
-                                      </button>
-                                    )}
-                                  </div>
-                                  
-                                  <div className="flex items-center gap-1.5">
-                                    <button onClick={() => bumpTable(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-9 h-9 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
-                                    <span className="font-bold w-5 text-center tnum">{l.qty}</span>
-                                    <button onClick={() => bumpTable(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-9 h-9 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
-                                  </div>
-                                </div>
-
-                                {tableEditingNoteKey === l.key && (
-                                  <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
-                                    <div className="flex flex-wrap gap-1">
-                                      {QUICK_ITEM_NOTES.map((preset) => (
-                                        <button
-                                          key={preset}
-                                          type="button"
-                                          onClick={() => setTableNoteDraft(preset)}
-                                          className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
-                                          style={{ background: tableNoteDraft === preset ? 'var(--turmeric)' : 'var(--paper)', color: tableNoteDraft === preset ? '#2A1607' : 'var(--ink-2)', borderColor: 'var(--line-2)' }}
-                                        >
-                                          {preset}
-                                        </button>
-                                      ))}
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <input
-                                        type="text"
-                                        value={tableNoteDraft}
-                                        onChange={(e) => setTableNoteDraft(e.target.value)}
-                                        placeholder="e.g. No onion..."
-                                        className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
-                                        style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
-                                        autoFocus
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') saveTableNote(l.key);
-                                          if (e.key === 'Escape') removeTableNote(l.key);
-                                        }}
-                                      />
-                                      <button type="button" onClick={() => saveTableNote(l.key)} className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0" style={{ background: 'var(--turmeric-d)' }}>Save</button>
-                                      <button type="button" onClick={() => { if (!l.notes) removeTableNote(l.key); else openTableNoteEdit({ ...l, notes: l.notes }); }} className="px-2 py-1 text-xs font-medium rounded-lg shrink-0" style={{ color: 'var(--ink-3)' }}>Cancel</button>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      <button onClick={sendTableCart} disabled={tableCart.length === 0 || sendBusy} className="btn btn-primary w-full shrink-0 mb-4" style={tableCart.length === 0 ? { opacity: 0.5 } : undefined}>
-                        {sendBusy ? 'Sending…' : `🍽️ SEND TO KITCHEN${cartTotal > 0 ? ` · ${formatINR(cartTotal)}` : ''}`}
-                      </button>
-
-                      <div className="border-t pt-4 flex-1 flex flex-col min-h-0" style={{ borderColor: 'var(--line)' }}>
-                        <input
-                          value={addSearch}
-                          onChange={(e) => setAddSearch(e.target.value)}
-                          placeholder="Search menu to add..."
-                          className="w-full p-2.5 rounded-xl border text-sm outline-none mb-3 shrink-0"
-                          style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
-                        />
-                        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 pos-scroll pb-4">
-                          {items.length === 0 ? (
-                            <p className="text-sm text-center py-4" style={{ color: 'var(--ink-3)' }}>No items match.</p>
-                          ) : items.map((it) => (
-                            <button key={it.id} onClick={() => addToTable(it)} className="flex justify-between items-center gap-2 text-sm p-2.5 rounded-xl text-left border" style={{ background: 'var(--paper-3)', borderColor: 'transparent' }}>
-                              <span className="min-w-0"><b className="block truncate">{it.name}</b><span className="text-xs" style={{ color: 'var(--ink-3)' }}>{formatINR(it.pricePaise)}{it.station ? ` · ${it.station}` : ''}</span></span>
-                              <span className="shrink-0 w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'color-mix(in srgb, var(--turmeric) 20%, transparent)', color: 'var(--turmeric-d)' }} aria-hidden><Plus size={16} /></span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                    <div className="max-h-[280px] overflow-auto grid grid-cols-3 sm:grid-cols-4 gap-2.5 pt-1">
+                      {availableTables.map((t) => {
+                        const isCurrent = t.id === tableAction.id;
+                        const occ = occupied[t.id];
+                        return (
+                          <button
+                            key={t.id}
+                            disabled={isCurrent}
+                            onClick={() => {
+                              if (isCurrent) return;
+                              setSelectedDestTable(t);
+                              if (occ) {
+                                setTransferOccupiedError(`Table ${t.label} is already occupied.`);
+                              } else {
+                                setTransferOccupiedError(null);
+                              }
+                            }}
+                            className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition relative"
+                            style={{
+                              opacity: isCurrent ? 0.35 : 1,
+                              borderColor: occ ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.5)',
+                              background: occ ? 'color-mix(in srgb, var(--clay, #dc2626) 8%, var(--paper-3))' : 'color-mix(in srgb, var(--cardamom-d, #16a34a) 8%, var(--paper-3))',
+                            }}
+                          >
+                            {isCurrent && (
+                              <span className="absolute top-1 right-1 text-[8.5px] font-bold px-1 rounded bg-black/40 text-white">Current</span>
+                            )}
+                            <span className="font-display font-bold text-[20px]">{t.label}</span>
+                            {occ ? (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#dc2626' }}>
+                                Occupied
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#16a34a' }}>
+                                Free · {t.seats}s
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 );
               })()
-            ) : (
-              <div className="p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>
-                    {tableOrder.count} order{tableOrder.count > 1 ? 's' : ''} · #{tableOrder.orders.map((o: any) => o.number).join(', ')}
-                  </span>
-                  <span className="font-display font-extrabold text-2xl tnum">{formatINR(tableOrder.totals.totalPaise)}</span>
-                </div>
-
-                <div className="max-h-[240px] overflow-auto flex flex-col gap-1.5 border-t border-b py-3 mb-4" style={{ borderColor: 'var(--line)' }}>
-                  {tableOrder.lines.length === 0 ? (
-                    <p className="text-sm text-center py-2" style={{ color: 'var(--ink-3)' }}>No items yet.</p>
-                  ) : tableOrder.lines.map((l: any) => (
-                    <div key={l.id} className="flex justify-between items-center gap-2 text-sm">
-                      <span className="min-w-0"><b className="mr-1.5" style={{ color: 'var(--turmeric-d)' }}>{l.qty}×</b>{l.name}</span>
-                      <span className="flex items-center gap-2 shrink-0">
-                        <span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
-                        {canSettleBill && (
-                          <button onClick={() => voidLine(l)} disabled={voidBusyId === l.id} title="Remove item" aria-label={`Remove ${l.name}`} className="w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--paper-3)', color: 'var(--clay, #c0392b)', opacity: voidBusyId === l.id ? 0.5 : 1 }}><X size={15} aria-hidden /></button>
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* customer on the bill — optional, defaults to "Customer" */}
-                <div className="mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[12.5px] font-bold" style={{ color: custName.trim() ? 'var(--ink-2)' : 'var(--ink-3)' }}>
-                      <User size={14} aria-hidden /> {billCustomer}{custPhone.trim() ? ` · ${custPhone.trim()}` : ''}
-                    </span>
-                    <button onClick={() => {
-                      if (showCust) {
-                        saveTableCustomer(custName, custPhone);
-                        setShowCust(false);
-                      } else {
-                        setShowCust(true);
-                      }
-                    }} className="ml-auto text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>
-                      {showCust ? 'Done' : custName.trim() ? 'Edit' : '＋ Add customer'}
-                    </button>
+            )
+          ) : addMode ? (
+            /* ── inline add-items panel ── */
+            (() => {
+              const q = addSearch.trim().toLowerCase();
+              const items = menu.flatMap((c) => c.items).filter((it) => !q || it.name.toLowerCase().includes(q));
+              const cartTotal = tableCart.reduce((s, l) => s + l.pricePaise * l.qty, 0);
+              return (
+                <div className="p-5 flex flex-col h-[85vh]">
+                  <div className="flex items-center justify-between mb-4 pb-2 border-b shrink-0" style={{ borderColor: 'var(--line)' }}>
+                    <button onClick={() => { setAddMode(false); setAddSearch(''); }} className="text-xs font-bold transition hover:opacity-80" style={{ color: 'var(--ink-3)' }}>← Back to Order</button>
+                    <button onClick={() => { setTableCart([]); setAddSearch(''); }} className="text-[11px] font-bold px-2 py-1 rounded transition hover:opacity-80" style={{ color: 'var(--ink-3)', background: 'var(--paper-3)' }}>Clear</button>
                   </div>
-                  {showCust && (
-                    <CustomerField name={custName} phone={custPhone} open={showCust}
-                      setName={setCustName} setPhone={setCustPhone} setOpen={(v) => {
-                        setShowCust(v);
-                        if (!v) saveTableCustomer(custName, custPhone);
-                      }} compact />
+
+                  <div className="flex-1 min-h-0 flex flex-col">
+                    <div className="text-[11px] font-bold uppercase mb-2" style={{ color: 'var(--ink-3)' }}>Ordering Now</div>
+
+                    {tableCart.length === 0 ? (
+                      <div className="flex-1 flex items-center justify-center border-2 border-dashed rounded-xl mb-4" style={{ borderColor: 'var(--line-2)' }}>
+                        <p className="text-xs text-center" style={{ color: 'var(--ink-3)' }}>No new items selected yet.<br />Search or tap items below.</p>
+                      </div>
+                    ) : (
+                      <div className="flex-1 min-h-[120px] overflow-y-auto flex flex-col gap-2 mb-4 pr-1 pos-scroll">
+                        {tableCart.map((l) => {
+                          const CatIcon = l.catName ? getCategoryIcon(l.catName) : null;
+                          return (
+                            <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border shrink-0" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                              <div className={`grid ${CatIcon ? 'grid-cols-[auto_1fr_auto]' : 'grid-cols-[1fr_auto]'} gap-2.5 items-center`}>
+                                {CatIcon && (
+                                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))', border: '1px solid color-mix(in srgb, var(--turmeric) 20%, var(--line))', color: 'var(--turmeric-d, #b45309)' }} aria-hidden>
+                                    <CatIcon size={16} className="stroke-[1.85]" />
+                                  </div>
+                                )}
+                                <div className="min-w-0 pr-1">
+                                  <div className="font-bold text-[13.5px] leading-tight truncate flex items-center justify-between">
+                                    <span className="truncate pr-2">{l.name}</span>
+                                    <span className="text-[13px] tnum shrink-0 font-normal" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
+                                  </div>
+
+                                  {l.notes && tableEditingNoteKey !== l.key && (
+                                    <div className="flex items-center gap-1.5 mt-1">
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
+                                        ↳ {l.notes}
+                                      </span>
+                                      <button type="button" onClick={() => openTableNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
+                                      <button type="button" onClick={() => removeTableNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
+                                    </div>
+                                  )}
+                                  {!l.notes && tableEditingNoteKey !== l.key && (
+                                    <button type="button" onClick={() => openTableNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
+                                      <Plus size={11} /> <span>Add note</span>
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  <button onClick={() => bumpTable(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-9 h-9 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
+                                  <span className="font-bold w-5 text-center tnum">{l.qty}</span>
+                                  <button onClick={() => bumpTable(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-9 h-9 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
+                                </div>
+                              </div>
+
+                              {tableEditingNoteKey === l.key && (
+                                <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
+                                  <div className="flex flex-wrap gap-1">
+                                    {QUICK_ITEM_NOTES.map((preset) => (
+                                      <button
+                                        key={preset}
+                                        type="button"
+                                        onClick={() => setTableNoteDraft(preset)}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
+                                        style={{ background: tableNoteDraft === preset ? 'var(--turmeric)' : 'var(--paper)', color: tableNoteDraft === preset ? '#2A1607' : 'var(--ink-2)', borderColor: 'var(--line-2)' }}
+                                      >
+                                        {preset}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="text"
+                                      value={tableNoteDraft}
+                                      onChange={(e) => setTableNoteDraft(e.target.value)}
+                                      placeholder="e.g. No onion..."
+                                      className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
+                                      style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
+                                      autoFocus
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') saveTableNote(l.key);
+                                        if (e.key === 'Escape') removeTableNote(l.key);
+                                      }}
+                                    />
+                                    <button type="button" onClick={() => saveTableNote(l.key)} className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0" style={{ background: 'var(--turmeric-d)' }}>Save</button>
+                                    <button type="button" onClick={() => { if (!l.notes) removeTableNote(l.key); else openTableNoteEdit({ ...l, notes: l.notes }); }} className="px-2 py-1 text-xs font-medium rounded-lg shrink-0" style={{ color: 'var(--ink-3)' }}>Cancel</button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <button onClick={sendTableCart} disabled={tableCart.length === 0 || sendBusy} className="btn btn-primary w-full shrink-0 mb-4" style={tableCart.length === 0 ? { opacity: 0.5 } : undefined}>
+                      {sendBusy ? 'Sending…' : `🍽️ SEND TO KITCHEN${cartTotal > 0 ? ` · ${formatINR(cartTotal)}` : ''}`}
+                    </button>
+
+                    <div className="border-t pt-4 flex-1 flex flex-col min-h-0" style={{ borderColor: 'var(--line)' }}>
+                      <input
+                        value={addSearch}
+                        onChange={(e) => setAddSearch(e.target.value)}
+                        placeholder="Search menu to add..."
+                        className="w-full p-2.5 rounded-xl border text-sm outline-none mb-3 shrink-0"
+                        style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                      />
+                      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 pos-scroll pb-4">
+                        {items.length === 0 ? (
+                          <p className="text-sm text-center py-4" style={{ color: 'var(--ink-3)' }}>No items match.</p>
+                        ) : items.map((it) => (
+                          <button key={it.id} onClick={() => addToTable(it)} className="flex justify-between items-center gap-2 text-sm p-2.5 rounded-xl text-left border" style={{ background: 'var(--paper-3)', borderColor: 'transparent' }}>
+                            <span className="min-w-0"><b className="block truncate">{it.name}</b><span className="text-xs" style={{ color: 'var(--ink-3)' }}>{formatINR(it.pricePaise)}{it.station ? ` · ${it.station}` : ''}</span></span>
+                            <span className="shrink-0 w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'color-mix(in srgb, var(--turmeric) 20%, transparent)', color: 'var(--turmeric-d)' }} aria-hidden><Plus size={16} /></span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>
+                  {tableOrder.count} order{tableOrder.count > 1 ? 's' : ''} · #{tableOrder.orders.map((o: any) => o.number).join(', ')}
+                </span>
+                <span className="font-display font-extrabold text-2xl tnum">{formatINR(tableOrder.totals.totalPaise)}</span>
+              </div>
+
+              <div className="max-h-[240px] overflow-auto flex flex-col gap-1.5 border-t border-b py-3 mb-4" style={{ borderColor: 'var(--line)' }}>
+                {tableOrder.lines.length === 0 ? (
+                  <p className="text-sm text-center py-2" style={{ color: 'var(--ink-3)' }}>No items yet.</p>
+                ) : tableOrder.lines.map((l: any) => (
+                  <div key={l.id} className="flex justify-between items-center gap-2 text-sm">
+                    <span className="min-w-0"><b className="mr-1.5" style={{ color: 'var(--turmeric-d)' }}>{l.qty}×</b>{l.name}</span>
+                    <span className="flex items-center gap-2 shrink-0">
+                      <span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
+                      {canSettleBill && (
+                        <button onClick={() => voidLine(l)} disabled={voidBusyId === l.id} title="Remove item" aria-label={`Remove ${l.name}`} className="w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--paper-3)', color: 'var(--clay, #c0392b)', opacity: voidBusyId === l.id ? 0.5 : 1 }}><X size={15} aria-hidden /></button>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* customer on the bill — optional, defaults to "Customer" */}
+              <div className="mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-[12.5px] font-bold" style={{ color: custName.trim() ? 'var(--ink-2)' : 'var(--ink-3)' }}>
+                    <User size={14} aria-hidden /> {billCustomer}{custPhone.trim() ? ` · ${custPhone.trim()}` : ''}
+                  </span>
+                  <button onClick={() => {
+                    if (showCust) {
+                      saveTableCustomer(custName, custPhone);
+                      setShowCust(false);
+                    } else {
+                      setShowCust(true);
+                    }
+                  }} className="ml-auto text-xs font-bold" style={{ color: 'var(--turmeric-d)' }}>
+                    {showCust ? 'Done' : custName.trim() ? 'Edit' : '＋ Add customer'}
+                  </button>
+                </div>
+                {showCust && (
+                  <CustomerField name={custName} phone={custPhone} open={showCust}
+                    setName={setCustName} setPhone={setCustPhone} setOpen={(v) => {
+                      setShowCust(v);
+                      if (!v) saveTableCustomer(custName, custPhone);
+                    }} compact />
+                )}
+              </div>
+
+              {(
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    onClick={() => { setAddMode(true); setTableCart([]); setAddSearch(''); }}
+                    className="btn btn-dark"
+                  >
+                    <Plus size={16} aria-hidden /> Add items
+                  </button>
+                  <button
+                    onClick={printKOT}
+                    className="btn"
+                  >
+                    <Receipt size={16} aria-hidden /> Print KOT
+                  </button>
+                  {canPrintBill && (
+                    <button
+                      onClick={printBill}
+                      disabled={printBusy}
+                      className="btn col-span-2"
+                      title={billPrinted ? 'Bill already printed — click to reprint bill' : 'Print bill for this table'}
+                      style={billPrinted ? { borderColor: 'var(--turmeric, #d97706)' } : {}}
+                    >
+                      <Printer size={16} aria-hidden />
+                      {printBusy ? 'Printing bill...' : billPrinted ? '🖨️ Reprint Bill' : 'Print bill'}
+                    </button>
                   )}
                 </div>
+              )}
+              {billPrinted && (
+                <p className="text-[11px] mt-2 text-center font-semibold" style={{ color: 'var(--turmeric-d)' }}>
+                  💳 Bill printed. Collect payment at the billing counter (T-Billing) to settle.
+                </p>
+              )}
+              {!canPrintBill && !billPrinted && <p className="text-[11px] mt-3 text-center" style={{ color: 'var(--ink-3)' }}>Bill printing requires staff access.</p>}
+            </div>
+          )}
+        </Modal>
+      )}
 
-                {(
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <button
-                      onClick={() => { setAddMode(true); setTableCart([]); setAddSearch(''); }}
-                      className="btn btn-dark"
-                    >
-                      <Plus size={16} aria-hidden /> Add items
-                    </button>
-                    <button
-                      onClick={printKOT}
-                      className="btn"
-                    >
-                      <Receipt size={16} aria-hidden /> Print KOT
-                    </button>
-                    {canPrintBill && (
-                      <button
-                        onClick={printBill}
-                        disabled={printBusy}
-                        className="btn col-span-2"
-                        title={billPrinted ? 'Bill already printed — click to reprint bill' : 'Print bill for this table'}
-                        style={billPrinted ? { borderColor: 'var(--turmeric, #d97706)' } : {}}
-                      >
-                        <Printer size={16} aria-hidden />
-                        {printBusy ? 'Printing bill...' : billPrinted ? '🖨️ Reprint Bill' : 'Print bill'}
-                      </button>
-                    )}
-                  </div>
-                )}
-                {billPrinted && (
-                  <p className="text-[11px] mt-2 text-center font-semibold" style={{ color: 'var(--turmeric-d)' }}>
-                    💳 Bill printed. Collect payment at the billing counter (T-Billing) to settle.
-                  </p>
-                )}
-                {!canPrintBill && !billPrinted && <p className="text-[11px] mt-3 text-center" style={{ color: 'var(--ink-3)' }}>Bill printing requires staff access.</p>}
-              </div>
-            )}
-          </Modal>
-        )}
+      {/* charge modal */}
+      {charging && (
+        <ChargeModal total={bill.totalPaise} busy={busy}
+          initialName={orderCustName} initialPhone={orderCustPhone}
+          upiConfig={outlet.upiConfig}
+          onClose={() => setCharging(false)}
+          onConfirm={(method, tipPaise, opts) => submit({ method, tipPaise }, opts)} />
+      )}
 
-        {/* charge modal */}
-        {charging && (
-          <ChargeModal total={bill.totalPaise} busy={busy}
-            initialName={orderCustName} initialPhone={orderCustPhone}
-            upiConfig={outlet.upiConfig}
-            onClose={() => setCharging(false)}
-            onConfirm={(method, tipPaise, opts) => submit({ method, tipPaise }, opts)} />
-        )}
-
-        {toast && (
-          <div role="status" aria-live="polite" className="anim-slide-in fixed left-1/2 -translate-x-1/2 bottom-[calc(76px_+_env(safe-area-inset-bottom))] md:bottom-7 z-[9000] px-5 py-3 rounded-full font-bold text-sm shadow-3" style={{ background: 'var(--ink)', color: 'var(--paper-2)' }}>
-            {toast}
-          </div>
-        )}
+      {toast && (
+        <div role="status" aria-live="polite" className="anim-slide-in fixed left-1/2 -translate-x-1/2 bottom-[calc(76px_+_env(safe-area-inset-bottom))] md:bottom-7 z-[9000] px-5 py-3 rounded-full font-bold text-sm shadow-3" style={{ background: 'var(--ink)', color: 'var(--paper-2)' }}>
+          {toast}
+        </div>
+      )}
 
       {/* ── Mobile sticky cart bar — taps open the bottom-sheet (phones only) ── */}
       {!cartSheetOpen && cartCount > 0 && (
@@ -3085,9 +3082,8 @@ ${rows}
       {/* T-Billing Terminal Modal — pre-warmed & kept mounted for instant 0ms latency */}
       {tBillingMounted && (
         <div
-          className={`fixed inset-0 z-[9500] flex flex-col bg-black transition-opacity duration-150 ${
-            showTBilling ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none -z-50'
-          }`}
+          className={`fixed inset-0 z-[9500] flex flex-col bg-black transition-opacity duration-150 ${showTBilling ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none -z-50'
+            }`}
           style={{
             visibility: showTBilling ? 'visible' : 'hidden',
           }}
@@ -3182,102 +3178,102 @@ function CartBody({
           {cart.map((l) => {
             const CatIcon = l.catName ? getCategoryIcon(l.catName) : null;
             return (
-            <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border shrink-0" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
-              <div className={`grid ${CatIcon ? 'grid-cols-[auto_1fr_auto_auto]' : 'grid-cols-[1fr_auto_auto]'} gap-2.5 items-center`}>
-                {CatIcon && (
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                    style={{
-                      background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))',
-                      border: '1px solid color-mix(in srgb, var(--turmeric) 20%, var(--line))',
-                      color: 'var(--turmeric-d, #b45309)',
-                    }}
-                    aria-hidden="true"
-                  >
-                    <CatIcon size={16} className="stroke-[1.85]" />
-                  </div>
-                )}
-                <div className="min-w-0 pr-1">
-                  <div className="font-bold text-[13.5px] leading-tight truncate">{l.name}</div>
-                  {l.notes && editingNoteKey !== l.key && (
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
-                        ↳ {l.notes}
-                      </span>
-                      <button type="button" onClick={() => openNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
-                      <button type="button" onClick={() => removeNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
+              <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border shrink-0" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                <div className={`grid ${CatIcon ? 'grid-cols-[auto_1fr_auto_auto]' : 'grid-cols-[1fr_auto_auto]'} gap-2.5 items-center`}>
+                  {CatIcon && (
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style={{
+                        background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))',
+                        border: '1px solid color-mix(in srgb, var(--turmeric) 20%, var(--line))',
+                        color: 'var(--turmeric-d, #b45309)',
+                      }}
+                      aria-hidden="true"
+                    >
+                      <CatIcon size={16} className="stroke-[1.85]" />
                     </div>
                   )}
-                  {!l.notes && editingNoteKey !== l.key && (
-                    <button type="button" onClick={() => openNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
-                      <Plus size={11} /> <span>Add note (e.g. without sugar)</span>
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button onClick={() => bump(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
-                  <span className="font-bold w-6 text-center tnum">{l.qty}</span>
-                  <button onClick={() => bump(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
-                </div>
-                <span className="text-[13.5px] tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
-              </div>
-
-              {editingNoteKey === l.key && (
-                <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
-                  <div className="flex flex-wrap gap-1">
-                    {quickNotes.map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setNoteDraft(preset)}
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
-                        style={{
-                          background: noteDraft === preset ? 'var(--turmeric)' : 'var(--paper)',
-                          color: noteDraft === preset ? '#2A1607' : 'var(--ink-2)',
-                          borderColor: 'var(--line-2)',
-                        }}
-                      >
-                        {preset}
+                  <div className="min-w-0 pr-1">
+                    <div className="font-bold text-[13.5px] leading-tight truncate">{l.name}</div>
+                    {l.notes && editingNoteKey !== l.key && (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
+                          ↳ {l.notes}
+                        </span>
+                        <button type="button" onClick={() => openNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
+                        <button type="button" onClick={() => removeNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
+                      </div>
+                    )}
+                    {!l.notes && editingNoteKey !== l.key && (
+                      <button type="button" onClick={() => openNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
+                        <Plus size={11} /> <span>Add note (e.g. without sugar)</span>
                       </button>
-                    ))}
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={noteDraft}
-                      onChange={(e) => setNoteDraft(e.target.value)}
-                      placeholder="e.g. without sugar, extra hot..."
-                      className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
-                      style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') saveNote(l.key);
-                        if (e.key === 'Escape') removeNote(l.key);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => saveNote(l.key)}
-                      className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0"
-                      style={{ background: 'var(--turmeric-d)' }}
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!l.notes) removeNote(l.key);
-                        else openNoteEdit({ ...l, notes: l.notes });
-                      }}
-                      className="px-2 py-1 text-xs font-medium rounded-lg shrink-0"
-                      style={{ color: 'var(--ink-3)' }}
-                    >
-                      Cancel
-                    </button>
+                    <button onClick={() => bump(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
+                    <span className="font-bold w-6 text-center tnum">{l.qty}</span>
+                    <button onClick={() => bump(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-11 h-11 md:w-8 md:h-8 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
                   </div>
+                  <span className="text-[13.5px] tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
                 </div>
-              )}
-            </div>
+
+                {editingNoteKey === l.key && (
+                  <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
+                    <div className="flex flex-wrap gap-1">
+                      {quickNotes.map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setNoteDraft(preset)}
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
+                          style={{
+                            background: noteDraft === preset ? 'var(--turmeric)' : 'var(--paper)',
+                            color: noteDraft === preset ? '#2A1607' : 'var(--ink-2)',
+                            borderColor: 'var(--line-2)',
+                          }}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={noteDraft}
+                        onChange={(e) => setNoteDraft(e.target.value)}
+                        placeholder="e.g. without sugar, extra hot..."
+                        className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
+                        style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveNote(l.key);
+                          if (e.key === 'Escape') removeNote(l.key);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => saveNote(l.key)}
+                        className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0"
+                        style={{ background: 'var(--turmeric-d)' }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!l.notes) removeNote(l.key);
+                          else openNoteEdit({ ...l, notes: l.notes });
+                        }}
+                        className="px-2 py-1 text-xs font-medium rounded-lg shrink-0"
+                        style={{ color: 'var(--ink-3)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -3398,7 +3394,21 @@ function Chip({ children, on, onClick }: { children: React.ReactNode; on: boolea
 
 function Modal({ children, title, onClose, headerAction }: { children: React.ReactNode; title: string; onClose: () => void; headerAction?: React.ReactNode }) {
   return (
-    <div onClick={onClose} className="fixed inset-0 z-[800] grid place-items-center p-5" style={{ background: 'rgba(30,18,10,.5)', backdropFilter: 'blur(6px)' }}>
+    <div 
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) {
+          (e.currentTarget as any)._closeOnUp = true;
+        }
+      }}
+      onPointerUp={(e) => {
+        if (e.target === e.currentTarget && (e.currentTarget as any)._closeOnUp) {
+          onClose();
+        }
+        (e.currentTarget as any)._closeOnUp = false;
+      }}
+      className="fixed inset-0 z-[800] grid place-items-center p-5" 
+      style={{ background: 'rgba(30,18,10,.5)', backdropFilter: 'blur(6px)' }}
+    >
       <div onClick={(e) => e.stopPropagation()} className="w-[min(560px,100%)] max-h-[90vh] overflow-auto" style={{ background: 'var(--paper-2)', borderRadius: '30px', boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
         <div className="flex items-center gap-3 px-5 py-[18px] border-b" style={{ borderColor: 'var(--line)' }}>
           <h3 className="text-[19px]">{title}</h3>
