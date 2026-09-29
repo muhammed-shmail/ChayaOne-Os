@@ -336,6 +336,7 @@ type Outlet = {
   gstConfig?: any;
   upiConfig?: any;
   logoUrl?: string | null;
+  parcel?: { mode: 'common' | 'per_item'; commonChargePaise: number };
 };
 type Staff = {
   id: string;
@@ -629,6 +630,8 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   const [addSearch, setAddSearch] = useState('');
   const [sendBusy, setSendBusy] = useState(false);
   const [voidBusyId, setVoidBusyId] = useState<string | null>(null);
+  const [tableEditingNoteKey, setTableEditingNoteKey] = useState<string | null>(null);
+  const [tableNoteDraft, setTableNoteDraft] = useState('');
 
   // ---- optional customer on the table's bill (defaults to "Customer" when blank) ----
   const [custName, setCustName] = useState('');
@@ -784,6 +787,22 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
     setTableCart((c) => c.flatMap((l) => (l.key === key ? (l.qty + d <= 0 ? [] : [{ ...l, qty: l.qty + d }]) : [l])));
   }
 
+  function openTableNoteEdit(line: Line) {
+    setTableEditingNoteKey(line.key);
+    // line.notes is string | string[] | undefined in type Line, but we store it as a single string currently
+    setTableNoteDraft(Array.isArray(line.notes) ? line.notes.join(', ') : (line.notes || ''));
+  }
+
+  function saveTableNote(key: string) {
+    setTableCart((c) => c.map((l) => (l.key === key ? { ...l, notes: tableNoteDraft.trim() || undefined } : l)));
+    setTableEditingNoteKey(null);
+  }
+
+  function removeTableNote(key: string) {
+    setTableCart((c) => c.map((l) => (l.key === key ? { ...l, notes: undefined } : l)));
+    setTableEditingNoteKey(null);
+  }
+
   async function sendTableCart() {
     if (!tableAction || tableCart.length === 0) return;
     if (isOffline()) { flash(OFFLINE_ORDER_MSG); return; }
@@ -796,7 +815,16 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
         type: 'dine_in' as const,
         tableId: tableAction.id,
         ...(custName.trim() || custPhone.trim() ? { customer: { name: custName.trim(), phone: custPhone.trim() } } : {}),
-        lines: tableCart.map((l) => ({ itemId: l.itemId, nameSnapshot: l.name, qty: l.qty, unitPricePaise: l.pricePaise, gstRate: l.gstRate, station: l.station, modifiers: [] })),
+        lines: tableCart.map((l) => ({ 
+          itemId: l.itemId, 
+          nameSnapshot: l.name, 
+          qty: l.qty, 
+          unitPricePaise: l.pricePaise, 
+          gstRate: l.gstRate, 
+          station: l.station, 
+          modifiers: [],
+          notes: l.notes || undefined
+        })),
         discountPct: 0,
         serviceChargePct: 0,
         interState: false,
@@ -805,7 +833,10 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
       const r = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json', ...geo }, body: JSON.stringify(body) });
       const d = await r.json();
       if (!r.ok) {
-        flash(d?.message || (d?.error === 'out_of_range' ? 'Too far from the cafe to send this order' : 'Cannot reach Main PC — check Wi-Fi (disable 5G)'));
+        if (d?.error === 'out_of_range') { flash('Too far from the cafe to send this order'); return; }
+        if (d?.error === 'slot_exceeded') { flash('Monthly order limit reached'); return; }
+        if (d?.issues) { console.error('Order validation issues:', d.issues); flash('Invalid order data'); return; }
+        flash(d?.message || (d?.error ? `Error: ${d.error}` : 'Cannot reach Main PC — check Wi-Fi (disable 5G)'));
         return;
       }
       flash(`KOT #${d.order.number} sent to kitchen`);
@@ -1519,22 +1550,55 @@ ${rows}
     return cat ? withCat(cat) : [];
   }, [q, menu, cat]);
 
+  const packagingChargePaise = useMemo(() => {
+    const parcelSettings = outlet.parcel;
+    const mode = parcelSettings?.mode ?? 'common';
+
+    // notes can be string | string[] | undefined — normalise to array safely
+    const hasParcelNote = (notes: unknown): boolean => {
+      if (!notes) return false;
+      if (typeof notes === 'string') return notes.toLowerCase().includes('parcel');
+      if (Array.isArray(notes)) return notes.some(n => String(n).toLowerCase().includes('parcel'));
+      return false;
+    };
+
+    if (mode === 'common') {
+      // Common mode: one flat fee if order is takeaway OR any item has Parcel note
+      const hasParcel = orderType === 'takeaway' || cart.some(l => hasParcelNote(l.notes));
+      return hasParcel ? (parcelSettings?.commonChargePaise ?? 0) : 0;
+    } else {
+      // Per-item mode: each item with Parcel note (or all items if takeaway) uses its own parcel: tag
+      let total = 0;
+      for (const line of cart) {
+        if (orderType === 'takeaway' || hasParcelNote(line.notes)) {
+          const item = menu.flatMap(c => c.items).find(it => it.id === line.itemId);
+          const parcelTag = item?.tags?.find((t: string) => t.startsWith('parcel:'));
+          if (parcelTag) {
+            total += parseInt(parcelTag.split(':')[1] || '0') * line.qty;
+          }
+        }
+      }
+      return total;
+    }
+  }, [cart, menu, orderType, outlet.parcel]);
+
   const bill = useMemo(() => {
     const lines: BillLine[] = cart.map((l) => ({ pricePaise: l.pricePaise, gstRate: isGstActive ? l.gstRate : 0, qty: l.qty }));
     const b = computeBill(lines, {
       discountPct,
       discountFlatPaise,
       serviceChargePct: scPct,
+      packagingChargePaise,
       gstEnabled: isGstActive,
       gstRateOverride: isGstActive ? outlet.gstRate : 0,
       gstInclusive: outlet.gstInclusive,
       roundOff: outlet.gstConfig?.roundOff !== false && (outlet.receipt as any)?.roundOff !== false,
     });
     if (lines.length > 0) {
-      console.log(`[BILLING]\nGST enabled: ${isGstActive}\nSubtotal: ${(b.subtotalPaise / 100).toFixed(2)}\nDiscount: ${(b.discountPaise / 100).toFixed(2)}\nTax: ${(b.taxPaise / 100).toFixed(2)}\nRound-off: ${(b.roundOffPaise / 100).toFixed(2)}\nFinal payable: ${(b.finalPayablePaise / 100).toFixed(2)}`);
+      console.log(`[BILLING]\nGST enabled: ${isGstActive}\nSubtotal: ${(b.subtotalPaise / 100).toFixed(2)}\nDiscount: ${(b.discountPaise / 100).toFixed(2)}\nTax: ${(b.taxPaise / 100).toFixed(2)}\nParcel: ${(packagingChargePaise / 100).toFixed(2)}\nRound-off: ${(b.roundOffPaise / 100).toFixed(2)}\nFinal payable: ${(b.finalPayablePaise / 100).toFixed(2)}`);
     }
     return b;
-  }, [cart, discountPct, discountFlatPaise, scPct, isGstActive, outlet.gstRate, outlet.gstInclusive, outlet.gstConfig?.roundOff, (outlet.receipt as any)?.roundOff]);
+  }, [cart, discountPct, discountFlatPaise, scPct, packagingChargePaise, isGstActive, outlet.gstRate, outlet.gstInclusive, outlet.gstConfig?.roundOff, (outlet.receipt as any)?.roundOff]);
 
   function flash(msg: string) {
     setToast(msg);
@@ -1619,6 +1683,7 @@ ${rows}
         discountPct,
         discountFlatPaise,
         serviceChargePct: scPct,
+        packagingChargePaise,
         interState: false,
         ...(withPayment ? { payment: { method: withPayment.method, amountPaise: bill.totalPaise + withPayment.tipPaise, tipPaise: withPayment.tipPaise } } : {}),
       };
@@ -2038,6 +2103,7 @@ ${rows}
             discountPct={discountPct}
             discountFlatPaise={discountFlatPaise}
             scPct={scPct}
+            packagingChargePaise={packagingChargePaise}
             setDiscountPct={setDiscountPct}
             setDiscountFlatPaise={setDiscountFlatPaise}
             setScPct={setScPct}
@@ -2130,8 +2196,52 @@ ${rows}
             const s = TABLE_STAGES[stage];
             const mins = occ ? Math.floor((now - occ.sinceMs) / 60000) : 0;
             const selected = tableId === t.id;
+
+            const handlePressStart = (e: React.PointerEvent) => {
+              if (e.pointerType === 'mouse' && e.button !== 0) return;
+              (t as any)._pressTimer = setTimeout(async () => {
+                (t as any)._pressTimer = null;
+                if (occ) {
+                  const confirmed = await confirmAction({
+                    title: 'Clear Table',
+                    message: `Are you sure you want to clear table ${t.label}? This will cancel all active orders on this table.`,
+                    confirmText: 'Clear Table',
+                    cancelText: 'Keep Table',
+                  });
+                  if (confirmed) {
+                    try {
+                      const r = await fetch('/api/tables/order', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ action: 'clear_table', tableId: t.id }),
+                      });
+                      if (r.ok) {
+                        flash('Table cleared.');
+                        refreshTables();
+                      } else {
+                        flash('Failed to clear table.');
+                      }
+                    } catch (e) {
+                      flash('Error clearing table.');
+                    }
+                  }
+                }
+              }, 800);
+            };
+
+            const handlePressEnd = (e: React.PointerEvent) => {
+              if ((t as any)._pressTimer) {
+                clearTimeout((t as any)._pressTimer);
+                (t as any)._pressTimer = null;
+                if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); }
+              }
+            };
+
             return (
-              <button key={t.id} onClick={() => { if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); } }}
+              <button key={t.id} 
+                onPointerDown={handlePressStart}
+                onPointerUp={handlePressEnd}
+                onPointerLeave={handlePressEnd}
                 className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition cursor-pointer hover:scale-[1.02]"
                 style={{
                   borderColor: selected ? 'var(--turmeric-d)' : s.color,
@@ -2534,49 +2644,124 @@ ${rows}
                 const items = menu.flatMap((c) => c.items).filter((it) => !q || it.name.toLowerCase().includes(q));
                 const cartTotal = tableCart.reduce((s, l) => s + l.pricePaise * l.qty, 0);
                 return (
-                  <div className="p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <button onClick={() => { setAddMode(false); setAddSearch(''); }} className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>← Back</button>
-                      <span className="font-bold text-[13px]" style={{ color: 'var(--ink-2)' }}>Add to Table {tableAction.label}</span>
+                  <div className="p-5 flex flex-col h-[85vh]">
+                    <div className="flex items-center justify-between mb-4 pb-2 border-b shrink-0" style={{ borderColor: 'var(--line)' }}>
+                      <button onClick={() => { setAddMode(false); setAddSearch(''); }} className="text-xs font-bold transition hover:opacity-80" style={{ color: 'var(--ink-3)' }}>← Back to Order</button>
+                      <button onClick={() => { setTableCart([]); setAddSearch(''); }} className="text-[11px] font-bold px-2 py-1 rounded transition hover:opacity-80" style={{ color: 'var(--ink-3)', background: 'var(--paper-3)' }}>Clear</button>
                     </div>
 
-                    <input
-                      value={addSearch}
-                      onChange={(e) => setAddSearch(e.target.value)}
-                      placeholder="Search menu…"
-                      className="w-full p-2.5 rounded-xl border text-sm outline-none mb-3"
-                      style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
-                    />
+                    <div className="flex-1 min-h-0 flex flex-col">
+                      <div className="text-[11px] font-bold uppercase mb-2" style={{ color: 'var(--ink-3)' }}>Ordering Now</div>
+                      
+                      {tableCart.length === 0 ? (
+                        <div className="flex-1 flex items-center justify-center border-2 border-dashed rounded-xl mb-4" style={{ borderColor: 'var(--line-2)' }}>
+                          <p className="text-xs text-center" style={{ color: 'var(--ink-3)' }}>No new items selected yet.<br/>Search or tap items below.</p>
+                        </div>
+                      ) : (
+                        <div className="flex-1 min-h-[120px] overflow-y-auto flex flex-col gap-2 mb-4 pr-1 pos-scroll">
+                          {tableCart.map((l) => {
+                            const CatIcon = l.catName ? getCategoryIcon(l.catName) : null;
+                            return (
+                              <div key={l.key} className="flex flex-col gap-1.5 p-2.5 rounded-[14px] border shrink-0" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                                <div className={`grid ${CatIcon ? 'grid-cols-[auto_1fr_auto]' : 'grid-cols-[1fr_auto]'} gap-2.5 items-center`}>
+                                  {CatIcon && (
+                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'color-mix(in srgb, var(--turmeric) 10%, var(--paper-2))', border: '1px solid color-mix(in srgb, var(--turmeric) 20%, var(--line))', color: 'var(--turmeric-d, #b45309)' }} aria-hidden>
+                                      <CatIcon size={16} className="stroke-[1.85]" />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 pr-1">
+                                    <div className="font-bold text-[13.5px] leading-tight truncate flex items-center justify-between">
+                                      <span className="truncate pr-2">{l.name}</span>
+                                      <span className="text-[13px] tnum shrink-0 font-normal" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.pricePaise * l.qty)}</span>
+                                    </div>
+                                    
+                                    {l.notes && tableEditingNoteKey !== l.key && (
+                                      <div className="flex items-center gap-1.5 mt-1">
+                                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md text-left leading-snug" style={{ background: 'color-mix(in srgb, var(--turmeric) 18%, var(--paper))', color: 'var(--turmeric-d)' }}>
+                                          ↳ {l.notes}
+                                        </span>
+                                        <button type="button" onClick={() => openTableNoteEdit(l)} className="text-[10px] font-bold underline hover:opacity-80" style={{ color: 'var(--ink-3)' }}>Edit</button>
+                                        <button type="button" onClick={() => removeTableNote(l.key)} className="text-[11px] font-bold leading-none px-1 hover:text-red-500" style={{ color: 'var(--ink-3)' }} title="Remove note">×</button>
+                                      </div>
+                                    )}
+                                    {!l.notes && tableEditingNoteKey !== l.key && (
+                                      <button type="button" onClick={() => openTableNoteEdit(l)} className="inline-flex items-center gap-1 text-[11px] font-semibold mt-1 transition hover:opacity-80" style={{ color: 'var(--turmeric-d)' }}>
+                                        <Plus size={11} /> <span>Add note</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-1.5">
+                                    <button onClick={() => bumpTable(l.key, -1)} aria-label={`Decrease ${l.name}`} className="w-9 h-9 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Minus size={15} aria-hidden /></button>
+                                    <span className="font-bold w-5 text-center tnum">{l.qty}</span>
+                                    <button onClick={() => bumpTable(l.key, 1)} aria-label={`Increase ${l.name}`} className="w-9 h-9 grid place-items-center rounded-[9px] border" style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}><Plus size={15} aria-hidden /></button>
+                                  </div>
+                                </div>
 
-                    <div className="max-h-[230px] overflow-auto flex flex-col gap-1 mb-3">
-                      {items.length === 0 ? (
-                        <p className="text-sm text-center py-4" style={{ color: 'var(--ink-3)' }}>No items match.</p>
-                      ) : items.map((it) => (
-                        <button key={it.id} onClick={() => addToTable(it)} className="flex justify-between items-center gap-2 text-sm p-2.5 rounded-xl text-left" style={{ background: 'var(--paper-3)' }}>
-                          <span className="min-w-0"><b className="block truncate">{it.name}</b><span className="text-xs" style={{ color: 'var(--ink-3)' }}>{formatINR(it.pricePaise)}{it.station ? ` · ${it.station}` : ''}</span></span>
-                          <span className="shrink-0 w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--turmeric)', color: '#2A1607' }} aria-hidden><Plus size={16} /></span>
-                        </button>
-                      ))}
-                    </div>
+                                {tableEditingNoteKey === l.key && (
+                                  <div className="mt-1 pt-1.5 border-t flex flex-col gap-1.5 anim-fade" style={{ borderColor: 'var(--line-2)' }}>
+                                    <div className="flex flex-wrap gap-1">
+                                      {QUICK_ITEM_NOTES.map((preset) => (
+                                        <button
+                                          key={preset}
+                                          type="button"
+                                          onClick={() => setTableNoteDraft(preset)}
+                                          className="text-[10px] font-bold px-2 py-0.5 rounded-full border transition"
+                                          style={{ background: tableNoteDraft === preset ? 'var(--turmeric)' : 'var(--paper)', color: tableNoteDraft === preset ? '#2A1607' : 'var(--ink-2)', borderColor: 'var(--line-2)' }}
+                                        >
+                                          {preset}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="text"
+                                        value={tableNoteDraft}
+                                        onChange={(e) => setTableNoteDraft(e.target.value)}
+                                        placeholder="e.g. No onion..."
+                                        className="flex-1 px-2.5 py-1 text-xs rounded-lg border outline-none"
+                                        style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
+                                        autoFocus
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') saveTableNote(l.key);
+                                          if (e.key === 'Escape') removeTableNote(l.key);
+                                        }}
+                                      />
+                                      <button type="button" onClick={() => saveTableNote(l.key)} className="px-2.5 py-1 text-xs font-bold rounded-lg text-white shrink-0" style={{ background: 'var(--turmeric-d)' }}>Save</button>
+                                      <button type="button" onClick={() => { if (!l.notes) removeTableNote(l.key); else openTableNoteEdit({ ...l, notes: l.notes }); }} className="px-2 py-1 text-xs font-medium rounded-lg shrink-0" style={{ color: 'var(--ink-3)' }}>Cancel</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
 
-                    {tableCart.length > 0 && (
-                      <div className="flex flex-col gap-1.5 border-t py-3 mb-3" style={{ borderColor: 'var(--line)' }}>
-                        {tableCart.map((l) => (
-                          <div key={l.key} className="flex items-center justify-between text-sm">
-                            <span className="min-w-0 truncate">{l.name}</span>
-                            <span className="flex items-center gap-2 shrink-0">
-                              <button onClick={() => bumpTable(l.key, -1)} className="w-6 h-6 rounded-[7px] border font-extrabold" style={{ borderColor: 'var(--line)' }}>−</button>
-                              <b className="w-5 text-center tnum">{l.qty}</b>
-                              <button onClick={() => bumpTable(l.key, 1)} className="w-6 h-6 rounded-[7px] border font-extrabold" style={{ borderColor: 'var(--line)' }}>+</button>
-                            </span>
-                          </div>
-                        ))}
+                      <button onClick={sendTableCart} disabled={tableCart.length === 0 || sendBusy} className="btn btn-primary w-full shrink-0 mb-4" style={tableCart.length === 0 ? { opacity: 0.5 } : undefined}>
+                        {sendBusy ? 'Sending…' : `🍽️ SEND TO KITCHEN${cartTotal > 0 ? ` · ${formatINR(cartTotal)}` : ''}`}
+                      </button>
+
+                      <div className="border-t pt-4 flex-1 flex flex-col min-h-0" style={{ borderColor: 'var(--line)' }}>
+                        <input
+                          value={addSearch}
+                          onChange={(e) => setAddSearch(e.target.value)}
+                          placeholder="Search menu to add..."
+                          className="w-full p-2.5 rounded-xl border text-sm outline-none mb-3 shrink-0"
+                          style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}
+                        />
+                        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 pos-scroll pb-4">
+                          {items.length === 0 ? (
+                            <p className="text-sm text-center py-4" style={{ color: 'var(--ink-3)' }}>No items match.</p>
+                          ) : items.map((it) => (
+                            <button key={it.id} onClick={() => addToTable(it)} className="flex justify-between items-center gap-2 text-sm p-2.5 rounded-xl text-left border" style={{ background: 'var(--paper-3)', borderColor: 'transparent' }}>
+                              <span className="min-w-0"><b className="block truncate">{it.name}</b><span className="text-xs" style={{ color: 'var(--ink-3)' }}>{formatINR(it.pricePaise)}{it.station ? ` · ${it.station}` : ''}</span></span>
+                              <span className="shrink-0 w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'color-mix(in srgb, var(--turmeric) 20%, transparent)', color: 'var(--turmeric-d)' }} aria-hidden><Plus size={16} /></span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    )}
-
-                    <button onClick={sendTableCart} disabled={tableCart.length === 0 || sendBusy} className="btn btn-primary w-full" style={tableCart.length === 0 ? { opacity: 0.5 } : undefined}>
-                      {sendBusy ? 'Sending…' : `Send to kitchen${cartTotal > 0 ? ` · ${formatINR(cartTotal)}` : ''}`}
-                    </button>
+                    </div>
                   </div>
                 );
               })()
@@ -2729,6 +2914,7 @@ ${rows}
                 discountPct={discountPct}
                 discountFlatPaise={discountFlatPaise}
                 scPct={scPct}
+                packagingChargePaise={packagingChargePaise}
                 setDiscountPct={setDiscountPct}
                 setDiscountFlatPaise={setDiscountFlatPaise}
                 setScPct={setScPct}
@@ -2931,7 +3117,7 @@ ${rows}
  * mobile can emphasise them differently. Qty steppers are 44px on phones, 32px at md+.
  */
 function CartBody({
-  cart, bill, outlet, discountPct, discountFlatPaise, scPct,
+  cart, bill, outlet, discountPct, discountFlatPaise, scPct, packagingChargePaise,
   setDiscountPct, setDiscountFlatPaise, setScPct, bump,
   editingNoteKey, noteDraft, setNoteDraft, openNoteEdit, saveNote, removeNote, quickNotes,
 }: {
@@ -2941,6 +3127,7 @@ function CartBody({
   discountPct: number;
   discountFlatPaise: number;
   scPct: number;
+  packagingChargePaise: number;
   setDiscountPct: (n: number) => void;
   setDiscountFlatPaise: (n: number) => void;
   setScPct: (n: number) => void;
@@ -3090,6 +3277,7 @@ function CartBody({
           {isGstActive && <Row label="SGST" val={formatINR(bill.sgstPaise)} sub />}
           {isGstActive && outlet.gstInclusive && <div className="text-[10px] mt-0.5" style={{ color: 'var(--ink-3)' }}>Menu prices include GST</div>}
           {scPct > 0 && <Row label="Service charge" val={formatINR(bill.serviceChargePaise)} />}
+          {packagingChargePaise > 0 && <Row label="Parcel charge" val={formatINR(packagingChargePaise)} />}
           <Row label="Round-off" val={`${bill.roundOffPaise >= 0 ? '+' : '−'} ${formatINR(Math.abs(bill.roundOffPaise))}`} sub />
           <div className="flex justify-between font-extrabold font-display text-[18px] mt-1.5 pt-1.5 border-t" style={{ borderColor: 'var(--line)' }}>
             <span>Total</span><span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(bill.totalPaise)}</span>
@@ -3153,18 +3341,16 @@ function LiveOrders({ tickets, now }: { tickets: LiveTicket[]; now: number }) {
           const st = STAGES[stage];
           const secs = Math.floor((now - t.placedAt) / 1000);
           return (
-            <div key={t.id} className="shrink-0 rounded-[12px] border px-3 py-2 flex flex-col gap-1.5"
-              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', borderLeft: `4px solid ${st.color}`, minWidth: 134 }}>
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-display font-extrabold text-[15px]">#{t.number}</span>
+            <div key={t.id} className="shrink-0 rounded-[12px] border px-2.5 py-1.5 flex flex-col gap-1"
+              style={{ background: 'var(--paper-2)', borderColor: 'var(--line)', borderLeft: `4px solid ${st.color}`, minWidth: 104 }}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-display font-extrabold text-[14px]">#{t.number}</span>
                 <span className="text-[11px] font-bold tnum" style={{ color: 'var(--ink-3)' }}>{fmtClock(secs)}</span>
               </div>
-              <span className="text-[11px] font-bold" style={{ color: 'var(--ink-2)' }}>{t.where}</span>
-              <span className="inline-flex items-center gap-1.5 self-start text-[10px] font-extrabold uppercase tracking-wide px-2 py-0.5 rounded-full"
-                style={{ background: st.bg, color: st.color }}>
-                <span className="w-[6px] h-[6px] rounded-full" style={{ background: st.color }} />
-                {st.label}
-              </span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold" style={{ color: 'var(--ink-2)' }}>{t.where}</span>
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: st.color, boxShadow: `0 0 0 2px ${st.bg}` }} aria-hidden="true" title={st.label} />
+              </div>
             </div>
           );
         })}

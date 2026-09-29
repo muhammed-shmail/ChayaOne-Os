@@ -103,10 +103,13 @@ export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get('status') as
     | 'open' | 'in_kitchen' | 'ready' | 'served' | 'settled' | 'cancelled' | null;
   const orders = await prisma.order.findMany({
-    where: { outletId: session.outletId, ...(status ? { status } : {}) },
+    where: { 
+      outletId: session.outletId, 
+      ...(status ? { status } : { status: { notIn: ['settled', 'cancelled'] } }) 
+    },
     orderBy: { placedAt: 'desc' },
-    take: 50,
-    include: { items: true, table: true, customer: true },
+    ...(status === 'settled' || status === 'cancelled' ? { take: 100 } : {}),
+    include: { items: { where: { kotStatus: { not: 'void' } } }, table: true, customer: true },
   });
   return NextResponse.json({ orders });
 }

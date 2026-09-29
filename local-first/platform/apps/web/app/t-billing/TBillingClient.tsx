@@ -340,7 +340,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
 
   const filteredOrders = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return orders.filter((o) => {
+    const list = orders.filter((o) => {
       if (filter !== 'completed' && o.status === 'settled') return false;
       if (filter === 'completed' && o.status !== 'settled') return false;
       if (filter === 'unpaid' && o.status === 'settled') return false;
@@ -359,6 +359,35 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         custPhoneStr.includes(q)
       );
     });
+
+    if (filter === 'completed') return list;
+
+    // Group active orders by tableId so multiple KOTs on the same table appear as one invoice
+    const tableGroups = new Map<string, typeof orders[0]>();
+    const nonTableOrders: typeof orders[0][] = [];
+
+    for (const o of list) {
+      if (o.tableId) {
+        const existing = tableGroups.get(o.tableId);
+        if (existing) {
+          existing.totalPaise += o.totalPaise;
+          existing.items = [...existing.items, ...o.items];
+          // Keep the primary (oldest) order details as the anchor
+          if (new Date(o.placedAt).getTime() < new Date(existing.placedAt).getTime()) {
+            existing.id = o.id;
+            existing.number = o.number;
+            existing.placedAt = o.placedAt;
+          }
+        } else {
+          tableGroups.set(o.tableId, { ...o, items: [...o.items] });
+        }
+      } else {
+        nonTableOrders.push(o);
+      }
+    }
+
+    const groupedList = [...Array.from(tableGroups.values()), ...nonTableOrders];
+    return groupedList.sort((a, b) => new Date(b.placedAt).getTime() - new Date(a.placedAt).getTime());
   }, [orders, search, filter]);
 
   const displayOrders = useMemo(() => {

@@ -34,16 +34,17 @@ export async function POST(req: NextRequest) {
   if (!canSettle(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
-  const { orderId, discountPct, discountFlatPaise, payments, customerName, customerPhone, customerGstin, printReceipt } = body;
+  let { orderId, discountPct, discountFlatPaise, payments, customerName, customerPhone, customerGstin, printReceipt } = body;
 
   if (!orderId) {
     return NextResponse.json({ error: 'missing_order_id' }, { status: 400 });
   }
 
-  const order = await prisma.order.findUnique({
+  let order = await prisma.order.findUnique({
     where: { id: orderId },
     include: {
       items: {
+        where: { kotStatus: { not: 'void' } },
         include: {
           item: {
             select: { gstRate: true }
@@ -61,6 +62,75 @@ export async function POST(req: NextRequest) {
 
   if (order.status === 'cancelled') {
     return NextResponse.json({ error: 'order_cancelled' }, { status: 400 });
+  }
+
+  // --- Merge multiple active orders for the same table (just like POS settle) ---
+  if (order.tableId) {
+    const activeOrders = await prisma.order.findMany({
+      where: { tableId: order.tableId, outletId: session.outletId, status: { in: ['open', 'in_kitchen', 'ready', 'served', 'pending_approval'] }, settledAt: null },
+      orderBy: { placedAt: 'asc' },
+    });
+    
+    if (activeOrders.length > 1) {
+      const primaryOrder = activeOrders[0]!;
+      const secondaryOrders = activeOrders.slice(1);
+      const secondaryIds = secondaryOrders.map(o => o.id);
+
+      let mergedSubtotal = primaryOrder.subtotalPaise;
+      let mergedDiscount = primaryOrder.discountPaise;
+      let mergedCgst = primaryOrder.cgstPaise;
+      let mergedSgst = primaryOrder.sgstPaise;
+      let mergedIgst = primaryOrder.igstPaise;
+      let mergedServiceCharge = primaryOrder.serviceChargePaise;
+      let mergedRoundOff = primaryOrder.roundOffPaise;
+      let mergedTotal = primaryOrder.totalPaise;
+
+      for (const o of secondaryOrders) {
+        mergedSubtotal += o.subtotalPaise;
+        mergedDiscount += o.discountPaise;
+        mergedCgst += o.cgstPaise;
+        mergedSgst += o.sgstPaise;
+        mergedIgst += o.igstPaise;
+        mergedServiceCharge += o.serviceChargePaise;
+        mergedRoundOff += o.roundOffPaise;
+        mergedTotal += o.totalPaise;
+      }
+
+      await prisma.$transaction([
+        prisma.orderItem.updateMany({ where: { orderId: { in: secondaryIds } }, data: { orderId: primaryOrder.id } }),
+        prisma.kot.updateMany({ where: { orderId: { in: secondaryIds } }, data: { orderId: primaryOrder.id } }),
+        prisma.printJob.updateMany({ where: { orderId: { in: secondaryIds } }, data: { orderId: primaryOrder.id } }),
+        prisma.order.update({
+          where: { id: primaryOrder.id },
+          data: {
+            subtotalPaise: mergedSubtotal,
+            discountPaise: mergedDiscount,
+            cgstPaise: mergedCgst,
+            sgstPaise: mergedSgst,
+            igstPaise: mergedIgst,
+            serviceChargePaise: mergedServiceCharge,
+            roundOffPaise: mergedRoundOff,
+            totalPaise: mergedTotal,
+          }
+        }),
+        prisma.order.deleteMany({ where: { id: { in: secondaryIds } } })
+      ]);
+
+      orderId = primaryOrder.id;
+      order = (await prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: { where: { kotStatus: { not: 'void' } }, include: { item: { select: { gstRate: true } } } },
+          table: { select: { label: true } },
+          customer: { select: { id: true, name: true, phone: true } }
+        }
+      })) as any;
+    }
+  }
+
+  // Guard: order should always exist at this point (re-fetched after merge if needed)
+  if (!order) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
 
   // RBAC validation for custom discounts: only owner, manager, or discount permission holders can apply

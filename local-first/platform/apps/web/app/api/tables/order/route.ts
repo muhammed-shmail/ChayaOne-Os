@@ -47,12 +47,14 @@ export async function GET(req: NextRequest) {
     o.items.map((i) => ({
       id: i.id,
       orderId: o.id,
+      itemId: i.itemId,
       name: i.nameSnapshot,
       qty: i.qty,
       unitPricePaise: i.unitPricePaise,
       linePaise: i.qty * i.unitPricePaise,
       station: i.station,
       kotStatus: i.kotStatus,
+      notes: i.notes,
     })),
   );
 
@@ -435,6 +437,44 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  if (action === 'clear_table') {
+    if (!canSettle(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    const { tableId } = body;
+    if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
+
+    const activeOrders = await prisma.order.findMany({
+      where: { tableId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
+    });
+
+    if (activeOrders.length > 0) {
+      await prisma.order.updateMany({
+        where: { id: { in: activeOrders.map((o) => o.id) } },
+        data: { status: 'cancelled' },
+      });
+      // Publish update for KDS to remove tickets
+      for (const o of activeOrders) {
+         await publish(session.outletId, { type: 'order.updated', ticket: { id: o.id, number: o.number, status: 'cancelled' } as any });
+      }
+    }
+
+    await prisma.tableMap.update({
+      where: { id: tableId },
+      data: { state: 'free' },
+    }).catch(() => {});
+
+    await publish(session.outletId, {
+      type: 'table.updated',
+      tableId,
+      state: 'free',
+    });
+
+    await prisma.auditLog.create({
+      data: { outletId: session.outletId, actorId: session.staffId, action: 'table.cleared', entity: 'table', entityId: tableId, after: { ordersCancelled: activeOrders.length } as Prisma.InputJsonValue },
+    }).catch(() => {});
+
+    return NextResponse.json({ ok: true, cleared: true });
+  }
+
   // ---- settle ----
   if (!canSettle(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const { tableId, method } = body;
@@ -443,7 +483,7 @@ export async function POST(req: NextRequest) {
 
   const orders = await prisma.order.findMany({
     where: { tableId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
-    select: { id: true, totalPaise: true, customerId: true },
+    orderBy: { placedAt: 'asc' },
   });
   if (orders.length === 0) return NextResponse.json({ error: 'nothing_to_settle' }, { status: 409 });
 
@@ -459,28 +499,74 @@ export async function POST(req: NextRequest) {
     customerId = orders.find((o) => o.customerId)?.customerId ?? null;
   }
 
-  let total = 0;
-  for (const o of orders) {
-    const updated = await prisma.$transaction(async (tx) => {
-      await tx.payment.create({
-        data: { orderId: o.id, outletId: session.outletId, method: pay, amountPaise: o.totalPaise, status: 'success' },
-      });
-      return tx.order.update({
-        where: { id: o.id },
-        data: { status: 'settled', settledAt: new Date(), ...(customerId ? { customerId } : {}) },
-        include: { items: true, table: { select: { label: true } } },
-      });
-    });
-    total += o.totalPaise;
-    await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
+  // Merge multiple orders into the first order to generate exactly ONE invoice for the table
+  const primaryOrder = orders[0]!;
+  const secondaryOrders = orders.slice(1);
+  const secondaryIds = secondaryOrders.map(o => o.id);
+
+  let mergedTotal = primaryOrder.totalPaise;
+  let mergedSubtotal = primaryOrder.subtotalPaise;
+  let mergedDiscount = primaryOrder.discountPaise;
+  let mergedCgst = primaryOrder.cgstPaise;
+  let mergedSgst = primaryOrder.sgstPaise;
+  let mergedIgst = primaryOrder.igstPaise;
+  let mergedServiceCharge = primaryOrder.serviceChargePaise;
+  let mergedRoundOff = primaryOrder.roundOffPaise;
+
+  if (secondaryOrders.length > 0) {
+    for (const o of secondaryOrders) {
+      mergedTotal += o.totalPaise;
+      mergedSubtotal += o.subtotalPaise;
+      mergedDiscount += o.discountPaise;
+      mergedCgst += o.cgstPaise;
+      mergedSgst += o.sgstPaise;
+      mergedIgst += o.igstPaise;
+      mergedServiceCharge += o.serviceChargePaise;
+      mergedRoundOff += o.roundOffPaise;
+    }
+
+    await prisma.$transaction([
+      prisma.orderItem.updateMany({ where: { orderId: { in: secondaryIds } }, data: { orderId: primaryOrder.id } }),
+      prisma.kot.updateMany({ where: { orderId: { in: secondaryIds } }, data: { orderId: primaryOrder.id } }),
+      prisma.printJob.updateMany({ where: { orderId: { in: secondaryIds } }, data: { orderId: primaryOrder.id } }),
+      prisma.order.update({
+        where: { id: primaryOrder.id },
+        data: {
+          subtotalPaise: mergedSubtotal,
+          discountPaise: mergedDiscount,
+          cgstPaise: mergedCgst,
+          sgstPaise: mergedSgst,
+          igstPaise: mergedIgst,
+          serviceChargePaise: mergedServiceCharge,
+          roundOffPaise: mergedRoundOff,
+          totalPaise: mergedTotal,
+        }
+      }),
+      prisma.order.deleteMany({ where: { id: { in: secondaryIds } } })
+    ]);
   }
+
+  // Settle the single merged primary order
+  const settledOrder = await prisma.$transaction(async (tx) => {
+    await tx.payment.create({
+      data: { orderId: primaryOrder.id, outletId: session.outletId, method: pay, amountPaise: mergedTotal, status: 'success' },
+    });
+    return tx.order.update({
+      where: { id: primaryOrder.id },
+      data: { status: 'settled', settledAt: new Date(), ...(customerId ? { customerId } : {}) },
+      include: { items: true, table: { select: { label: true } } },
+    });
+  });
+
+  await publish(session.outletId, { type: 'order.updated', ticket: toTicket(settledOrder) });
+
 
   // accrue loyalty ONCE on the combined table total (not per KOT) so a multi-order
   // table counts as a single visit with points on the full bill.
   if (customerId) {
     const pwa = await getOutletPwa(session.outletId);
     await prisma.$transaction((tx) =>
-      accrueLoyaltyOnSettle(tx, { customerId: customerId!, outletId: session.outletId, totalPaise: total, pwa, refId: orders[0]!.id }),
+      accrueLoyaltyOnSettle(tx, { customerId: customerId!, outletId: session.outletId, totalPaise: mergedTotal, pwa, refId: primaryOrder.id }),
     );
   }
 
@@ -498,15 +584,15 @@ export async function POST(req: NextRequest) {
   });
 
   await prisma.auditLog.create({
-    data: { outletId: session.outletId, actorId: session.staffId, action: 'table.settled', entity: 'table', entityId: tableId, after: { method: pay, totalPaise: total, orders: orders.length } as Prisma.InputJsonValue },
+    data: { outletId: session.outletId, actorId: session.staffId, action: 'table.settled', entity: 'table', entityId: tableId, after: { method: pay, totalPaise: mergedTotal, ordersMerged: orders.length } as Prisma.InputJsonValue },
   }).catch(() => {});
 
-  return NextResponse.json({ ok: true, settled: orders.length, totalPaise: total, method: pay });
+  return NextResponse.json({ ok: true, settled: 1, originalOrders: orders.length, totalPaise: mergedTotal, method: pay });
 }
 
-/** Void one sent line from an order and recompute everything from the survivors. */
-async function voidItem(session: { outletId: string; staffId: string | null }, body: { orderId?: string; itemId?: string }) {
-  const { orderId, itemId } = body;
+/** Void one sent line from an order (or reduce its quantity) and recompute everything from the survivors. */
+async function voidItem(session: { outletId: string; staffId: string | null }, body: { orderId?: string; itemId?: string; qty?: number }) {
+  const { orderId, itemId, qty } = body;
   if (!orderId || !itemId) return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
 
   const order = await prisma.order.findFirst({
@@ -518,8 +604,14 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
   const target = order.items.find((i) => i.id === itemId && i.kotStatus !== 'void');
   if (!target) return NextResponse.json({ error: 'item_not_found' }, { status: 404 });
 
-  // survivors = active lines after this void
-  const survivors = order.items.filter((i) => i.id !== itemId && i.kotStatus !== 'void');
+  const voidQty = qty && qty > 0 && qty < target.qty ? Math.floor(qty) : target.qty;
+  const remainingQty = target.qty - voidQty;
+
+  // survivors = active lines after this void / reduction
+  const survivors = order.items
+    .filter((i) => i.kotStatus !== 'void')
+    .map((i) => (i.id === itemId ? { ...i, qty: remainingQty } : i))
+    .filter((i) => i.qty > 0);
 
   // GST rate isn't snapshotted on OrderItem → source it from the menu item
   const itemIds = survivors.map((s) => s.itemId).filter((id): id is string => !!id);
@@ -547,7 +639,11 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
   const noneLeft = survivors.length === 0;
 
   const updated = await prisma.$transaction(async (tx) => {
-    await tx.orderItem.update({ where: { id: itemId }, data: { kotStatus: 'void' } });
+    if (remainingQty > 0) {
+      await tx.orderItem.update({ where: { id: itemId }, data: { qty: remainingQty } });
+    } else {
+      await tx.orderItem.update({ where: { id: itemId }, data: { kotStatus: 'void' } });
+    }
     await tx.order.update({
       where: { id: orderId },
       data: {
@@ -562,8 +658,8 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
         ...(noneLeft ? { status: 'cancelled' } : {}),
       },
     });
-    // restore the raw materials this line had consumed
-    await reverseRecipeConsumption(tx, { outletId: session.outletId, orderId, lines: [{ itemId: target.itemId, qty: target.qty }] });
+    // restore the raw materials this voided portion had consumed
+    await reverseRecipeConsumption(tx, { outletId: session.outletId, orderId, lines: [{ itemId: target.itemId, qty: voidQty }] });
     return tx.order.findUniqueOrThrow({
       where: { id: orderId },
       include: { items: { where: { kotStatus: { not: 'void' } } }, table: { select: { label: true } } },
@@ -572,13 +668,17 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
 
   await prisma.auditLog.create({
     data: {
-      outletId: session.outletId, actorId: session.staffId, action: 'order.item_voided', entity: 'order_item', entityId: itemId,
-      after: { orderId, name: target.nameSnapshot, qty: target.qty, cancelled: noneLeft } as Prisma.InputJsonValue,
+      outletId: session.outletId,
+      actorId: session.staffId,
+      action: remainingQty > 0 ? 'order.item_reduced' : 'order.item_voided',
+      entity: 'order_item',
+      entityId: itemId,
+      after: { orderId, name: target.nameSnapshot, voidQty, remainingQty, cancelled: noneLeft } as Prisma.InputJsonValue,
     },
   }).catch(() => {});
 
   // refresh the KDS — ticket without the voided line, or gone if cancelled
   await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
 
-  return NextResponse.json({ ok: true, cancelled: noneLeft, totalPaise: updated.totalPaise });
+  return NextResponse.json({ ok: true, cancelled: noneLeft, totalPaise: updated.totalPaise, remainingQty });
 }
