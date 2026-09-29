@@ -2204,6 +2204,7 @@ ${rows}
               if (e.pointerType === 'mouse' && e.button !== 0) return;
               (t as any)._pressTimer = setTimeout(async () => {
                 (t as any)._pressTimer = null;
+                (t as any)._longPressed = true;
                 if (occ) {
                   const confirmed = await confirmAction({
                     title: 'Clear Table',
@@ -2239,20 +2240,22 @@ ${rows}
               }
             };
 
-            const handlePressEnd = (e: React.PointerEvent) => {
-              if ((t as any)._pressTimer) {
-                clearTimeout((t as any)._pressTimer);
-                (t as any)._pressTimer = null;
-                if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); }
+            const handleClick = (e: React.MouseEvent) => {
+              handlePressCancel();
+              if ((t as any)._longPressed) {
+                (t as any)._longPressed = false;
+                return;
               }
+              if (occ) { openTableActions(t); } else { setTableId(t.id); setOrderType('dine_in'); setFloorOpen(false); }
             };
 
             return (
               <button key={t.id} 
                 onPointerDown={handlePressStart}
-                onPointerUp={handlePressEnd}
+                onPointerUp={handlePressCancel}
                 onPointerLeave={handlePressCancel}
                 onPointerCancel={handlePressCancel}
+                onClick={handleClick}
                 className="aspect-square rounded-[14px] border-[1.5px] flex flex-col items-center justify-center gap-1 transition cursor-pointer hover:scale-[1.02]"
                 style={{
                   borderColor: selected ? 'var(--turmeric-d)' : s.color,
