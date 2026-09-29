@@ -1710,7 +1710,7 @@ ${rows}
       // reset the table so the next order must pick one (don't silently reuse the last table)
       if (orderType === 'dine_in') {
         setTableId(null);
-        if (staffAppEnabled || isMobileBrowser()) setFloorOpen(true);
+        if (isMobileBrowser()) setFloorOpen(true);
       }
     } catch (e: any) {
       console.error('Order submission error:', e);
