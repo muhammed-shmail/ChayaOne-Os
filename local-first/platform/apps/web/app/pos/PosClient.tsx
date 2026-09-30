@@ -2251,7 +2251,8 @@ ${rows}
               flash(`Selected Table ${t.label}`);
               setTableId(t.id);
               setOrderType('dine_in');
-              setFloorOpen(false);
+              // Intentionally keeping the floor map open so the waiter can see the table is selected 
+              // and manually close the map when they are ready.
             }
           };
 
