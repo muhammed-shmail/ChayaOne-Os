@@ -77,6 +77,7 @@ export default async function PosPage() {
         upiConfig,
         kitchenWorkflow,
         gstConfig: gst,
+        parcel: (outlet.settings as any)?.parcel ?? undefined,
       }}
       staff={{
         id: session.staffId,

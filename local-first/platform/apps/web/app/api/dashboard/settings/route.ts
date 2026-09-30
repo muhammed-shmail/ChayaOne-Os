@@ -815,6 +815,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, location });
   }
 
+  if (body.action === 'parcel_settings') {
+    const mode: 'common' | 'per_item' = body.mode === 'per_item' ? 'per_item' : 'common';
+    const commonChargePaise = mode === 'common' ? Math.max(0, Math.round(Number(body.commonChargePaise ?? 0))) : 0;
+    const parcel = { mode, commonChargePaise };
+    const current = await prisma.outlet.findUnique({ where: { id: outletId }, select: { settings: true } });
+    const settings = (current?.settings as Record<string, unknown>) ?? {};
+    const merged = { ...settings, parcel };
+    await prisma.outlet.update({ where: { id: outletId }, data: { settings: merged as unknown as Prisma.InputJsonValue } });
+    return NextResponse.json({ ok: true, parcel });
+  }
+
   if (body.action !== 'outlet') return NextResponse.json({ error: 'invalid_action' }, { status: 400 });
 
   if (typeof body.logoUrl === 'string' && body.logoUrl.startsWith('blob:')) {

@@ -553,6 +553,7 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   // bill-printed status is the backend's 'bill.printed' audit log entry,
   // returned as `billPrinted` in GET /api/tables/order.
   const canSettleBill = canSettle(currentStaff);
+  const canVoidItem = canSettleBill || hasRole(currentStaff, ['owner', 'manager', 'cashier', 'waiter']);
   const canPrintBill = canSettleBill || hasRole(currentStaff, ['owner', 'manager', 'cashier', 'waiter']);
   // "Install the Staff App" entry — only when the cafe has the Staff App (PWA) offer
   // and the device can actually install (Android prompt ready, or iOS manual hint).
@@ -2803,7 +2804,7 @@ ${rows}
                     <span className="min-w-0"><b className="mr-1.5" style={{ color: 'var(--turmeric-d)' }}>{l.qty}×</b>{l.name}</span>
                     <span className="flex items-center gap-2 shrink-0">
                       <span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
-                      {canSettleBill && (
+                      {canVoidItem && (
                         <button onClick={() => voidLine(l)} disabled={voidBusyId === l.id} title="Remove item" aria-label={`Remove ${l.name}`} className="w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--paper-3)', color: 'var(--clay, #c0392b)', opacity: voidBusyId === l.id ? 0.5 : 1 }}><X size={15} aria-hidden /></button>
                       )}
                     </span>
@@ -3403,6 +3404,7 @@ function Chip({ children, on, onClick }: { children: React.ReactNode; on: boolea
 }
 
 function Modal({ children, title, onClose, headerAction }: { children: React.ReactNode; title: string; onClose: () => void; headerAction?: React.ReactNode }) {
+  const mountedAt = useRef(Date.now());
   return (
     <div 
       onPointerDown={(e) => {
@@ -3412,7 +3414,9 @@ function Modal({ children, title, onClose, headerAction }: { children: React.Rea
       }}
       onPointerUp={(e) => {
         if (e.target === e.currentTarget && (e.currentTarget as any)._closeOnUp) {
-          onClose();
+          if (Date.now() - mountedAt.current > 300) {
+            onClose();
+          }
         }
         (e.currentTarget as any)._closeOnUp = false;
       }}

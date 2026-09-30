@@ -10,7 +10,7 @@ import { CountUp } from '@/components/ui/motion';
 import { TeaLoader } from '@/components/ui/TeaLoader';
 import { RevenuePanel } from '@/components/dashboard/RevenuePanel';
 import type { DashboardData } from '@/lib/analytics';
-import { Maximize2, Minimize2, Globe } from 'lucide-react';
+import { Maximize2, Minimize2, Globe, Search } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { SECTION_KEY, SectionView } from './Sections';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS, assignableRoles, ALL_ROLES, hasRole as rbacHasRole, hasPermission as rbacHasPermission } from '@/lib/rbac';
@@ -1087,6 +1087,30 @@ export default function DashboardClient({
       });
       if (res.ok) { flashMessage(`Item marked ${isAvailable ? 'Available' : 'Sold Out'}`); loadInventoryData(); }
       else flashMessage('Could not update item');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveItemParcelCharge = async (item: any, chargePaise: number | null) => {
+    try {
+      const otherTags = item.tags?.filter((t: string) => !t.startsWith('parcel:')) || [];
+      const nextTags = chargePaise === null ? otherTags : [...otherTags, `parcel:${chargePaise}`];
+      
+      const res = await fetch('/api/dashboard/menu', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          itemId: item.id,
+          tags: nextTags,
+        }),
+      });
+      if (res.ok) {
+        flashMessage(chargePaise === null ? 'Parcel charge cleared' : `Parcel charge set to ${formatINR(chargePaise)}`);
+        loadInventoryData();
+      } else {
+        flashMessage('Could not save parcel charge');
+      }
     } catch (err) {
       console.error(err);
     }
@@ -2179,6 +2203,12 @@ export default function DashboardClient({
   const [kwForm, setKwForm] = useState<KitchenWorkflowConfig>(KITCHEN_WORKFLOW_DEFAULTS);
   const [kwSaving, setKwSaving] = useState(false);
   const setKw = <K extends keyof KitchenWorkflowConfig>(key: K, value: KitchenWorkflowConfig[K]) => setKwForm((p) => ({ ...p, [key]: value }));
+
+  // Parcel charge settings (Menu ▸ Parcel Management)
+  const [parcelMode, setParcelMode] = useState<'common' | 'per_item'>('common');
+  const [parcelCommonChargePaise, setParcelCommonChargePaise] = useState(0);
+  const [parcelSaving, setParcelSaving] = useState(false);
+  const [parcelSaved, setParcelSaved] = useState(false);
 
   // Devices & printers (Settings → Devices)
   const [devices, setDevices] = useState<Device[]>([]);
@@ -4881,6 +4911,17 @@ export default function DashboardClient({
                     </button>
                     <button
                       role="tab"
+                      aria-selected={activeSubTab === 'parcel'}
+                      onClick={() => setActiveSubTab('parcel')}
+                      className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
+                      style={activeSubTab === 'parcel'
+                        ? { background: 'var(--turmeric)', color: '#2A1607', boxShadow: 'var(--sh-1)' }
+                        : { color: 'var(--ink-2)', background: 'transparent' }}
+                    >
+                      📦 Parcel Management
+                    </button>
+                    <button
+                      role="tab"
                       aria-selected={activeSubTab === 'categories'}
                       onClick={() => setActiveSubTab('categories')}
                       className="px-5 py-2 rounded-full text-xs font-bold transition whitespace-nowrap cursor-pointer"
@@ -5391,6 +5432,123 @@ export default function DashboardClient({
                         </div>
                       )}
                     </section>
+                  );
+                })()}
+
+                {activeSubTab === 'parcel' && (() => {
+                  const q = categorySearch.trim().toLowerCase();
+                  const filtered = menuItems.filter((m) => !q || m.name.toLowerCase().includes(q));
+                  return (
+                    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-5">
+
+                      {/* Mode toggle */}
+                      <div className="p-5 rounded-2xl" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
+                        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                          <div>
+                            <div className="font-bold text-sm">Parcel Charge Mode</div>
+                            <div className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>Choose how parcel charges are calculated on invoices</div>
+                          </div>
+                          <div className="flex rounded-full p-1 gap-1" style={{ background: 'var(--paper-2)', border: '1px solid var(--line-2)' }}>
+                            <button
+                              onClick={() => setParcelMode('common')}
+                              className="px-4 py-1.5 rounded-full text-xs font-bold transition"
+                              style={parcelMode === 'common' ? { background: 'var(--turmeric)', color: '#2A1607' } : { color: 'var(--ink-2)' }}
+                            >Common (flat fee)</button>
+                            <button
+                              onClick={() => setParcelMode('per_item')}
+                              className="px-4 py-1.5 rounded-full text-xs font-bold transition"
+                              style={parcelMode === 'per_item' ? { background: 'var(--turmeric)', color: '#2A1607' } : { color: 'var(--ink-2)' }}
+                            >Per Item</button>
+                          </div>
+                        </div>
+
+                        {/* Common mode: single charge input */}
+                        {parcelMode === 'common' && (
+                          <div className="flex items-center gap-3 mt-2">
+                            <span className="text-sm font-bold" style={{ color: 'var(--ink-2)' }}>Parcel Charge (₹):</span>
+                            <div className="relative">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm font-bold" style={{ color: 'var(--ink-3)' }}>₹</span>
+                              <input
+                                type="number" min={0} step={1}
+                                value={parcelCommonChargePaise ? parcelCommonChargePaise / 100 : ''}
+                                onChange={(e) => setParcelCommonChargePaise(Math.max(0, Math.round(Number(e.target.value) * 100)))}
+                                placeholder="e.g. 15"
+                                className="pl-7 pr-3 py-2 w-32 rounded-xl border text-sm outline-none text-right tnum"
+                                style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
+                              />
+                            </div>
+                            <span className="text-xs" style={{ color: 'var(--ink-3)' }}>added once per parcel order</span>
+                          </div>
+                        )}
+
+                        {/* Save button */}
+                        <div className="flex items-center gap-3 mt-4">
+                          <button
+                            disabled={parcelSaving}
+                            onClick={async () => {
+                              setParcelSaving(true);
+                              const res = await fetch('/api/dashboard/settings', {
+                                method: 'POST',
+                                headers: { 'content-type': 'application/json' },
+                                body: JSON.stringify({ action: 'parcel_settings', mode: parcelMode, commonChargePaise: parcelCommonChargePaise }),
+                              });
+                              setParcelSaving(false);
+                              if (res.ok) { setParcelSaved(true); setTimeout(() => setParcelSaved(false), 2000); }
+                              else flashMessage('Could not save parcel settings');
+                            }}
+                            className="px-5 py-2 rounded-xl text-sm font-bold transition disabled:opacity-50"
+                            style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                          >{parcelSaving ? 'Saving…' : parcelSaved ? '✓ Saved!' : 'Save Settings'}</button>
+                          <span className="text-xs" style={{ color: 'var(--ink-3)' }}>
+                            {parcelMode === 'common' ? 'A single flat charge will be added to every parcel/takeaway order.' : 'Each item can have its own parcel charge configured below.'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Per-item mode: item list */}
+                      {parcelMode === 'per_item' && (
+                        <div>
+                          <div className="mb-3 flex items-center gap-3 flex-wrap">
+                            <div className="relative w-64 max-w-full">
+                              <input type="text" placeholder="Search items…" value={categorySearch} onChange={(e) => setCategorySearch(e.target.value)} className="w-full pl-9 pr-4 py-2 text-sm rounded-xl outline-none" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }} />
+                              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--ink-3)' }} />
+                            </div>
+                            <span className="text-xs" style={{ color: 'var(--ink-3)' }}>Set individual parcel charge per item. Leave blank for no charge.</span>
+                          </div>
+                          <div className="grid gap-2.5">
+                            {filtered.map((item) => {
+                              const parcelTag = item.tags?.find((t: string) => t.startsWith('parcel:'));
+                              const parcelVal = parcelTag ? parseInt(parcelTag.split(':')[1]) / 100 : '';
+                              return (
+                                <div key={item.id} className="p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3 text-sm" style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)' }}>
+                                  <div className="min-w-0">
+                                    <b className="block truncate">{item.name}</b>
+                                    <div className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>{formatINR(item.pricePaise)}</div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold" style={{ color: 'var(--ink-3)' }}>Parcel ₹:</span>
+                                    <input
+                                      type="number" min={0} step={1} placeholder="0"
+                                      defaultValue={parcelVal}
+                                      onBlur={(e) => {
+                                        const val = e.target.value.trim();
+                                        if (val === '') handleSaveItemParcelCharge(item, null);
+                                        else handleSaveItemParcelCharge(item, parseInt(val) * 100);
+                                      }}
+                                      className="w-20 px-2 py-1.5 rounded-lg text-sm text-center outline-none border"
+                                      style={{ background: 'var(--paper)', borderColor: 'var(--line-2)' }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {filtered.length === 0 && (
+                              <div className="p-6 text-center text-sm font-bold" style={{ color: 'var(--ink-3)' }}>No items found.</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   );
                 })()}
 

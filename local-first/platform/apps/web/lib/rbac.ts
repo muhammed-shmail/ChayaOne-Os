@@ -567,7 +567,7 @@ export function canSettle(subject: StaffSubject): boolean {
 
 export function canVoid(subject: StaffSubject): boolean {
   return (
-    hasRole(subject, ['owner', 'manager', 'cashier']) ||
+    hasRole(subject, ['owner', 'manager', 'cashier', 'waiter']) ||
     hasPermission(subject, 'pos:cancel_item') ||
     hasPermission(subject, 'pos:void_bill')
   );
