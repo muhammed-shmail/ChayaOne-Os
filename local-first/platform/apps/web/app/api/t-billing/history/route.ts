@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
       ...(method !== 'all' ? { payments: { some: { method: method as any } } } : {}),
     },
     include: {
-      items: true,
+      items: { where: { kotStatus: { not: 'void' } } },
       table: { select: { label: true } },
       customer: { select: { name: true, phone: true } },
       payments: { select: { method: true, amountPaise: true, providerRef: true, createdAt: true, meta: true } },

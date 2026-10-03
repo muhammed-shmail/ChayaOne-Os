@@ -37,6 +37,7 @@ import { BusinessDayPrompt, BusinessDayHeaderBadge } from '@/components/Business
 import LicenseStatusBadge from '@/components/license/LicenseStatusBadge';
 import StaffDevices from '@/components/StaffDevices';
 import { MobileDrawer, BottomNav, type NavItem } from '@/components/dashboard/MobileNav';
+import { ChaiAssistant } from '@/components/dashboard/ChaiAssistant';
 
 const CustomerManagement = dynamic(() => import('./CustomerManagement'), {
   loading: () => <div className="p-8 text-center text-xs text-gray-500">Loading Customers...</div>,
@@ -59,8 +60,6 @@ const ReportsView = dynamic(() => import('./components/reports/ReportsView').the
 type FloorTable = { id: string; label: string; seats: number; state: string; qrToken: string; floorId: string | null; activeOrders: number };
 type Floor = { id: string; name: string; sort: number };
 type Kitchen = { id: string; name: string; color?: string; sort: number };
-
-type Msg = { who: 'ai' | 'me'; html: string };
 
 const MENUS: { key: string; label: string; icon: LucideIcon }[] = [
   { key: 'home',      label: 'Home',         icon: LayoutDashboard },
@@ -750,19 +749,120 @@ export default function DashboardClient({
   // add-vendor form
   const [vName, setVName] = useState('');
   const [vPhone, setVPhone] = useState('');
+  const [vEmail, setVEmail] = useState('');
   const [vGstin, setVGstin] = useState('');
+  const [vAddress, setVAddress] = useState('');
+  const [vNotes, setVNotes] = useState('');
   const [vOpening, setVOpening] = useState('');
+  const [vSaving, setVSaving] = useState(false);
   const handleAddVendor = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vName.trim()) return;
+    if (!vName.trim() || vSaving) return;
+    setVSaving(true);
     const ok = await postSupplier(
-      { action: 'vendor', name: vName, phone: vPhone || null, gstin: vGstin || null, openingBalancePaise: vOpening ? Math.round(parseFloat(vOpening) * 100) : 0 },
+      {
+        action: 'vendor',
+        name: vName.trim(),
+        phone: vPhone || null,
+        email: vEmail || null,
+        gstin: vGstin || null,
+        address: vAddress || null,
+        notes: vNotes || null,
+        openingBalancePaise: vOpening ? Math.round(parseFloat(vOpening) * 100) : 0,
+      },
       'Supplier added.',
     );
-    if (ok) { setVName(''); setVPhone(''); setVGstin(''); setVOpening(''); }
+    setVSaving(false);
+    if (ok) {
+      setVName(''); setVPhone(''); setVEmail(''); setVGstin(''); setVAddress(''); setVNotes(''); setVOpening('');
+    }
   };
 
-  // invoice form
+  // ── Supplier Edit / Delete (owner-only) ──
+  const isOwnerForSupplier = rbacHasRole(currentStaff, ['owner']);
+  const [editVendor, setEditVendor] = useState<any | null>(null);
+  const [editVName, setEditVName] = useState('');
+  const [editVPhone, setEditVPhone] = useState('');
+  const [editVEmail, setEditVEmail] = useState('');
+  const [editVGstin, setEditVGstin] = useState('');
+  const [editVAddress, setEditVAddress] = useState('');
+  const [editVNotes, setEditVNotes] = useState('');
+  const [editVSaving, setEditVSaving] = useState(false);
+
+  const openEditVendor = (v: any) => {
+    setEditVendor(v);
+    setEditVName(v.name || '');
+    setEditVPhone(v.phone || '');
+    setEditVEmail(v.email || '');
+    setEditVGstin(v.gstin || '');
+    const contact = (v.contact && typeof v.contact === 'object') ? v.contact : {};
+    setEditVAddress(contact.address || '');
+    setEditVNotes(contact.notes || v.notes || '');
+  };
+
+  const handleUpdateVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editVendor || !editVName.trim() || editVSaving) return;
+    setEditVSaving(true);
+    try {
+      const res = await fetch('/api/suppliers', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'vendor',
+          id: editVendor.id,
+          name: editVName.trim(),
+          phone: editVPhone || null,
+          email: editVEmail || null,
+          gstin: editVGstin || null,
+          address: editVAddress || null,
+          notes: editVNotes || null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        flashMessage('Supplier updated.');
+        setEditVendor(null);
+        loadSuppliers();
+        if (statement?.vendor?.id === editVendor.id) {
+          openStatement(editVendor.id);
+        }
+      } else {
+        flashMessage(`Error: ${data.error || 'failed'}`);
+      }
+    } catch {
+      flashMessage('Network error');
+    } finally {
+      setEditVSaving(false);
+    }
+  };
+
+  const [deleteVendor, setDeleteVendor] = useState<any | null>(null);
+  const [deleteVSaving, setDeleteVSaving] = useState(false);
+
+  const handleDeleteVendor = async () => {
+    if (!deleteVendor || deleteVSaving) return;
+    setDeleteVSaving(true);
+    try {
+      const res = await fetch(`/api/suppliers?vendorId=${deleteVendor.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        flashMessage(data.message || (data.archived ? 'Supplier archived.' : 'Supplier deleted.'));
+        setDeleteVendor(null);
+        if (statement?.vendor?.id === deleteVendor.id) {
+          setStatement(null);
+        }
+        loadSuppliers();
+      } else {
+        flashMessage(`Error: ${data.error || 'failed'}`);
+      }
+    } catch {
+      flashMessage('Network error');
+    } finally {
+      setDeleteVSaving(false);
+    }
+  };
+
   const [invVendorId, setInvVendorId] = useState('');
   const [invNo, setInvNo] = useState('');
   const [invDate, setInvDate] = useState('');
@@ -2981,7 +3081,7 @@ export default function DashboardClient({
             transition={{ duration: 0.2 }}
             className={`absolute inset-0 flex items-center justify-center ${!isExpanded ? 'pointer-events-auto' : 'pointer-events-none'}`}
           >
-            <img src="/app.png" alt="ChayaOne" style={{ width: 36, height: 36, margin: 0 }} className="brand-cup-icon object-contain" />
+            <img src="/dashboard whitr .png" alt="ChayaOne" style={{ width: 36, height: 36, margin: 0 }} className="brand-cup-icon object-contain" />
           </motion.div>
         </div>
 
@@ -3546,8 +3646,6 @@ export default function DashboardClient({
                   )}
                 </motion.section>
 
-                {/* AI Assistant grounded box */}
-                {(activeFeatures.ai_assistant ?? false) && <Assistant />}
               </div>
             )}
 
@@ -4278,30 +4376,62 @@ export default function DashboardClient({
                   ) : (
                     <div className="grid gap-2.5">
                       {suppliers.vendors.map((v: any) => (
-                        <button
+                        <div
                           key={v.id}
-                          onClick={() => openStatement(v.id)}
-                          className="flex justify-between items-center text-sm p-4 rounded-2xl text-left transition duration-200 hover:-translate-y-0.5 cursor-pointer"
+                          className="text-sm rounded-2xl transition duration-200"
                           style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', boxShadow: 'var(--sh-1)' }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = 'var(--turmeric)';
-                            e.currentTarget.style.boxShadow = 'var(--sh-2)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = 'var(--line)';
-                            e.currentTarget.style.boxShadow = 'var(--sh-1)';
-                          }}
                         >
-                          <div>
-                            <span className="font-bold text-slate-800">{v.name}</span>
-                            {v.phone && <span className="text-xs text-ink-3 ml-2">{v.phone}</span>}
-                            <span className="block text-[11px] text-ink-3 mt-1">Invoiced {formatINR(v.invoicedPaise)} · Paid {formatINR(v.paidPaise)}</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="font-mono font-bold text-sm" style={{ color: v.balancePaise > 0 ? 'var(--clay)' : 'var(--cardamom-d)' }}>{formatINR(v.balancePaise)}</span>
-                            <span className="block text-[10px] text-ink-3 uppercase mt-0.5">{v.balancePaise > 0 ? 'payable' : 'settled'}</span>
-                          </div>
-                        </button>
+                          {/* Clickable top area — opens statement */}
+                          <button
+                            onClick={() => openStatement(v.id)}
+                            className="flex justify-between items-start w-full p-4 text-left cursor-pointer hover:-translate-y-0.5 transition duration-200"
+                            onMouseEnter={(e) => {
+                              (e.currentTarget.closest('[data-vendor]') as HTMLElement || e.currentTarget.parentElement)!.style.borderColor = 'var(--turmeric)';
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.currentTarget.closest('[data-vendor]') as HTMLElement || e.currentTarget.parentElement)!.style.borderColor = 'var(--line)';
+                            }}
+                          >
+                            <div>
+                              <span className="font-bold text-slate-800">{v.name}</span>
+                              {v.phone && <span className="text-xs text-ink-3 ml-2">{v.phone}</span>}
+                              <span className="block text-[11px] text-ink-3 mt-1">Invoiced {formatINR(v.invoicedPaise)} · Paid {formatINR(v.paidPaise)}</span>
+                            </div>
+                            <div className="text-right shrink-0 ml-3">
+                              <span className="font-mono font-bold text-sm" style={{ color: v.balancePaise > 0 ? 'var(--clay)' : 'var(--cardamom-d)' }}>{formatINR(v.balancePaise)}</span>
+                              <span className="block text-[10px] text-ink-3 uppercase mt-0.5">{v.balancePaise > 0 ? 'payable' : 'settled'}</span>
+                            </div>
+                          </button>
+
+                          {/* Owner-only action row */}
+                          {isOwnerForSupplier && (
+                            <div
+                              className="flex justify-end gap-2 px-4 pb-3"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                title="Edit supplier"
+                                onClick={() => openEditVendor(v)}
+                                className="text-[11px] font-bold px-3 py-1 rounded-lg transition cursor-pointer"
+                                style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--turmeric)'; e.currentTarget.style.color = 'var(--turmeric-d)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-2)'; }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                title="Delete supplier"
+                                onClick={() => setDeleteVendor(v)}
+                                className="text-[11px] font-bold px-3 py-1 rounded-lg transition cursor-pointer"
+                                style={{ background: 'var(--paper-2)', border: '1px solid var(--line)', color: 'var(--clay)' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--clay)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = 'var(--clay)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--paper-2)'; e.currentTarget.style.color = 'var(--clay)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -4442,25 +4572,40 @@ export default function DashboardClient({
                 <h4 className="font-bold mb-3">Add Supplier</h4>
                 <form onSubmit={handleAddVendor} className="grid gap-3">
                   <div>
-                    <label className="lbl">Supplier name</label>
-                    <input value={vName} onChange={(e) => setVName(e.target.value)} placeholder="e.g. Friends Vegetables" required className="inp" />
+                    <label className="lbl">Supplier name <span style={{ color: 'var(--clay)' }}>*</span></label>
+                    <input value={vName} onChange={(e) => setVName(e.target.value)} placeholder="e.g. Friends Vegetables" required className="inp" disabled={vSaving} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="lbl">Phone</label>
-                      <input value={vPhone} onChange={(e) => setVPhone(e.target.value)} placeholder="+91…" className="inp" />
+                      <input value={vPhone} onChange={(e) => setVPhone(e.target.value)} placeholder="+91…" className="inp" disabled={vSaving} />
                     </div>
                     <div>
+                      <label className="lbl">Email</label>
+                      <input type="email" value={vEmail} onChange={(e) => setVEmail(e.target.value)} placeholder="optional" className="inp" disabled={vSaving} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
                       <label className="lbl">GSTIN</label>
-                      <input value={vGstin} onChange={(e) => setVGstin(e.target.value)} placeholder="optional" className="inp" />
+                      <input value={vGstin} onChange={(e) => setVGstin(e.target.value)} placeholder="optional" className="inp" disabled={vSaving} />
+                    </div>
+                    <div>
+                      <label className="lbl">Opening balance owed (₹)</label>
+                      <input type="number" step="0.01" value={vOpening} onChange={(e) => setVOpening(e.target.value)} placeholder="0" className="inp" disabled={vSaving} />
                     </div>
                   </div>
                   <div>
-                    <label className="lbl">Opening balance owed (₹)</label>
-                    <input type="number" step="0.01" value={vOpening} onChange={(e) => setVOpening(e.target.value)} placeholder="0" className="inp" />
-                    <p className="text-[11px] text-ink-3 mt-1">Existing dues carried over when onboarding this supplier.</p>
+                    <label className="lbl">Address</label>
+                    <input value={vAddress} onChange={(e) => setVAddress(e.target.value)} placeholder="optional" className="inp" disabled={vSaving} />
                   </div>
-                  <button type="submit" className="btn btn-primary mt-1">Add Supplier</button>
+                  <div>
+                    <label className="lbl">Notes</label>
+                    <textarea value={vNotes} onChange={(e) => setVNotes(e.target.value)} placeholder="optional notes" rows={2} className="inp resize-none" disabled={vSaving} />
+                  </div>
+                  <button type="submit" disabled={vSaving || !vName.trim()} className="btn btn-primary mt-1 disabled:opacity-50">
+                    {vSaving ? 'Adding…' : 'Add Supplier'}
+                  </button>
                 </form>
               </section>
             )}
@@ -6427,9 +6572,41 @@ export default function DashboardClient({
                 <h3 className="text-lg font-bold">{statement.vendor.name}</h3>
                 <span className="text-xs text-ink-3">{statement.vendor.phone ?? ''}{statement.vendor.gstin ? ` · ${statement.vendor.gstin}` : ''}</span>
               </div>
-              <div className="text-right">
-                <span className="block text-[11px] text-ink-3 uppercase">Balance</span>
-                <span className="font-mono font-bold text-lg" style={{ color: statement.balancePaise > 0 ? 'var(--clay)' : 'var(--cardamom-d)' }}>{formatINR(statement.balancePaise)}</span>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <span className="block text-[11px] text-ink-3 uppercase">Balance</span>
+                  <span className="font-mono font-bold text-lg" style={{ color: statement.balancePaise > 0 ? 'var(--clay)' : 'var(--cardamom-d)' }}>{formatINR(statement.balancePaise)}</span>
+                </div>
+                {isOwnerForSupplier && (
+                  <div className="flex gap-1.5 ml-2 border-l pl-3" style={{ borderColor: 'var(--line)' }}>
+                    <button
+                      title="Edit supplier"
+                      onClick={() => {
+                        const targetVendor = suppliers?.vendors?.find((x: any) => x.id === statement.vendor.id) || statement.vendor;
+                        openEditVendor(targetVendor);
+                      }}
+                      className="text-xs font-bold px-2.5 py-1 rounded-lg transition cursor-pointer"
+                      style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--turmeric)'; e.currentTarget.style.color = 'var(--turmeric-d)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = 'var(--ink-2)'; }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      title="Delete supplier"
+                      onClick={() => {
+                        const targetVendor = suppliers?.vendors?.find((x: any) => x.id === statement.vendor.id) || statement.vendor;
+                        setDeleteVendor(targetVendor);
+                      }}
+                      className="text-xs font-bold px-2.5 py-1 rounded-lg transition cursor-pointer"
+                      style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--clay)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--clay)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = 'var(--clay)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--paper-3)'; e.currentTarget.style.color = 'var(--clay)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
             <div className="p-5">
@@ -6464,6 +6641,101 @@ export default function DashboardClient({
                 </div>
               )}
               <button onClick={() => setStatement(null)} className="btn btn-dark w-full mt-4">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Supplier Modal (owner-only) ── */}
+      {editVendor && (
+        <div onClick={() => { if (!editVSaving) setEditVendor(null); }} className="fixed inset-0 z-[8600] grid place-items-center p-5" style={{ background: 'rgba(30,18,10,.5)', backdropFilter: 'blur(6px)' }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-[min(480px,100%)]" style={{ background: 'var(--paper-2)', borderRadius: 24, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--line)' }}>
+              <h3 className="text-base font-bold">Edit Supplier</h3>
+              <button onClick={() => { if (!editVSaving) setEditVendor(null); }} aria-label="Close" className="btn py-1.5 px-3 text-xs" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>✕</button>
+            </div>
+            <form onSubmit={handleUpdateVendor} className="p-5 grid gap-3">
+              <div>
+                <label className="lbl">Supplier name <span style={{ color: 'var(--clay)' }}>*</span></label>
+                <input
+                  value={editVName}
+                  onChange={(e) => setEditVName(e.target.value)}
+                  required
+                  placeholder="Supplier name"
+                  className="inp"
+                  disabled={editVSaving}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="lbl">Phone</label>
+                  <input value={editVPhone} onChange={(e) => setEditVPhone(e.target.value)} placeholder="+91…" className="inp" disabled={editVSaving} />
+                </div>
+                <div>
+                  <label className="lbl">Email</label>
+                  <input type="email" value={editVEmail} onChange={(e) => setEditVEmail(e.target.value)} placeholder="optional" className="inp" disabled={editVSaving} />
+                </div>
+              </div>
+              <div>
+                <label className="lbl">GSTIN</label>
+                <input value={editVGstin} onChange={(e) => setEditVGstin(e.target.value)} placeholder="optional" className="inp" disabled={editVSaving} />
+              </div>
+              <div>
+                <label className="lbl">Address</label>
+                <input value={editVAddress} onChange={(e) => setEditVAddress(e.target.value)} placeholder="Street, City, State" className="inp" disabled={editVSaving} />
+              </div>
+              <div>
+                <label className="lbl">Notes</label>
+                <textarea value={editVNotes} onChange={(e) => setEditVNotes(e.target.value)} placeholder="optional notes" rows={2} className="inp resize-none" disabled={editVSaving} />
+              </div>
+              <div className="flex gap-2 mt-1">
+                <button type="button" onClick={() => setEditVendor(null)} disabled={editVSaving} className="btn flex-1 text-sm" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>Cancel</button>
+                <button type="submit" disabled={editVSaving || !editVName.trim()} className="btn btn-primary flex-1 text-sm disabled:opacity-50">
+                  {editVSaving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Supplier Confirmation (owner-only) ── */}
+      {deleteVendor && (
+        <div onClick={() => { if (!deleteVSaving) setDeleteVendor(null); }} className="fixed inset-0 z-[8600] grid place-items-center p-5" style={{ background: 'rgba(30,18,10,.5)', backdropFilter: 'blur(6px)' }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-[min(420px,100%)]" style={{ background: 'var(--paper-2)', borderRadius: 24, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
+            <div className="px-5 pt-5 pb-4">
+              <h3 className="text-base font-bold mb-1">Delete supplier?</h3>
+              <p className="text-sm text-ink-3">
+                Are you sure you want to delete <strong>{deleteVendor.name}</strong>?
+              </p>
+              {(deleteVendor.invoicedPaise > 0 || deleteVendor.paidPaise > 0 || (deleteVendor.openingBalancePaise && deleteVendor.openingBalancePaise > 0)) ? (
+                <div className="mt-3 p-3 rounded-xl text-xs" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
+                  <span className="font-bold block mb-0.5">⚠ This supplier has financial records.</span>
+                  <span className="text-ink-3">This supplier has financial records and cannot be permanently deleted. You can archive/deactivate the supplier instead. All historical invoices and payments will be preserved.</span>
+                </div>
+              ) : (
+                <div className="mt-3 p-3 rounded-xl text-xs text-ink-3" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
+                  This supplier has no invoices or payment records and will be permanently removed.
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 px-5 pb-5">
+              <button
+                onClick={() => setDeleteVendor(null)}
+                disabled={deleteVSaving}
+                className="btn flex-1 text-sm"
+                style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteVendor}
+                disabled={deleteVSaving}
+                className="btn flex-1 text-sm font-bold disabled:opacity-50"
+                style={{ background: 'var(--clay)', color: '#fff', border: '1px solid var(--clay)' }}
+              >
+                {deleteVSaving ? 'Processing…' : (deleteVendor.invoicedPaise > 0 || deleteVendor.paidPaise > 0 || (deleteVendor.openingBalancePaise && deleteVendor.openingBalancePaise > 0)) ? 'Archive Supplier' : 'Delete Supplier'}
+              </button>
             </div>
           </div>
         </div>
@@ -6930,6 +7202,13 @@ export default function DashboardClient({
 
       {/* Confirmation Dialog Modal */}
       <ConfirmDialog />
+
+      {/* Chai — the ChayaOne AI assistant, a floating widget available across the dashboard (owner & manager only, hidden on POS / KDS / T-Billing) */}
+      {(activeFeatures.ai_assistant ?? false) && (staff.role === 'owner' || staff.role === 'manager') && !showPos && !showTBilling && !showKds && (
+        <ChaiAssistant
+          module={activeMenu === 'finance' ? 'finance' : activeMenu === 'inventory' ? 'inventory' : 'home'}
+        />
+      )}
     </div>
   );
 }
@@ -6957,173 +7236,6 @@ function KpiCard({ label, value, n, format, tone, index = 0 }: { label: string; 
         {n !== undefined ? <CountUp value={n} format={format ?? ((x) => x.toLocaleString('en-IN'))} /> : value}
       </span>
     </motion.section>
-  );
-}
-
-// quick-prompt chips per language
-const PROMPTS: Record<'en' | 'ml', string[]> = {
-  en: ['Why up today?', 'Promote tonight?', 'Who to win back?', 'Busiest hours?'],
-  ml: ['ഇന്നത്തെ വിൽപ്പന?', 'എന്ത് പ്രമോട്ട് ചെയ്യണം?', 'ആരെ തിരികെ കൊണ്ടുവരണം?', 'തിരക്കുള്ള സമയം?'],
-};
-
-function Assistant() {
-  const [msgs, setMsgs] = useState<Msg[]>([
-    { who: 'ai', html: 'Ask me anything — “why are sales down?”, “what to promote?” · മലയാളത്തിലും ചോദിക്കാം 🎙️' },
-  ]);
-  const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [uiLang, setUiLang] = useState<'en' | 'ml'>('en'); // drives quick chips + mic locale
-  const [speakOn, setSpeakOn] = useState(true); // read replies aloud
-  const [listening, setListening] = useState(false);
-  const [voiceOk, setVoiceOk] = useState(false); // speech-recognition support (set client-side)
-  const scroll = useRef<HTMLDivElement>(null);
-  const recRef = useRef<any>(null);
-
-  useEffect(() => {
-    scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'smooth' });
-  }, [msgs, busy]);
-
-  // feature-detect the Web Speech API on the client (avoids SSR hydration mismatch)
-  useEffect(() => {
-    setVoiceOk(typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window));
-    return () => { try { window.speechSynthesis?.cancel(); } catch {} };
-  }, []);
-
-  // read an AI reply aloud in the language the server answered in
-  function speak(html: string, lang: 'en' | 'ml') {
-    if (!speakOn || typeof window === 'undefined' || !window.speechSynthesis) return;
-    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!text) return;
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang === 'ml' ? 'ml-IN' : 'en-IN';
-    const match = window.speechSynthesis.getVoices().find((v) => v.lang === u.lang);
-    if (match) u.voice = match;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
-  }
-
-  async function ask(q: string) {
-    if (!q.trim() || busy) return;
-    setMsgs((m) => [...m, { who: 'me', html: q }]);
-    setInput('');
-    setBusy(true);
-    try {
-      const res = await fetch('/api/dashboard/assistant', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ q }),
-      });
-      const data = await res.json().catch(() => ({}));
-      // Surface the real reason instead of a generic "couldn't read that" — the
-      // gate (402) and auth (401/403) return an `error`, not a `reply`.
-      if (!res.ok) {
-        const html =
-          res.status === 402
-            ? 'The <b>AI Sales Assistant</b> isn’t included in your current plan. <span class="msg-act">Upgrade to Pro to switch it on.</span>'
-            : res.status === 401 || res.status === 403
-              ? 'You don’t have access to the assistant — sign in as an owner or manager.'
-              : 'The assistant is unavailable right now — please try again in a moment.';
-        setMsgs((m) => [...m, { who: 'ai', html }]);
-        return;
-      }
-      const { reply, lang } = data;
-      const safe = reply ?? 'Sorry, I couldn’t read that.';
-      setMsgs((m) => [...m, { who: 'ai', html: safe }]);
-      speak(safe, lang === 'ml' ? 'ml' : 'en');
-    } catch {
-      setMsgs((m) => [...m, { who: 'ai', html: 'Network hiccup — try again in a moment.' }]);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // mic: dictate the question (Malayalam or English per the language toggle)
-  function toggleMic() {
-    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
-    if (listening) { recRef.current?.stop(); return; }
-    const rec = new SR();
-    rec.lang = uiLang === 'ml' ? 'ml-IN' : 'en-IN';
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    rec.onresult = (e: any) => {
-      const said = e.results?.[0]?.[0]?.transcript ?? '';
-      if (said) ask(said);
-    };
-    rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
-    recRef.current = rec;
-    setListening(true);
-    try { rec.start(); } catch { setListening(false); }
-  }
-
-  return (
-    <section className="card col-span-2 p-5 flex flex-col" style={{ minHeight: 320 }}>
-      <div className="flex items-center justify-between mb-3">
-        <span className="font-bold text-xs" style={{ color: 'var(--berry)' }}>🤖 Sales Assistant</span>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setUiLang((l) => (l === 'en' ? 'ml' : 'en'))}
-            className="text-[10px] font-bold px-2 py-1 rounded-full"
-            style={{ background: 'var(--paper-3)', border: '1px solid var(--line)', color: 'var(--ink-2)' }}
-            title="Question language for the mic"
-          >{uiLang === 'en' ? 'EN' : 'മ'}</button>
-          <button
-            onClick={() => { setSpeakOn((s) => { if (s) window.speechSynthesis?.cancel(); return !s; }); }}
-            className="text-[12px] px-2 py-1 rounded-full"
-            style={{ background: speakOn ? 'color-mix(in srgb, var(--berry) 16%, var(--paper-3))' : 'var(--paper-3)', border: '1px solid var(--line)' }}
-            title={speakOn ? 'Voice replies on' : 'Voice replies off'}
-          >{speakOn ? '🔊' : '🔇'}</button>
-        </div>
-      </div>
-
-      <div ref={scroll} className="flex-1 overflow-y-auto flex flex-col gap-2.5 mb-3 pr-1" style={{ maxHeight: 220 }}>
-        {msgs.map((m, i) => (
-          <div
-            key={i}
-            className="text-sm px-3 py-2 rounded-2xl max-w-[88%]"
-            style={m.who === 'me'
-              ? { alignSelf: 'flex-end', background: 'var(--turmeric)', color: '#2A1607', fontWeight: 600 }
-              : { alignSelf: 'flex-start', background: 'var(--paper-3)', color: 'var(--ink-2)', border: '1px solid var(--line)' }}
-            dangerouslySetInnerHTML={{ __html: m.html }}
-          />
-        ))}
-        {busy && (
-          <div className="text-sm px-3 py-2.5 rounded-2xl self-start flex gap-1" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
-            <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--ink-3)' }} />
-            <span className="w-1.5 h-1.5 rounded-full animate-bounce delay-150" style={{ background: 'var(--ink-3)' }} />
-            <span className="w-1.5 h-1.5 rounded-full animate-bounce delay-300" style={{ background: 'var(--ink-3)' }} />
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap gap-1.5 mb-2.5">
-        {PROMPTS[uiLang].map((q) => (
-          <button key={q} onClick={() => ask(q)} disabled={busy} className="pill text-xs disabled:opacity-50 hover:-translate-y-0.5 transition">{q}</button>
-        ))}
-      </div>
-
-      <div className="flex gap-2">
-        {voiceOk && (
-          <button
-            onClick={toggleMic}
-            disabled={busy}
-            className="btn"
-            style={{ padding: '0 14px', background: listening ? 'var(--clay)' : 'var(--paper-3)', color: listening ? '#fff' : 'var(--ink)', border: '1px solid var(--line-2)' }}
-            title={listening ? 'Listening… tap to stop' : `Speak (${uiLang === 'ml' ? 'മലയാളം' : 'English'})`}
-          >{listening ? '⏺' : '🎙️'}</button>
-        )}
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && ask(input)}
-          placeholder={uiLang === 'ml' ? 'ചോദിക്കൂ…' : 'Ask the assistant…'}
-          className="flex-1 px-3 py-2.5 rounded-xl text-sm outline-none"
-          style={{ background: 'var(--paper-3)', border: '1px solid var(--line-2)', color: 'var(--ink)' }}
-        />
-        <button onClick={() => ask(input)} disabled={busy || !input.trim()} className="btn btn-dark" style={{ padding: '0 16px' }}>↑</button>
-      </div>
-    </section>
   );
 }
 

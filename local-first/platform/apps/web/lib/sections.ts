@@ -223,7 +223,7 @@ export interface InventoryData {
   recipes: { itemId: string; itemName: string; lines: { id: string; material: string; qty: number; unit: string }[] }[];
 }
 
-async function getInventory(outletId: string): Promise<InventoryData> {
+export async function getInventory(outletId: string): Promise<InventoryData> {
   const [stock, waste, consumption, alerts, recipeRows] = await Promise.all([
     prisma.stockItem.findMany({ where: { outletId }, orderBy: { qtyOnHand: 'asc' } }),
     prisma.wasteLog.findMany({
@@ -317,6 +317,9 @@ export interface SuppliersData {
     id: string;
     name: string;
     phone: string | null;
+    email: string | null;
+    gstin: string | null;
+    contact: any;
     openingBalancePaise: number;
     invoicedPaise: number;
     paidPaise: number;
@@ -338,12 +341,12 @@ export interface SuppliersData {
   payments: { id: string; vendorName: string; amountPaise: number; method: string; reference: string | null; at: string }[];
 }
 
-async function getSuppliers(outletId: string, tenantId: string): Promise<SuppliersData> {
-  const [vendors, poByVendor, payByVendor, recentInvoices, recentPayments, paid30] = await Promise.all([
+export async function getSuppliers(outletId: string, tenantId: string): Promise<SuppliersData> {
+  const [allVendors, poByVendor, payByVendor, recentInvoices, recentPayments, paid30] = await Promise.all([
     prisma.vendor.findMany({
       where: { tenantId },
       orderBy: { name: 'asc' },
-      select: { id: true, name: true, phone: true, openingBalancePaise: true },
+      select: { id: true, name: true, phone: true, email: true, gstin: true, openingBalancePaise: true, contact: true },
     }),
     prisma.purchaseOrder.groupBy({
       by: ['vendorId'],
@@ -377,6 +380,12 @@ async function getSuppliers(outletId: string, tenantId: string): Promise<Supplie
   const poMap = new Map(poByVendor.map((r) => [r.vendorId, r._sum]));
   const payMap = new Map(payByVendor.map((r) => [r.vendorId, r]));
 
+  // Filter out archived (soft-deleted) vendors from the active list
+  const vendors = allVendors.filter((v) => {
+    const contact = v.contact as Record<string, any> | null;
+    return !contact?.isArchived;
+  });
+
   let outstanding = 0;
   const vendorRows = vendors.map((v) => {
     const invoiced = poMap.get(v.id)?.totalPaise ?? 0;
@@ -387,6 +396,9 @@ async function getSuppliers(outletId: string, tenantId: string): Promise<Supplie
       id: v.id,
       name: v.name,
       phone: v.phone,
+      email: v.email,
+      gstin: v.gstin,
+      contact: v.contact,
       openingBalancePaise: v.openingBalancePaise,
       invoicedPaise: invoiced,
       paidPaise: paid,
@@ -394,6 +406,7 @@ async function getSuppliers(outletId: string, tenantId: string): Promise<Supplie
       lastPaymentAt: payMap.get(v.id)?._max.paidAt?.toISOString() ?? null,
     };
   });
+
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);

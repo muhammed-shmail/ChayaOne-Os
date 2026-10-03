@@ -7,7 +7,7 @@ import { readTableFloors } from '@/lib/floors';
 import { readReceiptConfig } from '@/lib/receipt';
 import { readUpiConfig } from '@/lib/print/upi';
 import { readKitchenWorkflow } from '@/lib/kitchenWorkflow';
-import TBillingClient, { type TableDto } from './TBillingClient';
+import TBillingClient, { type TableDto, type MenuItemDto } from './TBillingClient';
 
 export const revalidate = 0;
 
@@ -20,8 +20,13 @@ export default async function TBillingPage() {
   const outlet = await prisma.outlet.findUnique({ where: { id: session.outletId } });
   if (!outlet) redirect('/api/auth/logout');
 
-  const [tables, initialOrdersRaw] = await Promise.all([
+  const [tables, menuItemsRaw, initialOrdersRaw] = await Promise.all([
     prisma.tableMap.findMany({ where: { outletId: outlet.id }, orderBy: { label: 'asc' } }),
+    prisma.menuItem.findMany({
+      where: { outletId: outlet.id, isAvailable: true },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, pricePaise: true, gstRate: true },
+    }),
     prisma.order.findMany({
       where: {
         outletId: outlet.id,
@@ -29,6 +34,7 @@ export default async function TBillingPage() {
       },
       include: {
         items: {
+          where: { kotStatus: { not: 'void' } },
           include: {
             item: {
               select: { gstRate: true }
@@ -42,6 +48,13 @@ export default async function TBillingPage() {
       take: 50,
     })
   ]);
+
+  const menuItems: MenuItemDto[] = menuItemsRaw.map((i) => ({
+    id: i.id,
+    name: i.name,
+    pricePaise: i.pricePaise,
+    gstRate: Number(i.gstRate),
+  }));
 
   const tableFloors = readTableFloors(outlet.settings);
   const tableDtos: TableDto[] = tables.map((t) => ({
@@ -127,6 +140,7 @@ export default async function TBillingPage() {
         effectivePermissions: session.effectivePermissions,
       }}
       tables={tableDtos}
+      menuItems={menuItems}
       initialOrders={initialOrders}
     />
   );

@@ -20,6 +20,15 @@ async function guard() {
   return { session };
 }
 
+/** Stricter guard: owner-only actions (edit supplier, delete supplier). */
+async function ownerGuard() {
+  const session = await getSession();
+  if (!session) return { error: NextResponse.json({ error: 'unauthorized' }, { status: 401 }) };
+  if (session.role !== 'owner')
+    return { error: NextResponse.json({ error: 'forbidden — owner only' }, { status: 403 }) };
+  return { session };
+}
+
 const toDate = (s: unknown) => (typeof s === 'string' && s.trim() ? new Date(s) : null);
 
 /** GET /api/suppliers?vendorId=… — chronological ledger / statement for one supplier. */
@@ -100,37 +109,108 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { action } = body;
 
-    // ---------------- create / update supplier ----------------
-    if (action === 'vendor') {
-      const { id, name, phone, email, gstin, openingBalancePaise } = body;
-      if (!id && (!name || !String(name).trim())) {
+    // ---------------- create supplier (anyone in guard) ----------------
+    if (action === 'vendor' && !body.id) {
+      const { name, phone, email, gstin, openingBalancePaise, address, notes } = body;
+      const trimmedName = name ? String(name).trim() : '';
+      if (!trimmedName) {
         return NextResponse.json({ error: 'name_required' }, { status: 400 });
       }
-      if (id) {
-        const existing = await prisma.vendor.findFirst({ where: { id, tenantId: session.tenantId } });
-        if (!existing) return NextResponse.json({ error: 'vendor_not_found' }, { status: 404 });
-        const vendor = await prisma.vendor.update({
-          where: { id },
-          data: {
-            name: name?.trim() ?? existing.name,
-            phone: phone ?? existing.phone,
-            email: email ?? existing.email,
-            gstin: gstin ?? existing.gstin,
-            ...(openingBalancePaise != null ? { openingBalancePaise: Math.round(Number(openingBalancePaise)) } : {}),
-          },
-        });
-        return NextResponse.json({ ok: true, vendor });
+
+      // Check duplicate supplier name (case-insensitive)
+      const existingSupplier = await prisma.vendor.findFirst({
+        where: { tenantId: session.tenantId, name: { equals: trimmedName, mode: 'insensitive' } },
+      });
+      if (existingSupplier) {
+        const isArch = (existingSupplier.contact as any)?.isArchived;
+        if (isArch) {
+          return NextResponse.json({ error: 'A supplier with this name was previously archived. Please use a different name.' }, { status: 409 });
+        }
+        return NextResponse.json({ error: 'A supplier with this name already exists.' }, { status: 409 });
       }
+
       const vendor = await prisma.vendor.create({
         data: {
           tenantId: session.tenantId,
-          name: String(name).trim(),
+          name: trimmedName,
           phone: phone || null,
           email: email || null,
           gstin: gstin || null,
           openingBalancePaise: openingBalancePaise != null ? Math.round(Number(openingBalancePaise)) : 0,
+          contact: (notes || address) ? { notes: notes || null, address: address || null } : undefined,
         },
       });
+
+      await prisma.auditLog.create({
+        data: {
+          outletId: session.outletId,
+          actorId: session.staffId,
+          action: 'supplier.created',
+          entity: 'vendor',
+          entityId: vendor.id,
+          after: { name: vendor.name, phone: vendor.phone, email: vendor.email, gstin: vendor.gstin },
+        },
+      }).catch(() => {});
+
+      return NextResponse.json({ ok: true, vendor });
+    }
+
+    // ---------------- update supplier (owner only) ----------------
+    if (action === 'vendor' && body.id) {
+      // Owner-only: verify before allowing update
+      if (session.role !== 'owner') {
+        return NextResponse.json({ error: 'forbidden — owner only' }, { status: 403 });
+      }
+      const { id, name, phone, email, gstin, openingBalancePaise, address, notes } = body;
+      const existing = await prisma.vendor.findFirst({ where: { id, tenantId: session.tenantId } });
+      if (!existing) return NextResponse.json({ error: 'vendor_not_found' }, { status: 404 });
+
+      const trimmedName = name ? String(name).trim() : existing.name;
+      if (!trimmedName) return NextResponse.json({ error: 'name_required' }, { status: 400 });
+
+      // Duplicate check against other suppliers
+      const duplicate = await prisma.vendor.findFirst({
+        where: {
+          tenantId: session.tenantId,
+          name: { equals: trimmedName, mode: 'insensitive' },
+          id: { not: id },
+        },
+      });
+      if (duplicate) {
+        return NextResponse.json({ error: 'Another supplier with this name already exists.' }, { status: 409 });
+      }
+
+      const existingContact = (existing.contact && typeof existing.contact === 'object') ? existing.contact as Record<string, any> : {};
+      const updatedContact = {
+        ...existingContact,
+        ...(address !== undefined ? { address: address || null } : {}),
+        ...(notes !== undefined ? { notes: notes || null } : {}),
+      };
+
+      const vendor = await prisma.vendor.update({
+        where: { id },
+        data: {
+          name: trimmedName,
+          phone: phone !== undefined ? (phone || null) : existing.phone,
+          email: email !== undefined ? (email || null) : existing.email,
+          gstin: gstin !== undefined ? (gstin || null) : existing.gstin,
+          ...(openingBalancePaise != null ? { openingBalancePaise: Math.round(Number(openingBalancePaise)) } : {}),
+          contact: updatedContact,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          outletId: session.outletId,
+          actorId: session.staffId,
+          action: 'supplier.updated',
+          entity: 'vendor',
+          entityId: vendor.id,
+          before: { name: existing.name, phone: existing.phone, email: existing.email, gstin: existing.gstin },
+          after: { name: vendor.name, phone: vendor.phone, email: vendor.email, gstin: vendor.gstin },
+        },
+      }).catch(() => {});
+
       return NextResponse.json({ ok: true, vendor });
     }
 
@@ -260,5 +340,86 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     console.error('supplier operation failed', e);
     return NextResponse.json({ error: e?.message ?? 'failed' }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/suppliers?vendorId=…  — Owner-only supplier deletion.
+ *
+ * If the vendor has any financial records (invoices, payments) it is archived
+ * (soft-delete via contact JSON flag) rather than hard-deleted to preserve history.
+ * If the vendor has no records at all, it is permanently deleted.
+ */
+export async function DELETE(req: NextRequest) {
+  const og = await ownerGuard();
+  if (og.error) return og.error;
+  const { session } = og;
+
+  const vendorId = req.nextUrl.searchParams.get('vendorId');
+  if (!vendorId) return NextResponse.json({ error: 'vendorId required' }, { status: 400 });
+
+  try {
+    const vendor = await prisma.vendor.findFirst({ where: { id: vendorId, tenantId: session.tenantId } });
+    if (!vendor) return NextResponse.json({ error: 'vendor_not_found' }, { status: 404 });
+
+    // Check for dependent records
+    const [invoiceCount, paymentCount] = await Promise.all([
+      prisma.purchaseOrder.count({ where: { vendorId } }),
+      prisma.supplierPayment.count({ where: { vendorId } }),
+    ]);
+
+    const hasRecords = invoiceCount > 0 || paymentCount > 0 || (vendor.openingBalancePaise != null && vendor.openingBalancePaise > 0);
+
+    if (hasRecords) {
+      // Soft-delete: mark as archived in contact JSON to preserve financial history
+      const existingContact = (vendor.contact && typeof vendor.contact === 'object') ? vendor.contact as Record<string, any> : {};
+      await prisma.vendor.update({
+        where: { id: vendorId },
+        data: {
+          contact: {
+            ...existingContact,
+            isArchived: true,
+            archivedAt: new Date().toISOString(),
+            archivedBy: session.name,
+          },
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          outletId: session.outletId,
+          actorId: session.staffId,
+          action: 'supplier.archived',
+          entity: 'vendor',
+          entityId: vendorId,
+          before: { name: vendor.name, phone: vendor.phone, invoicedCount: invoiceCount, paymentCount },
+        },
+      }).catch(() => {});
+
+      return NextResponse.json({
+        ok: true,
+        archived: true,
+        message: `Supplier archived. Financial history preserved (${invoiceCount} invoice${invoiceCount !== 1 ? 's' : ''}, ${paymentCount} payment${paymentCount !== 1 ? 's' : ''}).`,
+      });
+    }
+
+    // No records: safe to hard-delete
+    await prisma.vendor.delete({ where: { id: vendorId } });
+
+    await prisma.auditLog.create({
+      data: {
+        outletId: session.outletId,
+        actorId: session.staffId,
+        action: 'supplier.deleted',
+        entity: 'vendor',
+        entityId: vendorId,
+        before: { name: vendor.name, phone: vendor.phone },
+      },
+    }).catch(() => {});
+
+    return NextResponse.json({ ok: true, archived: false, message: 'Supplier deleted permanently.' });
+  } catch (e: any) {
+    console.error('supplier delete failed', e);
+    return NextResponse.json({ error: e?.message ?? 'delete failed' }, { status: 500 });
   }
 }

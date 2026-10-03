@@ -2170,7 +2170,7 @@ export default function DashboardClient({
             transition={{ duration: 0.2 }}
             className={`absolute inset-0 flex items-center justify-center ${!isExpanded ? 'pointer-events-auto' : 'pointer-events-none'}`}
           >
-            <img src="/app.png" alt="ChayaOne" style={{ width: 36, height: 36, margin: 0 }} className="brand-cup-icon object-contain" />
+            <img src="/dashboard whitr .png" alt="ChayaOne" style={{ width: 36, height: 36, margin: 0 }} className="brand-cup-icon object-contain" />
           </motion.div>
         </div>
 
@@ -2693,8 +2693,8 @@ export default function DashboardClient({
                   )}
                 </motion.section>
 
-                {/* AI Assistant grounded box */}
-                {features.ai_assistant !== false && <Assistant />}
+                {/* AI Assistant grounded box (owner & manager only, hidden on POS) */}
+                {features.ai_assistant !== false && (staff.role === 'owner' || staff.role === 'manager') && !showPos && <Assistant />}
               </div>
             )}
 

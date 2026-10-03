@@ -1,5 +1,6 @@
 import { prisma } from '@cafeos/db';
 import { readBusinessDay } from './businessDay';
+import { getSuppliers } from './sections';
 
 /**
  * Cafe OS — Owner Dashboard analytics.
@@ -339,6 +340,43 @@ async function lowStock(outletId: string): Promise<LowStock[]> {
         level: on <= reorder * 0.5 ? ('critical' as const) : ('low' as const),
       };
     });
+}
+
+// --------------------------- finance (for the Chai assistant) ---------------------------
+export interface FinanceSnapshot {
+  totalPaise: number; // expenses, last 30 days
+  byCategory: { category: string; totalPaise: number }[];
+  biggest: { category: string; vendor: string | null; amountPaise: number; businessDate: string } | null;
+  outstandingDuesPaise: number; // owed to vendors/suppliers right now
+}
+
+export async function financeSnapshot(outletId: string, tenantId: string): Promise<FinanceSnapshot> {
+  const since = new Date(Date.now() - 30 * 864e5);
+  const [expenses, suppliers] = await Promise.all([
+    prisma.expense.findMany({
+      where: { outletId, createdAt: { gte: since } },
+      orderBy: { amountPaise: 'desc' },
+    }),
+    getSuppliers(outletId, tenantId).catch(() => null),
+  ]);
+
+  const totalPaise = expenses.reduce((s, e) => s + e.amountPaise, 0);
+  const byCategoryMap = new Map<string, number>();
+  for (const e of expenses) byCategoryMap.set(e.category, (byCategoryMap.get(e.category) ?? 0) + e.amountPaise);
+  const byCategory = Array.from(byCategoryMap, ([category, totalPaise]) => ({ category, totalPaise }))
+    .sort((a, b) => b.totalPaise - a.totalPaise);
+
+  const top = expenses[0];
+  const biggest = top
+    ? { category: top.category, vendor: top.vendor, amountPaise: top.amountPaise, businessDate: top.businessDate }
+    : null;
+
+  return {
+    totalPaise,
+    byCategory,
+    biggest,
+    outstandingDuesPaise: suppliers?.summary.outstandingPaise ?? 0,
+  };
 }
 
 // --------------------------- loyalty ---------------------------

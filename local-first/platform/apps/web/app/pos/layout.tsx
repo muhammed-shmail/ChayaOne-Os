@@ -27,7 +27,7 @@ export default async function PosLayout({ children }: { children: React.ReactNod
   const session = await getSession();
   const staffAppEnabled = session ? await tenantHasFeature(session.tenantId, 'staff_app') : false;
   return (
-    <div className="flex flex-col h-screen max-h-screen md:h-[100dvh] md:max-h-[100dvh] overflow-hidden bg-[var(--paper)]">
+    <div className="flex flex-col h-[100dvh] max-h-[100dvh] overflow-hidden bg-[var(--paper)]">
       <LicenseExpiryBanner />
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {children}

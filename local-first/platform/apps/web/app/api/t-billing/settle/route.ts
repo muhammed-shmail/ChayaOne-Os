@@ -209,7 +209,7 @@ export async function POST(req: NextRequest) {
         roundOffPaise: bill.roundOffPaise,
         totalPaise: bill.totalPaise,
       },
-      include: { items: true, table: { select: { label: true } }, customer: { select: { name: true, phone: true } } },
+      include: { items: { where: { kotStatus: { not: 'void' } } }, table: { select: { label: true } }, customer: { select: { name: true, phone: true } } },
     });
 
     // Accrue loyalty points and increment customer lifetime spend/visits
@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
 
     // Mark KOT items as served
     await tx.orderItem.updateMany({
-      where: { orderId: orderId },
+      where: { orderId: orderId, kotStatus: { not: 'void' } },
       data: { kotStatus: 'served' },
     });
 

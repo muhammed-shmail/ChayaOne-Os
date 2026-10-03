@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { prisma, type Prisma, PrintJobType } from '@cafeos/db';
 import { computeBill, type BillLine } from '@cafeos/core';
 import { getSession, type Session } from '@/lib/auth';
 import { canSettle, canVoid } from '@/lib/rbac';
 import { publish, toTicket } from '@/lib/realtime';
-import { reverseRecipeConsumption } from '@/lib/inventory';
+import { reverseRecipeConsumption, applyRecipeConsumption } from '@/lib/inventory';
 import { getOutletGst, gstBillOptions } from '@/lib/tax';
 import { getOutletPwa } from '@/lib/pwa';
 import { findOrCreateCustomerByPhone, accrueLoyaltyOnSettle } from '@/lib/customer';
@@ -168,14 +169,14 @@ async function dispatchStationBillPrint(
       status: { in: [...ACTIVE_STATUS] },
       settledAt: null,
     },
-    include: { items: true, table: true, customer: true },
+    include: { items: { where: { kotStatus: { not: 'void' } } }, table: true, customer: true },
     orderBy: { placedAt: 'asc' },
   });
 
   if (orders.length === 0 && orderId) {
     const single = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: true, table: true, customer: true },
+      include: { items: { where: { kotStatus: { not: 'void' } } }, table: true, customer: true },
     });
     if (single && single.outletId === session.outletId) {
       orders = [single];
@@ -198,14 +199,16 @@ async function dispatchStationBillPrint(
 
   // 5. Build ESC/POS bill preview payload
   const items = orders.flatMap((o) =>
-    o.items.map((i) => ({
-      name: i.nameSnapshot,
-      qty: i.qty,
-      pricePaise: i.unitPricePaise,
-      totalPaise: i.unitPricePaise * i.qty,
-      notes: i.notes ?? undefined,
-      modifiers: Array.isArray(i.modifiers) ? (i.modifiers as { name: string }[]) : [],
-    }))
+    o.items
+      .filter((i) => i.kotStatus !== 'void')
+      .map((i) => ({
+        name: i.nameSnapshot,
+        qty: i.qty,
+        pricePaise: i.unitPricePaise,
+        totalPaise: i.unitPricePaise * i.qty,
+        notes: i.notes ?? undefined,
+        modifiers: Array.isArray(i.modifiers) ? (i.modifiers as { name: string }[]) : [],
+      }))
   );
 
   const subtotalPaise = orders.reduce((s, o) => s + (o.subtotalPaise || 0), 0);
@@ -400,6 +403,16 @@ export async function POST(req: NextRequest) {
     return voidItem(session, body);
   }
 
+  if (action === 'update_item_qty') {
+    if (!canVoid(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    return updateItemQty(session, body);
+  }
+
+  if (action === 'add_item') {
+    if (!canSettle(session)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+    return addItem(session, body);
+  }
+
   if (action === 'request_bill' || action === 'cancel_bill_request') {
     const { tableId, waiterStation, staffName } = body;
     if (!tableId) return NextResponse.json({ error: 'missing_table' }, { status: 400 });
@@ -554,7 +567,7 @@ export async function POST(req: NextRequest) {
     return tx.order.update({
       where: { id: primaryOrder.id },
       data: { status: 'settled', settledAt: new Date(), ...(customerId ? { customerId } : {}) },
-      include: { items: true, table: { select: { label: true } } },
+      include: { items: { where: { kotStatus: { not: 'void' } } }, table: { select: { label: true } } },
     });
   });
 
@@ -592,8 +605,120 @@ export async function POST(req: NextRequest) {
 
 /** Void one sent line from an order (or reduce its quantity) and recompute everything from the survivors. */
 async function voidItem(session: { outletId: string; staffId: string | null }, body: { orderId?: string; itemId?: string; qty?: number }) {
-  const { orderId, itemId, qty } = body;
-  if (!orderId || !itemId) return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
+  try {
+    const { orderId, itemId, qty } = body;
+    if (!orderId || !itemId) return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
+
+    const order = await prisma.order.findFirst({
+      where: { id: orderId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
+      include: { items: true },
+    });
+    if (!order) return NextResponse.json({ error: 'order_not_found' }, { status: 404 });
+
+    const target = order.items.find((i) => i.id === itemId && i.kotStatus !== 'void');
+    if (!target) return NextResponse.json({ error: 'item_not_found' }, { status: 404 });
+
+    const voidQty = qty && qty > 0 && qty < target.qty ? Math.floor(qty) : target.qty;
+    const remainingQty = target.qty - voidQty;
+
+    // survivors = active lines after this void / reduction
+    const survivors = order.items
+      .filter((i) => i.kotStatus !== 'void')
+      .map((i) => (i.id === itemId ? { ...i, qty: remainingQty } : i))
+      .filter((i) => i.qty > 0);
+
+    // GST rate isn't snapshotted on OrderItem → source it from the menu item
+    const itemIds = survivors.map((s) => s.itemId).filter((id): id is string => !!id);
+    const gstByItem = new Map<string, number>();
+    if (itemIds.length) {
+      const menuItems = await prisma.menuItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, gstRate: true } });
+      for (const m of menuItems) gstByItem.set(m.id, Number(m.gstRate));
+    }
+
+    const billLines: BillLine[] = survivors.map((s) => ({
+      pricePaise: s.unitPricePaise,
+      modPaise: Array.isArray(s.modifiers) ? (s.modifiers as { pricePaise: number }[]).reduce((sum, m) => sum + (m.pricePaise ?? 0), 0) : 0,
+      gstRate: (s.itemId && gstByItem.get(s.itemId)) || 5.0,
+      qty: s.qty,
+    }));
+
+    // preserve the order's original discount / service-charge / inter-state shape
+    const taxableBase = order.subtotalPaise - order.discountPaise;
+    const discountPct = order.subtotalPaise > 0 ? (order.discountPaise / order.subtotalPaise) * 100 : 0;
+    const serviceChargePct = taxableBase > 0 ? (order.serviceChargePaise / taxableBase) * 100 : 0;
+    const interState = order.igstPaise > 0;
+    const gst = await getOutletGst(order.outletId);
+    const bill = computeBill(billLines, { discountPct, serviceChargePct, interState, ...gstBillOptions(gst) });
+
+    const noneLeft = survivors.length === 0;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (remainingQty > 0) {
+        await tx.orderItem.update({ where: { id: itemId }, data: { qty: remainingQty } });
+      } else {
+        await tx.orderItem.update({ where: { id: itemId }, data: { kotStatus: 'void' } });
+      }
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          subtotalPaise: bill.subtotalPaise,
+          discountPaise: bill.discountPaise,
+          cgstPaise: bill.cgstPaise,
+          sgstPaise: bill.sgstPaise,
+          igstPaise: bill.igstPaise,
+          serviceChargePaise: bill.serviceChargePaise,
+          roundOffPaise: bill.roundOffPaise,
+          totalPaise: bill.totalPaise,
+          ...(noneLeft ? { status: 'cancelled' } : {}),
+        },
+      });
+      // restore the raw materials this voided portion had consumed
+      if (target.itemId) {
+        await reverseRecipeConsumption(tx, { outletId: session.outletId, orderId, lines: [{ itemId: target.itemId, qty: voidQty }] }).catch((err) => {
+          console.warn('[voidItem] reverseRecipeConsumption non-fatal error:', err);
+        });
+      }
+      return tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: { items: { where: { kotStatus: { not: 'void' } } }, table: { select: { label: true } } },
+      });
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        outletId: session.outletId,
+        actorId: session.staffId,
+        action: remainingQty > 0 ? 'order.item_reduced' : 'order.item_voided',
+        entity: 'order_item',
+        entityId: itemId,
+        after: { orderId, name: target.nameSnapshot, voidQty, remainingQty, cancelled: noneLeft } as Prisma.InputJsonValue,
+      },
+    }).catch(() => {});
+
+    // refresh the KDS — ticket without the voided line, or gone if cancelled
+    await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) }).catch(() => {});
+
+    return NextResponse.json({ ok: true, cancelled: noneLeft, totalPaise: updated.totalPaise, remainingQty, order: updated });
+  } catch (err: any) {
+    console.error('[voidItem] error:', err);
+    return NextResponse.json({ error: err?.message || 'Could not void item' }, { status: 500 });
+  }
+}
+
+/** Update an item's quantity on an active order (increase, decrease, or remove). */
+async function updateItemQty(
+  session: { outletId: string; staffId: string | null },
+  body: { orderId?: string; itemId?: string; newQty?: number }
+) {
+  const { orderId, itemId, newQty } = body;
+  if (!orderId || !itemId || typeof newQty !== 'number') {
+    return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
+  }
+
+  const targetQty = Math.max(0, Math.floor(newQty));
+  if (targetQty === 0) {
+    return voidItem(session, { orderId, itemId });
+  }
 
   const order = await prisma.order.findFirst({
     where: { id: orderId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
@@ -604,16 +729,21 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
   const target = order.items.find((i) => i.id === itemId && i.kotStatus !== 'void');
   if (!target) return NextResponse.json({ error: 'item_not_found' }, { status: 404 });
 
-  const voidQty = qty && qty > 0 && qty < target.qty ? Math.floor(qty) : target.qty;
-  const remainingQty = target.qty - voidQty;
+  if (targetQty === target.qty) {
+    return NextResponse.json({ ok: true, cancelled: false, totalPaise: order.totalPaise, remainingQty: targetQty, order });
+  }
 
-  // survivors = active lines after this void / reduction
+  if (targetQty < target.qty) {
+    const voidQty = target.qty - targetQty;
+    return voidItem(session, { orderId, itemId, qty: voidQty });
+  }
+
+  // targetQty > target.qty: increase quantity
+  const addedQty = targetQty - target.qty;
   const survivors = order.items
     .filter((i) => i.kotStatus !== 'void')
-    .map((i) => (i.id === itemId ? { ...i, qty: remainingQty } : i))
-    .filter((i) => i.qty > 0);
+    .map((i) => (i.id === itemId ? { ...i, qty: targetQty } : i));
 
-  // GST rate isn't snapshotted on OrderItem → source it from the menu item
   const itemIds = survivors.map((s) => s.itemId).filter((id): id is string => !!id);
   const gstByItem = new Map<string, number>();
   if (itemIds.length) {
@@ -624,11 +754,10 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
   const billLines: BillLine[] = survivors.map((s) => ({
     pricePaise: s.unitPricePaise,
     modPaise: Array.isArray(s.modifiers) ? (s.modifiers as { pricePaise: number }[]).reduce((sum, m) => sum + (m.pricePaise ?? 0), 0) : 0,
-    gstRate: (s.itemId && gstByItem.get(s.itemId)) || 0,
+    gstRate: (s.itemId && gstByItem.get(s.itemId)) || 5.0,
     qty: s.qty,
   }));
 
-  // preserve the order's original discount / service-charge / inter-state shape
   const taxableBase = order.subtotalPaise - order.discountPaise;
   const discountPct = order.subtotalPaise > 0 ? (order.discountPaise / order.subtotalPaise) * 100 : 0;
   const serviceChargePct = taxableBase > 0 ? (order.serviceChargePaise / taxableBase) * 100 : 0;
@@ -636,14 +765,8 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
   const gst = await getOutletGst(order.outletId);
   const bill = computeBill(billLines, { discountPct, serviceChargePct, interState, ...gstBillOptions(gst) });
 
-  const noneLeft = survivors.length === 0;
-
   const updated = await prisma.$transaction(async (tx) => {
-    if (remainingQty > 0) {
-      await tx.orderItem.update({ where: { id: itemId }, data: { qty: remainingQty } });
-    } else {
-      await tx.orderItem.update({ where: { id: itemId }, data: { kotStatus: 'void' } });
-    }
+    await tx.orderItem.update({ where: { id: itemId }, data: { qty: targetQty } });
     await tx.order.update({
       where: { id: orderId },
       data: {
@@ -655,11 +778,11 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
         serviceChargePaise: bill.serviceChargePaise,
         roundOffPaise: bill.roundOffPaise,
         totalPaise: bill.totalPaise,
-        ...(noneLeft ? { status: 'cancelled' } : {}),
       },
     });
-    // restore the raw materials this voided portion had consumed
-    await reverseRecipeConsumption(tx, { outletId: session.outletId, orderId, lines: [{ itemId: target.itemId, qty: voidQty }] });
+    if (target.itemId) {
+      await applyRecipeConsumption(tx, { outletId: session.outletId, orderId, lines: [{ itemId: target.itemId, qty: addedQty }] }).catch(() => {});
+    }
     return tx.order.findUniqueOrThrow({
       where: { id: orderId },
       include: { items: { where: { kotStatus: { not: 'void' } } }, table: { select: { label: true } } },
@@ -670,15 +793,160 @@ async function voidItem(session: { outletId: string; staffId: string | null }, b
     data: {
       outletId: session.outletId,
       actorId: session.staffId,
-      action: remainingQty > 0 ? 'order.item_reduced' : 'order.item_voided',
+      action: 'order.item_increased',
       entity: 'order_item',
       entityId: itemId,
-      after: { orderId, name: target.nameSnapshot, voidQty, remainingQty, cancelled: noneLeft } as Prisma.InputJsonValue,
+      after: { orderId, name: target.nameSnapshot, previousQty: target.qty, newQty: targetQty } as Prisma.InputJsonValue,
     },
   }).catch(() => {});
 
-  // refresh the KDS — ticket without the voided line, or gone if cancelled
   await publish(session.outletId, { type: 'order.updated', ticket: toTicket(updated) });
 
-  return NextResponse.json({ ok: true, cancelled: noneLeft, totalPaise: updated.totalPaise, remainingQty });
+  return NextResponse.json({ ok: true, cancelled: false, totalPaise: updated.totalPaise, remainingQty: targetQty, order: updated });
+}
+
+/**
+ * Add a line to a bill at billing time — either a real menu item (itemId) or a
+ * free-text custom line (name + pricePaise, e.g. "Water Bottle"). The line is
+ * marked `served` directly (no KOT / kitchen routing) since it's being added
+ * while the cashier is already settling the bill.
+ *
+ * When `orderId` is omitted, a brand-new "quick bill" order is created on the
+ * fly (no table, no KOT) — this is how T-Billing's Quick Billing starts: the
+ * first item added creates the order, every item after that just appends to it.
+ */
+async function addItem(
+  session: { outletId: string; staffId: string | null },
+  body: { orderId?: string; itemId?: string; name?: string; pricePaise?: number; qty?: number }
+) {
+  try {
+    const { orderId, itemId } = body;
+    const qtyNum = Math.max(1, Math.floor(Number(body.qty) || 1));
+
+    let nameSnapshot = typeof body.name === 'string' ? body.name.trim() : '';
+    let unitPricePaise = Math.round(Number(body.pricePaise) || 0);
+    let resolvedItemId: string | null = null;
+    let station: string | null = null;
+
+    if (itemId) {
+      const menuItem = await prisma.menuItem.findFirst({ where: { id: itemId, outletId: session.outletId } });
+      if (!menuItem) return NextResponse.json({ error: 'item_not_found' }, { status: 404 });
+      resolvedItemId = menuItem.id;
+      nameSnapshot = menuItem.name;
+      unitPricePaise = menuItem.pricePaise;
+      station = menuItem.station ?? null;
+    } else {
+      if (!nameSnapshot) return NextResponse.json({ error: 'missing_item_name' }, { status: 400 });
+      if (!Number.isFinite(unitPricePaise) || unitPricePaise < 0) {
+        return NextResponse.json({ error: 'invalid_price' }, { status: 400 });
+      }
+    }
+
+    let order = orderId
+      ? await prisma.order.findFirst({
+          where: { id: orderId, outletId: session.outletId, status: { in: [...ACTIVE_STATUS] }, settledAt: null },
+          include: { items: true },
+        })
+      : null;
+
+    if (orderId && !order) {
+      return NextResponse.json({ error: 'order_not_found' }, { status: 404 });
+    }
+
+    const isNewQuickBill = !order;
+    if (!order) {
+      const prev = await prisma.order.findFirst({ where: { outletId: session.outletId }, orderBy: { number: 'desc' }, select: { number: true } });
+      const orderNumber = (prev?.number ?? 100) + 1;
+      order = await prisma.order.create({
+        data: {
+          clientUuid: randomUUID(),
+          number: orderNumber,
+          outletId: session.outletId,
+          staffId: session.staffId,
+          type: 'takeaway',
+          status: 'served',
+          channel: 'pos',
+        },
+        include: { items: true },
+      });
+    }
+
+    const newItem = await prisma.orderItem.create({
+      data: {
+        orderId: order.id,
+        itemId: resolvedItemId,
+        nameSnapshot,
+        qty: qtyNum,
+        unitPricePaise,
+        modifiers: [],
+        notes: null,
+        station,
+        kotStatus: 'served',
+      },
+    });
+
+    const survivors = [...order.items.filter((i) => i.kotStatus !== 'void'), newItem];
+    const itemIds = survivors.map((s) => s.itemId).filter((id): id is string => !!id);
+    const gstByItem = new Map<string, number>();
+    if (itemIds.length) {
+      const menuItems = await prisma.menuItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, gstRate: true } });
+      for (const m of menuItems) gstByItem.set(m.id, Number(m.gstRate));
+    }
+
+    const billLines: BillLine[] = survivors.map((s) => ({
+      pricePaise: s.unitPricePaise,
+      modPaise: Array.isArray(s.modifiers) ? (s.modifiers as { pricePaise: number }[]).reduce((sum, m) => sum + (m.pricePaise ?? 0), 0) : 0,
+      gstRate: (s.itemId && gstByItem.get(s.itemId)) || 5.0,
+      qty: s.qty,
+    }));
+
+    const taxableBase = order.subtotalPaise - order.discountPaise;
+    const discountPct = order.subtotalPaise > 0 ? (order.discountPaise / order.subtotalPaise) * 100 : 0;
+    const serviceChargePct = taxableBase > 0 ? (order.serviceChargePaise / taxableBase) * 100 : 0;
+    const interState = order.igstPaise > 0;
+    const gst = await getOutletGst(order.outletId);
+    const bill = computeBill(billLines, { discountPct, serviceChargePct, interState, ...gstBillOptions(gst) });
+
+    const finalOrderId = order.id;
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: finalOrderId },
+        data: {
+          subtotalPaise: bill.subtotalPaise,
+          discountPaise: bill.discountPaise,
+          cgstPaise: bill.cgstPaise,
+          sgstPaise: bill.sgstPaise,
+          igstPaise: bill.igstPaise,
+          serviceChargePaise: bill.serviceChargePaise,
+          roundOffPaise: bill.roundOffPaise,
+          totalPaise: bill.totalPaise,
+        },
+      });
+      if (resolvedItemId) {
+        await applyRecipeConsumption(tx, { outletId: session.outletId, orderId: finalOrderId, lines: [{ itemId: resolvedItemId, qty: qtyNum }] }).catch(() => {});
+      }
+      return tx.order.findUniqueOrThrow({
+        where: { id: finalOrderId },
+        include: { items: { where: { kotStatus: { not: 'void' } } }, table: { select: { label: true } } },
+      });
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        outletId: session.outletId,
+        actorId: session.staffId,
+        action: 'order.item_added',
+        entity: 'order_item',
+        entityId: newItem.id,
+        after: { orderId: finalOrderId, name: nameSnapshot, qty: qtyNum, unitPricePaise, custom: !resolvedItemId, quickBill: isNewQuickBill } as Prisma.InputJsonValue,
+      },
+    }).catch(() => {});
+
+    await publish(session.outletId, { type: isNewQuickBill ? 'order.new' : 'order.updated', ticket: toTicket(updated) }).catch(() => {});
+
+    return NextResponse.json({ ok: true, created: isNewQuickBill, totalPaise: updated.totalPaise, order: updated });
+  } catch (err: any) {
+    console.error('[addItem] error:', err);
+    return NextResponse.json({ error: err?.message || 'Could not add item' }, { status: 500 });
+  }
 }

@@ -2,17 +2,37 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { formatINR } from '@cafeos/core';
 import { getSession } from '@/lib/auth';
-import { getDashboardData } from '@/lib/analytics';
+import { getDashboardData, financeSnapshot, type FinanceSnapshot } from '@/lib/analytics';
+import { getInventory, type InventoryData } from '@/lib/sections';
 import { tenantHasFeature } from '@/lib/features';
+import { ASSISTANT, type AssistantModule } from '@/lib/assistant-config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Body = z.object({ q: z.string().min(1).max(500) });
+const Body = z.object({
+  q: z.string().min(1).max(500),
+  module: z.enum(['home', 'finance', 'inventory']).optional().default('home'),
+});
+
+/** Context handed to Gemini / the deterministic fallback — the Home dashboard
+ * analytics, plus module-specific grounding data when the user is on the
+ * Finance or Inventory tab. */
+type Context = Awaited<ReturnType<typeof getDashboardData>> & {
+  module: AssistantModule;
+  inventory?: InventoryData;
+  finance?: FinanceSnapshot;
+};
+
+const MODULE_CONTEXT_LINE: Record<AssistantModule, string> = {
+  home: '',
+  finance: "\n\nThe user is currently viewing the Finance section — prioritize expense, spend and dues questions using the `finance` data.",
+  inventory: "\n\nThe user is currently viewing the Inventory section — prioritize stock, reorder and valuation questions using the full `inventory` data (it is more complete than the `lowStock` summary).",
+};
 
 async function askGemini(
   qRaw: string,
-  d: Awaited<ReturnType<typeof getDashboardData>>
+  d: Context
 ): Promise<{ reply: string; lang: Lang } | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === 'AIzaSy-xxxx' || apiKey.includes('xxxx')) {
@@ -25,10 +45,10 @@ async function askGemini(
     const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    const systemInstruction = `You are the Cafe OS AI Sales Assistant, a helpful, expert Indian Cafe operations co-pilot.
+    const systemInstruction = `You are ${ASSISTANT.name}, the ChayaOne AI assistant — a helpful, expert Indian Cafe operations co-pilot.
 You have access to live analytics data for the user's cafe outlet.
 Your task is to answer the user's question accurately and helpfully using the provided live analytics JSON data.
-Ground all your responses, sales figures, and inventory details in the provided live analytics data.
+Ground all your responses, sales figures, and inventory details in the provided live analytics data.${MODULE_CONTEXT_LINE[d.module]}
 
 Expected Output Format:
 Your output MUST be a JSON object matching this schema:
@@ -112,17 +132,17 @@ ${JSON.stringify(d, null, 2)}`;
 }
 
 /**
- * POST /api/dashboard/assistant — the Owner Dashboard's Sales Assistant.
+ * POST /api/dashboard/assistant — Chai, the ChayaOne AI assistant.
  *
  * Owner/manager only. Answers are grounded in the SAME live analytics the
  * dashboard renders, so the numbers always agree with the tiles. This is an
- * intentionally deterministic responder; swapping in a Gemini (1.5 Flash) call
- * is a drop-in replacement here — feed `data` as context and return the reply.
+ * intentionally deterministic responder; swapping in a Gemini call is a
+ * drop-in replacement here — feed `data` as context and return the reply.
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (session.role !== 'owner' && session.role !== 'manager' && session.role !== 'accountant')
+  if (session.role !== 'owner' && session.role !== 'manager')
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   // feature gate (G9): the AI assistant is a plan feature (Pro+)
@@ -132,7 +152,14 @@ export async function POST(req: NextRequest) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'invalid' }, { status: 400 });
 
-  const data = await getDashboardData(session.outletId);
+  const { module } = parsed.data;
+  const baseData = await getDashboardData(session.outletId);
+  const [inventory, finance] = await Promise.all([
+    module === 'inventory' ? getInventory(session.outletId) : Promise.resolve(undefined),
+    module === 'finance' ? financeSnapshot(session.outletId, session.tenantId) : Promise.resolve(undefined),
+  ]);
+  const data: Context = { ...baseData, module, inventory, finance };
+
   const geminiResult = await askGemini(parsed.data.q, data);
   const { reply, lang } = geminiResult || answer(parsed.data.q, data);
   // `lang` tells the client which voice (ml-IN / en-IN) to read the reply with
@@ -141,7 +168,7 @@ export async function POST(req: NextRequest) {
 
 type Lang = 'en' | 'ml';
 
-function answer(qRaw: string, d: Awaited<ReturnType<typeof getDashboardData>>): { reply: string; lang: Lang } {
+function answer(qRaw: string, d: Context): { reply: string; lang: Lang } {
   const q = qRaw.toLowerCase();
   // any Malayalam codepoint in the question ⇒ answer in Malayalam
   const lang: Lang = /[ഀ-ൿ]/.test(qRaw) ? 'ml' : 'en';
@@ -152,6 +179,40 @@ function answer(qRaw: string, d: Awaited<ReturnType<typeof getDashboardData>>): 
   const { kpi, topItems, hourly, menuQuadrant, lowStock, loyalty } = d;
   const peak = hourly.indexOf(Math.max(...hourly));
   const peakStr = Math.max(...hourly) > 0 ? `${fmtHour(peak)}–${fmtHour((peak + 1) % 24)}` : null;
+
+  // finance tab: spend / dues questions, grounded in the real 30-day expense ledger
+  if (d.finance) {
+    const f = d.finance;
+    if (has(/(spend|expense|cost|where|most|category)/, ['ചെലവ്', 'എവിടെ', 'ഏറ്റവും', 'ചിലവ്'])) {
+      if (f.totalPaise === 0)
+        return r(
+          `No expenses logged in the last 30 days yet. Once you record some, I can break down where the money's going.`,
+          `കഴിഞ്ഞ 30 ദിവസത്തിൽ ചെലവുകളൊന്നും രേഖപ്പെടുത്തിയിട്ടില്ല. രേഖപ്പെടുത്തിയാൽ, പണം എവിടെ പോകുന്നുവെന്ന് വിശദീകരിക്കാം.`,
+        );
+      const top = f.byCategory[0]!;
+      return r(
+        `Over the last 30 days you've spent <b>${formatINR(f.totalPaise)}</b> across ${f.byCategory.length} categor${f.byCategory.length === 1 ? 'y' : 'ies'}. <b>${top.category}</b> leads at <b>${formatINR(top.totalPaise)}</b>.${f.biggest ? ` Biggest single expense: <b>${formatINR(f.biggest.amountPaise)}</b> (${f.biggest.category}${f.biggest.vendor ? `, ${f.biggest.vendor}` : ''}).` : ''} <span class="msg-act">Tip: review ${top.category} for savings.</span>`,
+        `കഴിഞ്ഞ 30 ദിവസത്തിൽ നിങ്ങൾ <b>${formatINR(f.totalPaise)}</b> ചെലവഴിച്ചു, ${f.byCategory.length} വിഭാഗങ്ങളിലായി. <b>${top.category}</b> ഏറ്റവും മുന്നിൽ, <b>${formatINR(top.totalPaise)}</b>.${f.biggest ? ` ഏറ്റവും വലിയ ഒറ്റ ചെലവ്: <b>${formatINR(f.biggest.amountPaise)}</b> (${f.biggest.category}${f.biggest.vendor ? `, ${f.biggest.vendor}` : ''}).` : ''} <span class="msg-act">നുറുങ്ങ്: ${top.category} ലാഭിക്കാൻ പരിശോധിക്കൂ.</span>`,
+      );
+    }
+    if (has(/(due|owe|outstanding|pending|pay)/, ['ബാക്കി', 'കുടിശ്ശിക', 'അടയ്ക്കാനുള്ള'])) {
+      return r(
+        `You currently owe <b>${formatINR(f.outstandingDuesPaise)}</b> to vendors/suppliers.${f.outstandingDuesPaise > 0 ? ` <span class="msg-act">Settle the oldest bills first to avoid late fees.</span>` : ''}`,
+        `നിലവിൽ വെണ്ടർമാർ/സപ്ലയർമാർക്ക് <b>${formatINR(f.outstandingDuesPaise)}</b> കൊടുക്കാനുണ്ട്.${f.outstandingDuesPaise > 0 ? ` <span class="msg-act">വൈകിയ ഫീസ് ഒഴിവാക്കാൻ പഴയ ബില്ലുകൾ ആദ്യം തീർക്കൂ.</span>` : ''}`,
+      );
+    }
+    if (has(/(unusual|anomal|spike|weird)/, ['അസാധാരണ', 'പെട്ടെന്ന്'])) {
+      const biggest = f.biggest;
+      return r(
+        biggest
+          ? `The largest single expense in the last 30 days was <b>${formatINR(biggest.amountPaise)}</b> under <b>${biggest.category}</b>${biggest.vendor ? ` (${biggest.vendor})` : ''} on ${biggest.businessDate}. <span class="msg-act">Worth a quick sanity check if that's higher than usual.</span>`
+          : `No expenses logged in the last 30 days, so nothing unusual to flag yet.`,
+        biggest
+          ? `കഴിഞ്ഞ 30 ദിവസത്തെ ഏറ്റവും വലിയ ചെലവ് <b>${formatINR(biggest.amountPaise)}</b>, <b>${biggest.category}</b>-ൽ${biggest.vendor ? ` (${biggest.vendor})` : ''}, ${biggest.businessDate}-ന്. <span class="msg-act">പതിവിലും കൂടുതലാണെങ്കിൽ ഒന്ന് പരിശോധിക്കൂ.</span>`
+          : `കഴിഞ്ഞ 30 ദിവസത്തിൽ ചെലവുകളില്ല, അതിനാൽ അസാധാരണമായൊന്നും ഇല്ല.`,
+      );
+    }
+  }
 
   // sales / performance
   if (has(/(sales|why|up|down|today|how.*doing|revenue)/, ['വിൽപ്പന', 'വില്പന', 'വരുമാനം', 'ഇന്ന്', 'എങ്ങനെ', 'കച്ചവടം'])) {
@@ -202,17 +263,27 @@ function answer(qRaw: string, d: Awaited<ReturnType<typeof getDashboardData>>): 
     );
   }
 
-  // inventory
-  if (has(/(stock|inventory|reorder|ingredient|low)/, ['സ്റ്റോക്ക്', 'സാധനം', 'സാധനങ്ങൾ', 'ഇൻവെന്ററി', 'റീഓർഡർ', 'തീർന്നു'])) {
-    if (lowStock.length === 0)
+  // inventory — prefer the full inventory tab dataset (all items, real value) when
+  // the user is on that tab; fall back to the trimmed Home `lowStock` summary.
+  if (d.inventory && has(/(worth|value)/, ['മൂല്യം', 'വില'])) {
+    return r(
+      `Your stock is currently worth <b>${formatINR(d.inventory.totalValuePaise)}</b> across <b>${d.inventory.counts.items}</b> tracked items (${d.inventory.counts.low} low, ${d.inventory.counts.critical} critical).`,
+      `നിങ്ങളുടെ സ്റ്റോക്ക് നിലവിൽ <b>${formatINR(d.inventory.totalValuePaise)}</b> മൂല്യമുള്ളതാണ്, <b>${d.inventory.counts.items}</b> ഐറ്റങ്ങളിലായി (${d.inventory.counts.low} കുറവ്, ${d.inventory.counts.critical} ക്രിട്ടിക്കൽ).`,
+    );
+  }
+  if (has(/(stock|inventory|reorder|ingredient|low|slow.?moving)/, ['സ്റ്റോക്ക്', 'സാധനം', 'സാധനങ്ങൾ', 'ഇൻവെന്ററി', 'റീഓർഡർ', 'തീർന്നു', 'മന്ദഗതി'])) {
+    const needsAttention = d.inventory
+      ? d.inventory.items.filter((i) => i.status !== 'ok').map((i) => ({ name: i.name, qty: `${i.onHand} ${i.unit}` }))
+      : lowStock.map((s) => ({ name: s.name, qty: s.qty }));
+    if (needsAttention.length === 0)
       return r(
         `Inventory looks healthy — nothing is at or below its reorder level right now.`,
         `ഇൻവെന്ററി ആരോഗ്യകരമാണ് — ഇപ്പോൾ ഒന്നും റീഓർഡർ ലെവലിന് താഴെയല്ല.`,
       );
-    const names = lowStock.map((s) => `<b>${s.name}</b> (${s.qty})`).join(', ');
+    const names = needsAttention.map((s) => `<b>${s.name}</b> (${s.qty})`).join(', ');
     return r(
-      `${lowStock.length} item${lowStock.length === 1 ? '' : 's'} need attention: ${names}. <span class="msg-act">I can raise a draft purchase order for these.</span>`,
-      `${lowStock.length} സാധന${lowStock.length === 1 ? 'ത്തിന്' : 'ങ്ങൾക്ക്'} ശ്രദ്ധ വേണം: ${names}. <span class="msg-act">ഇവയ്ക്ക് ഒരു ഡ്രാഫ്റ്റ് പർച്ചേസ് ഓർഡർ ഞാൻ ഉണ്ടാക്കാം.</span>`,
+      `${needsAttention.length} item${needsAttention.length === 1 ? '' : 's'} need attention: ${names}. <span class="msg-act">I can raise a draft purchase order for these.</span>`,
+      `${needsAttention.length} സാധന${needsAttention.length === 1 ? 'ത്തിന്' : 'ങ്ങൾക്ക്'} ശ്രദ്ധ വേണം: ${names}. <span class="msg-act">ഇവയ്ക്ക് ഒരു ഡ്രാഫ്റ്റ് പർച്ചേസ് ഓർഡർ ഞാൻ ഉണ്ടാക്കാം.</span>`,
     );
   }
 

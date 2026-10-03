@@ -20,12 +20,15 @@ import {
   Lock, DollarSign, History, HelpCircle, CheckCircle2,
   Banknote, SplitSquareVertical, ChevronRight, Clock, ShoppingBag,
   Zap, Calendar, ArrowUpDown, Filter,
+  Minus, Plus, Trash2,
 } from 'lucide-react';
+import { useConfirm } from '@/components/ui';
 import { LocalPrinterClient } from '@/lib/printer-client';
 import { subscribeStaff } from '@/lib/realtime-client';
 import { hasRole, hasPermission, canDiscount, canSettle } from '@/lib/rbac';
 
 export type TableDto = { id: string; label: string; seats: number; state: string; floorId: string | null };
+export type MenuItemDto = { id: string; name: string; pricePaise: number; gstRate: number };
 
 interface TBillingProps {
   outlet: {
@@ -55,10 +58,11 @@ interface TBillingProps {
     effectivePermissions?: string[];
   };
   tables: TableDto[];
+  menuItems?: MenuItemDto[];
   initialOrders?: any[];
 }
 
-export default function TBillingClient({ outlet, staff, tables, initialOrders = [] }: TBillingProps) {
+export default function TBillingClient({ outlet, staff, tables, menuItems = [], initialOrders = [] }: TBillingProps) {
   const [view, setView] = useState<'queue' | 'workspace' | 'completed' | 'history'>('queue');
 
   const [search, setSearch] = useState('');
@@ -66,6 +70,8 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
   const [orders, setOrders] = useState<any[]>(initialOrders);
   const [ordersLoading, setOrdersLoading] = useState(false);
 
+  const { confirm: confirmAction, ConfirmDialog } = useConfirm();
+  const [itemBusyId, setItemBusyId] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
 
   const [discountType, setDiscountType] = useState<'pct' | 'flat'>('flat');
@@ -94,6 +100,16 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
   const [previewOrderOverride, setPreviewOrderOverride] = useState<any | null>(null);
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  // ── Add Item to Bill (menu or custom) — also how Quick Billing starts a fresh bill
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const [addItemBusy, setAddItemBusy] = useState(false);
+  const [addItemSource, setAddItemSource] = useState<'menu' | 'custom'>('menu');
+  const [addItemSearch, setAddItemSearch] = useState('');
+  const [addItemSelected, setAddItemSelected] = useState<MenuItemDto | null>(null);
+  const [addItemCustomName, setAddItemCustomName] = useState('');
+  const [addItemCustomPrice, setAddItemCustomPrice] = useState('');
+  const [addItemQty, setAddItemQty] = useState('1');
 
   const [historyList, setHistoryList] = useState<any[]>([]);
   const [historySearch, setHistorySearch] = useState('');
@@ -273,14 +289,16 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       orderType: order.type || 'dine_in',
       placedAt: order.placedAt || new Date(),
       settledAt: order.settledAt || new Date(),
-      items: (order.items || []).map((i: any) => ({
-        name: i.nameSnapshot || i.name,
-        qty: i.qty,
-        unitPricePaise: i.unitPricePaise || 0,
-        totalPaise: i.linePaise || ((i.unitPricePaise || 0) * i.qty),
-        modifiers: Array.isArray(i.modifiers) ? i.modifiers : [],
-        notes: i.notes ?? null,
-      })),
+      items: (order.items || [])
+        .filter((i: any) => i.kotStatus !== 'void')
+        .map((i: any) => ({
+          name: i.nameSnapshot || i.name,
+          qty: i.qty,
+          unitPricePaise: i.unitPricePaise || 0,
+          totalPaise: i.linePaise || ((i.unitPricePaise || 0) * i.qty),
+          modifiers: Array.isArray(i.modifiers) ? i.modifiers : [],
+          notes: i.notes ?? null,
+        })),
       subtotalPaise: order.subtotalPaise || order.totalPaise,
       discountPaise: order.discountPaise || 0,
       cgstPaise: order.cgstPaise || 0,
@@ -422,6 +440,110 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
     setView('workspace');
   };
 
+  /** Quick Billing — opens the workspace with a blank draft bill. Nothing is written
+   * to the database until the first item is added (see handleAddItemSubmit); no KOT
+   * is ever created since items are billed directly, never routed to the kitchen. */
+  const startQuickBilling = () => {
+    setSelectedOrder({
+      id: null,
+      number: null,
+      type: 'takeaway',
+      table: null,
+      tableId: null,
+      customer: null,
+      items: [],
+      placedAt: new Date().toISOString(),
+    });
+    setDiscountType('flat');
+    setDiscountVal('0');
+    setCustName('');
+    setCustPhone('');
+    setCustMatches([]);
+    setCustGstin('');
+    setPayTab('cash');
+    setCashReceived('');
+    setUpiRef('');
+    setCardRef('');
+    setSplitCash('0');
+    setSplitUpi('0');
+    setSplitCard('0');
+    setPrintReceipt(false);
+    setView('workspace');
+  };
+
+  const openAddItem = () => {
+    setAddItemOpen(true);
+    setAddItemSource('menu');
+    setAddItemSearch('');
+    setAddItemSelected(null);
+    setAddItemCustomName('');
+    setAddItemCustomPrice('');
+    setAddItemQty('1');
+  };
+
+  const filteredMenuItems = useMemo(() => {
+    const q = addItemSearch.trim().toLowerCase();
+    const list = q ? menuItems.filter((i) => i.name.toLowerCase().includes(q)) : menuItems;
+    return list.slice(0, 50);
+  }, [menuItems, addItemSearch]);
+
+  const handleAddItemSubmit = async () => {
+    if (!selectedOrder || addItemBusy) return;
+    const qty = Math.max(1, parseInt(addItemQty, 10) || 1);
+
+    const payload: any = { action: 'add_item', qty };
+    if (selectedOrder.id) payload.orderId = selectedOrder.id;
+
+    let addedLabel = '';
+    if (addItemSource === 'menu') {
+      if (!addItemSelected) {
+        flash('Select an item from the menu');
+        return;
+      }
+      payload.itemId = addItemSelected.id;
+      addedLabel = addItemSelected.name;
+    } else {
+      const name = addItemCustomName.trim();
+      const price = parseFloat(addItemCustomPrice);
+      if (!name) {
+        flash('Enter an item name');
+        return;
+      }
+      if (!Number.isFinite(price) || price < 0) {
+        flash('Enter a valid price');
+        return;
+      }
+      payload.name = name;
+      payload.pricePaise = Math.round(price * 100);
+      addedLabel = name;
+    }
+
+    setAddItemBusy(true);
+    try {
+      const res = await fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        flash(data.error === 'item_not_found' ? 'Menu item not found' : data.error || 'Failed to add item');
+        return;
+      }
+      setSelectedOrder(data.order);
+      setOrders((prev) => {
+        const exists = prev.some((o) => o.id === data.order.id);
+        return exists ? prev.map((o) => (o.id === data.order.id ? { ...o, ...data.order } : o)) : [data.order, ...prev];
+      });
+      setAddItemOpen(false);
+      flash(`Added "${addedLabel}" to bill (qty ${qty})`);
+    } catch {
+      flash('Network error adding item');
+    } finally {
+      setAddItemBusy(false);
+    }
+  };
+
   useEffect(() => {
     const rawDigits = custPhone.replace(/\D/g, '');
     if (rawDigits.length < 3) {
@@ -499,7 +621,8 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
       }
 
       if (e.key === 'Escape') {
-        if (receiptModalOpen) setReceiptModalOpen(false);
+        if (addItemOpen) setAddItemOpen(false);
+        else if (receiptModalOpen) setReceiptModalOpen(false);
         else if (shortcutsOpen) setShortcutsOpen(false);
         else if (view === 'workspace') setView('queue');
         else if (view === 'completed') setView('queue');
@@ -508,7 +631,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         return;
       }
 
-      if (receiptModalOpen || shortcutsOpen) return;
+      if (addItemOpen || receiptModalOpen || shortcutsOpen) return;
 
       if (view === 'queue') {
         const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
@@ -585,17 +708,139 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [view, receiptModalOpen, shortcutsOpen, selectedOrder, settleBusy, displayOrders, selectedOrderIndex, filter, openReprintModal, handleExit]);
+  }, [view, addItemOpen, receiptModalOpen, shortcutsOpen, selectedOrder, settleBusy, displayOrders, selectedOrderIndex, filter, openReprintModal, handleExit]);
+
+  const handleUpdateItemQty = async (item: any, newQty: number) => {
+    if (!selectedOrder) return;
+    if (newQty <= 0) {
+      await handleRemoveItem(item);
+      return;
+    }
+    setItemBusyId(item.id);
+    try {
+      const res = await fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_item_qty',
+          orderId: selectedOrder.id,
+          itemId: item.id,
+          newQty,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        flash(data.error || 'Failed to update quantity');
+        return;
+      }
+      if (data.order) {
+        setSelectedOrder((prev: any) => prev ? {
+          ...prev,
+          items: data.order.items,
+          subtotalPaise: data.order.subtotalPaise,
+          discountPaise: data.order.discountPaise,
+          cgstPaise: data.order.cgstPaise,
+          sgstPaise: data.order.sgstPaise,
+          igstPaise: data.order.igstPaise,
+          serviceChargePaise: data.order.serviceChargePaise,
+          roundOffPaise: data.order.roundOffPaise,
+          totalPaise: data.order.totalPaise,
+        } : null);
+        setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? { ...o, ...data.order } : o)));
+      } else {
+        setSelectedOrder((prev: any) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            items: prev.items.map((it: any) => (it.id === item.id ? { ...it, qty: newQty } : it)),
+          };
+        });
+        loadOrders();
+      }
+      flash(`Updated "${item.nameSnapshot}" quantity to ${newQty}`);
+    } catch {
+      flash('Network error updating quantity');
+    } finally {
+      setItemBusyId(null);
+    }
+  };
+
+  const handleRemoveItem = async (item: any) => {
+    if (!selectedOrder) return;
+    const ok = await confirmAction({
+      title: 'Remove Item',
+      message: `Remove "${item.nameSnapshot}" from this bill? Stock will be restored.`,
+      confirmText: 'Remove Item',
+      isDestructive: true,
+    });
+    if (!ok) return;
+
+    setItemBusyId(item.id);
+    try {
+      const res = await fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'void_item',
+          orderId: selectedOrder.id,
+          itemId: item.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        flash(data.error || 'Failed to remove item');
+        return;
+      }
+      if (data.cancelled) {
+        flash('Item removed · order cancelled (no items remaining)');
+        setSelectedOrder(null);
+        setOrders((prev) => prev.filter((o) => o.id !== selectedOrder.id));
+        setView('queue');
+        return;
+      }
+      if (data.order) {
+        setSelectedOrder((prev: any) => prev ? {
+          ...prev,
+          items: data.order.items,
+          subtotalPaise: data.order.subtotalPaise,
+          discountPaise: data.order.discountPaise,
+          cgstPaise: data.order.cgstPaise,
+          sgstPaise: data.order.sgstPaise,
+          igstPaise: data.order.igstPaise,
+          serviceChargePaise: data.order.serviceChargePaise,
+          roundOffPaise: data.order.roundOffPaise,
+          totalPaise: data.order.totalPaise,
+        } : null);
+        setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? { ...o, ...data.order } : o)));
+      } else {
+        setSelectedOrder((prev: any) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            items: prev.items.filter((it: any) => it.id !== item.id),
+          };
+        });
+        loadOrders();
+      }
+      flash(`Removed "${item.nameSnapshot}" from bill`);
+    } catch {
+      flash('Network error removing item');
+    } finally {
+      setItemBusyId(null);
+    }
+  };
 
   const calculatedBill = useMemo(() => {
     if (!selectedOrder) return { subtotalPaise: 0, discountPaise: 0, taxablePaise: 0, cgstPaise: 0, sgstPaise: 0, igstPaise: 0, roundOffPaise: 0, totalPaise: 0 };
 
-    const lines = (selectedOrder.items || []).map((i: any) => ({
-      pricePaise: i.unitPricePaise,
-      modPaise: ((i.modifiers as any) || []).reduce((s: number, m: any) => s + (m.pricePaise || 0), 0),
-      gstRate: Number(i.item?.gstRate ?? 5.00),
-      qty: i.qty,
-    }));
+    const lines = (selectedOrder.items || [])
+      .filter((i: any) => i.kotStatus !== 'void')
+      .map((i: any) => ({
+        pricePaise: i.unitPricePaise,
+        modPaise: ((i.modifiers as any) || []).reduce((s: number, m: any) => s + (m.pricePaise || 0), 0),
+        gstRate: Number(i.item?.gstRate ?? 5.00),
+        qty: i.qty,
+      }));
 
     const pct = discountType === 'pct' ? parseFloat(discountVal) || 0 : 0;
     const flatVal = discountType === 'flat' ? parseFloat(discountVal) || 0 : 0;
@@ -620,6 +865,10 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
 
   const handleSettleOrder = async () => {
     if (!selectedOrder || settleBusy) return;
+    if (!selectedOrder.id || (selectedOrder.items || []).length === 0) {
+      flash('Add at least one item before settling the bill.');
+      return;
+    }
 
     let payments: any[] = [];
     if (payTab === 'cash') {
@@ -874,6 +1123,20 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
 
         {/* Right: Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          {view === 'queue' && (
+            <button
+              onClick={startQuickBilling}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition hover:opacity-80 active:scale-95"
+              style={{
+                background: 'color-mix(in srgb, var(--gold) 15%, var(--paper-3))',
+                border: '1px solid color-mix(in srgb, var(--gold) 30%, transparent)',
+                color: 'var(--gold-d)',
+              }}
+              title="Bill a walk-in sale instantly — no KOT, no table required"
+            >
+              <Zap size={14} /> Quick Billing
+            </button>
+          )}
           {view === 'queue' && (
             <button
               onClick={() => setView('history')}
@@ -1508,10 +1771,12 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                 <div className="flex flex-wrap items-start justify-between gap-3 pb-4 mb-4 border-b" style={{ borderColor: 'var(--line)' }}>
                   <div>
                     <span className="text-[10px] font-extrabold uppercase tracking-widest" style={{ color: 'var(--gold-d)' }} suppressHydrationWarning>
-                      Invoice Preview — INV-{new Date().getFullYear()}-{String(selectedOrder.number).padStart(6, '0')}
+                      {selectedOrder.number
+                        ? `Invoice Preview — INV-${new Date().getFullYear()}-${String(selectedOrder.number).padStart(6, '0')}`
+                        : '⚡ Quick Billing — Add items to start'}
                     </span>
                     <h2 className="font-display text-2xl font-extrabold mt-0.5" style={{ color: 'var(--ink)' }}>
-                      Order #{selectedOrder.number}
+                      {selectedOrder.number ? `Order #${selectedOrder.number}` : 'New Quick Bill'}
                       <span className="text-base font-semibold ml-2" style={{ color: 'var(--gold-d)' }}>
                         · {selectedOrder.table?.label ? `Table ${selectedOrder.table.label}` : 'Takeaway'}
                       </span>
@@ -1541,17 +1806,19 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                         {outlet.gstEnabled && (
                           <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider">Tax</th>
                         )}
-                        <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider rounded-r-xl">Amount</th>
+                        <th className="px-3 py-2.5 text-right text-[11px] font-extrabold uppercase tracking-wider">Amount</th>
+                        <th className="px-3 py-2.5 text-center text-[11px] font-extrabold uppercase tracking-wider rounded-r-xl">Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(selectedOrder.items || []).map((i: any, idx: number) => {
+                      {(selectedOrder.items || []).filter((i: any) => i.kotStatus !== 'void').map((i: any) => {
                         const gstRate = Number(i.item?.gstRate ?? 5);
                         const lineTotal = i.unitPricePaise * i.qty;
+                        const isBusy = itemBusyId === i.id;
                         return (
                           <tr
                             key={i.id}
-                            className="transition-colors"
+                            className="transition-colors group hover:bg-[var(--paper-3)]"
                             style={{ borderBottom: '1px solid var(--line)' }}
                           >
                             <td className="px-3 py-3 font-semibold" style={{ color: 'var(--ink)' }}>
@@ -1560,17 +1827,66 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                                 <p className="text-[11px] italic mt-0.5" style={{ color: 'var(--ink-3)' }}>{i.notes}</p>
                               )}
                             </td>
-                            <td className="px-3 py-3 text-center font-bold tnum">{i.qty}</td>
+                            <td className="px-3 py-3 text-center">
+                              <div className="inline-flex items-center gap-1 rounded-lg border p-0.5" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => handleUpdateItemQty(i, i.qty - 1)}
+                                  title={i.qty > 1 ? "Decrease quantity" : "Remove item"}
+                                  className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--ink-2)] hover:bg-[var(--paper-2)] disabled:opacity-40 transition"
+                                >
+                                  <Minus size={12} />
+                                </button>
+                                <span className="w-6 text-center font-bold font-mono text-xs" style={{ color: 'var(--ink)' }}>{i.qty}</span>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => handleUpdateItemQty(i, i.qty + 1)}
+                                  title="Increase quantity"
+                                  className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--ink-2)] hover:bg-[var(--paper-2)] disabled:opacity-40 transition"
+                                >
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+                            </td>
                             <td className="px-3 py-3 text-right font-medium tnum">{formatINR(i.unitPricePaise)}</td>
                             {outlet.gstEnabled && (
                               <td className="px-3 py-3 text-right text-xs tnum" style={{ color: 'var(--ink-3)' }}>{gstRate}%</td>
                             )}
                             <td className="px-3 py-3 text-right font-bold tnum">{formatINR(lineTotal)}</td>
+                            <td className="px-3 py-3 text-center">
+                              <button
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => handleRemoveItem(i)}
+                                title={`Remove ${i.nameSnapshot}`}
+                                aria-label={`Remove ${i.nameSnapshot}`}
+                                className="w-7 h-7 inline-flex items-center justify-center rounded-lg hover:bg-red-500/10 text-red-500 disabled:opacity-40 transition"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
+                  {(selectedOrder.items || []).filter((i: any) => i.kotStatus !== 'void').length === 0 && (
+                    <div className="py-8 text-center text-xs font-medium" style={{ color: 'var(--ink-3)' }}>
+                      No items yet — add one below to start the bill.
+                    </div>
+                  )}
+
+                  {/* Add Item (menu or custom — e.g. Water Bottle) */}
+                  <button
+                    type="button"
+                    onClick={openAddItem}
+                    className="w-full mt-2 py-2.5 rounded-xl border border-dashed text-xs font-bold flex items-center justify-center gap-1.5 transition hover:opacity-80 active:scale-95"
+                    style={{ borderColor: 'color-mix(in srgb, var(--gold) 40%, var(--line))', color: 'var(--gold-d)' }}
+                  >
+                    <Plus size={14} /> Add Item (Menu or Custom)
+                  </button>
                 </div>
 
                 {/* Discount Row */}
@@ -1972,7 +2288,7 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
                     <Receipt size={15} /> Preview (F6)
                   </button>
                   <button
-                    disabled={settleBusy}
+                    disabled={settleBusy || !selectedOrder.id || (selectedOrder.items || []).length === 0}
                     onClick={handleSettleOrder}
                     className="py-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-60"
                     style={{
@@ -2302,6 +2618,142 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
         />
       )}
 
+      {/* ── ADD ITEM MODAL (Menu or Custom) ── */}
+      {addItemOpen && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center p-4 backdrop-blur-sm"
+          style={{ background: 'rgba(0,0,0,0.65)' }}
+          onClick={() => setAddItemOpen(false)}
+        >
+          <div
+            className="rounded-3xl border w-full max-w-md max-h-[85vh] flex flex-col"
+            style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: 'var(--line)' }}>
+              <h3 className="font-display font-bold text-lg flex items-center gap-2" style={{ color: 'var(--ink)' }}>
+                <Plus size={18} style={{ color: 'var(--gold-d)' }} /> Add Item to Bill
+              </h3>
+              <button onClick={() => setAddItemOpen(false)} className="text-sm font-bold transition hover:opacity-70" style={{ color: 'var(--ink-3)' }}>
+                Close
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1 space-y-4">
+              {/* Source tabs */}
+              <div className="flex rounded-xl p-1" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
+                {(['menu', 'custom'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setAddItemSource(s)}
+                    className="flex-1 py-2 text-xs font-bold rounded-lg transition"
+                    style={addItemSource === s ? { background: 'var(--gold)', color: '#2A1607' } : { color: 'var(--ink-3)' }}
+                  >
+                    {s === 'menu' ? '☕ From Menu' : '✍ Custom Item'}
+                  </button>
+                ))}
+              </div>
+
+              {addItemSource === 'menu' ? (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={14} style={{ color: 'var(--ink-3)' }} />
+                    <input
+                      autoFocus
+                      value={addItemSearch}
+                      onChange={(e) => { setAddItemSearch(e.target.value); setAddItemSelected(null); }}
+                      placeholder="Search menu items..."
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border text-sm outline-none transition"
+                      style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                    />
+                  </div>
+                  <div className="max-h-52 overflow-y-auto rounded-xl border divide-y" style={{ borderColor: 'var(--line)' }}>
+                    {filteredMenuItems.length === 0 ? (
+                      <div className="py-6 text-center text-xs" style={{ color: 'var(--ink-3)' }}>No menu items found</div>
+                    ) : (
+                      filteredMenuItems.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setAddItemSelected(item)}
+                          className="w-full px-3 py-2.5 flex items-center justify-between text-left text-sm transition hover:opacity-80"
+                          style={{
+                            background: addItemSelected?.id === item.id ? 'color-mix(in srgb, var(--gold) 12%, var(--paper-2))' : 'var(--paper-2)',
+                            color: 'var(--ink)',
+                          }}
+                        >
+                          <span className="font-semibold truncate">{item.name}</span>
+                          <span className="font-mono text-xs shrink-0 ml-2" style={{ color: 'var(--gold-d)' }}>{formatINR(item.pricePaise)}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: 'var(--ink-3)' }}>
+                      Item Name
+                    </label>
+                    <input
+                      autoFocus
+                      value={addItemCustomName}
+                      onChange={(e) => setAddItemCustomName(e.target.value)}
+                      placeholder="e.g. Water Bottle"
+                      className="w-full px-3.5 py-2.5 rounded-xl border text-sm outline-none transition"
+                      style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: 'var(--ink-3)' }}>
+                      Rate (₹)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={addItemCustomPrice}
+                      onChange={(e) => setAddItemCustomPrice(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full px-3.5 py-2.5 rounded-xl border text-sm outline-none font-mono transition"
+                      style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] font-extrabold uppercase tracking-wider block mb-1" style={{ color: 'var(--ink-3)' }}>
+                  Quantity
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={addItemQty}
+                  onChange={(e) => setAddItemQty(e.target.value)}
+                  className="w-24 px-3.5 py-2.5 rounded-xl border text-sm outline-none font-mono text-center transition"
+                  style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+                />
+              </div>
+            </div>
+
+            <div className="p-5 border-t shrink-0" style={{ borderColor: 'var(--line)' }}>
+              <button
+                disabled={addItemBusy}
+                onClick={handleAddItemSubmit}
+                className="w-full py-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-60"
+                style={{
+                  background: 'linear-gradient(135deg, var(--gold) 0%, color-mix(in srgb, var(--gold) 60%, var(--espresso)) 100%)',
+                  color: '#2A1607',
+                }}
+              >
+                <Plus size={15} /> {addItemBusy ? 'Adding…' : 'Add to Bill'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── KEYBOARD SHORTCUTS MODAL ── */}
       {shortcutsOpen && (
         <div
@@ -2372,6 +2824,8 @@ export default function TBillingClient({ outlet, staff, tables, initialOrders = 
           {toast}
         </div>
       )}
+      {/* ── Confirm Dialog ── */}
+      <ConfirmDialog />
     </div>
   );
 }

@@ -631,6 +631,7 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
   const [addSearch, setAddSearch] = useState('');
   const [sendBusy, setSendBusy] = useState(false);
   const [voidBusyId, setVoidBusyId] = useState<string | null>(null);
+  const [qtyVoidTarget, setQtyVoidTarget] = useState<{ id: string; orderId: string; name: string; totalQty: number; removeQty: number } | null>(null);
   const [tableEditingNoteKey, setTableEditingNoteKey] = useState<string | null>(null);
   const [tableNoteDraft, setTableNoteDraft] = useState('');
 
@@ -848,8 +849,13 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
     finally { setSendBusy(false); }
   }
 
-  async function voidLine(l: { id: string; orderId: string; name: string }) {
+  async function voidLine(l: { id: string; orderId: string; name: string; qty?: number }) {
     if (isOffline()) { flash(OFFLINE_ORDER_MSG); return; }
+    const totalQty = typeof l.qty === 'number' && l.qty > 0 ? l.qty : 1;
+    if (totalQty > 1) {
+      setQtyVoidTarget({ id: l.id, orderId: l.orderId, name: l.name, totalQty, removeQty: 1 });
+      return;
+    }
     const ok = await confirmAction({
       title: 'Remove Item',
       message: `Remove "${l.name}" from this table? Stock will be restored.`,
@@ -857,18 +863,81 @@ export default function PosClient({ outlet: initialOutlet, staff, menu, tables, 
       isDestructive: true,
     });
     if (!ok) return;
+    executeVoid(l.id, l.orderId, 1, 1, l.name);
+  }
+
+  async function decreaseLineQty(l: any) {
+    if (isOffline()) { flash(OFFLINE_ORDER_MSG); return; }
+    if (l.qty <= 1) {
+      voidLine(l);
+      return;
+    }
+    const ok = await confirmAction({
+      title: 'Decrease Quantity',
+      message: `Reduce "${l.name}" quantity from ${l.qty} to ${l.qty - 1}? Kitchen stock will be restored.`,
+      confirmText: 'Decrease',
+      isDestructive: true,
+    });
+    if (!ok) return;
+    executeVoid(l.id, l.orderId, 1, l.qty, l.name);
+  }
+
+  async function increaseLineQty(l: any) {
+    if (isOffline()) { flash(OFFLINE_ORDER_MSG); return; }
     setVoidBusyId(l.id);
     try {
-      const r = await fetch('/api/tables/order', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'void_item', orderId: l.orderId, itemId: l.id }) });
+      const r = await fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_item_qty',
+          orderId: l.orderId,
+          itemId: l.id,
+          newQty: l.qty + 1,
+        }),
+      });
       const d = await r.json();
       if (r.ok) {
-        flash(d.cancelled ? 'Item removed · order cancelled' : 'Item removed');
+        flash(`Added 1 more "${l.name}" (${l.qty + 1} total)`);
+        await refreshTableOrder();
+        refreshTables();
+      } else {
+        flash(d?.error || 'Could not increase quantity');
+      }
+    } catch {
+      flash('Network error');
+    } finally {
+      setVoidBusyId(null);
+    }
+  }
+
+  async function executeVoid(itemId: string, orderId: string, removeQty: number, totalQty: number, name: string) {
+    setVoidBusyId(itemId);
+    try {
+      const payload: any = { action: 'void_item', orderId, itemId };
+      if (removeQty > 0 && removeQty < totalQty) {
+        payload.qty = removeQty;
+      }
+      const r = await fetch('/api/tables/order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        flash(d.cancelled ? 'Item removed · order cancelled' : removeQty < totalQty ? `Removed ${removeQty} × ${name} (${totalQty - removeQty} remain)` : 'Item removed');
         const fresh = await refreshTableOrder();
         refreshTables();
         if (!fresh || fresh.count === 0) closeTableActions(); // table is now empty
-      } else flash('Could not remove item');
-    } catch { flash('Network error'); }
-    finally { setVoidBusyId(null); }
+      } else {
+        flash(d?.error || 'Could not remove item');
+      }
+    } catch {
+      flash('Network error');
+    } finally {
+      setVoidBusyId(null);
+      setQtyVoidTarget(null);
+    }
   }
 
   async function settleTable(method: 'cash' | 'upi' | 'card') {
@@ -1735,7 +1804,7 @@ ${rows}
   return (
     <>
       <div className="md:hidden sticky top-0 z-30" style={{ paddingTop: 'env(safe-area-inset-top)', background: 'color-mix(in srgb, var(--paper) 90%, transparent)', backdropFilter: 'blur(10px)', borderBottom: '1px solid var(--line)' }}>
-        <div className="flex items-center gap-2 px-3 py-2 pr-14">
+        <div className="flex items-center gap-2 px-3 py-2">
           <StaffBell role={currentStaff.role} staffId={currentStaff.id} triggerClassName="btn btn-icon btn-sm btn-ghost shrink-0" />
           <div className="flex rounded-full p-[3px] border flex-1 min-w-0" style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}>
             {(['dine_in', 'takeaway'] as const).map((t) => (
@@ -1899,7 +1968,7 @@ ${rows}
       </header>
 
       {/* POS WORKSPACE */}
-      <div className="grid grid-cols-1 md:grid-cols-[190px_1fr_310px] lg:grid-cols-[216px_1fr_336px] xl:grid-cols-[232px_1fr_360px] gap-3.5 p-3.5 flex-1 min-h-0 overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-[190px_1fr_310px] lg:grid-cols-[216px_1fr_336px] xl:grid-cols-[232px_1fr_360px] gap-3.5 p-3.5 pb-0 md:pb-3.5 flex-1 min-h-0 overflow-hidden">
         {/* LEFT COLUMN: STAFF / CATEGORIES */}
         <aside className="hidden md:flex flex-col h-full min-h-0 overflow-hidden gap-2">
           {/* Staff profile */}
@@ -2000,7 +2069,7 @@ ${rows}
         </aside>
 
         {/* CENTER COLUMN: PRODUCTS */}
-        <section className="flex flex-col min-w-0 h-full min-h-0 overflow-hidden pb-[calc(120px_+_env(safe-area-inset-bottom))] md:pb-0">
+        <section className="flex flex-col min-w-0 h-full min-h-0 overflow-hidden">
           <div className="flex items-center justify-between mb-2 shrink-0">
             <h2 className="text-xl md:text-2xl font-bold truncate">{q ? `“${search.trim()}”` : cat?.name}</h2>
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0" style={{ background: 'var(--paper-3)', color: 'var(--ink-3)' }}>
@@ -2010,7 +2079,14 @@ ${rows}
 
           {live.length > 0 && <LiveOrders tickets={live} now={now} />}
 
-          <div className="grid gap-3 overflow-y-auto overflow-x-hidden content-start pr-1 flex-1 min-h-0 pos-scroll" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(136px,1fr))' }}>
+          <div
+            className={`grid gap-3 overflow-y-auto overflow-x-hidden content-start pr-1 flex-1 min-h-0 pos-scroll ${
+              cartCount > 0
+                ? 'pb-[calc(120px_+_env(safe-area-inset-bottom))]'
+                : 'pb-[calc(68px_+_env(safe-area-inset-bottom))]'
+            } md:pb-2`}
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(136px,1fr))' }}
+          >
             {shownItems.length === 0 ? (
               <div className="col-span-full grid place-content-center text-center gap-2 py-12" style={{ color: 'var(--ink-3)' }}>
                 <Search size={34} className="mx-auto opacity-40" aria-hidden />
@@ -2800,14 +2876,52 @@ ${rows}
                 {tableOrder.lines.length === 0 ? (
                   <p className="text-sm text-center py-2" style={{ color: 'var(--ink-3)' }}>No items yet.</p>
                 ) : tableOrder.lines.map((l: any) => (
-                  <div key={l.id} className="flex justify-between items-center gap-2 text-sm">
-                    <span className="min-w-0"><b className="mr-1.5" style={{ color: 'var(--turmeric-d)' }}>{l.qty}×</b>{l.name}</span>
-                    <span className="flex items-center gap-2 shrink-0">
-                      <span className="tnum" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
+                  <div key={l.id} className="flex justify-between items-center gap-2 text-sm py-1.5 border-b last:border-b-0" style={{ borderColor: 'var(--line)' }}>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-[13.5px] truncate leading-tight">{l.name}</div>
+                      <div className="text-[11px] mt-0.5" style={{ color: 'var(--ink-3)' }}>
+                        {formatINR(l.unitPricePaise || Math.round(l.linePaise / (l.qty || 1)))} each
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="tnum font-bold text-sm min-w-[50px] text-right" style={{ fontFamily: 'var(--font-mono)' }}>{formatINR(l.linePaise)}</span>
                       {canVoidItem && (
-                        <button onClick={() => voidLine(l)} disabled={voidBusyId === l.id} title="Remove item" aria-label={`Remove ${l.name}`} className="w-7 h-7 grid place-items-center rounded-lg" style={{ background: 'var(--paper-3)', color: 'var(--clay, #c0392b)', opacity: voidBusyId === l.id ? 0.5 : 1 }}><X size={15} aria-hidden /></button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => decreaseLineQty(l)}
+                            disabled={voidBusyId === l.id}
+                            title={l.qty > 1 ? `Decrease ${l.name} quantity` : `Remove ${l.name}`}
+                            className="w-7 h-7 grid place-items-center rounded-lg border font-bold text-sm transition active:scale-95 hover:opacity-80"
+                            style={{ borderColor: 'var(--line)', background: 'var(--paper-3)', color: 'var(--ink-2)' }}
+                          >
+                            <Minus size={13} strokeWidth={2.5} />
+                          </button>
+                          <span className="w-5 text-center font-bold text-sm tnum">{l.qty}</span>
+                          <button
+                            type="button"
+                            onClick={() => increaseLineQty(l)}
+                            disabled={voidBusyId === l.id}
+                            title={`Add 1 more ${l.name}`}
+                            className="w-7 h-7 grid place-items-center rounded-lg font-bold text-sm transition active:scale-95 shadow-xs hover:opacity-90"
+                            style={{ background: 'var(--turmeric)', color: '#2A1607' }}
+                          >
+                            <Plus size={13} strokeWidth={2.5} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => voidLine(l)}
+                            disabled={voidBusyId === l.id}
+                            title={`Remove ${l.name}`}
+                            aria-label={`Remove ${l.name}`}
+                            className="w-7 h-7 grid place-items-center rounded-lg transition hover:opacity-80 ml-0.5"
+                            style={{ background: 'var(--paper-3)', color: 'var(--clay, #c0392b)', opacity: voidBusyId === l.id ? 0.5 : 1 }}
+                          >
+                            <X size={15} aria-hidden />
+                          </button>
+                        </div>
                       )}
-                    </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -3127,6 +3241,98 @@ ${rows}
       {/* Midnight / Business Day Extension Prompt */}
       <BusinessDayPrompt currentStaff={currentStaff} />
       <ConfirmDialog />
+
+      {qtyVoidTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setQtyVoidTarget(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border p-5 shadow-2xl flex flex-col gap-4"
+            style={{ background: 'var(--paper-2)', borderColor: 'var(--line)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-bold text-base" style={{ color: 'var(--ink)' }}>Remove / Reduce Item</h3>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>Select quantity to remove from table</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQtyVoidTarget(null)}
+                className="w-7 h-7 grid place-items-center rounded-lg text-sm"
+                style={{ background: 'var(--paper-3)', color: 'var(--ink-3)' }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl border flex flex-col gap-1" style={{ background: 'var(--paper-3)', borderColor: 'var(--line)' }}>
+              <span className="font-bold text-sm" style={{ color: 'var(--ink)' }}>{qtyVoidTarget.name}</span>
+              <div className="flex items-center justify-between text-xs" style={{ color: 'var(--ink-2)' }}>
+                <span>Ordered: <b>{qtyVoidTarget.totalQty}</b></span>
+                <span>Remaining: <b style={{ color: 'var(--turmeric-d)' }}>{qtyVoidTarget.totalQty - qtyVoidTarget.removeQty}</b></span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center gap-4 py-2">
+              <button
+                type="button"
+                disabled={qtyVoidTarget.removeQty <= 1}
+                onClick={() => setQtyVoidTarget((prev) => prev ? { ...prev, removeQty: Math.max(1, prev.removeQty - 1) } : null)}
+                className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-lg border disabled:opacity-30 active:scale-95 transition"
+                style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+              >
+                <Minus size={18} />
+              </button>
+              <div className="flex flex-col items-center">
+                <span className="text-3xl font-extrabold font-mono" style={{ color: 'var(--ink)' }}>
+                  {qtyVoidTarget.removeQty}
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--ink-3)' }}>
+                  to remove
+                </span>
+              </div>
+              <button
+                type="button"
+                disabled={qtyVoidTarget.removeQty >= qtyVoidTarget.totalQty}
+                onClick={() => setQtyVoidTarget((prev) => prev ? { ...prev, removeQty: Math.min(prev.totalQty, prev.removeQty + 1) } : null)}
+                className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-lg border disabled:opacity-30 active:scale-95 transition"
+                style={{ background: 'var(--paper-3)', borderColor: 'var(--line)', color: 'var(--ink)' }}
+              >
+                <Plus size={18} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                disabled={voidBusyId === qtyVoidTarget.id}
+                onClick={() => executeVoid(qtyVoidTarget.id, qtyVoidTarget.orderId, qtyVoidTarget.removeQty, qtyVoidTarget.totalQty, qtyVoidTarget.name)}
+                className="w-full py-3 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 active:scale-98 transition disabled:opacity-50"
+                style={{ background: 'var(--clay, #c0392b)' }}
+              >
+                {qtyVoidTarget.removeQty === qtyVoidTarget.totalQty
+                  ? `Remove All (${qtyVoidTarget.totalQty})`
+                  : `Remove ${qtyVoidTarget.removeQty} (${qtyVoidTarget.totalQty - qtyVoidTarget.removeQty} remaining)`}
+              </button>
+              {qtyVoidTarget.removeQty < qtyVoidTarget.totalQty && (
+                <button
+                  type="button"
+                  disabled={voidBusyId === qtyVoidTarget.id}
+                  onClick={() => executeVoid(qtyVoidTarget.id, qtyVoidTarget.orderId, qtyVoidTarget.totalQty, qtyVoidTarget.totalQty, qtyVoidTarget.name)}
+                  className="w-full py-2.5 rounded-xl font-semibold text-xs border active:scale-98 transition"
+                  style={{ background: 'transparent', borderColor: 'var(--line)', color: 'var(--ink-2)' }}
+                >
+                  Remove all {qtyVoidTarget.totalQty} items instead
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

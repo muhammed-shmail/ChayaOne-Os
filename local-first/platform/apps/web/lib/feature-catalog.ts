@@ -35,8 +35,8 @@ export type FeatureDef = {
 export const FEATURE_CATALOG: FeatureDef[] = [
   { key: 'revenue_analytics', label: 'Revenue Analytics', category: 'Insights', defaultOn: true,
     description: 'Revenue trends, KPIs and the analytics panel on the owner dashboard.' },
-  { key: 'ai_assistant', label: 'AI Sales Assistant', category: 'Insights', defaultOn: false,
-    description: 'Natural-language sales assistant (Gemini) on the owner dashboard.' },
+  { key: 'ai_assistant', label: 'Chai Assistant', category: 'Insights', defaultOn: false,
+    description: 'Chai — the natural-language AI assistant on the owner dashboard.' },
   { key: 'crm', label: 'Customer Management', category: 'Engagement', defaultOn: true,
     description: 'Customer directory, segments and the CRM dashboard.' },
   { key: 'pwa_customer_app', label: 'Customer PWA', category: 'Engagement', defaultOn: true,

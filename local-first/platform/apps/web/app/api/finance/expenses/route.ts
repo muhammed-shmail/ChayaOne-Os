@@ -39,13 +39,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_expense_data' }, { status: 400 });
   }
 
+  const customDate = typeof body.businessDate === 'string' && body.businessDate.trim()
+    ? body.businessDate.trim()
+    : typeof body.date === 'string' && body.date.trim()
+    ? body.date.trim()
+    : null;
+
   const outlet = await prisma.outlet.findUnique({
     where: { id: session.outletId },
     select: { settings: true, timezone: true },
   });
   const tz = outlet?.timezone || DEFAULT_TIMEZONE;
   const bState = readBusinessDay(outlet?.settings, new Date(), tz);
-  const businessDate = bState.currentBusinessDate || formatYmdInTz(new Date(), tz);
+  const businessDate = customDate || bState.currentBusinessDate || formatYmdInTz(new Date(), tz);
 
   try {
     await FinancialYearService.assertDateNotLocked(session.tenantId, session.outletId, businessDate);
@@ -66,6 +72,23 @@ export async function POST(req: NextRequest) {
         reference: reference || null,
       },
     });
+
+    await prisma.auditLog.create({
+      data: {
+        outletId: session.outletId,
+        actorId: session.staffId,
+        action: 'expense.created',
+        entity: 'expense',
+        entityId: expense.id,
+        after: {
+          category: expense.category,
+          vendor: expense.vendor,
+          amountPaise: expense.amountPaise,
+          method: expense.method,
+          businessDate: expense.businessDate,
+        },
+      },
+    }).catch(() => {});
 
     return NextResponse.json({ ok: true, expense });
   } catch (err: any) {

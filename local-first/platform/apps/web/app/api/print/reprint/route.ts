@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: {
-      items: true,
+      items: { where: { kotStatus: { not: 'void' } } },
       table: { select: { label: true } },
       customer: { select: { name: true, phone: true } },
     },

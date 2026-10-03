@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { formatINR } from '@cafeos/core';
 import {
   LayoutDashboard, Store, Printer, Package, ClipboardList,
@@ -205,7 +205,16 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   const [pettyCashEnabled, setPettyCashEnabled] = useState(true);
 
   // Modal forms
-  const [expenseForm, setExpenseForm] = useState({ category: 'Kitchen Supplies', vendor: '', amount: '', gstRate: '5', method: 'cash', notes: '', recurring: false });
+  const [expenseForm, setExpenseForm] = useState({
+    category: 'Kitchen Supplies',
+    vendor: '',
+    amount: '',
+    gstRate: '5',
+    method: 'cash',
+    notes: '',
+    recurring: false,
+    date: new Date().toISOString().split('T')[0],
+  });
   const [cashForm, setCashForm] = useState({ type: 'deposit', amount: '', method: 'cash', details: '' });
   const [accountForm, setAccountForm] = useState({ name: '', type: 'bank' as 'bank' | 'upi' | 'wallet', identifier: '', balance: '' });
   const [vendorPayForm, setVendorPayForm] = useState({ billId: '', amount: '', method: 'bank_transfer', accountId: '' });
@@ -213,10 +222,42 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   const [journalForm, setJournalForm] = useState({ description: '', debitAcc: 'Cash Register', debitAmt: '', creditAcc: 'Sales Revenue', creditAmt: '' });
   const [varianceRemark, setVarianceRemark] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // Delete expense state (owner-only)
+  const [deleteExpenseId, setDeleteExpenseId] = useState<string | null>(null);
+  const [deleteExpenseData, setDeleteExpenseData] = useState<Expense | null>(null);
+  const [deleteExpenseSaving, setDeleteExpenseSaving] = useState(false);
+  const [expenseSaving, setExpenseSaving] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleDeleteExpense = async () => {
+    if (!deleteExpenseId || deleteExpenseSaving) return;
+    setDeleteExpenseSaving(true);
+    try {
+      const res = await fetch(`/api/finance/expenses/${deleteExpenseId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        // Remove from local state
+        const next = expenses.filter((e) => e.id !== deleteExpenseId);
+        saveExpenses(next);
+        // Also remove related transaction if present
+        const nextTx = transactions.filter((t) => t.id !== deleteExpenseId);
+        saveTransactions(nextTx);
+        showToast('Expense deleted.');
+        setDeleteExpenseId(null);
+        setDeleteExpenseData(null);
+        loadExpenses();
+      } else {
+        showToast(`Error: ${data.error || 'failed'}`);
+      }
+    } catch {
+      showToast('Network error — could not delete expense.');
+    } finally {
+      setDeleteExpenseSaving(false);
+    }
   };
 
   // Initialize data from localStorage without any hardcoded dummy/mock records.
@@ -302,6 +343,38 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
     setExpenses(next);
     localStorage.setItem('cafeos_fin_expenses', JSON.stringify(next));
   };
+
+  const loadExpenses = useCallback(async () => {
+    try {
+      const res = await fetch('/api/finance/expenses');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.expenses) && data.expenses.length > 0) {
+          const mapped: Expense[] = data.expenses.map((db: any) => ({
+            id: db.id,
+            date: db.businessDate || (db.createdAt ? new Date(db.createdAt).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN')),
+            category: db.category,
+            vendor: db.vendor || 'General Supplier',
+            amountPaise: db.amountPaise,
+            gstPaise: db.gstPaise || 0,
+            method: db.method || 'cash',
+            status: db.status || 'approved',
+            approvedBy: db.approvedBy || undefined,
+            recurring: false,
+            notes: db.notes || undefined,
+          }));
+          setExpenses(mapped);
+          localStorage.setItem('cafeos_fin_expenses', JSON.stringify(mapped));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load expenses from server', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadExpenses();
+  }, [loadExpenses]);
   const saveBills = (next: VendorBill[]) => {
     setVendorBills(next);
     localStorage.setItem('cafeos_fin_bills', JSON.stringify(next));
@@ -412,69 +485,117 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
   }, [isOwner, isManager, isAccountant]);
 
   // Handle Form Submissions
-  const handleRecordExpense = (e: React.FormEvent) => {
+  const handleRecordExpense = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (expenseSaving) return;
+    const trimmedCategory = expenseForm.category.trim();
+    if (!trimmedCategory) {
+      showToast('Expense category is required.');
+      return;
+    }
+    const trimmedVendor = expenseForm.vendor.trim();
+    if (!trimmedVendor) {
+      showToast('Expense name / vendor is required.');
+      return;
+    }
     const amountVal = parseFloat(expenseForm.amount) || 0;
     const amountPaise = Math.round(amountVal * 100);
+    if (amountPaise <= 0) {
+      showToast('Amount must be greater than 0.');
+      return;
+    }
+    if (!expenseForm.date?.trim()) {
+      showToast('Expense date is required.');
+      return;
+    }
     const gstRateVal = parseFloat(expenseForm.gstRate) || 0;
     const gstPaise = Math.round(amountPaise * (gstRateVal / 100));
 
-    const newExpense: Expense = {
-      id: Date.now().toString(),
-      date: new Date().toLocaleDateString('en-IN'),
-      category: expenseForm.category,
-      vendor: expenseForm.vendor || 'General Supplier',
-      amountPaise,
-      gstPaise,
-      method: expenseForm.method,
-      status: requireExpenseApproval && !isOwner ? 'pending' : 'approved',
-      approvedBy: isOwner ? staff.name : undefined,
-      recurring: expenseForm.recurring,
-      notes: expenseForm.notes
-    };
+    setExpenseSaving(true);
+    try {
+      // Persist to real database via API
+      const res = await fetch('/api/finance/expenses', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          category: trimmedCategory,
+          vendor: trimmedVendor,
+          amountPaise,
+          gstPaise,
+          method: expenseForm.method,
+          notes: expenseForm.notes || null,
+          businessDate: expenseForm.date,
+        }),
+      });
+      const apiData = await res.json();
 
-    saveExpenses([newExpense, ...expenses]);
+      // Build local record (use API id if successful, else fallback to timestamp)
+      const newExpenseId = res.ok && apiData.expense?.id ? apiData.expense.id : Date.now().toString();
+      const newExpense: Expense = {
+        id: newExpenseId,
+        date: expenseForm.date,
+        category: trimmedCategory,
+        vendor: trimmedVendor,
+        amountPaise,
+        gstPaise,
+        method: expenseForm.method,
+        status: requireExpenseApproval && !isOwner ? 'pending' : 'approved',
+        approvedBy: isOwner ? staff.name : undefined,
+        recurring: expenseForm.recurring,
+        notes: expenseForm.notes
+      };
 
-    // Directly log transaction if pre-approved
-    if (newExpense.status === 'approved') {
-      const newTransaction: FinancialTransaction = {
+      saveExpenses([newExpense, ...expenses]);
+
+      // Directly log transaction if pre-approved
+      if (newExpense.status === 'approved') {
+        const newTransaction: FinancialTransaction = {
+          id: Date.now().toString(),
+          time: new Date().toLocaleString('en-IN'),
+          user: staff.name,
+          action: `Paid ${trimmedCategory}`,
+          amountPaise,
+          type: 'outflow',
+          method: expenseForm.method,
+          category: trimmedCategory,
+          details: `Expense paid to ${trimmedVendor}`
+        };
+        saveTransactions([newTransaction, ...transactions]);
+
+        // Deduct from Petty cash box if paid with cash
+        if (expenseForm.method === 'cash') {
+          const nextAccounts = bankAccounts.map((a) =>
+            a.id === '3' ? { ...a, balancePaise: Math.max(0, a.balancePaise - amountPaise) } : a
+          );
+          saveAccounts(nextAccounts);
+        }
+      }
+
+      // Audit log local mirror
+      const newAudit: AuditLog = {
         id: Date.now().toString(),
         time: new Date().toLocaleString('en-IN'),
         user: staff.name,
-        action: `Paid ${expenseForm.category}`,
-        amountPaise,
-        type: 'outflow',
-        method: expenseForm.method,
-        category: expenseForm.category,
-        details: `Expense paid to ${newExpense.vendor}`
+        action: 'Create Expense',
+        details: `Created new expense of ${formatINR(amountPaise)} for ${trimmedCategory} (${trimmedVendor})`,
+        oldValue: 'N/A',
+        newValue: `Expense ID: ${newExpenseId}`,
+        device: 'Desktop Terminal'
       };
-      saveTransactions([newTransaction, ...transactions]);
+      saveAudits([newAudit, ...auditLogs]);
 
-      // Deduct from Petty cash box if paid with cash
-      if (expenseForm.method === 'cash') {
-        const nextAccounts = bankAccounts.map((a) =>
-          a.id === '3' ? { ...a, balancePaise: Math.max(0, a.balancePaise - amountPaise) } : a
-        );
-        saveAccounts(nextAccounts);
+      setActiveModal(null);
+      const todayYmd = new Date().toISOString().split('T')[0];
+      setExpenseForm({ category: 'Kitchen Supplies', vendor: '', amount: '', gstRate: '5', method: 'cash', notes: '', recurring: false, date: todayYmd });
+      showToast(res.ok ? 'Expense recorded successfully!' : 'Expense recorded locally (API unavailable).');
+      if (res.ok) {
+        loadExpenses();
       }
+    } catch {
+      showToast('Network error — expense saved locally only.');
+    } finally {
+      setExpenseSaving(false);
     }
-
-    // Audit log
-    const newAudit: AuditLog = {
-      id: Date.now().toString(),
-      time: new Date().toLocaleString('en-IN'),
-      user: staff.name,
-      action: 'Create Expense',
-      details: `Created new expense of ${formatINR(amountPaise)} for ${expenseForm.category}`,
-      oldValue: 'N/A',
-      newValue: `Expense ID: ${newExpense.id}`,
-      device: 'Desktop Terminal'
-    };
-    saveAudits([newAudit, ...auditLogs]);
-
-    setActiveModal(null);
-    setExpenseForm({ category: 'Kitchen Supplies', vendor: '', amount: '', gstRate: '5', method: 'cash', notes: '', recurring: false });
-    showToast('Expense successfully recorded!');
   };
 
   const handleCashMovement = (e: React.FormEvent) => {
@@ -1130,7 +1251,7 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-bold">Receipts &amp; Expense Claims</h3>
             <button onClick={() => setActiveModal('record_expense')} className="btn btn-primary text-xs gap-1 px-4">
-              ＋ Add Expense Record
+              + Add Expense
             </button>
           </div>
 
@@ -1202,44 +1323,59 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                         </span>
                       </td>
                       <td className="py-2.5 text-right">
-                        {e.status === 'pending' && isOwner && (
-                          <div className="flex justify-end gap-1.5">
+                        <div className="flex justify-end gap-1.5">
+                          {e.status === 'pending' && isOwner && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  const next = expenses.map((x) => x.id === e.id ? { ...x, status: 'approved' as const, approvedBy: staff.name } : x);
+                                  saveExpenses(next);
+                                  // add transaction
+                                  const t: FinancialTransaction = {
+                                    id: Date.now().toString(),
+                                    time: new Date().toLocaleString('en-IN'),
+                                    user: staff.name,
+                                    action: `Approved ${e.category}`,
+                                    amountPaise: e.amountPaise,
+                                    type: 'outflow',
+                                    method: e.method,
+                                    category: e.category,
+                                    details: `Approved expense paid to ${e.vendor}`
+                                  };
+                                  saveTransactions([t, ...transactions]);
+                                  showToast('Expense approved!');
+                                }}
+                                className="btn btn-xs py-0.5 px-2 text-[10px] bg-green-600 text-white font-bold"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const next = expenses.map((x) => x.id === e.id ? { ...x, status: 'rejected' as const } : x);
+                                  saveExpenses(next);
+                                  showToast('Expense rejected.');
+                                }}
+                                className="btn btn-xs py-0.5 px-2 text-[10px] bg-red-600 text-white font-bold"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                          {e.status === 'approved' && !isOwner && <span className="text-[10px] text-slate-400 font-bold">Claim settled</span>}
+                          {/* Owner-only: delete any expense */}
+                          {isOwner && (
                             <button
-                              onClick={() => {
-                                const next = expenses.map((x) => x.id === e.id ? { ...x, status: 'approved' as const, approvedBy: staff.name } : x);
-                                saveExpenses(next);
-                                // add transaction
-                                const t: FinancialTransaction = {
-                                  id: Date.now().toString(),
-                                  time: new Date().toLocaleString('en-IN'),
-                                  user: staff.name,
-                                  action: `Approved ${e.category}`,
-                                  amountPaise: e.amountPaise,
-                                  type: 'outflow',
-                                  method: e.method,
-                                  category: e.category,
-                                  details: `Approved expense paid to ${e.vendor}`
-                                };
-                                saveTransactions([t, ...transactions]);
-                                showToast('Expense approved!');
-                              }}
-                              className="btn btn-xs py-0.5 px-2 text-[10px] bg-green-600 text-white font-bold"
+                              title="Delete expense"
+                              onClick={() => { setDeleteExpenseId(e.id); setDeleteExpenseData(e); }}
+                              className="btn btn-xs py-0.5 px-2 text-[10px] font-bold transition"
+                              style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--clay)' }}
+                              onMouseEnter={(el) => { el.currentTarget.style.background = 'var(--clay)'; el.currentTarget.style.color = '#fff'; }}
+                              onMouseLeave={(el) => { el.currentTarget.style.background = 'transparent'; el.currentTarget.style.color = 'var(--clay)'; }}
                             >
-                              Approve
+                              Delete
                             </button>
-                            <button
-                              onClick={() => {
-                                const next = expenses.map((x) => x.id === e.id ? { ...x, status: 'rejected' as const } : x);
-                                saveExpenses(next);
-                                showToast('Expense rejected.');
-                              }}
-                              className="btn btn-xs py-0.5 px-2 text-[10px] bg-red-600 text-white font-bold"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        )}
-                        {e.status === 'approved' && <span className="text-[10px] text-slate-400 font-bold">Claim settled</span>}
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1247,6 +1383,45 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
               </table>
             </div>
           </section>
+        </div>
+      )}
+
+      {/* ── Delete Expense Confirmation Modal (owner-only) ── */}
+      {deleteExpenseId && deleteExpenseData && (
+        <div
+          onClick={() => { if (!deleteExpenseSaving) { setDeleteExpenseId(null); setDeleteExpenseData(null); } }}
+          className="fixed inset-0 z-[9000] grid place-items-center p-5"
+          style={{ background: 'rgba(30,18,10,.5)', backdropFilter: 'blur(6px)' }}
+        >
+          <div onClick={(e) => e.stopPropagation()} className="w-[min(420px,100%)]" style={{ background: 'var(--paper-2)', borderRadius: 24, boxShadow: 'var(--sh-3)', border: '1px solid var(--line)' }}>
+            <div className="px-5 pt-5 pb-2">
+              <h3 className="text-base font-bold mb-1">Delete expense?</h3>
+              <p className="text-sm text-ink-3 mb-3">Are you sure you want to delete this expense?</p>
+              <div className="rounded-xl p-3 text-xs" style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}>
+                <div className="flex justify-between mb-0.5"><span className="text-ink-3">Expense</span><span className="font-bold">{deleteExpenseData.vendor ? `${deleteExpenseData.vendor} (${deleteExpenseData.category})` : deleteExpenseData.category}</span></div>
+                <div className="flex justify-between mb-0.5"><span className="text-ink-3">Amount</span><span className="font-mono font-bold">{formatINR(deleteExpenseData.amountPaise)}</span></div>
+                <div className="flex justify-between"><span className="text-ink-3">Date</span><span>{deleteExpenseData.date}</span></div>
+              </div>
+            </div>
+            <div className="flex gap-2 px-5 py-4">
+              <button
+                onClick={() => { setDeleteExpenseId(null); setDeleteExpenseData(null); }}
+                disabled={deleteExpenseSaving}
+                className="btn flex-1 text-sm"
+                style={{ background: 'var(--paper-3)', border: '1px solid var(--line)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteExpense}
+                disabled={deleteExpenseSaving}
+                className="btn flex-1 text-sm font-bold disabled:opacity-50"
+                style={{ background: 'var(--clay)', color: '#fff', border: '1px solid var(--clay)' }}
+              >
+                {deleteExpenseSaving ? 'Deleting…' : 'Delete Expense'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1798,16 +1973,29 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="lbl">Payment Method</label>
-                  <CustomSelect
-                    value={expenseForm.method}
-                    onChange={(val) => setExpenseForm({ ...expenseForm, method: val })}
-                    options={[
-                      { value: 'cash', label: 'Cash (Drawer)' },
-                      { value: 'bank_transfer', label: bankAccounts[0]?.name ? `${bankAccounts[0].name} (Bank Transfer)` : 'Bank Transfer' }
-                    ]}
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="lbl">Date <span style={{ color: 'var(--clay)' }}>*</span></label>
+                    <input
+                      type="date"
+                      required
+                      value={expenseForm.date}
+                      onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                      className="inp"
+                      disabled={expenseSaving}
+                    />
+                  </div>
+                  <div>
+                    <label className="lbl">Payment Method</label>
+                    <CustomSelect
+                      value={expenseForm.method}
+                      onChange={(val) => setExpenseForm({ ...expenseForm, method: val })}
+                      options={[
+                        { value: 'cash', label: 'Cash (Drawer)' },
+                        { value: 'bank_transfer', label: bankAccounts[0]?.name ? `${bankAccounts[0].name} (Bank Transfer)` : 'Bank Transfer' }
+                      ]}
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="lbl">Notes / Remarks</label>
@@ -1815,7 +2003,8 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                     placeholder="Provide details about the invoice or purchase..."
                     value={expenseForm.notes}
                     onChange={(e) => setExpenseForm({ ...expenseForm, notes: e.target.value })}
-                    className="inp h-16"
+                    className="inp h-16 resize-none"
+                    disabled={expenseSaving}
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -1824,11 +2013,16 @@ export default function FinanceManagement({ outlet, staff, kpi, formatINR }: Fin
                     id="recurring"
                     checked={expenseForm.recurring}
                     onChange={(e) => setExpenseForm({ ...expenseForm, recurring: e.target.checked })}
+                    disabled={expenseSaving}
                   />
                   <label htmlFor="recurring" className="text-xs font-bold">This is a recurring monthly bill</label>
                 </div>
-                <button type="submit" className="btn btn-primary w-full py-2.5">
-                  Save &amp; Record Transaction
+                <button
+                  type="submit"
+                  disabled={expenseSaving || !expenseForm.vendor.trim() || !expenseForm.amount || parseFloat(expenseForm.amount) <= 0}
+                  className="btn btn-primary w-full py-2.5 disabled:opacity-50"
+                >
+                  {expenseSaving ? 'Saving…' : 'Save & Record Expense'}
                 </button>
               </form>
             </div>
