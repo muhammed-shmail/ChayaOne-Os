@@ -1,0 +1,13 @@
+name: Release
+
+# Manual only. Installer and APK builds currently run on a Windows machine via
+# BUILD-MAIN-PC-INSTALLER.bat / BUILD-RELEASE-APK.bat; this workflow is the place
+# to automate them later.
+on:
+  workflow_dispatch:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Release automation not configured yet."

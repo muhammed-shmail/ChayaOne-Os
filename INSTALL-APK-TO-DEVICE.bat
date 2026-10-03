@@ -9,7 +9,7 @@ echo        CHAYAONE OS - WAITER APP APK INSTALLER
 echo =================================================================
 echo.
 echo [*] APK File:
-echo     %~dp0android\release-apks\ChayaOne-Waiter-Release.apk
+echo     %~dp0apps\waiter-android\release-apks\ChayaOne-Waiter-Release.apk
 echo.
 echo How to install on your Tablet:
 echo  1. Connect tablet to PC with USB (Select 'File Transfer / MTP')
@@ -31,7 +31,7 @@ goto :done
 :open_folder
 echo.
 echo [*] Opening APK folder...
-explorer.exe "%~dp0android\release-apks"
+explorer.exe "%~dp0apps\waiter-android\release-apks"
 goto :done
 
 :adb_install
@@ -47,7 +47,7 @@ if not exist "%ADB_EXE%" (
 )
 echo.
 echo [*] Installing via ADB...
-"%ADB_EXE%" install -r -d "%~dp0android\release-apks\ChayaOne-Waiter-Release.apk"
+"%ADB_EXE%" install -r -d "%~dp0apps\waiter-android\release-apks\ChayaOne-Waiter-Release.apk"
 if %ERRORLEVEL% EQU 0 (
     echo [SUCCESS] ChayaOne Waiter App installed successfully!
 ) else (

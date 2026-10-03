@@ -3,4 +3,4 @@ Set FSO = CreateObject("Scripting.FileSystemObject")
 
 strScriptDir = FSO.GetParentFolderName(WScript.ScriptFullName)
 WshShell.CurrentDirectory = strScriptDir
-WshShell.Run "node scripts/run-tunnel.js", 0, False
+WshShell.Run "node tools/scripts/run-tunnel.js", 0, False

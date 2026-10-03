@@ -14,7 +14,7 @@ echo [*] Destination: release-main-pc\ChayaOne-MainPC-Setup.exe
 echo =================================================================
 echo.
 
-cd /d "%~dp0local-first\platform"
+cd /d "%~dp0"
 
 echo [*] Compiling Desktop Application TypeScript...
 call npm run -w @cafeos/desktop build
@@ -34,11 +34,11 @@ if %ERRORLEVEL% NEQ 0 (
 :: Copy to release-main-pc folder in root
 cd /d "%~dp0"
 if not exist "release-main-pc" mkdir "release-main-pc"
-for %%F in ("local-first\platform\apps\desktop\dist-installers-v6\ChayaOne App Setup *.exe") do (
+for %%F in ("apps\hub-pc\dist-installers-v6\ChayaOne App Setup *.exe") do (
     copy /y "%%F" "release-main-pc\ChayaOne-MainPC-Setup.exe" >nul
 )
-if exist "local-first\platform\apps\desktop\dist-installers-v6\latest.yml" (
-    copy /y "local-first\platform\apps\desktop\dist-installers-v6\latest.yml" "release-main-pc\latest.yml" >nul
+if exist "apps\hub-pc\dist-installers-v6\latest.yml" (
+    copy /y "apps\hub-pc\dist-installers-v6\latest.yml" "release-main-pc\latest.yml" >nul
 )
 
 echo.
