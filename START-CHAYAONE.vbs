@@ -7,7 +7,7 @@ Set FSO = CreateObject("Scripting.FileSystemObject")
 
 strScriptDir = FSO.GetParentFolderName(WScript.ScriptFullName)
 strLocalAppData = WshShell.ExpandEnvironmentStrings("%LOCALAPPDATA%")
-strUnpackedExe = strScriptDir & "\local-first\platform\apps\desktop\dist-installers-v6\win-unpacked\ChayaOne App.exe"
+strUnpackedExe = strScriptDir & "\apps\hub-pc\dist-installers-v6\win-unpacked\ChayaOne App.exe"
 strInstalledExe = strLocalAppData & "\Programs\@cafeosdesktop\ChayaOne App.exe"
 
 Dim appExe
@@ -27,7 +27,7 @@ If Len(appExe) > 0 Then
     WshShell.CurrentDirectory = FSO.GetParentFolderName(appExe)
     WshShell.Run """" & appExe & """ --route=/pos", 1, False
 Else
-    strDesktopDir = strScriptDir & "\local-first\platform\apps\desktop"
+    strDesktopDir = strScriptDir & "\apps\hub-pc"
     strElectronBin = strDesktopDir & "\node_modules\.bin\electron.cmd"
     If FSO.FolderExists(strDesktopDir) Then
         WshShell.CurrentDirectory = strDesktopDir

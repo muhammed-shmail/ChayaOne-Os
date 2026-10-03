@@ -11,7 +11,7 @@ echo.
 echo [*] Target: Building ChayaOne Waiter App APK (Staff Tablets)
 echo [*] Customer App: Uses PWA via Table QR code (no APK needed)
 echo.
-echo Target Output Folder: android\release-apks\
+echo Target Output Folder: apps\waiter-android\release-apks\
 echo =================================================================
 echo.
 
@@ -29,23 +29,23 @@ echo.
 echo -----------------------------------------------------------------
 echo Compiling ChayaOne Waiter App (com.chayaone.waiter)...
 echo -----------------------------------------------------------------
-cd /d "%~dp0local-first\platform\apps\waiter-android"
+cd /d "%~dp0apps\waiter-android"
 call gradlew.bat assembleDebug
 if %ERRORLEVEL% NEQ 0 goto :waiter_error
 
 :: Copy to release-apks
 cd /d "%~dp0"
-if not exist "android\release-apks" mkdir "android\release-apks"
+if not exist "apps\waiter-android\release-apks" mkdir "apps\waiter-android\release-apks"
 
-copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\debug\app-debug.apk" "android\release-apks\ChayaOne-Waiter.apk" >nul
-copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\debug\app-debug.apk" "local-first\platform\apps\web\public\downloads\ChayaOne-Waiter.apk" >nul
-copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\debug\app-debug.apk" "local-first\platform\apps\web\public\downloads\waiter.apk" >nul
+copy /y "apps\waiter-android\app\build\outputs\apk\debug\app-debug.apk" "apps\waiter-android\release-apks\ChayaOne-Waiter.apk" >nul
+copy /y "apps\waiter-android\app\build\outputs\apk\debug\app-debug.apk" "apps\pos-ui\public\downloads\ChayaOne-Waiter.apk" >nul
+copy /y "apps\waiter-android\app\build\outputs\apk\debug\app-debug.apk" "apps\pos-ui\public\downloads\waiter.apk" >nul
 
 echo.
 echo =================================================================
 echo [SUCCESS] ChayaOne Waiter Android APK built successfully!
 echo.
-echo Output file: android\release-apks\ChayaOne-Waiter.apk
+echo Output file: apps\waiter-android\release-apks\ChayaOne-Waiter.apk
 echo.
 echo You can transfer this APK to any Android tablet or handheld
 echo via USB cable or run INSTALL-APK-TO-DEVICE.bat

@@ -11,7 +11,7 @@ echo.
 echo [*] Target: Building ChayaOne Waiter App RELEASE APK (Staff Tablets)
 echo [*] Mode: assembleRelease (Optimized + Signed)
 echo.
-echo Target Output: android\release-apks\ChayaOne-Waiter-Release.apk
+echo Target Output: apps\waiter-android\release-apks\ChayaOne-Waiter-Release.apk
 echo =================================================================
 echo.
 
@@ -31,24 +31,24 @@ echo.
 echo -----------------------------------------------------------------
 echo Compiling ChayaOne Waiter App (Release Build)...
 echo -----------------------------------------------------------------
-cd /d "%~dp0local-first\platform\apps\waiter-android"
+cd /d "%~dp0apps\waiter-android"
 call gradlew.bat assembleRelease
 if %ERRORLEVEL% NEQ 0 goto :waiter_error
 
 :: Copy to release-apks
 cd /d "%~dp0"
-if not exist "android\release-apks" mkdir "android\release-apks"
+if not exist "apps\waiter-android\release-apks" mkdir "apps\waiter-android\release-apks"
 
-copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "android\release-apks\ChayaOne-Waiter-Release.apk" >nul
-copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "android\release-apks\ChayaOne-Waiter.apk" >nul
-copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "local-first\platform\apps\web\public\downloads\ChayaOne-Waiter.apk" >nul
-copy /y "local-first\platform\apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "local-first\platform\apps\web\public\downloads\waiter.apk" >nul
+copy /y "apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "apps\waiter-android\release-apks\ChayaOne-Waiter-Release.apk" >nul
+copy /y "apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "apps\waiter-android\release-apks\ChayaOne-Waiter.apk" >nul
+copy /y "apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "apps\pos-ui\public\downloads\ChayaOne-Waiter.apk" >nul
+copy /y "apps\waiter-android\app\build\outputs\apk\release\app-release.apk" "apps\pos-ui\public\downloads\waiter.apk" >nul
 
 echo.
 echo =================================================================
 echo [SUCCESS] ChayaOne Waiter Release APK built successfully!
 echo.
-echo Release APK file: android\release-apks\ChayaOne-Waiter-Release.apk
+echo Release APK file: apps\waiter-android\release-apks\ChayaOne-Waiter-Release.apk
 echo.
 echo Sideloading: Transfer this APK to any Android tablet/handheld
 echo via USB cable, Google Drive, or WhatsApp, and tap to install.
